@@ -11,8 +11,10 @@
 1. Install and open Otium.
 2. Press **Start earning**. No wallet and no settings are needed.
 3. Otium starts when you sign in and earns only while you're away from the computer, after 3 minutes without keyboard or mouse input. It pauses the moment you come back, and also when electricity would cost more than it earns (the price is estimated from your country).
-4. Your balance grows in dollars. Press **Cash out** to get paid by PayPal or crypto (Monero).
-5. Share your invite code. Friends mine fee-free for 30 days, and you get 5% of everything they earn.
+4. Your balance grows in dollars. Add your email when Otium asks; that keeps the balance safe if you reinstall, lets you
+   sign in on your other PCs (they all earn into one balance), and is needed before the first cash-out.
+5. Press **Cash out** to get paid by PayPal or crypto (Monero).
+6. Share your invite code. Friends mine fee-free for 30 days, and you get 5% of everything they earn.
 
 Everything technical lives under **Advanced**:
 - Details per device, including GPU algorithm and speed, power draw, and profit per day.
@@ -47,6 +49,17 @@ Everything technical lives under **Advanced**:
 - Referrers get 5% of a friend's gross earnings, paid out of the fee.
 - The operator carries the pool's luck. `GET /admin/summary` compares what was credited against what the pool actually paid.
 
+**Accounts and sign-in** (`src/Otium.Server/Accounts`)
+- The first time a computer connects it gets its own account: no sign-up step.
+- An account can have several computers. Each computer authenticates with its own random secret, and the balance, invite
+  code and pool worker id belong to the account.
+- **Adding an email** (a 6-digit code, valid 15 minutes, 5 tries, rate-limited, stored only as a salted hash) secures the
+  account. Signing in with the same email on another computer attaches that computer to the account. If that computer
+  had been earning on its own anonymous account, those earnings are merged in, and its old worker id keeps crediting the
+  right account.
+- A verified email is required before cashing out.
+- Without an SMTP server configured, codes are written to the server log and to `/dev/outbox` (development only).
+
 **Pool addresses**
 - MoneroOcean reports only about 50 simultaneously active workers per address separately; beyond that, everything is lumped together.
 - The server therefore spreads accounts across subaddresses of the operator's wallet, 40 per address, creating new ones through `monero-wallet-rpc` when needed. All payouts still land in one wallet.
@@ -80,6 +93,7 @@ Configure `src/Otium.Server/appsettings.json` (or environment variables such as 
 | `PayPal:ClientId`, `ClientSecret`, `UseSandbox` | PayPal Payouts. Use the sandbox until PayPal approves the live account. |
 | `MoneroWallet:RpcUrl`, `Username`, `Password` | `monero-wallet-rpc` with `--rpc-login`, on localhost or a private network |
 | `Admin:Token` | Enables `/admin/*`; send it as `X-Admin-Token` |
+| `Email:SmtpHost`, `Port`, `Username`, `Password`, `From` | SMTP service for sign-in codes (Postmark, SES, Mailgun, ...) |
 | `Referral:PublicBaseUrl`, `DownloadUrl` | Invite links and the landing page |
 
 Run it locally:
@@ -108,11 +122,36 @@ You need the .NET 10 SDK. On this machine it's installed per-user, so add it to 
 $env:PATH = "$env:LOCALAPPDATA\Microsoft\dotnet;$env:PATH"
 ```
 
-Run the tests (109, covering crediting, cash-outs, fraud rules, GPU profit switching, wallet checksums and the engine):
+Run the tests (119, covering accounts and sign-in, crediting, cash-outs, fraud rules, GPU profit switching, the simulated pool, wallet checksums and the engine):
 
 ```bash
 dotnet test
 ```
+
+### Dev mode: the whole loop on one PC
+
+```bash
+pwsh build/dev.ps1
+```
+
+This starts everything locally, with no real mining and no real money:
+- **Otium.DevPool**, a simulated MoneroOcean (same API). Earnings are sped up 3000× so balances move in minutes.
+- **Otium.Server** with dev timings: credits every 20 s, a 1-minute hold, no new-account review, and fake PayPal/Monero
+  payouts that are marked paid 15 s later.
+- **The app** with simulated CPU and GPU miners.
+
+Sign-in codes are printed in the console. Closing the app window stops everything.
+
+| Option | Effect |
+|---|---|
+| `-Computers 2` | Two simulated PCs, to try signing in on a second computer |
+| `-Reset` | Wipe dev data (`artifacts/dev`) first |
+| `-Speedup N` | Change the earnings speed-up |
+
+Server admin summary while it runs: `curl -H "X-Admin-Token: dev" http://localhost:5080/admin/summary`. It compares what
+users were credited against what the simulated pool paid, which is a quick check that crediting is right.
+
+### Running the app on its own
 
 Run the app. `OTIUM_HOME` keeps your real data folder untouched:
 
@@ -142,9 +181,10 @@ src/Otium.Core               engine, provider interface, fees, power, GPU detect
 src/Otium.Providers.XMRig    CPU miner provider
 src/Otium.Providers.SrbMiner GPU miner provider with benchmarking and profit switching
 src/Otium.App                desktop app (Welcome → Home ⇄ Advanced), Velopack updates
-src/Otium.Server             accounts, crediting, cash-outs, referrals, landing page, admin API
+src/Otium.Server             accounts and email sign-in, crediting, cash-outs, referrals, landing page, admin API
+src/Otium.DevPool            simulated MoneroOcean for dev mode
 tests/Otium.Tests            unit and API tests
-build/                       packaging script, icon generator, icons
+build/                       dev.ps1 (dev mode), package.ps1 (installers), icon generator, icons
 ```
 
 ## Before launch

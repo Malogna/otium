@@ -22,10 +22,12 @@ public partial class DashboardViewModel : ViewModelBase
         _host = host;
 
         Devices.Add(new DeviceViewModel("Processor", $"{Environment.ProcessorCount} threads · Monero (RandomX) via XMRig", host.Engine));
-        if (host.GpuEngine is not null && host.GpuProvider is not null)
+        if (host.GpuEngine is not null)
         {
-            var names = string.Join(", ", host.GpuProvider.Gpus.Select(g => g.Describe()));
-            Devices.Add(new DeviceViewModel("Graphics card", $"{names} · best-paying algorithm via SRBMiner", host.GpuEngine));
+            var subtitle = host.GpuProvider is { } gpu
+                ? $"{string.Join(", ", gpu.Gpus.Select(g => g.Describe()))} · best-paying algorithm via SRBMiner"
+                : "Simulated graphics card (dev mode)";
+            Devices.Add(new DeviceViewModel("Graphics card", subtitle, host.GpuEngine));
         }
 
         foreach (var device in Devices)

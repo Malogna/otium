@@ -17,7 +17,32 @@ public sealed record AccountSummary(
     int InvitedCount,
     int VerifiedCount,
     string? ReferralCodeError,
-    BalanceInfo Balance);
+    BalanceInfo Balance,
+    string? Email = null,
+    int DeviceCount = 1);
+
+/// <summary>Asks the server to email a 6-digit sign-in code.</summary>
+public sealed record EmailCodeRequest(string Email);
+
+/// <summary>
+/// Confirms the code. If the email is new it secures this computer's account; if it already belongs to an account,
+/// this computer joins that account (and any earnings it had on its own are moved over).
+/// </summary>
+public sealed record EmailVerifyRequest(string Email, string Code);
+
+public static class EmailAddresses
+{
+    public static string Normalize(string? email) => (email ?? "").Trim().ToLowerInvariant();
+
+    public static bool IsValid(string? email)
+    {
+        var value = (email ?? "").Trim();
+        return value.Length <= 254
+               && System.Net.Mail.MailAddress.TryCreate(value, out var parsed)
+               && parsed.Address == value
+               && value.Contains('.', StringComparison.Ordinal);
+    }
+}
 
 /// <param name="FeePercent">Otium's share of mining earnings for balance accounts, shown to the user.</param>
 /// <param name="ReferralPercent">What a referrer earns, as a percent of each invited friend's earnings.</param>

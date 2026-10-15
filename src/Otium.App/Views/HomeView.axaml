@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Otium.App.ViewModels"
+             xmlns:views="using:Otium.App.Views"
              x:Class="Otium.App.Views.HomeView"
              x:DataType="vm:HomeViewModel">
 
@@ -54,6 +55,18 @@
                                     IsVisible="{Binding IsBalanceMode}" />
                         </Grid>
                         <TextBlock Classes="muted" FontSize="12" HorizontalAlignment="Center" Text="{Binding CashOutHint}" />
+                        <TextBlock Classes="muted" FontSize="12" HorizontalAlignment="Center" Text="{Binding AccountLine}"
+                                   IsVisible="{Binding AccountLine, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Protect the balance with an email (also how a second PC signs in) -->
+                <Border Classes="card" IsVisible="{Binding NeedsEmail}">
+                    <StackPanel Spacing="10">
+                        <TextBlock Classes="h2" Text="Protect your balance" />
+                        <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap"
+                                   Text="Add your email so your money is safe if you reinstall or switch computers. You'll need it to cash out, and you can use it to sign in on your other PCs." />
+                        <views:EmailSignInView DataContext="{Binding SignIn}" />
                     </StackPanel>
                 </Border>
 

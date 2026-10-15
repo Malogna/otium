@@ -44,7 +44,12 @@ public sealed record HashratePoint(DateTimeOffset Time, double Hps, double Norma
 /// <summary>Public MoneroOcean API. Network stats are cached because they only change every block (~2 min).</summary>
 public sealed class MoneroOceanClient(HttpClient http, TimeProvider? time = null) : IMoneroPoolApi
 {
-    public static readonly Uri ApiBase = new("https://api.moneroocean.stream/");
+    public static readonly Uri MoneroOceanApi = new("https://api.moneroocean.stream/");
+
+    /// <summary>The pool API in use: MoneroOcean, or a simulated pool when OTIUM_POOL_API is set (dev mode).</summary>
+    public static Uri ApiBase { get; } = Environment.GetEnvironmentVariable("OTIUM_POOL_API") is { Length: > 0 } custom
+        ? new Uri(custom.TrimEnd('/') + "/")
+        : MoneroOceanApi;
     public const double AtomicUnitsPerXmr = 1e12;
     public const double MinimumPayoutXmr = 0.003;
 

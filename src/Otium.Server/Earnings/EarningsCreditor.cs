@@ -59,10 +59,12 @@ public sealed class EarningsCreditor(
 
             foreach (var (workerId, points) in history)
             {
-                var device = store.FindByWorker(workerId);
+                var owner = store.FindAccountByWorker(workerId);
                 // Unknown workers (or "all_other_workers") can't be attributed; the operator keeps those earnings.
-                if (device is null || device.PoolWallet != address)
+                if (owner is null || owner.PoolWallet != address)
                     continue;
+                // A merged account's worker keeps crediting the account it was folded into.
+                var account = store.Resolve(owner)!;
 
                 var lastMs = progress.TryGetValue(workerId, out var seen) ? seen : (long?)null;
                 var (hashes, newestMs) = Integrate(points, lastMs);
@@ -72,7 +74,7 @@ public sealed class EarningsCreditor(
                 if (hashes <= 0)
                     continue;
 
-                var (user, referral) = Credit(device, hashes * usdPerHash, newestMs.Value, now);
+                var (user, referral) = Credit(account, workerId, hashes * usdPerHash, newestMs.Value, now);
                 users += user;
                 referrals += referral;
                 workers++;
@@ -109,25 +111,25 @@ public sealed class EarningsCreditor(
         return (hashes, newest);
     }
 
-    private (decimal User, decimal Referral) Credit(DeviceRecord device, double grossUsd, long newestMs, DateTimeOffset now)
+    private (decimal User, decimal Referral) Credit(AccountRecord account, string workerId, double grossUsd, long newestMs, DateTimeOffset now)
     {
-        var feeFree = device.FeeFreeUntil is { } until && now < until;
+        var feeFree = account.FeeFreeUntil is { } until && now < until;
         var fee = feeFree ? 0 : _options.FeePercent / 100.0;
         var availableAt = now + _options.HoldPeriod;
 
         var userMicros = (long)(grossUsd * (1 - fee) * OtiumStore.MicrosPerDollar);
         if (userMicros > 0)
-            store.AddLedger(device.DeviceId, LedgerKinds.Earning, userMicros, now, availableAt, $"{device.WorkerId}@{newestMs}");
+            store.AddLedger(account.AccountId, LedgerKinds.Earning, userMicros, now, availableAt, $"{workerId}@{newestMs}");
 
         long referralMicros = 0;
-        if (device.ReferredByCode is { } code
-            && device.ReferredAt is { } referredAt
+        if (account.ReferredByCode is { } code
+            && account.ReferredAt is { } referredAt
             && now < referredAt + FeePolicy.Default.ReferrerRewardPeriod
-            && store.FindByCode(code) is { IsBalanceAccount: true } referrer)
+            && store.Resolve(store.FindAccountByCode(code)) is { IsBalanceAccount: true } referrer)
         {
             referralMicros = (long)(grossUsd * _options.ReferralPercent / 100.0 * OtiumStore.MicrosPerDollar);
             if (referralMicros > 0)
-                store.AddLedger(referrer.DeviceId, LedgerKinds.Referral, referralMicros, now, availableAt, $"ref:{device.WorkerId}@{newestMs}");
+                store.AddLedger(referrer.AccountId, LedgerKinds.Referral, referralMicros, now, availableAt, $"ref:{workerId}@{newestMs}");
         }
 
         return (AccountService.ToUsd(userMicros), AccountService.ToUsd(referralMicros));

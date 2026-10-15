@@ -10,11 +10,25 @@ public partial class WelcomeViewModel(AppHost host, Action started) : ViewModelB
 {
     public bool IsSupported => host.Provider.IsSupportedOnThisPlatform;
 
-    public string DevicesLine => host.GpuProvider is { } gpu
-        ? $"Uses your processor and {gpu.Gpus[0].Name} while you're away."
-        : "Uses your processor while you're away.";
+    public string DevicesLine => host.IsSimulated
+        ? "Dev mode: simulated processor and graphics card, simulated pool, fake payouts."
+        : host.GpuProvider is { } gpu
+            ? $"Uses your processor and {gpu.Gpus[0].Name} while you're away."
+            : "Uses your processor while you're away.";
 
     [ObservableProperty] public partial bool ShowInvite { get; set; }
+
+    [ObservableProperty] public partial bool ShowSignIn { get; set; }
+
+    [ObservableProperty] public partial string? SignedInText { get; set; }
+
+    public EmailSignInViewModel SignIn { get; } = new(host, () => { });
+
+    partial void OnShowSignInChanged(bool value)
+    {
+        if (value)
+            ShowInvite = false;
+    }
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(StartCommand))]
@@ -43,6 +57,24 @@ public partial class WelcomeViewModel(AppHost host, Action started) : ViewModelB
 
     [RelayCommand]
     private void ToggleInvite() => ShowInvite = !ShowInvite;
+
+    [RelayCommand]
+    private void ToggleSignIn()
+    {
+        ShowSignIn = !ShowSignIn;
+        if (ShowSignIn)
+            host.AccountChanged += OnAccountChanged;
+    }
+
+    private void OnAccountChanged()
+    {
+        if (host.Settings.Account.Email is { } signedIn)
+            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                SignedInText = $"Signed in as {signedIn}. Press Start earning to continue.";
+                ShowSignIn = false;
+            });
+    }
 
     [RelayCommand]
     private static void OpenHowItWorks() => Launch.Open("https://github.com/Malogna/otium#readme");

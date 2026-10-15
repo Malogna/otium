@@ -1,0 +1,26 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Otium.App.ViewModels"
+             x:Class="Otium.App.Views.EmailSignInView"
+             x:DataType="vm:EmailSignInViewModel">
+    <StackPanel Spacing="8">
+        <StackPanel Spacing="8" IsVisible="{Binding IsEnteringEmail}">
+            <TextBox Text="{Binding Email}" PlaceholderText="you@example.com" />
+            <Button Classes="accent" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                    Content="Email me a code" Command="{Binding SendCodeCommand}" />
+        </StackPanel>
+        <StackPanel Spacing="8" IsVisible="{Binding IsEnteringCode}">
+            <TextBox Text="{Binding Code}" PlaceholderText="6-digit code" MaxLength="6" HorizontalContentAlignment="Center"
+                     FontSize="20" LetterSpacing="6" FontFamily="Consolas, Menlo, monospace" />
+            <Button Classes="accent" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                    Content="Confirm" Command="{Binding VerifyCommand}" />
+            <Button Classes="link" HorizontalAlignment="Center" Background="Transparent" BorderThickness="0"
+                    Command="{Binding ChangeEmailCommand}">
+                <TextBlock Text="Use a different email or send a new code" Foreground="{DynamicResource GoodBrush}" FontSize="12" />
+            </Button>
+        </StackPanel>
+        <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap" Text="{Binding Info}"
+                   IsVisible="{Binding Info, Converter={x:Static ObjectConverters.IsNotNull}}" />
+        <TextBlock Classes="error" Text="{Binding Error}" IsVisible="{Binding Error, Converter={x:Static ObjectConverters.IsNotNull}}" />
+    </StackPanel>
+</UserControl>

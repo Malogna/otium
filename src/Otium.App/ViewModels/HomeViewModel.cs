@@ -21,6 +21,7 @@ public partial class HomeViewModel : ViewModelBase
         _host = host;
         _openAdvanced = openAdvanced;
         CashOut = new CashOutViewModel(host, () => IsCashingOut = false);
+        SignIn = new EmailSignInViewModel(host);
 
         foreach (var engine in host.Engines)
             engine.SnapshotChanged += _ => Dispatcher.UIThread.Post(Refresh);
@@ -30,6 +31,11 @@ public partial class HomeViewModel : ViewModelBase
     }
 
     public CashOutViewModel CashOut { get; }
+
+    public EmailSignInViewModel SignIn { get; }
+
+    [ObservableProperty] public partial bool NeedsEmail { get; set; }
+    [ObservableProperty] public partial string AccountLine { get; set; } = "";
 
     [ObservableProperty] public partial string Balance { get; set; } = "$0.00";
     [ObservableProperty] public partial string BalanceCaption { get; set; } = "";
@@ -103,6 +109,11 @@ public partial class HomeViewModel : ViewModelBase
             : "Invite friends: they mine fee-free for 30 days";
         InviteCode = settings.Referral.MyCode ?? "";
         HasInviteCode = InviteCode.Length > 0;
+
+        NeedsEmail = IsBalanceMode && account.Email is null && account.WorkerId is not null;
+        AccountLine = account.Email is null
+            ? ""
+            : account.DeviceCount > 1 ? $"Signed in as {account.Email} on {account.DeviceCount} computers" : $"Signed in as {account.Email}";
 
         UpdateReady = _host.Updates.ReadyVersion is not null;
         UpdateText = UpdateReady ? $"Otium {_host.Updates.ReadyVersion} is ready." : "";

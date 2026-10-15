@@ -10,6 +10,10 @@ namespace Otium.Core.Platform;
 /// </summary>
 public static class DeviceIdentity
 {
+    /// <summary>A device id derived only from a seed (dev mode uses this to run two "computers" on one PC).</summary>
+    public static string FromSeed(string seed) =>
+        Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes("Otium.device.v1:seed:" + seed)));
+
     public static string Compute(string fallbackSeed)
     {
         var machineId = ReadMachineId();

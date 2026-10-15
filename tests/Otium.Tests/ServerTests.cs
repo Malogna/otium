@@ -8,6 +8,8 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Otium.Core.Pools;
 using Otium.Core.Accounts;
 using Otium.Server;
+using Otium.Server.Accounts;
+using Otium.Server.Data;
 
 namespace Otium.Tests;
 
@@ -16,6 +18,7 @@ public sealed class ServerTests : IDisposable
     private readonly string _dbPath = Path.Combine(Path.GetTempPath(), $"otium-test-{Guid.NewGuid():N}.db");
     private readonly FakePool _pool = new();
     private readonly string _poolWallet = TestAddresses.Generate();
+    private readonly ManualTime _time = new(DateTimeOffset.UtcNow);
     private readonly WebApplicationFactory<Program> _factory;
     private readonly HttpClient _http;
 
@@ -31,6 +34,8 @@ public sealed class ServerTests : IDisposable
             {
                 services.RemoveAll<IMoneroPoolApi>();
                 services.AddSingleton<IMoneroPoolApi>(_pool);
+                services.RemoveAll<TimeProvider>();
+                services.AddSingleton<TimeProvider>(_time);
             });
         });
         _http = _factory.CreateClient();
@@ -252,14 +257,125 @@ public sealed class ServerTests : IDisposable
     }
 
     [Fact]
-    public async Task Cashout_with_no_balance_is_refused_with_a_readable_message()
+    public async Task Cashout_needs_an_email_and_then_enough_balance()
     {
         var device = NewDevice();
         await RegisterBalance(device);
-        var error = await Assert.ThrowsAsync<AccountRequestException>(() => new AccountClient(_http)
-            .RequestCashoutAsync(device.Id, device.Secret, new CashoutRequest(CashoutMethods.PayPal, "me@example.com"), CancellationToken.None));
-        Assert.Equal(400, error.StatusCode);
-        Assert.Contains("at least $5.00", error.Message);
+        var client = new AccountClient(_http);
+        var noEmail = await Assert.ThrowsAsync<AccountRequestException>(() =>
+            client.RequestCashoutAsync(device.Id, device.Secret, new CashoutRequest(CashoutMethods.PayPal, "me@example.com"), CancellationToken.None));
+        Assert.Equal(403, noEmail.StatusCode);
+        Assert.Contains("Add your email", noEmail.Message);
+
+        await SignIn(device, "me@example.com");
+        var noMoney = await Assert.ThrowsAsync<AccountRequestException>(() =>
+            client.RequestCashoutAsync(device.Id, device.Secret, new CashoutRequest(CashoutMethods.PayPal, "me@example.com"), CancellationToken.None));
+        Assert.Equal(400, noMoney.StatusCode);
+        Assert.Contains("at least $5.00", noMoney.Message);
+    }
+
+    // ---------- email sign-in ----------
+
+    private OutboxEmailSender Outbox => _factory.Services.GetRequiredService<OutboxEmailSender>();
+
+    private OtiumStore Store => _factory.Services.GetRequiredService<OtiumStore>();
+
+    private string LatestCode(string email) =>
+        System.Text.RegularExpressions.Regex.Match(Outbox.Sent.Last(m => m.To == email).Body, @"\b(\d{6})\b").Groups[1].Value;
+
+    private async Task<AccountSummary> SignIn(Device device, string email)
+    {
+        var client = new AccountClient(_http);
+        await client.SendEmailCodeAsync(device.Id, device.Secret, new EmailCodeRequest(email), CancellationToken.None);
+        return await client.VerifyEmailCodeAsync(device.Id, device.Secret, new EmailVerifyRequest(email, LatestCode(email)), CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Adding_an_email_secures_the_account()
+    {
+        var device = NewDevice();
+        var before = await RegisterBalance(device);
+        var after = await SignIn(device, "Alex@Example.com");
+        Assert.Equal("alex@example.com", after.Email);
+        Assert.Equal(before.WorkerId, after.WorkerId);
+        Assert.Equal(before.Code, after.Code);
+        Assert.Equal(1, after.DeviceCount);
+    }
+
+    [Fact]
+    public async Task Signing_in_on_a_second_computer_joins_the_account_and_keeps_its_earnings()
+    {
+        var laptop = NewDevice();
+        var account = await RegisterBalance(laptop);
+        await SignIn(laptop, "sam@example.com");
+
+        // The new PC mined a little on its own anonymous account before signing in.
+        var desktop = NewDevice();
+        var anonymous = await RegisterBalance(desktop);
+        var anonymousId = Store.FindAccountByWorker(anonymous.WorkerId)!.AccountId;
+        Store.AddLedger(anonymousId, LedgerKinds.Earning, 1_500_000, _time.GetUtcNow(), _time.GetUtcNow(), "test");
+
+        var joined = await SignIn(desktop, "sam@example.com");
+
+        Assert.Equal(account.WorkerId, joined.WorkerId); // both PCs now mine for the same account
+        Assert.Equal(2, joined.DeviceCount);
+        Assert.Equal(1.50m, joined.Balance.AvailableUsd);
+        Assert.Equal(1.50m, (await Summary(laptop)).Balance.AvailableUsd);
+        // The old worker id still credits the surviving account.
+        Assert.Equal(Store.FindAccountByWorker(account.WorkerId)!.AccountId, Store.Resolve(Store.FindAccountByWorker(anonymous.WorkerId))!.AccountId);
+    }
+
+    [Fact]
+    public async Task Wrong_codes_are_rejected_and_lock_after_five_tries()
+    {
+        var device = NewDevice();
+        await RegisterBalance(device);
+        var client = new AccountClient(_http);
+        await client.SendEmailCodeAsync(device.Id, device.Secret, new EmailCodeRequest("kim@example.com"), CancellationToken.None);
+        var right = LatestCode("kim@example.com");
+        var wrong = right == "000000" ? "111111" : "000000";
+
+        for (var i = 0; i < AccountService.MaxCodeAttempts; i++)
+        {
+            var e = await Assert.ThrowsAsync<AccountRequestException>(() =>
+                client.VerifyEmailCodeAsync(device.Id, device.Secret, new EmailVerifyRequest("kim@example.com", wrong), CancellationToken.None));
+            Assert.Contains("isn't right", e.Message);
+        }
+        var locked = await Assert.ThrowsAsync<AccountRequestException>(() =>
+            client.VerifyEmailCodeAsync(device.Id, device.Secret, new EmailVerifyRequest("kim@example.com", right), CancellationToken.None));
+        Assert.Contains("Too many wrong tries", locked.Message);
+    }
+
+    [Fact]
+    public async Task Codes_expire_and_cannot_be_reused()
+    {
+        var device = NewDevice();
+        await RegisterBalance(device);
+        var client = new AccountClient(_http);
+        await client.SendEmailCodeAsync(device.Id, device.Secret, new EmailCodeRequest("lee@example.com"), CancellationToken.None);
+        var code = LatestCode("lee@example.com");
+        _time.Advance(AccountService.CodeLifetime + TimeSpan.FromMinutes(1));
+        var expired = await Assert.ThrowsAsync<AccountRequestException>(() =>
+            client.VerifyEmailCodeAsync(device.Id, device.Secret, new EmailVerifyRequest("lee@example.com", code), CancellationToken.None));
+        Assert.Contains("expired", expired.Message);
+
+        await SignIn(device, "lee@example.com");
+        var reused = await Assert.ThrowsAsync<AccountRequestException>(() =>
+            client.VerifyEmailCodeAsync(device.Id, device.Secret, new EmailVerifyRequest("lee@example.com", LatestCode("lee@example.com")), CancellationToken.None));
+        Assert.Contains("expired", reused.Message);
+    }
+
+    [Fact]
+    public async Task Code_requests_are_rate_limited_per_email()
+    {
+        var device = NewDevice();
+        await RegisterBalance(device);
+        var client = new AccountClient(_http);
+        for (var i = 0; i < AccountService.MaxCodesPerEmailPerHour; i++)
+            await client.SendEmailCodeAsync(device.Id, device.Secret, new EmailCodeRequest("pat@example.com"), CancellationToken.None);
+        var limited = await Assert.ThrowsAsync<AccountRequestException>(() =>
+            client.SendEmailCodeAsync(device.Id, device.Secret, new EmailCodeRequest("pat@example.com"), CancellationToken.None));
+        Assert.Equal(429, limited.StatusCode);
     }
 
     [Fact]

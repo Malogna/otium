@@ -7,6 +7,7 @@ using Otium.Core.Gpu;
 using Otium.Core.Platform;
 using Otium.Core.Pools;
 using Otium.Core.Power;
+using Otium.Core.Providers;
 using Otium.Core.Accounts;
 using Otium.Core.Settings;
 using Otium.Core.Wallets;
@@ -35,7 +36,10 @@ public sealed class AppHost : IAsyncDisposable
         Settings = _settingsStore.Load();
         EnsureDeviceSecrets();
 
-        DeviceId = DeviceIdentity.Compute(Settings.DeviceSeed);
+        DeviceId = Environment.GetEnvironmentVariable("OTIUM_DEVICE_SEED") is { Length: > 0 } devSeed
+            ? DeviceIdentity.FromSeed(devSeed)
+            : DeviceIdentity.Compute(Settings.DeviceSeed);
+        IsSimulated = SimulatedProvider.IsEnabled;
         FeeWallet = ValidWalletOrNull(AppIdentity.ResolveFeeWallet());
 
         _http = new HttpClient { Timeout = TimeSpan.FromMinutes(5) };
@@ -49,7 +53,9 @@ public sealed class AppHost : IAsyncDisposable
         PowerMeter = RaplPowerMeter.IsAvailable() ? new RaplPowerMeter(() => PowerModel) : new EstimatedCpuPowerMeter(() => PowerModel);
         var cpuLedger = new JsonFileStore<EarningsLedger>(Paths.LedgerFile);
         _cpuConfig = BuildConfig(Settings.CpuUsagePercent, "");
-        Engine = new EarningsEngine(Provider, PowerMeter, idle, () => _cpuConfig, cpuLedger.Load(), cpuLedger.Save);
+        // Dev mode swaps the real miners for simulated ones that report to the local simulated pool.
+        IComputeProvider cpuProvider = IsSimulated ? new SimulatedProvider(_http, Pool, DeviceKind.Cpu, "rx/0", 9_000, 1.0) : Provider;
+        Engine = new EarningsEngine(cpuProvider, PowerMeter, idle, () => _cpuConfig, cpuLedger.Load(), cpuLedger.Save);
 
         // GPU (only when a supported card and miner build exist)
         _nvml = Nvml.TryOpen();
@@ -58,7 +64,14 @@ public sealed class AppHost : IAsyncDisposable
         _gpuConfig = BuildConfig(100, "g");
         var gpuProvider = new SrbMinerGpuProvider(
             _http, Pool, Paths.EnginesDir, Paths.GpuBenchmarksFile, Gpus, GpuPowerMeter, () => Settings.ElectricityPricePerKwh);
-        if (gpuProvider.IsSupportedOnThisPlatform)
+        if (IsSimulated)
+        {
+            var gpuLedger = new JsonFileStore<EarningsLedger>(Paths.GpuLedgerFile);
+            // kawpow at RTX 3080-like speed; the factor converts to the XMR-equivalent rate the simulated pool pays for.
+            var simulatedGpu = new SimulatedProvider(_http, Pool, DeviceKind.Gpu, "kawpow", 45e6, 8.7e-5);
+            GpuEngine = new EarningsEngine(simulatedGpu, new EstimatedCpuPowerMeter(new CpuPowerModel(200, 30)), idle, () => _gpuConfig, gpuLedger.Load(), gpuLedger.Save);
+        }
+        else if (gpuProvider.IsSupportedOnThisPlatform)
         {
             GpuProvider = gpuProvider;
             var gpuLedger = new JsonFileStore<EarningsLedger>(Paths.GpuLedgerFile);
@@ -67,6 +80,9 @@ public sealed class AppHost : IAsyncDisposable
     }
 
     public static AppHost Create() => new();
+
+    /// <summary>Dev mode (OTIUM_SIMULATE=1): simulated miners instead of XMRig/SRBMiner.</summary>
+    public bool IsSimulated { get; }
 
     public AppPaths Paths { get; }
 
@@ -302,6 +318,27 @@ public sealed class AppHost : IAsyncDisposable
         return cashout;
     }
 
+    /// <summary>Emails a 6-digit code. Registers this computer first if it never connected.</summary>
+    public async Task SendEmailCodeAsync(string email)
+    {
+        if (Settings.Account.WorkerId is null)
+            await SyncAccountAsync(CancellationToken.None);
+        await CreateClient().SendEmailCodeAsync(DeviceId, Settings.DeviceSecret, new EmailCodeRequest(email.Trim()), CancellationToken.None);
+    }
+
+    /// <summary>
+    /// Confirms the code. Either secures this computer's account or signs this computer in to the account that
+    /// already uses the email (bringing its balance, invite code and worker id here).
+    /// </summary>
+    public async Task VerifyEmailCodeAsync(string email, string code)
+    {
+        var summary = await CreateClient().VerifyEmailCodeAsync(DeviceId, Settings.DeviceSecret, new EmailVerifyRequest(email.Trim(), code.Trim()), CancellationToken.None);
+        Apply(summary);
+        SaveSettings();          // new worker id / pool address take effect on the next engine tick
+        ApplyDeviceSwitches();
+        AccountChanged?.Invoke();
+    }
+
     private AccountClient CreateClient() =>
         new(new HttpClient
         {
@@ -329,6 +366,8 @@ public sealed class AppHost : IAsyncDisposable
 
         var account = Settings.Account;
         account.WorkerId = summary.WorkerId;
+        account.Email = summary.Email;
+        account.DeviceCount = summary.DeviceCount;
         account.PoolWallet = ValidWalletOrNull(summary.PoolWallet);
         account.AvailableUsd = summary.Balance.AvailableUsd;
         account.PendingUsd = summary.Balance.PendingUsd;

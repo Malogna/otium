@@ -50,6 +50,14 @@ public partial class SettingsViewModel : ViewModelBase
         host.Updates.Changed += () => Dispatcher.UIThread.Post(() => UpdateStatus = _host.Updates.Status);
     }
 
+    public EmailSignInViewModel SignIn => _signIn ??= new EmailSignInViewModel(_host, () => OnPropertyChanged(nameof(AccountText)));
+
+    private EmailSignInViewModel? _signIn;
+
+    public string AccountText => _host.Settings.Account.Email is { } email
+        ? $"Signed in as {email}" + (_host.Settings.Account.DeviceCount > 1 ? $" · {_host.Settings.Account.DeviceCount} computers share this balance" : "")
+        : "Not signed in. Add your email so your balance can't get lost, or sign in to an account you use on another computer.";
+
     public string VersionText => $"Version {_host.Updates.CurrentVersion}";
 
     public bool UpdatesEnabled => _host.Updates.IsEnabled;

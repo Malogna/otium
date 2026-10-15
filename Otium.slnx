@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/Otium.App/Otium.App.csproj" />
     <Project Path="src/Otium.Core/Otium.Core.csproj" />
+    <Project Path="src/Otium.DevPool/Otium.DevPool.csproj" />
     <Project Path="src/Otium.Providers.SrbMiner/Otium.Providers.SrbMiner.csproj" />
     <Project Path="src/Otium.Providers.XMRig/Otium.Providers.XMRig.csproj" />
     <Project Path="src/Otium.Server/Otium.Server.csproj" />

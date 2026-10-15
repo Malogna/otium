@@ -23,12 +23,26 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton(_ => new OtiumStore(builder.Configuration.GetConnectionString("Otium") ?? "Data Source=otium.db"));
 builder.Services.AddHttpClient<IMoneroPoolApi, MoneroOceanClient>();
 builder.Services.AddSingleton<IMoneroWallet, MoneroWalletRpc>();
+builder.Services.Configure<EmailOptions>(builder.Configuration.GetSection(EmailOptions.Section));
+builder.Services.AddSingleton<OutboxEmailSender>();
+builder.Services.AddSingleton<IEmailSender>(sp => sp.GetRequiredService<IOptions<EmailOptions>>().Value.IsConfigured
+    ? new SmtpEmailSender(sp.GetRequiredService<IOptions<EmailOptions>>())
+    : sp.GetRequiredService<OutboxEmailSender>());
 builder.Services.AddSingleton<PoolWalletAllocator>();
 builder.Services.AddSingleton<AccountService>();
 builder.Services.AddSingleton<EarningsCreditor>();
-builder.Services.AddHttpClient<PayPalPayoutProvider>();
-builder.Services.AddSingleton<IPayoutProvider>(sp => sp.GetRequiredService<PayPalPayoutProvider>());
-builder.Services.AddSingleton<IPayoutProvider, MoneroPayoutProvider>();
+if (builder.Configuration.GetValue<bool>("DevMode:FakePayouts"))
+{
+    // Development: cash-outs "arrive" after a few seconds without touching PayPal or a wallet.
+    builder.Services.AddSingleton<IPayoutProvider>(sp => new FakePayoutProvider(CashoutMethods.PayPal, sp.GetRequiredService<TimeProvider>()));
+    builder.Services.AddSingleton<IPayoutProvider>(sp => new FakePayoutProvider(CashoutMethods.Monero, sp.GetRequiredService<TimeProvider>()));
+}
+else
+{
+    builder.Services.AddHttpClient<PayPalPayoutProvider>();
+    builder.Services.AddSingleton<IPayoutProvider>(sp => sp.GetRequiredService<PayPalPayoutProvider>());
+    builder.Services.AddSingleton<IPayoutProvider, MoneroPayoutProvider>();
+}
 builder.Services.AddSingleton<CashoutService>();
 builder.Services.AddSingleton<CashoutProcessor>();
 if (!builder.Configuration.GetValue<bool>("DisableBackgroundJobs"))
@@ -80,9 +94,18 @@ api.MapGet("/devices/{deviceId}/account", async (string deviceId, HttpRequest re
 
 api.MapPost("/devices/{deviceId}/cashouts", (string deviceId, CashoutRequest body, HttpRequest request, AccountService accounts, CashoutService cashouts) =>
 {
-    var device = accounts.Authenticate(deviceId, Secret(request));
-    return Results.Ok(cashouts.Request(device, body));
+    var session = accounts.Authenticate(deviceId, Secret(request));
+    return Results.Ok(cashouts.Request(session.Account, body));
 });
+
+api.MapPost("/devices/{deviceId}/email/code", async (string deviceId, EmailCodeRequest body, HttpRequest request, AccountService accounts, CancellationToken ct) =>
+{
+    await accounts.SendSignInCodeAsync(deviceId, Secret(request), body, ct);
+    return Results.NoContent();
+});
+
+api.MapPost("/devices/{deviceId}/email/verify", (string deviceId, EmailVerifyRequest body, HttpRequest request, AccountService accounts, IOptions<ReferralOptions> options) =>
+    Results.Ok(accounts.VerifySignInCode(deviceId, Secret(request), body, PublicBase(request, options))));
 
 app.MapGet("/r/{code}", (string code, OtiumStore store, IOptions<ReferralOptions> options) =>
 {
@@ -92,6 +115,10 @@ app.MapGet("/r/{code}", (string code, OtiumStore store, IOptions<ReferralOptions
 }).RequireRateLimiting("per-ip");
 
 app.MapGet("/healthz", () => Results.Ok("ok"));
+
+// Development only: read the emails that would have been sent (sign-in codes) when no SMTP server is configured.
+if (app.Environment.IsDevelopment() || app.Configuration.GetValue<bool>("DevMode:Enabled"))
+    app.MapGet("/dev/outbox", (OutboxEmailSender outbox) => Results.Ok(outbox.Sent.Reverse()));
 
 // ---------- operator API ----------
 
