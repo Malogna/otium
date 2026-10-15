@@ -1,0 +1,45 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Otium.App.ViewModels"
+             x:Class="Otium.App.Views.WelcomeView"
+             x:DataType="vm:WelcomeViewModel">
+
+    <ScrollViewer>
+        <StackPanel MaxWidth="520" Margin="24,56,24,32" HorizontalAlignment="Center" Spacing="22">
+            <Image Source="/Assets/otium.png" Width="96" Height="96" HorizontalAlignment="Center" />
+
+            <StackPanel Spacing="10">
+                <TextBlock Classes="h1" FontSize="34" HorizontalAlignment="Center" TextAlignment="Center"
+                           Text="Earn money while your computer rests" />
+                <TextBlock Classes="muted" FontSize="16" HorizontalAlignment="Center" TextAlignment="Center"
+                           Text="Otium puts your computer's spare power to work when you're not using it. Cash out with PayPal or crypto." />
+            </StackPanel>
+
+            <TextBlock Classes="error" HorizontalAlignment="Center" IsVisible="{Binding !IsSupported}"
+                       Text="Sorry, Otium doesn't support this type of computer yet." />
+
+            <Button Classes="accent big" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                    FontSize="18" Padding="0,16" Command="{Binding StartCommand}" Content="Start earning" />
+
+            <StackPanel Spacing="6">
+                <TextBlock Classes="muted" FontSize="13" TextAlignment="Center" Text="{Binding DevicesLine}" />
+                <TextBlock Classes="muted" FontSize="12" TextAlignment="Center" TextWrapping="Wrap"
+                           Text="By starting you agree that Otium runs crypto-mining software (XMRig and SRBMiner) on this computer and starts when you sign in. It pauses whenever you use the computer or when electricity would cost more than it earns. Some antivirus tools flag miners; Otium shows you how to allow them." />
+            </StackPanel>
+
+            <StackPanel Spacing="8" HorizontalAlignment="Center">
+                <Button Classes="link" HorizontalAlignment="Center" Background="Transparent" BorderThickness="0"
+                        Command="{Binding ToggleInviteCommand}">
+                    <TextBlock Text="Have an invite code?" Foreground="{DynamicResource GoodBrush}" />
+                </Button>
+                <StackPanel Spacing="4" IsVisible="{Binding ShowInvite}" HorizontalAlignment="Center">
+                    <TextBox Text="{Binding InviteCode}" PlaceholderText="e.g. 7KQ2M9X" Width="220"
+                             HorizontalContentAlignment="Center" FontFamily="Consolas, Menlo, monospace" />
+                    <TextBlock Classes="error" HorizontalAlignment="Center" Text="{Binding InviteError}"
+                               IsVisible="{Binding InviteError, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                    <TextBlock Classes="muted" FontSize="12" HorizontalAlignment="Center" Text="Your first 30 days are fee-free." />
+                </StackPanel>
+            </StackPanel>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

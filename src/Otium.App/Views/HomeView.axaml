@@ -1,0 +1,111 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Otium.App.ViewModels"
+             x:Class="Otium.App.Views.HomeView"
+             x:DataType="vm:HomeViewModel">
+
+    <Grid RowDefinitions="Auto,*">
+        <!-- Header -->
+        <Grid Margin="24,16,24,0" ColumnDefinitions="Auto,*,Auto">
+            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                <Image Source="/Assets/otium.png" Width="30" Height="30" />
+                <TextBlock Text="Otium" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center" />
+            </StackPanel>
+            <Button Grid.Column="2" Content="Advanced" Command="{Binding OpenAdvancedCommand}" />
+        </Grid>
+
+        <ScrollViewer Grid.Row="1">
+            <StackPanel MaxWidth="560" Margin="24,20,24,32" Spacing="16">
+
+                <!-- Update ready -->
+                <Border Classes="card" IsVisible="{Binding UpdateReady}" Padding="14">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock VerticalAlignment="Center" Text="{Binding UpdateText}" />
+                        <Button Grid.Column="1" Classes="accent" Content="Restart to update" Command="{Binding RestartToUpdateCommand}" />
+                    </Grid>
+                </Border>
+
+                <!-- Balance + switch -->
+                <Border Classes="card" Padding="28">
+                    <StackPanel Spacing="18">
+                        <StackPanel Spacing="2" HorizontalAlignment="Center">
+                            <TextBlock Classes="muted" HorizontalAlignment="Center" Text="{Binding BalanceCaption}" />
+                            <TextBlock HorizontalAlignment="Center" FontSize="52" FontWeight="Bold" Text="{Binding Balance}" />
+                            <TextBlock Classes="muted" FontSize="13" HorizontalAlignment="Center" Text="{Binding PendingText}"
+                                       IsVisible="{Binding PendingText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                        </StackPanel>
+
+                        <StackPanel Spacing="8" HorizontalAlignment="Center">
+                            <Border Classes="pill" HorizontalAlignment="Center"
+                                    Classes.earning="{Binding IsEarning}"
+                                    Classes.paused="{Binding IsWaiting}"
+                                    Classes.problem="{Binding IsProblem}">
+                                <TextBlock Text="{Binding StateLabel}" FontWeight="SemiBold" />
+                            </Border>
+                            <TextBlock HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="440"
+                                       Text="{Binding StatusText}" />
+                        </StackPanel>
+
+                        <Grid ColumnDefinitions="*,12,*">
+                            <Button Classes="big" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                                    Content="{Binding ToggleText}" Command="{Binding ToggleCommand}" />
+                            <Button Grid.Column="2" Classes="accent big" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                                    Content="Cash out" Command="{Binding StartCashOutCommand}" IsEnabled="{Binding CanCashOut}"
+                                    IsVisible="{Binding IsBalanceMode}" />
+                        </Grid>
+                        <TextBlock Classes="muted" FontSize="12" HorizontalAlignment="Center" Text="{Binding CashOutHint}" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Cash-out panel -->
+                <Border Classes="card" IsVisible="{Binding IsCashingOut}">
+                    <StackPanel Spacing="12" DataContext="{Binding CashOut}" x:DataType="vm:CashOutViewModel">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Classes="h2" Text="{Binding Amount, StringFormat='Cash out {0}'}" />
+                            <Button Grid.Column="1" Content="Close" Command="{Binding CloseCommand}" />
+                        </Grid>
+                        <StackPanel Orientation="Horizontal" Spacing="16">
+                            <RadioButton GroupName="method" IsChecked="{Binding IsPayPal}" Content="PayPal" />
+                            <RadioButton GroupName="method" IsChecked="{Binding IsCrypto}" Content="Crypto (Monero)" />
+                        </StackPanel>
+                        <StackPanel Spacing="4">
+                            <TextBlock Classes="label" Text="{Binding DestinationLabel}" />
+                            <TextBox Text="{Binding Destination}" PlaceholderText="{Binding DestinationPlaceholder}" />
+                            <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap" Text="{Binding MinimumText}" />
+                        </StackPanel>
+                        <TextBlock Classes="error" Text="{Binding Error}" IsVisible="{Binding Error, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                        <TextBlock Classes="good" TextWrapping="Wrap" Text="{Binding Result}" IsVisible="{Binding Result, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                        <Button Classes="accent" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                                Content="Send my money" Command="{Binding ConfirmCommand}" />
+                        <ItemsControl ItemsSource="{Binding Recent}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:CashoutRow">
+                                    <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,2">
+                                        <TextBlock Classes="muted" FontSize="12" Text="{Binding When}" Width="100" />
+                                        <TextBlock Grid.Column="1" FontSize="12" Text="{Binding What}" />
+                                        <TextBlock Grid.Column="2" Classes="muted" FontSize="12" Text="{Binding Status}" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+
+                <!-- Invite -->
+                <Border Classes="card" IsVisible="{Binding HasInviteCode}">
+                    <StackPanel Spacing="10">
+                        <TextBlock Classes="h2" TextWrapping="Wrap" Text="{Binding InviteTitle}" />
+                        <Grid ColumnDefinitions="*,Auto">
+                            <Border Background="{DynamicResource NeutralSoft}" CornerRadius="10" Padding="14,6" HorizontalAlignment="Left">
+                                <SelectableTextBlock Text="{Binding InviteCode}" FontSize="22" FontWeight="Bold" LetterSpacing="3"
+                                                     FontFamily="Consolas, Menlo, monospace" />
+                            </Border>
+                            <Button Grid.Column="1" Classes="accent" VerticalAlignment="Center" Content="Copy invite" Command="{Binding CopyInviteCommand}" />
+                        </Grid>
+                        <TextBlock Classes="good" FontSize="12" Text="{Binding CopiedText}" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

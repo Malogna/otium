@@ -1,0 +1,160 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Otium.App.ViewModels"
+             x:Class="Otium.App.Views.DashboardView"
+             x:DataType="vm:DashboardViewModel">
+
+    <UserControl.Styles>
+        <Style Selector="Border.tile">
+            <Setter Property="Width" Value="290" />
+            <Setter Property="Margin" Value="0,0,12,12" />
+        </Style>
+    </UserControl.Styles>
+
+    <StackPanel Spacing="16">
+        <!-- Status + main switch -->
+        <Border Classes="card">
+            <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Spacing="8">
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <Border Classes="pill"
+                                Classes.earning="{Binding IsEarning}"
+                                Classes.paused="{Binding IsPaused}"
+                                Classes.problem="{Binding IsProblem}">
+                            <TextBlock Text="{Binding StateLabel}" FontWeight="SemiBold" FontSize="13" />
+                        </Border>
+                        <TextBlock Classes="muted" VerticalAlignment="Center" Text="{Binding FeeText}" FontSize="13" />
+                    </StackPanel>
+                    <TextBlock Text="{Binding StatusText}" FontSize="16" TextWrapping="Wrap" />
+                    <TextBlock Classes="muted" FontSize="13" Text="{Binding MiningFor}"
+                               IsVisible="{Binding MiningFor, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                </StackPanel>
+                <Button Grid.Column="1" Classes="accent big" VerticalAlignment="Center" Margin="16,0,0,0"
+                        Content="{Binding ToggleText}" Command="{Binding ToggleEarningCommand}" />
+            </Grid>
+        </Border>
+
+        <!-- Update ready -->
+        <Border Classes="card" IsVisible="{Binding UpdateReady}">
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBlock VerticalAlignment="Center" TextWrapping="Wrap" Text="{Binding UpdateText}" />
+                <Button Grid.Column="1" Classes="accent" Margin="16,0,0,0" Content="Restart to update" Command="{Binding RestartToUpdateCommand}" />
+            </Grid>
+        </Border>
+
+        <!-- Antivirus problem -->
+        <Border Classes="banner" IsVisible="{Binding IsBlocked}">
+            <StackPanel Spacing="10">
+                <TextBlock Classes="h2" Text="Your antivirus removed a mining engine" />
+                <TextBlock TextWrapping="Wrap"
+                           Text="Antivirus tools flag every crypto miner as a 'potentially unwanted program', including the ones Otium uses. If you want to continue, allow only the Otium engines folder below, then press Try again. Don't turn off your antivirus." />
+                <SelectableTextBlock Text="{Binding BlockedPath}" FontFamily="Consolas, Menlo, monospace" TextWrapping="Wrap" />
+                <TextBlock Classes="muted" FontSize="13" IsVisible="{Binding IsWindows}" TextWrapping="Wrap"
+                           Text="Windows Security → Virus &amp; threat protection → Manage settings → Exclusions → Add an exclusion → Folder. Then restore the file from Protection history." />
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Content="Copy folder path" Command="{Binding CopyBlockedPathCommand}" />
+                    <Button Content="Open Windows Security" Command="{Binding OpenWindowsSecurityCommand}" IsVisible="{Binding IsWindows}" />
+                    <Button Classes="accent" Content="Try again" Command="{Binding RetryEngineCommand}" />
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <!-- Combined numbers -->
+        <WrapPanel>
+            <Border Classes="card tile">
+                <StackPanel Spacing="4">
+                    <TextBlock Classes="label" Text="You earn" />
+                    <TextBlock Classes="value" Text="{Binding EarnPerDay}" />
+                    <TextBlock Classes="muted" FontSize="12" Text="per day, after fees" />
+                </StackPanel>
+            </Border>
+            <Border Classes="card tile">
+                <StackPanel Spacing="4">
+                    <TextBlock Classes="label" Text="Electricity" />
+                    <TextBlock Classes="value" Text="{Binding ElectricityPerDay}" />
+                    <TextBlock Classes="muted" FontSize="12" Text="{Binding PowerDetail}" />
+                </StackPanel>
+            </Border>
+            <Border Classes="card tile">
+                <StackPanel Spacing="4">
+                    <TextBlock Classes="label" Text="Profit" />
+                    <TextBlock Classes="value" Classes.bad="{Binding IsNetNegative}" Text="{Binding NetPerDay}" />
+                    <TextBlock Classes="muted" FontSize="12" Text="per day, after electricity" />
+                </StackPanel>
+            </Border>
+        </WrapPanel>
+
+        <!-- Per device -->
+        <Border Classes="card">
+            <StackPanel Spacing="12">
+                <TextBlock Classes="h2" Text="Your devices" />
+                <ItemsControl ItemsSource="{Binding Devices}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Spacing="14" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:DeviceViewModel">
+                            <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto">
+                                <StackPanel Spacing="2">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                        <Border Classes="pill" Padding="8,1"
+                                                Classes.earning="{Binding IsEarning}"
+                                                Classes.paused="{Binding IsPaused}"
+                                                Classes.problem="{Binding IsProblem}">
+                                            <TextBlock Text="{Binding StateLabel}" FontSize="12" />
+                                        </Border>
+                                        <TextBlock Classes="muted" FontSize="12" VerticalAlignment="Center" Text="{Binding Detail}" />
+                                    </StackPanel>
+                                    <TextBlock Classes="muted" FontSize="12" Text="{Binding Subtitle}" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" HorizontalAlignment="Right" Spacing="2">
+                                    <TextBlock HorizontalAlignment="Right" FontWeight="SemiBold" Text="{Binding EarnPerDay}" />
+                                    <TextBlock HorizontalAlignment="Right" Classes="muted" FontSize="12" Text="{Binding Hashrate}" />
+                                    <TextBlock HorizontalAlignment="Right" Classes="muted" FontSize="12" Text="{Binding PowerText}" />
+                                </StackPanel>
+                                <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Margin="0,4,0,0" FontSize="13" TextWrapping="Wrap" Text="{Binding StatusText}"
+                                           IsVisible="{Binding StatusText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                                <ProgressBar Grid.Row="2" Grid.ColumnSpan="2" Margin="0,6,0,0" IsVisible="{Binding IsInstalling}"
+                                             Value="{Binding InstallPercent}" Maximum="100" Height="6" />
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </Border>
+
+        <!-- Totals and payout -->
+        <Grid ColumnDefinitions="*,16,*">
+            <Border Classes="card">
+                <StackPanel Spacing="10">
+                    <TextBlock Classes="h2" Text="So far" />
+                    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto" RowSpacing="6">
+                        <TextBlock Classes="muted" Text="Earned (estimate)" />
+                        <TextBlock Grid.Column="1" Text="{Binding TotalEarned}" FontWeight="SemiBold" />
+                        <TextBlock Grid.Row="1" Classes="muted" Text="Electricity used" />
+                        <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding TotalElectricity}" />
+                        <TextBlock Grid.Row="2" Classes="muted" Text="Today's profit" />
+                        <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding TodayEarned}" />
+                    </Grid>
+                    <TextBlock Classes="muted" FontSize="12" Text="{Binding MiningTime}" TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+            <Border Grid.Column="2" Classes="card" IsVisible="{Binding IsOwnWallet}">
+                <StackPanel Spacing="10">
+                    <TextBlock Classes="h2" Text="Your wallet balance at the pool" />
+                    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="6">
+                        <TextBlock Classes="muted" Text="Pending" />
+                        <TextBlock Grid.Column="1" Text="{Binding PoolPending}" FontWeight="SemiBold" />
+                        <TextBlock Grid.Row="1" Classes="muted" Text="Already paid to you" />
+                        <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding PoolPaid}" />
+                    </Grid>
+                    <TextBlock Classes="muted" FontSize="12" Text="{Binding PoolNote}" TextWrapping="Wrap" />
+                    <Button Content="Open pool dashboard" Command="{Binding OpenPoolDashboardCommand}" />
+                </StackPanel>
+            </Border>
+        </Grid>
+    </StackPanel>
+</UserControl>

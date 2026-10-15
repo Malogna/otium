@@ -1,0 +1,17 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Otium.App.ViewModels"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="980" d:DesignHeight="720"
+        x:Class="Otium.App.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Icon="/Assets/otium.ico"
+        Width="980" Height="760" MinWidth="560" MinHeight="520"
+        WindowStartupLocation="CenterScreen"
+        Background="{DynamicResource PageBackground}"
+        Title="Otium">
+
+    <ContentControl Content="{Binding CurrentPage}" />
+
+</Window>
