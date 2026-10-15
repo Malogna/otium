@@ -1,0 +1,131 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Otium.App.App"
+             xmlns:local="using:Otium.App"
+             RequestedThemeVariant="Default">
+
+    <Application.DataTemplates>
+        <local:ViewLocator />
+    </Application.DataTemplates>
+
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="PageBackground" Color="#F5F6F8" />
+                    <SolidColorBrush x:Key="CardBackground" Color="#FFFFFF" />
+                    <SolidColorBrush x:Key="CardBorder" Color="#E2E5EA" />
+                    <SolidColorBrush x:Key="MutedText" Color="#5B6472" />
+                    <SolidColorBrush x:Key="GoodBrush" Color="#1F8A5B" />
+                    <SolidColorBrush x:Key="GoodSoft" Color="#E3F4EC" />
+                    <SolidColorBrush x:Key="WarnBrush" Color="#9A6200" />
+                    <SolidColorBrush x:Key="WarnSoft" Color="#FFF3DC" />
+                    <SolidColorBrush x:Key="BadBrush" Color="#B42318" />
+                    <SolidColorBrush x:Key="BadSoft" Color="#FDE8E6" />
+                    <SolidColorBrush x:Key="NeutralSoft" Color="#ECEEF1" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Dark">
+                    <SolidColorBrush x:Key="PageBackground" Color="#0F1216" />
+                    <SolidColorBrush x:Key="CardBackground" Color="#171B21" />
+                    <SolidColorBrush x:Key="CardBorder" Color="#272D36" />
+                    <SolidColorBrush x:Key="MutedText" Color="#9AA4B2" />
+                    <SolidColorBrush x:Key="GoodBrush" Color="#46C08A" />
+                    <SolidColorBrush x:Key="GoodSoft" Color="#15301F" />
+                    <SolidColorBrush x:Key="WarnBrush" Color="#F2B544" />
+                    <SolidColorBrush x:Key="WarnSoft" Color="#33270F" />
+                    <SolidColorBrush x:Key="BadBrush" Color="#F47066" />
+                    <SolidColorBrush x:Key="BadSoft" Color="#3A1714" />
+                    <SolidColorBrush x:Key="NeutralSoft" Color="#222831" />
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+
+    <Application.Styles>
+        <FluentTheme>
+            <FluentTheme.Palettes>
+                <ColorPaletteResources x:Key="Light" Accent="#1F8A5B" />
+                <ColorPaletteResources x:Key="Dark" Accent="#3FBF87" />
+            </FluentTheme.Palettes>
+        </FluentTheme>
+
+        <Style Selector="Border.card">
+            <Setter Property="Background" Value="{DynamicResource CardBackground}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource CardBorder}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="Padding" Value="20" />
+        </Style>
+
+        <Style Selector="TextBlock.h1">
+            <Setter Property="FontSize" Value="26" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+        <Style Selector="TextBlock.h2">
+            <Setter Property="FontSize" Value="17" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="TextBlock.muted">
+            <Setter Property="Foreground" Value="{DynamicResource MutedText}" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+        <Style Selector="TextBlock.label">
+            <Setter Property="Foreground" Value="{DynamicResource MutedText}" />
+            <Setter Property="FontSize" Value="13" />
+        </Style>
+        <Style Selector="TextBlock.value">
+            <Setter Property="FontSize" Value="24" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="TextBlock.error">
+            <Setter Property="Foreground" Value="{DynamicResource BadBrush}" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="FontSize" Value="13" />
+        </Style>
+        <Style Selector="TextBlock.good">
+            <Setter Property="Foreground" Value="{DynamicResource GoodBrush}" />
+        </Style>
+        <Style Selector="TextBlock.bad">
+            <Setter Property="Foreground" Value="{DynamicResource BadBrush}" />
+        </Style>
+
+        <Style Selector="Border.pill">
+            <Setter Property="CornerRadius" Value="999" />
+            <Setter Property="Padding" Value="12,4" />
+            <Setter Property="Background" Value="{DynamicResource NeutralSoft}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="Border.pill.earning">
+            <Setter Property="Background" Value="{DynamicResource GoodSoft}" />
+        </Style>
+        <Style Selector="Border.pill.earning > TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource GoodBrush}" />
+        </Style>
+        <Style Selector="Border.pill.paused">
+            <Setter Property="Background" Value="{DynamicResource WarnSoft}" />
+        </Style>
+        <Style Selector="Border.pill.paused > TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource WarnBrush}" />
+        </Style>
+        <Style Selector="Border.pill.problem">
+            <Setter Property="Background" Value="{DynamicResource BadSoft}" />
+        </Style>
+        <Style Selector="Border.pill.problem > TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource BadBrush}" />
+        </Style>
+
+        <Style Selector="Border.banner">
+            <Setter Property="Background" Value="{DynamicResource BadSoft}" />
+            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="Padding" Value="18" />
+        </Style>
+
+        <Style Selector="Button.big">
+            <Setter Property="Padding" Value="22,10" />
+            <Setter Property="FontSize" Value="15" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="CornerRadius" Value="10" />
+        </Style>
+    </Application.Styles>
+</Application>

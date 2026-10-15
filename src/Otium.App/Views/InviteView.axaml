@@ -1,0 +1,69 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Otium.App.ViewModels"
+             x:Class="Otium.App.Views.InviteView"
+             x:DataType="vm:InviteViewModel">
+
+    <StackPanel Spacing="16" MaxWidth="760" HorizontalAlignment="Left">
+        <Border Classes="card">
+            <StackPanel Spacing="14">
+                <TextBlock Classes="h1" Text="Invite friends, mine fee-free" />
+
+                <TextBlock Classes="error" Text="{Binding ErrorText}" IsVisible="{Binding ErrorText, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                <TextBlock Classes="error" Text="{Binding CodeErrorText}" IsVisible="{Binding CodeErrorText, Converter={x:Static ObjectConverters.IsNotNull}}" />
+
+                <StackPanel Spacing="10" IsVisible="{Binding HasCode}">
+                    <TextBlock Classes="label" Text="Your invite code" />
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <Border Background="{DynamicResource NeutralSoft}" CornerRadius="10" Padding="18,8">
+                            <SelectableTextBlock Text="{Binding Code}" FontSize="30" FontWeight="Bold" LetterSpacing="4"
+                                                 FontFamily="Consolas, Menlo, monospace" />
+                        </Border>
+                        <Button Content="Copy code" VerticalAlignment="Center" Command="{Binding CopyCodeCommand}" />
+                    </StackPanel>
+                    <SelectableTextBlock Classes="muted" Text="{Binding ShareUrl}" FontFamily="Consolas, Menlo, monospace" />
+                    <WrapPanel>
+                        <Button Classes="accent" Margin="0,0,8,8" Content="Copy invite message" Command="{Binding CopyMessageCommand}" />
+                        <Button Margin="0,0,8,8" Content="Copy link" Command="{Binding CopyLinkCommand}" />
+                        <Button Margin="0,0,8,8" Content="Share on X" Command="{Binding ShareXCommand}" />
+                        <Button Margin="0,0,8,8" Content="WhatsApp" Command="{Binding ShareWhatsAppCommand}" />
+                        <Button Margin="0,0,8,8" Content="Reddit" Command="{Binding ShareRedditCommand}" />
+                        <Button Margin="0,0,8,8" Content="Email" Command="{Binding ShareEmailCommand}" />
+                    </WrapPanel>
+                    <TextBlock Classes="good" FontSize="13" Text="{Binding CopiedText}" />
+                </StackPanel>
+
+                <TextBlock Classes="muted" IsVisible="{Binding !HasCode}"
+                           Text="Your invite code appears here once Otium has connected to the invite server." />
+            </StackPanel>
+        </Border>
+
+        <Border Classes="card">
+            <StackPanel Spacing="10">
+                <TextBlock Classes="h2" Text="How rewards work" />
+                <TextBlock TextWrapping="Wrap" Text="{Binding RewardFriend, StringFormat='• {0}'}" />
+                <TextBlock TextWrapping="Wrap" Text="{Binding RewardYou, StringFormat='• {0}'}" />
+                <TextBlock TextWrapping="Wrap" Text="{Binding RewardBonus, StringFormat='• {0}'}" />
+                <TextBlock Classes="muted" FontSize="13"
+                           Text="Rewards come only out of Otium' own fee, so your friends never earn less because you invited them. Rewards are paid by the pool to your wallet; Otium never holds anyone's money." />
+            </StackPanel>
+        </Border>
+
+        <Border Classes="card">
+            <StackPanel Spacing="10">
+                <TextBlock Classes="h2" Text="Your invites" />
+                <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="6">
+                    <TextBlock Classes="muted" Text="Friends who joined" />
+                    <TextBlock Grid.Column="1" Text="{Binding InvitedCount}" FontWeight="SemiBold" />
+                    <TextBlock Grid.Row="1" Classes="muted" Text="Friends who started mining" />
+                    <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding VerifiedCount}" FontWeight="SemiBold" />
+                </Grid>
+                <TextBlock Classes="good" Text="{Binding FeeFreeText}"
+                           IsVisible="{Binding FeeFreeText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                <TextBlock Classes="muted" Text="{Binding ReferredByText}"
+                           IsVisible="{Binding ReferredByText, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                <Button Content="Refresh" Command="{Binding RefreshCommand}" IsEnabled="{Binding !IsRefreshing}" />
+            </StackPanel>
+        </Border>
+    </StackPanel>
+</UserControl>

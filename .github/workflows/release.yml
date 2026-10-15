@@ -1,0 +1,132 @@
+# Builds installers for every platform and publishes them as one GitHub release.
+# The release doubles as the auto-update feed: set AppIdentity.UpdateUrl to this repository's URL.
+#
+# Trigger: push a tag like v0.2.0, or run manually with a version.
+#
+# Optional signing secrets (packages build unsigned without them):
+#   WIN_SIGN_PARAMS            signtool.exe parameters (needs the certificate available on the runner)
+#   APPLE_CERTIFICATES_P12     base64 .p12 containing "Developer ID Application" and "Developer ID Installer"
+#   APPLE_CERTIFICATES_PASSWORD
+#   APPLE_APP_IDENTITY         e.g. "Developer ID Application: Your Name (TEAMID)"
+#   APPLE_INSTALL_IDENTITY     e.g. "Developer ID Installer: Your Name (TEAMID)"
+#   APPLE_ID / APPLE_TEAM_ID / APPLE_APP_PASSWORD   for notarization
+
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, e.g. 0.2.0'
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet test
+
+  package:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, rid: win-x64 }
+          - { os: ubuntu-latest, rid: linux-x64 }
+          - { os: macos-latest, rid: osx-arm64 }
+          - { os: macos-latest, rid: osx-x64 }
+    runs-on: ${{ matrix.os }}
+    env:
+      HAS_APPLE_CERTS: ${{ secrets.APPLE_CERTIFICATES_P12 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Work out version
+        shell: pwsh
+        run: |
+          $v = '${{ github.event.inputs.version }}'
+          if (-not $v) { $v = '${{ github.ref_name }}'.TrimStart('v') }
+          "VERSION=$v" >> $env:GITHUB_ENV
+
+      - name: Import Apple signing certificates
+        if: runner.os == 'macOS' && env.HAS_APPLE_CERTS == 'true'
+        env:
+          APPLE_CERTIFICATES_P12: ${{ secrets.APPLE_CERTIFICATES_P12 }}
+          APPLE_CERTIFICATES_PASSWORD: ${{ secrets.APPLE_CERTIFICATES_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          echo "$APPLE_CERTIFICATES_P12" | base64 --decode > "$RUNNER_TEMP/certs.p12"
+          security create-keychain -p ci "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p ci "$KEYCHAIN"
+          security import "$RUNNER_TEMP/certs.p12" -P "$APPLE_CERTIFICATES_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security list-keychain -d user -s "$KEYCHAIN"
+          xcrun notarytool store-credentials otium --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD"
+          echo "SC_APPLE_NOTARY_PROFILE=otium" >> "$GITHUB_ENV"
+
+      - name: Build installer
+        shell: pwsh
+        env:
+          SC_WIN_SIGN_PARAMS: ${{ secrets.WIN_SIGN_PARAMS }}
+          SC_APPLE_APP_IDENTITY: ${{ secrets.APPLE_APP_IDENTITY }}
+          SC_APPLE_INSTALL_IDENTITY: ${{ secrets.APPLE_INSTALL_IDENTITY }}
+        run: ./build/package.ps1 -Runtimes ${{ matrix.rid }} -Version $env:VERSION
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: otium-${{ matrix.rid }}
+          path: artifacts/releases/${{ matrix.rid }}
+          if-no-files-found: error
+
+  publish:
+    # One job uploads every channel in turn, so parallel jobs don't race to create the release.
+    needs: package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts/releases
+          pattern: otium-*
+
+      - name: Publish GitHub release
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $v = '${{ github.event.inputs.version }}'
+          if (-not $v) { $v = '${{ github.ref_name }}'.TrimStart('v') }
+          dotnet tool restore
+          foreach ($rid in 'win-x64', 'linux-x64', 'osx-arm64', 'osx-x64') {
+            $dir = "artifacts/releases/otium-$rid"
+            if (-not (Test-Path $dir)) { Write-Warning "No packages for $rid"; continue }
+            dotnet vpk upload github --repoUrl "${{ github.server_url }}/${{ github.repository }}" --token $env:GITHUB_TOKEN `
+              --outputDir $dir --channel $rid --tag "v$v" --releaseName "Otium $v" --merge --publish
+            if ($LASTEXITCODE) { throw "upload failed for $rid" }
+          }

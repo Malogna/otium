@@ -1,0 +1,146 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Otium.App.ViewModels"
+             x:Class="Otium.App.Views.SettingsView"
+             x:DataType="vm:SettingsViewModel">
+
+    <StackPanel Spacing="16" MaxWidth="760" HorizontalAlignment="Left">
+        <Border Classes="card">
+            <StackPanel Spacing="14">
+                <TextBlock Classes="h2" Text="How hard should your computer work?" />
+                <StackPanel Spacing="4">
+                    <TextBlock Text="{Binding CpuUsagePercent, StringFormat='Use up to {0:0}% of CPU threads'}" />
+                    <Slider Minimum="10" Maximum="100" TickFrequency="5" IsSnapToTickEnabled="True" Value="{Binding CpuUsagePercent}" />
+                    <TextBlock Classes="muted" FontSize="13" Text="Mining always runs at the lowest priority, so anything you're doing comes first." />
+                </StackPanel>
+                <ToggleSwitch IsChecked="{Binding OnlyWhenIdle}" OnContent="Only mine when I'm away from the computer" OffContent="Only mine when I'm away from the computer" />
+                <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding OnlyWhenIdle}">
+                    <TextBlock VerticalAlignment="Center" Text="Start after" />
+                    <NumericUpDown Value="{Binding IdleMinutes}" Minimum="1" Maximum="120" Increment="1" FormatString="0" Width="120" />
+                    <TextBlock VerticalAlignment="Center" Text="minutes without keyboard or mouse input" />
+                </StackPanel>
+                <TextBlock Classes="error" IsVisible="{Binding IdleUnsupported}"
+                           Text="Idle detection isn't available on this desktop (install 'xprintidle' on Linux). Mining will run continuously." />
+                <ToggleSwitch IsChecked="{Binding StartWithSystem}" OnContent="Start Otium when I sign in" OffContent="Start Otium when I sign in" />
+            </StackPanel>
+        </Border>
+
+        <Border Classes="card">
+            <StackPanel Spacing="12">
+                <TextBlock Classes="h2" Text="Devices" />
+                <ToggleSwitch IsChecked="{Binding UseCpu}"
+                              OnContent="Earn with my processor" OffContent="Earn with my processor" />
+                <ToggleSwitch IsVisible="{Binding HasGpu}" IsChecked="{Binding UseGpu}"
+                              OnContent="Earn with my graphics card" OffContent="Earn with my graphics card" />
+                <TextBlock Classes="muted" Text="{Binding GpuSummary}" TextWrapping="Wrap" />
+
+                <StackPanel Spacing="10" IsVisible="{Binding HasGpu}">
+                    <TextBlock Classes="muted" FontSize="13" Text="{Binding GpuPowerNote}" TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding !GpuPowerMeasured}">
+                        <NumericUpDown Value="{Binding GpuWatts}" Minimum="0" Maximum="1500" Increment="10" FormatString="0" Width="160"
+                                       PlaceholderText="Auto" />
+                        <TextBlock VerticalAlignment="Center" Text="extra watts while mining" />
+                    </StackPanel>
+
+                    <TextBlock Classes="h2" Margin="0,6,0,0" Text="Which algorithm pays best on your card" />
+                    <TextBlock Classes="muted" FontSize="13" Text="{Binding BenchmarkNote}" TextWrapping="Wrap" />
+                    <Grid ColumnDefinitions="1.3*,*,0.7*,0.8*,0.8*,1.2*" IsVisible="{Binding HasBenchmarks}">
+                        <TextBlock Grid.Column="0" Classes="label" Text="Algorithm" />
+                        <TextBlock Grid.Column="1" Classes="label" Text="Speed" />
+                        <TextBlock Grid.Column="2" Classes="label" Text="Power" />
+                        <TextBlock Grid.Column="3" Classes="label" Text="Earns/day" />
+                        <TextBlock Grid.Column="4" Classes="label" Text="Profit/day" />
+                    </Grid>
+                    <ItemsControl ItemsSource="{Binding Benchmarks}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:BenchmarkRow">
+                                <Grid ColumnDefinitions="1.3*,*,0.7*,0.8*,0.8*,1.2*" Margin="0,3">
+                                    <TextBlock Grid.Column="0" Text="{Binding Algorithm}" FontWeight="SemiBold" />
+                                    <TextBlock Grid.Column="1" Text="{Binding Speed}" />
+                                    <TextBlock Grid.Column="2" Text="{Binding Power}" />
+                                    <TextBlock Grid.Column="3" Text="{Binding Earns}" />
+                                    <TextBlock Grid.Column="4" Text="{Binding Net}" />
+                                    <TextBlock Grid.Column="5" Classes="good" FontSize="12" Text="{Binding Note}" TextWrapping="Wrap" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button Content="Refresh" Command="{Binding RefreshBenchmarksCommand}" />
+                        <Button Content="Test GPU again" Command="{Binding RetestGpuCommand}" />
+                    </StackPanel>
+                    <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
+                               Text="If Windows asks whether SRBMiner may use networks, you can choose Cancel: Otium reads its statistics on this computer only." />
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <Border Classes="card">
+            <StackPanel Spacing="14">
+                <TextBlock Classes="h2" Text="Electricity" />
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <NumericUpDown Value="{Binding ElectricityPrice}" Minimum="0" Maximum="5" Increment="0.01" FormatString="0.000" Width="160" />
+                    <TextBlock VerticalAlignment="Center" Text="$ per kWh" />
+                </StackPanel>
+                <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Text="{Binding ElectricityNote}" />
+                <StackPanel Spacing="4">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <NumericUpDown Value="{Binding CpuFullLoadWatts}" Minimum="0" Maximum="500" Increment="5" FormatString="0" Width="160"
+                                       PlaceholderText="Auto" />
+                        <TextBlock VerticalAlignment="Center" Text="watts: CPU power at full load" />
+                    </StackPanel>
+                    <TextBlock Classes="muted" FontSize="13" Text="{Binding WattsHint}" />
+                </StackPanel>
+                <ToggleSwitch IsChecked="{Binding NeverRunAtLoss}" OnContent="Pause automatically when electricity costs more than I earn" OffContent="Pause automatically when electricity costs more than I earn" />
+            </StackPanel>
+        </Border>
+
+        <Border Classes="card">
+            <StackPanel Spacing="10">
+                <TextBlock Classes="h2" Text="How you get paid" />
+                <RadioButton GroupName="payout" IsChecked="{Binding UseBalance}">
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="Otium balance (recommended)" FontWeight="SemiBold" />
+                        <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap"
+                                   Text="Earnings collect in your Otium balance. Cash out by PayPal or crypto whenever you like." />
+                    </StackPanel>
+                </RadioButton>
+                <RadioButton GroupName="payout" IsChecked="{Binding UseOwnWallet}">
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="My own Monero wallet" FontWeight="SemiBold" />
+                        <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap"
+                                   Text="The mining pool pays your wallet directly and nothing passes through Otium. For people who already use crypto." />
+                    </StackPanel>
+                </RadioButton>
+                <StackPanel Spacing="8" IsVisible="{Binding UseOwnWallet}" Margin="28,0,0,0">
+                    <TextBox Text="{Binding PayoutAddress}" PlaceholderText="Your Monero (XMR) address" FontFamily="Consolas, Menlo, monospace" />
+                    <TextBlock Classes="error" Text="{Binding PayoutError}" IsVisible="{Binding PayoutError, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                    <TextBlock Classes="good" FontSize="13" Text="{Binding PayoutSaved}" IsVisible="{Binding PayoutSaved, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                    <Button Content="Save wallet" Command="{Binding SavePayoutCommand}" />
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <Border Classes="card">
+            <StackPanel Spacing="10">
+                <TextBlock Classes="h2" Text="About" />
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                    <TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Text="{Binding VersionText}" />
+                    <Button Content="Check for updates" Command="{Binding CheckForUpdatesCommand}" IsVisible="{Binding UpdatesEnabled}" />
+                </StackPanel>
+                <TextBlock Classes="muted" FontSize="13" Text="{Binding UpdateStatus}"
+                           IsVisible="{Binding UpdateStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                <TextBlock Classes="muted" Text="{Binding EngineInfo}" />
+                <TextBlock Classes="muted" Text="{Binding FeeInfo}" />
+                <StackPanel Spacing="4">
+                    <TextBlock Classes="label" Text="Invite server" />
+                    <TextBox Text="{Binding ServerUrl}" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Classes="muted" VerticalAlignment="Center" Text="{Binding DataFolder}" />
+                    <Button Content="Open data folder" Command="{Binding OpenDataFolderCommand}" />
+                </StackPanel>
+            </StackPanel>
+        </Border>
+    </StackPanel>
+</UserControl>

@@ -1,0 +1,407 @@
+using System.Runtime.InteropServices;
+using System.Text.Json;
+using Otium.Core.Gpu;
+using Otium.Core.Pools;
+using Otium.Core.Power;
+using Otium.Core.Providers;
+using Otium.Core.Switching;
+using Otium.Providers.SrbMiner;
+
+namespace Otium.Tests;
+
+public class ProfitSwitcherTests
+{
+    private static readonly DateTimeOffset T = new(2026, 10, 15, 12, 0, 0, TimeSpan.Zero);
+    private readonly ProfitSwitcher _switcher = new();
+
+    private static AlgorithmQuote Quote(string algo, double perHash, double fee = 1) => new(algo, perHash, fee);
+
+    [Fact]
+    public void Scores_by_net_profit_after_fees_and_electricity()
+    {
+        var scored = _switcher.Score(
+            [new BenchmarkResult("kawpow", 30e6, 220, T), new BenchmarkResult("autolykos2", 200e6, 160, T)],
+            [Quote("kawpow", 7.6e-12), Quote("autolykos2", 2.43e-12)],
+            coinPriceUsd: 545,
+            pricePerKwh: 0.15,
+            fallbackWatts: 180);
+
+        Assert.Equal("autolykos2", scored[0].Algorithm);
+        var kawpow = scored.Single(o => o.Algorithm == "kawpow");
+        // 30 MH/s * 7.6e-12 XMR/(H/s·day) * 0.99 dev * 0.99 pool * $545
+        Assert.Equal(30e6 * 7.6e-12 * 0.99 * 0.99 * 545, kawpow.GrossUsdPerDay, precision: 9);
+        Assert.Equal(220 * 24 / 1000.0 * 0.15, kawpow.ElectricityUsdPerDay, precision: 9);
+    }
+
+    [Fact]
+    public void Expensive_electricity_can_change_the_winner()
+    {
+        // Hungry etchash earns ~$0.27/day at 300 W; efficient cn/gpu ~$0.21/day at 120 W.
+        BenchmarkResult[] benches = [new("etchash", 100e6, 300, T), new("cn/gpu", 4000, 120, T)];
+        AlgorithmQuote[] quotes = [Quote("etchash", 5e-12), Quote("cn/gpu", 1e-7)];
+
+        var cheap = _switcher.Score(benches, quotes, 545, pricePerKwh: 0.0, fallbackWatts: 0);
+        var pricey = _switcher.Score(benches, quotes, 545, pricePerKwh: 0.30, fallbackWatts: 0);
+        Assert.Equal("etchash", cheap[0].Algorithm);
+        Assert.Equal("cn/gpu", pricey[0].Algorithm);
+    }
+
+    [Fact]
+    public void Failed_benchmarks_and_unpaid_algorithms_are_ignored()
+    {
+        var scored = _switcher.Score(
+            [new BenchmarkResult("kawpow", 0, null, T, "out of memory"), new BenchmarkResult("etchash", 50e6, 200, T), new BenchmarkResult("pearlhash", 1e14, 300, T)],
+            [Quote("kawpow", 7e-12), Quote("etchash", 1e-12), Quote("pearlhash", 0)],
+            545, 0.15, 180);
+        Assert.Equal(["etchash"], scored.Select(s => s.Algorithm));
+    }
+
+    [Fact]
+    public void Missing_power_measurement_uses_the_fallback_watts()
+    {
+        var scored = _switcher.Score([new BenchmarkResult("kawpow", 30e6, null, T)], [Quote("kawpow", 7e-12)], 545, 0.15, fallbackWatts: 180);
+        Assert.Equal(180 * 24 / 1000.0 * 0.15, scored[0].ElectricityUsdPerDay, precision: 9);
+        Assert.Null(scored[0].ExtraWatts);
+    }
+
+    [Fact]
+    public void Hysteresis_and_minimum_hold_prevent_flapping()
+    {
+        ScoredOption[] scored = [new("autolykos2", 1, 1.03, 0.30, 150), new("kawpow", 1, 1.00, 0.30, 150)];
+
+        Assert.Equal("autolykos2", _switcher.Choose(scored, current: null, TimeSpan.Zero));
+        // 4% better isn't enough to leave kawpow (needs 5%)
+        Assert.Equal("kawpow", _switcher.Choose(scored, "kawpow", TimeSpan.FromHours(1)));
+
+        ScoredOption[] clearlyBetter = [new("autolykos2", 1, 1.50, 0.30, 150), new("kawpow", 1, 1.00, 0.30, 150)];
+        // clearly better, but held for less than the minimum
+        Assert.Equal("kawpow", _switcher.Choose(clearlyBetter, "kawpow", TimeSpan.FromMinutes(5)));
+        Assert.Equal("autolykos2", _switcher.Choose(clearlyBetter, "kawpow", TimeSpan.FromMinutes(20)));
+    }
+
+    [Fact]
+    public void Leaves_an_algorithm_that_stopped_paying()
+    {
+        ScoredOption[] scored = [new("etchash", 1, 0.8, 0.3, 100)];
+        Assert.Equal("etchash", _switcher.Choose(scored, "kawpow", TimeSpan.FromMinutes(1)));
+        Assert.Null(_switcher.Choose([], "kawpow", TimeSpan.FromHours(1)));
+    }
+}
+
+public class MoneroOceanAlgoProfitTests
+{
+    [Fact]
+    public void Takes_the_best_active_coin_per_algorithm()
+    {
+        // Trimmed from MoneroOcean's /pool/stats on 2026-10-15.
+        const string json = """
+            {"pool_statistics":{
+              "price":{"usd":544.59},
+              "activePorts":[18081,8766,19001,9053,17767],
+              "portCoinAlgo":{"18081":"rx/0","8766":"kawpow","19001":"kawpow","9053":"autolykos2","17767":"rx/0","9998":"ghostrider"},
+              "coinProfit":{"18081":7.683e-08,"8766":6.675e-12,"19001":7.636e-12,"9053":2.426e-12,"17767":4.48e-08,"9998":5.2e-08}
+            }}
+            """;
+        using var doc = JsonDocument.Parse(json);
+        var profits = MoneroOceanClient.ParseAlgoProfits(doc.RootElement, DateTimeOffset.UnixEpoch);
+
+        Assert.Equal(544.59, profits.XmrPriceUsd);
+        Assert.Equal(7.636e-12, profits.For("kawpow")); // XNA beats RVN
+        Assert.Equal(7.683e-08, profits.For("rx/0"));
+        Assert.Equal(2.426e-12, profits.For("autolykos2"));
+        Assert.Equal(0, profits.For("ghostrider")); // port not active
+        Assert.Equal(0, profits.For("etchash"));
+    }
+}
+
+public class SrbMinerTests
+{
+    private static readonly GpuInfo Rtx3080 = new(GpuVendor.Nvidia, 0, "NVIDIA GeForce RTX 3080", 12);
+
+    [Fact]
+    public void Arguments_pin_the_algorithm_in_the_password_and_leave_the_cpu_alone()
+    {
+        var args = SrbMinerArgs.Build(GpuAlgorithms.Find("cn/gpu")!, GpuPoolEndpoint.MoneroOcean, "WALLET", "sc12345678g", 40001, [Rtx3080]);
+        string Value(string flag) => args[args.ToList().IndexOf(flag) + 1];
+
+        Assert.Equal("cryptonight_gpu", Value("--algorithm"));
+        Assert.Equal("gulf.moneroocean.stream:10128", Value("--pool"));
+        Assert.Equal("WALLET", Value("--wallet"));
+        Assert.Equal("sc12345678g~cn/gpu", Value("--password"));
+        Assert.Equal("40001", Value("--api-port"));
+        Assert.Contains("--disable-cpu", args);
+        Assert.Contains("--disable-gpu-amd", args);
+        Assert.Contains("--disable-gpu-intel", args);
+        Assert.DoesNotContain("--disable-gpu-nvidia", args);
+    }
+
+    [Fact]
+    public void Algorithms_respect_vendor_and_memory()
+    {
+        var small = new GpuInfo(GpuVendor.Nvidia, 0, "GTX 1650", 4);
+        Assert.False(GpuAlgorithms.Find("kawpow")!.Supports([small]));
+        Assert.True(GpuAlgorithms.Find("autolykos2")!.Supports([small]));
+        Assert.True(GpuAlgorithms.Find("kawpow")!.Supports([Rtx3080]));
+        Assert.False(GpuAlgorithms.Find("kawpow")!.Supports([new GpuInfo(GpuVendor.Intel, 0, "Arc", 16)]));
+        // unknown VRAM (0) doesn't exclude anything
+        Assert.True(GpuAlgorithms.Find("pearlhash")!.Supports([new GpuInfo(GpuVendor.Amd, 0, "Radeon", 0)]));
+    }
+
+    [Theory]
+    [InlineData("""{"algorithms":[{"name":"kawpow","hashrate":{"gpu":{"gpu0":25000000.5,"total":25000000.5}}}]}""", 25000000.5)]
+    [InlineData("""{"algorithms":[{"name":"kawpow","hashrate":{"total":"1234.5"}}]}""", 1234.5)]
+    [InlineData("""{"algorithms":[{"name":"etchash","hashrate":61000000}]}""", 61000000)]
+    [InlineData("""{"hashrate_total_now":4200}""", 4200)]
+    public void Api_hashrate_is_read_from_known_shapes(string json, double expected)
+    {
+        Assert.Equal(expected, SrbMinerStats.ParseApiHashrate(json));
+    }
+
+    [Fact]
+    public void Unknown_api_shape_returns_null()
+    {
+        Assert.Null(SrbMinerStats.ParseApiHashrate("""{"miner":"x"}"""));
+    }
+
+    [Fact]
+    public void Console_hashrate_fallback_normalises_units()
+    {
+        string[] lines = ["[2026-10-15 22:00:01] GPU0 : 24.88 MH/s", "[2026-10-15 22:00:31] Total: 25.12 MH/s", "noise"];
+        Assert.Equal(25.12e6, SrbMinerStats.ParseConsoleHashrate(lines)!.Value, precision: 3);
+        Assert.Null(SrbMinerStats.ParseConsoleHashrate(["nothing here"]));
+    }
+
+    [Fact]
+    public void Release_assets_cover_windows_and_linux_x64_only()
+    {
+        Assert.Equal("SRBMiner-Multi-3-7-6-win64.zip", SrbMinerRelease.For(OSPlatform.Windows, Architecture.X64)!.FileName);
+        Assert.Equal("SRBMiner-Multi-3-7-6-Linux.tar.gz", SrbMinerRelease.For(OSPlatform.Linux, Architecture.X64)!.FileName);
+        Assert.Null(SrbMinerRelease.For(OSPlatform.OSX, Architecture.Arm64));
+        Assert.Null(SrbMinerRelease.For(OSPlatform.Linux, Architecture.Arm64));
+    }
+}
+
+public sealed class SrbMinerProviderTests : IDisposable
+{
+    private static readonly GpuInfo Rtx3080 = new(GpuVendor.Nvidia, 0, "NVIDIA GeForce RTX 3080", 12);
+    private readonly string _dir = Path.Combine(Path.GetTempPath(), $"sc-gpu-{Guid.NewGuid():N}");
+    private readonly ManualTime _time = new(new DateTimeOffset(2026, 10, 15, 12, 0, 0, TimeSpan.Zero));
+    private readonly FakePool _pool = new();
+    private readonly FakeFactory _factory = new();
+    private readonly FakeMeter _meter = new();
+    private readonly SrbMinerGpuProvider _provider;
+    private static readonly ProviderRunOptions Options = new(new MiningTarget(TestAddresses.Generate(), PayoutRole.User), "sc1234abcdg", 100);
+
+    public SrbMinerProviderTests()
+    {
+        // A stand-in binary so the provider believes the engine is installed.
+        var engineDir = Path.Combine(_dir, "engines", $"srbminer-{SrbMinerRelease.Version}");
+        Directory.CreateDirectory(engineDir);
+        File.WriteAllText(Path.Combine(engineDir, SrbMinerRelease.BinaryName), "x");
+        File.WriteAllText(Path.Combine(engineDir, ".verified"), "x");
+
+        _provider = new SrbMinerGpuProvider(
+            new HttpClient(), _pool, Path.Combine(_dir, "engines"), Path.Combine(_dir, "bench.json"),
+            [Rtx3080], _meter, () => 0.15, _factory, _time,
+            asset: SrbMinerRelease.For(OSPlatform.Windows, Architecture.X64));
+    }
+
+    private sealed class FakePool : IMoneroPoolApi
+    {
+        public Dictionary<string, double> Profits { get; } = new()
+        {
+            ["kawpow"] = 7.6e-12,
+            ["autolykos2"] = 2.43e-12,
+        };
+
+        public Task<MoneroNetworkStats> GetNetworkStatsAsync(CancellationToken ct) => throw new NotSupportedException();
+
+        public Task<PoolMinerStats?> GetMinerStatsAsync(string walletAddress, CancellationToken ct) => Task.FromResult<PoolMinerStats?>(null);
+
+        public Task<AlgoProfits> GetAlgoProfitsAsync(CancellationToken ct) =>
+            Task.FromResult(new AlgoProfits(new Dictionary<string, double>(Profits), 545, DateTimeOffset.UtcNow));
+
+        public Task<IReadOnlyDictionary<string, IReadOnlyList<HashratePoint>>> GetWorkerHistoryAsync(string walletAddress, CancellationToken ct) =>
+            throw new NotSupportedException();
+    }
+
+    private sealed class FakeMeter : IPowerMeter
+    {
+        public void CaptureBaseline()
+        {
+        }
+
+        public PowerReading Read(int usagePercent) => new(200, true, "fake");
+    }
+
+    private sealed class FakeProcess(double hashrate) : IMinerProcess
+    {
+        public double Hashrate { get; set; } = hashrate;
+        public bool Exited { get; set; }
+        public bool HasExited => Exited;
+        public int? ExitCode => Exited ? 1 : null;
+        public IReadOnlyList<string> RecentLog => ["not enough GPU memory"];
+        public bool Disposed { get; private set; }
+
+        public Task<double?> ReadHashrateAsync(CancellationToken ct) => Task.FromResult<double?>(Hashrate);
+
+        public ValueTask DisposeAsync()
+        {
+            Disposed = true;
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class FakeFactory : IMinerProcessFactory
+    {
+        /// <summary>Hashrate the fake "card" reaches per algorithm; 0 means the miner crashes.</summary>
+        public Dictionary<string, double> Speeds { get; } = new() { ["kawpow"] = 30e6, ["autolykos2"] = 200e6 };
+        public List<(string Algorithm, string Password, FakeProcess Process)> Launches { get; } = [];
+
+        public IMinerProcess Start(string binary, IReadOnlyList<string> arguments, int apiPort)
+        {
+            var algo = arguments[arguments.ToList().IndexOf("--algorithm") + 1];
+            var password = arguments[arguments.ToList().IndexOf("--password") + 1];
+            var speed = Speeds.GetValueOrDefault(algo);
+            var process = new FakeProcess(speed) { Exited = speed == 0 };
+            Launches.Add((algo, password, process));
+            return process;
+        }
+    }
+
+    private async Task<ProviderStatus> RunFor(TimeSpan duration)
+    {
+        ProviderStatus status = ProviderStatus.Stopped(true);
+        var end = _time.GetUtcNow() + duration;
+        while (_time.GetUtcNow() < end)
+        {
+            _time.Advance(TimeSpan.FromSeconds(5));
+            status = await _provider.GetStatusAsync(CancellationToken.None);
+        }
+        return status;
+    }
+
+    [Fact]
+    public async Task Benchmarks_every_paying_algorithm_then_mines_the_most_profitable()
+    {
+        Assert.Null(await _provider.GetExpectedOfferAsync(CancellationToken.None)); // nothing measured yet
+
+        await _provider.StartAsync(Options, CancellationToken.None);
+        Assert.Equal("kawpow", _factory.Launches[0].Algorithm);
+        Assert.Equal("sc1234abcdg~kawpow", _factory.Launches[0].Password);
+
+        var status = await RunFor(TimeSpan.FromSeconds(30));
+        Assert.True(status.IsCalibrating);
+        Assert.Contains("1 of 2", status.Message);
+
+        await RunFor(SrbMinerGpuProvider.BenchmarkDuration);
+        Assert.Equal("autolykos2", _factory.Launches[^1].Algorithm); // second benchmark
+        Assert.True(_factory.Launches[0].Process.Disposed);
+
+        status = await RunFor(SrbMinerGpuProvider.BenchmarkDuration + TimeSpan.FromSeconds(10));
+        Assert.False(status.IsCalibrating);
+
+        // 200 MH/s * 2.43e-12 beats 30 MH/s * 7.6e-12, so autolykos2 wins and keeps running.
+        Assert.Equal("autolykos2", _provider.CurrentAlgorithm);
+        Assert.Equal(2, _provider.Benchmarks.Count);
+        Assert.Equal(200e6, _provider.Benchmarks.Single(b => b.Algorithm == "autolykos2").HashrateHps);
+        Assert.Equal(200, _provider.Benchmarks.Single(b => b.Algorithm == "autolykos2").ExtraWatts);
+
+        var offer = await _provider.GetExpectedOfferAsync(CancellationToken.None);
+        Assert.NotNull(offer);
+        Assert.Equal("autolykos2", offer.Description);
+        Assert.Equal(200, offer.ExtraWatts);
+
+        var estimate = await _provider.EstimateRevenueAsync(200e6, CancellationToken.None);
+        Assert.Equal(200e6 * 2.43e-12 * 0.99 * 0.99 * 545, estimate.UsdPerDay, precision: 9);
+    }
+
+    [Fact]
+    public async Task An_algorithm_that_crashes_is_recorded_and_skipped()
+    {
+        _factory.Speeds["kawpow"] = 0; // e.g. out of memory
+        await _provider.StartAsync(Options, CancellationToken.None);
+        await RunFor(TimeSpan.FromSeconds(10));
+
+        var kawpow = _provider.Benchmarks.Single(b => b.Algorithm == "kawpow");
+        Assert.False(kawpow.Succeeded);
+        Assert.Contains("not enough GPU memory", kawpow.Failure);
+        Assert.Equal("autolykos2", _factory.Launches[^1].Algorithm);
+    }
+
+    [Fact]
+    public async Task Switches_when_payouts_change_but_not_before_the_hold_time()
+    {
+        await _provider.StartAsync(Options, CancellationToken.None);
+        await RunFor(SrbMinerGpuProvider.BenchmarkDuration * 2 + TimeSpan.FromSeconds(10));
+        Assert.Equal("autolykos2", _provider.CurrentAlgorithm);
+        var launches = _factory.Launches.Count;
+
+        // Kawpow suddenly pays 4x more.
+        _pool.Profits["kawpow"] = 30e-12;
+        await RunFor(TimeSpan.FromMinutes(5));
+        Assert.Equal(launches, _factory.Launches.Count); // not re-evaluated yet
+
+        var status = await RunFor(SrbMinerGpuProvider.ReevaluateEvery + TimeSpan.FromMinutes(5));
+        Assert.Equal("kawpow", _provider.CurrentAlgorithm);
+        Assert.Equal("kawpow", _factory.Launches[^1].Algorithm);
+        Assert.Contains("switched from autolykos2", status.Detail);
+    }
+
+    [Fact]
+    public async Task Restarting_for_a_fee_slice_keeps_the_algorithm_and_the_benchmarks()
+    {
+        await _provider.StartAsync(Options, CancellationToken.None);
+        await RunFor(SrbMinerGpuProvider.BenchmarkDuration * 2 + TimeSpan.FromSeconds(10));
+        await _provider.StopAsync(CancellationToken.None);
+
+        var feeSlice = Options with { Target = new MiningTarget(TestAddresses.Generate(), PayoutRole.App) };
+        await _provider.StartAsync(feeSlice, CancellationToken.None);
+        Assert.Equal("autolykos2", _factory.Launches[^1].Algorithm);
+        Assert.False((await _provider.GetStatusAsync(CancellationToken.None)).IsCalibrating);
+    }
+
+    [Fact]
+    public async Task Benchmarks_survive_an_app_restart_and_can_be_reset()
+    {
+        await _provider.StartAsync(Options, CancellationToken.None);
+        await RunFor(SrbMinerGpuProvider.BenchmarkDuration * 2 + TimeSpan.FromSeconds(10));
+        await _provider.StopAsync(CancellationToken.None);
+
+        var reopened = new SrbMinerGpuProvider(
+            new HttpClient(), _pool, Path.Combine(_dir, "engines"), Path.Combine(_dir, "bench.json"),
+            [Rtx3080], _meter, () => 0.15, _factory, _time, asset: SrbMinerRelease.For(OSPlatform.Windows, Architecture.X64));
+        Assert.Equal(2, reopened.Benchmarks.Count);
+
+        // A different card invalidates them.
+        var otherCard = new SrbMinerGpuProvider(
+            new HttpClient(), _pool, Path.Combine(_dir, "engines"), Path.Combine(_dir, "bench.json"),
+            [new GpuInfo(GpuVendor.Nvidia, 0, "NVIDIA GeForce RTX 4090", 24)], _meter, () => 0.15, _factory, _time,
+            asset: SrbMinerRelease.For(OSPlatform.Windows, Architecture.X64));
+        Assert.Empty(otherCard.Benchmarks);
+
+        reopened.ResetBenchmarks();
+        Assert.Empty(reopened.Benchmarks);
+    }
+
+    [Fact]
+    public void Unsupported_without_a_mining_capable_gpu()
+    {
+        var intelOnly = new SrbMinerGpuProvider(
+            new HttpClient(), _pool, Path.Combine(_dir, "engines"), Path.Combine(_dir, "bench2.json"),
+            [new GpuInfo(GpuVendor.Intel, 0, "Intel Arc", 8)], _meter, () => 0.15, _factory, _time,
+            asset: SrbMinerRelease.For(OSPlatform.Windows, Architecture.X64));
+        Assert.False(intelOnly.IsSupportedOnThisPlatform);
+    }
+
+    public void Dispose()
+    {
+        try
+        {
+            Directory.Delete(_dir, recursive: true);
+        }
+        catch (IOException)
+        {
+        }
+    }
+}
