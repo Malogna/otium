@@ -25,7 +25,7 @@ public static class AppIdentity
     /// or any static URL hosting a Velopack release feed. Empty disables update checks.
     /// Can be overridden at runtime with the OTIUM_UPDATE_URL environment variable.
     /// </summary>
-    public const string UpdateUrl = "";
+    public const string UpdateUrl = "https://github.com/Malogna/otium";
 
     public static string ResolveServerUrl(string? configured)
     {
