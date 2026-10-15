@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Otium.App.ViewModels"
+             xmlns:views="using:Otium.App.Views"
              x:Class="Otium.App.Views.WelcomeView"
              x:DataType="vm:WelcomeViewModel">
 
@@ -15,6 +16,9 @@
                            Text="Otium puts your computer's spare power to work when you're not using it. Cash out with PayPal or crypto." />
             </StackPanel>
 
+            <TextBlock Classes="good" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" Text="{Binding SignedInText}"
+                       IsVisible="{Binding SignedInText, Converter={x:Static ObjectConverters.IsNotNull}}" />
+
             <TextBlock Classes="error" HorizontalAlignment="Center" IsVisible="{Binding !IsSupported}"
                        Text="Sorry, Otium doesn't support this type of computer yet." />
 
@@ -28,6 +32,17 @@
             </StackPanel>
 
             <StackPanel Spacing="8" HorizontalAlignment="Center">
+                <Button Classes="link" HorizontalAlignment="Center" Background="Transparent" BorderThickness="0"
+                        Command="{Binding ToggleSignInCommand}">
+                    <TextBlock Text="Already use Otium on another computer? Sign in" Foreground="{DynamicResource GoodBrush}" />
+                </Button>
+                <Border Classes="card" Width="360" IsVisible="{Binding ShowSignIn}">
+                    <StackPanel Spacing="6">
+                        <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
+                                   Text="Enter the email you use with Otium. Your balance and invite code come with you." />
+                        <views:EmailSignInView DataContext="{Binding SignIn}" />
+                    </StackPanel>
+                </Border>
                 <Button Classes="link" HorizontalAlignment="Center" Background="Transparent" BorderThickness="0"
                         Command="{Binding ToggleInviteCommand}">
                     <TextBlock Text="Have an invite code?" Foreground="{DynamicResource GoodBrush}" />

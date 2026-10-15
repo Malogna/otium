@@ -75,6 +75,11 @@ public sealed class AccountState
     /// <summary>Pool worker name the server assigned to this account; mining is credited by it.</summary>
     public string? WorkerId { get; set; }
 
+    /// <summary>Verified email that secures the account; null until the user adds one.</summary>
+    public string? Email { get; set; }
+
+    public int DeviceCount { get; set; } = 1;
+
     /// <summary>Operator wallet to mine to in balance mode, as announced by the server.</summary>
     public string? PoolWallet { get; set; }
 

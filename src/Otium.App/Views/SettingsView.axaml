@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Otium.App.ViewModels"
+             xmlns:views="using:Otium.App.Views"
              x:Class="Otium.App.Views.SettingsView"
              x:DataType="vm:SettingsViewModel">
 
@@ -97,7 +98,10 @@
 
         <Border Classes="card">
             <StackPanel Spacing="10">
-                <TextBlock Classes="h2" Text="How you get paid" />
+                <TextBlock Classes="h2" Text="Account" />
+                <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Text="{Binding AccountText}" />
+                <views:EmailSignInView DataContext="{Binding SignIn}" MaxWidth="420" HorizontalAlignment="Left" />
+                <TextBlock Classes="h2" Margin="0,8,0,0" Text="How you get paid" />
                 <RadioButton GroupName="payout" IsChecked="{Binding UseBalance}">
                     <StackPanel Spacing="2">
                         <TextBlock Text="Otium balance (recommended)" FontWeight="SemiBold" />

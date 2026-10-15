@@ -12,7 +12,7 @@ namespace Otium.App;
 
 public partial class App : Application
 {
-    private static readonly TimeSpan AccountSyncInterval = TimeSpan.FromMinutes(3);
+    private static readonly TimeSpan AccountSyncInterval = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan UpdateCheckInterval = TimeSpan.FromHours(6);
     private AppHost? _host;
     private MainWindow? _window;

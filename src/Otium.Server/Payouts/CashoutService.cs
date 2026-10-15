@@ -24,31 +24,33 @@ public sealed class CashoutService(
 
     private readonly CashoutOptions _options = options.Value;
 
-    public CashoutInfo Request(DeviceRecord device, CashoutRequest request)
+    public CashoutInfo Request(AccountRecord account, CashoutRequest request)
     {
         var method = (request.Method ?? "").Trim().ToLowerInvariant();
         var destination = (request.Destination ?? "").Trim();
 
-        if (!device.IsBalanceAccount)
+        if (!account.IsBalanceAccount)
             throw new OtiumException(400, "Your earnings are paid by the pool straight to your own wallet, so there's nothing to cash out here.");
+        if (account.Email is null)
+            throw new OtiumException(403, "Add your email first, so your balance can never get lost.");
         if (!CashoutMethods.IsKnown(method))
             throw new OtiumException(400, "Choose PayPal or Monero.");
         if (method == CashoutMethods.PayPal && !IsEmail(destination))
             throw new OtiumException(400, "That doesn't look like an email address.");
         if (method == CashoutMethods.Monero && !MoneroAddress.TryValidate(destination, out _, out var addressError))
             throw new OtiumException(400, addressError!);
-        if (store.HasOpenCashout(device.DeviceId))
+        if (store.HasOpenCashout(account.AccountId))
             throw new OtiumException(409, "You already have a cash-out on its way. You can request the next one when it arrives.");
 
         var now = time.GetUtcNow();
         var minimum = method == CashoutMethods.PayPal ? _options.MinPayPalUsd : _options.MinCryptoUsd;
-        var available = AccountService.ToUsd(store.Balance(device.DeviceId, now).AvailableMicros);
+        var available = AccountService.ToUsd(store.Balance(account.AccountId, now).AvailableMicros);
         if (available < minimum)
             throw new OtiumException(400, $"You need at least ${Money(minimum)} available to cash out this way (you have ${Money(available)}).");
 
-        var reviewReason = ReviewReason(device, method, destination, available, now);
+        var reviewReason = ReviewReason(account, method, destination, available, now);
         var status = reviewReason is null ? Core.Accounts.CashoutStatuses.Queued : Core.Accounts.CashoutStatuses.Review;
-        var cashout = store.DebitAndCreateCashout(device.DeviceId, method, destination, AccountService.ToMicros(minimum), status, now)
+        var cashout = store.DebitAndCreateCashout(account.AccountId, method, destination, AccountService.ToMicros(minimum), status, now)
                       ?? throw new OtiumException(400, $"You need at least ${Money(minimum)} available to cash out.");
 
         if (reviewReason is not null)
@@ -59,19 +61,19 @@ public sealed class CashoutService(
         return AccountService.ToInfo(store.FindCashout(cashout.Id)!);
     }
 
-    private string? ReviewReason(DeviceRecord device, string method, string destination, decimal amount, DateTimeOffset now)
+    private string? ReviewReason(AccountRecord account, string method, string destination, decimal amount, DateTimeOffset now)
     {
         if (providers.FirstOrDefault(p => p.Method == method) is not { IsConfigured: true })
             return "provider not configured: pay manually, then mark paid";
         if (amount > _options.AutoApproveMaxUsd)
             return $"amount above automatic limit (${Money(_options.AutoApproveMaxUsd)})";
-        if (now - device.CreatedAt < _options.MinAccountAgeForAuto && !store.CashoutsFor(device.DeviceId).Any(c => c.Status == Core.Accounts.CashoutStatuses.Paid))
+        if (now - account.CreatedAt < _options.MinAccountAgeForAuto && !store.CashoutsFor(account.AccountId).Any(c => c.Status == Core.Accounts.CashoutStatuses.Paid))
             return "new account";
-        if (store.OtherAccountsUsingDestination(destination, device.DeviceId) > 0)
+        if (store.OtherAccountsUsingDestination(destination, account.AccountId) > 0)
             return "destination used by another account";
         if (AccountService.ToUsd(store.AutoPaidMicrosSince(now - TimeSpan.FromDays(1))) + amount > _options.DailyAutoBudgetUsd)
             return "daily automatic payout budget reached";
-        if (AccountService.ToUsd(store.PaidMicrosInYear(device.DeviceId, now.Year)) + amount > TaxDetailsThresholdUsd)
+        if (AccountService.ToUsd(store.PaidMicrosInYear(account.AccountId, now.Year)) + amount > TaxDetailsThresholdUsd)
             return "yearly total near tax-reporting threshold: collect tax details";
         return null;
     }

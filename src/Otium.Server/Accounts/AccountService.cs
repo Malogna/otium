@@ -15,24 +15,36 @@ public sealed class OtiumException(int statusCode, string message) : Exception(m
     public int StatusCode { get; } = statusCode;
 }
 
+/// <summary>A signed-in computer and the account it belongs to (after following any merges).</summary>
+public sealed record Session(DeviceRecord Device, AccountRecord Account);
+
 /// <summary>
-/// Accounts and referrals. An account is created the first time a device connects; balance accounts get a pool
-/// address and worker id to mine under, own-wallet accounts mine straight to their wallet.
+/// Accounts, computers, email sign-in and referrals. The first time a computer connects it gets its own account
+/// (no sign-up needed). Adding an email secures that account; signing in with the same email on another computer
+/// attaches that computer to the account, so a balance survives reinstalls and is shared across a user's PCs.
 /// </summary>
 public sealed class AccountService(
     OtiumStore store,
     PoolWalletAllocator allocator,
     IMoneroPoolApi pool,
+    IEmailSender email,
     IOptions<ReferralOptions> referralOptions,
     IOptions<EarningsOptions> earningsOptions,
     IOptions<CashoutOptions> cashoutOptions,
     TimeProvider time,
     ILogger<AccountService> logger)
 {
+    public static readonly TimeSpan CodeLifetime = TimeSpan.FromMinutes(15);
+    public const int MaxCodeAttempts = 5;
+    public const int MaxCodesPerEmailPerHour = 5;
+    public const int MaxCodesPerDevicePerHour = 10;
+
     private static readonly FeePolicy Policy = FeePolicy.Default;
     private readonly ReferralOptions _referral = referralOptions.Value;
     private readonly EarningsOptions _earnings = earningsOptions.Value;
     private readonly CashoutOptions _cashouts = cashoutOptions.Value;
+
+    // ---------- registration & authentication ----------
 
     public async Task<AccountSummary> RegisterAsync(RegisterDeviceRequest request, string publicBaseUrl, CancellationToken ct)
     {
@@ -50,72 +62,157 @@ public sealed class AccountService(
         }
 
         var now = time.GetUtcNow();
-        var device = store.FindByDevice(request.DeviceId);
+        AccountRecord account;
+        var device = store.FindDevice(request.DeviceId);
         if (device is null)
         {
-            device = new DeviceRecord(request.DeviceId, HashSecret(request.DeviceSecret), NewWorkerId(), null, ownWallet, NewCode(),
-                null, null, null, false, null, now);
+            account = new AccountRecord(Guid.NewGuid().ToString("N"), NewWorkerId(), null, ownWallet, NewCode(), null,
+                null, null, null, false, null, null, now);
+            device = new DeviceRecord(request.DeviceId, HashSecret(request.DeviceSecret), account.AccountId, now, now);
         }
         else
         {
             RequireSecret(device, request.DeviceSecret);
-            device = device with { OwnWallet = ownWallet };
+            account = store.Resolve(store.FindAccount(device.AccountId)) ?? throw new OtiumException(404, "Account not found.");
+            account = account with { OwnWallet = ownWallet };
+            device = device with { AccountId = account.AccountId, LastSeenAt = now };
         }
 
         // Balance accounts need a pool address to mine to; keep it if switching back and forth between modes.
-        if (device.IsBalanceAccount && device.PoolWallet is null)
-            device = device with { PoolWallet = await allocator.AssignAsync(ct) };
+        if (account.IsBalanceAccount && account.PoolWallet is null)
+            account = account with { PoolWallet = await allocator.AssignAsync(ct) };
 
         string? codeError = null;
-        if (!string.IsNullOrWhiteSpace(request.ReferralCode) && device.ReferredByCode is null)
+        if (!string.IsNullOrWhiteSpace(request.ReferralCode) && account.ReferredByCode is null)
         {
-            codeError = TryBind(ref device, ReferralCodes.Normalize(request.ReferralCode), now);
+            codeError = TryBind(ref account, ReferralCodes.Normalize(request.ReferralCode), now);
             if (codeError is not null)
-                logger.LogInformation("Referral code rejected for {Device}: {Reason}", device.DeviceId, codeError);
+                logger.LogInformation("Referral code rejected for {Account}: {Reason}", account.AccountId, codeError);
         }
 
+        store.Upsert(account);
         store.Upsert(device);
-        return Summarize(device, publicBaseUrl, codeError);
+        return Summarize(account, publicBaseUrl, codeError);
     }
 
-    public DeviceRecord Authenticate(string deviceId, string secret)
+    public Session Authenticate(string deviceId, string secret)
     {
-        var device = store.FindByDevice(deviceId) ?? throw new OtiumException(404, "Unknown device.");
+        var device = store.FindDevice(deviceId) ?? throw new OtiumException(404, "Unknown device.");
         RequireSecret(device, secret);
-        return device;
+        var account = store.Resolve(store.FindAccount(device.AccountId)) ?? throw new OtiumException(404, "Account not found.");
+        return new Session(device, account);
     }
 
     public async Task<AccountSummary> GetSummaryAsync(string deviceId, string secret, string publicBaseUrl, CancellationToken ct)
     {
-        var device = Authenticate(deviceId, secret);
-        await RefreshVerificationsAsync(device, ct);
-        return Summarize(store.FindByDevice(deviceId)!, publicBaseUrl, null);
+        var session = Authenticate(deviceId, secret);
+        await RefreshVerificationsAsync(session.Account, ct);
+        return Summarize(store.FindAccount(session.Account.AccountId)!, publicBaseUrl, null);
     }
 
-    private string? TryBind(ref DeviceRecord device, string code, DateTimeOffset now)
+    // ---------- email sign-in ----------
+
+    public async Task SendSignInCodeAsync(string deviceId, string secret, EmailCodeRequest request, CancellationToken ct)
+    {
+        var session = Authenticate(deviceId, secret);
+        if (!EmailAddresses.IsValid(request.Email))
+            throw new OtiumException(400, "That doesn't look like an email address.");
+
+        var address = EmailAddresses.Normalize(request.Email);
+        var now = time.GetUtcNow();
+        if (store.EmailCodesSince(address, now - TimeSpan.FromHours(1)) >= MaxCodesPerEmailPerHour
+            || store.DeviceEmailCodesSince(session.Device.DeviceId, now - TimeSpan.FromHours(1)) >= MaxCodesPerDevicePerHour)
+            throw new OtiumException(429, "Too many codes requested. Please wait a while and try again.");
+
+        var code = RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6", System.Globalization.CultureInfo.InvariantCulture);
+        var salt = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(16));
+        store.AddEmailCode(address, session.Device.DeviceId, HashCode(code, salt), salt, now + CodeLifetime, now);
+
+        var existing = store.FindAccountByEmail(address);
+        var purpose = existing is null || existing.AccountId == session.Account.AccountId
+            ? "secure your Otium balance"
+            : "sign in to your Otium account on this computer";
+        await email.SendAsync(
+            request.Email.Trim(),
+            $"Your Otium code: {code}",
+            $"Your code to {purpose} is:\n\n    {code}\n\nIt expires in {CodeLifetime.TotalMinutes:0} minutes. If you didn't ask for it, you can ignore this email.",
+            ct);
+    }
+
+    public AccountSummary VerifySignInCode(string deviceId, string secret, EmailVerifyRequest request, string publicBaseUrl)
+    {
+        var session = Authenticate(deviceId, secret);
+        var address = EmailAddresses.Normalize(request.Email);
+        var now = time.GetUtcNow();
+
+        var stored = store.LatestEmailCode(address, session.Device.DeviceId, now)
+                     ?? throw new OtiumException(400, "That code has expired. Request a new one.");
+        if (stored.Attempts >= MaxCodeAttempts)
+            throw new OtiumException(400, "Too many wrong tries. Request a new code.");
+
+        var presented = Encoding.ASCII.GetBytes(HashCode((request.Code ?? "").Trim(), stored.Salt));
+        if (!CryptographicOperations.FixedTimeEquals(presented, Encoding.ASCII.GetBytes(stored.CodeHash)))
+        {
+            store.CountEmailCodeAttempt(stored.Id);
+            throw new OtiumException(400, "That code isn't right. Check the email and try again.");
+        }
+        store.UseEmailCode(stored.Id);
+
+        var current = session.Account;
+        var owner = store.FindAccountByEmail(address);
+
+        if (owner is null)
+        {
+            // New email: it now secures (or replaces the email of) this computer's account.
+            current = current with { Email = address };
+            store.Upsert(current);
+            return Summarize(current, publicBaseUrl, null);
+        }
+
+        if (owner.AccountId == current.AccountId)
+            return Summarize(current, publicBaseUrl, null);
+
+        // The email belongs to another account: this computer joins it. If the computer had only an anonymous
+        // account of its own, fold that into the signed-in account so nothing it earned is lost.
+        if (current.Email is null && store.DeviceCount(current.AccountId) <= 1)
+        {
+            store.MergeAccount(current.AccountId, owner.AccountId);
+            logger.LogInformation("Merged anonymous account {From} into {Into}", current.AccountId, owner.AccountId);
+        }
+        else
+        {
+            store.Upsert(session.Device with { AccountId = owner.AccountId, LastSeenAt = now });
+        }
+
+        return Summarize(store.FindAccount(owner.AccountId)!, publicBaseUrl, null);
+    }
+
+    // ---------- referrals ----------
+
+    private string? TryBind(ref AccountRecord account, string code, DateTimeOffset now)
     {
         if (!ReferralCodes.IsWellFormed(code))
             return "That invite code doesn't look right.";
-        if (now - device.CreatedAt > _referral.RedeemWindow)
+        if (now - account.CreatedAt > _referral.RedeemWindow)
             return "Invite codes can only be used in your first week.";
 
-        var referrer = store.FindByCode(code);
+        var referrer = store.Resolve(store.FindAccountByCode(code));
         if (referrer is null)
             return "We couldn't find that invite code.";
-        if (referrer.DeviceId == device.DeviceId || referrer.Code == device.Code)
+        if (referrer.AccountId == account.AccountId || referrer.Code == account.Code)
             return "You can't use your own invite code.";
-        if (device.OwnWallet is not null && string.Equals(referrer.OwnWallet, device.OwnWallet, StringComparison.Ordinal))
+        if (account.OwnWallet is not null && string.Equals(referrer.OwnWallet, account.OwnWallet, StringComparison.Ordinal))
             return "You can't invite a device that pays out to your own wallet.";
-        if (referrer.ReferredByCode == device.Code)
+        if (referrer.ReferredByCode == account.Code)
             return "Two people can't invite each other.";
-        if (device.OwnWallet is not null && store.WalletAlreadyReferred(device.OwnWallet, device.DeviceId))
+        if (account.OwnWallet is not null && store.WalletAlreadyReferred(account.OwnWallet, account.AccountId))
             return "This wallet has already joined through an invite.";
 
-        device = device with
+        account = account with
         {
             ReferredByCode = referrer.Code,
             ReferredAt = now,
-            FeeFreeUntil = ExtendHoliday(device.FeeFreeUntil, Policy.RefereeFeeHoliday, now),
+            FeeFreeUntil = ExtendHoliday(account.FeeFreeUntil, Policy.RefereeFeeHoliday, now),
         };
         return null;
     }
@@ -124,7 +221,7 @@ public sealed class AccountService(
     /// Marks invited friends as verified once they have really contributed (balance accounts: credited earnings;
     /// own-wallet accounts: hashes reported by the pool) and gives the referrer fee-free time.
     /// </summary>
-    private async Task RefreshVerificationsAsync(DeviceRecord referrer, CancellationToken ct)
+    private async Task RefreshVerificationsAsync(AccountRecord referrer, CancellationToken ct)
     {
         var now = time.GetUtcNow();
         foreach (var referee in store.FindReferees(referrer.Code).Where(r => !r.Verified))
@@ -135,7 +232,7 @@ public sealed class AccountService(
             bool verified;
             if (referee.IsBalanceAccount)
             {
-                verified = store.LifetimeEarningMicros(referee.DeviceId) >= ToMicros(_referral.VerificationUsd);
+                verified = store.LifetimeEarningMicros(referee.AccountId) >= ToMicros(_referral.VerificationUsd);
             }
             else
             {
@@ -146,7 +243,7 @@ public sealed class AccountService(
                 }
                 catch (HttpRequestException e)
                 {
-                    logger.LogWarning(e, "Pool lookup failed for referee {Device}", referee.DeviceId);
+                    logger.LogWarning(e, "Pool lookup failed for referee {Account}", referee.AccountId);
                     continue;
                 }
             }
@@ -154,29 +251,31 @@ public sealed class AccountService(
             store.Upsert(referee with { Verified = verified, LastCheckedAt = now });
             if (verified)
             {
-                var current = store.FindByDevice(referrer.DeviceId)!;
+                var current = store.FindAccount(referrer.AccountId)!;
                 store.Upsert(current with { FeeFreeUntil = ExtendHoliday(current.FeeFreeUntil, Policy.ReferrerFeeHolidayPerVerifiedFriend, now) });
             }
         }
     }
 
-    public AccountSummary Summarize(DeviceRecord device, string publicBaseUrl, string? codeError)
+    // ---------- summary ----------
+
+    public AccountSummary Summarize(AccountRecord account, string publicBaseUrl, string? codeError)
     {
         var now = time.GetUtcNow();
-        var referrer = device.ReferredByCode is null ? null : store.FindByCode(device.ReferredByCode);
-        var referees = store.FindReferees(device.Code);
-        var totals = store.Balance(device.DeviceId, now);
-        var cashouts = store.CashoutsFor(device.DeviceId).Select(ToInfo).ToList();
+        var referrer = account.ReferredByCode is null ? null : store.Resolve(store.FindAccountByCode(account.ReferredByCode));
+        var referees = store.FindReferees(account.Code);
+        var totals = store.Balance(account.AccountId, now);
+        var cashouts = store.CashoutsFor(account.AccountId).Select(ToInfo).ToList();
 
         return new AccountSummary(
-            device.WorkerId,
-            device.IsBalanceAccount ? device.PoolWallet : null,
-            device.Code,
-            $"{publicBaseUrl.TrimEnd('/')}/r/{device.Code}",
+            account.WorkerId,
+            account.IsBalanceAccount ? account.PoolWallet : null,
+            account.Code,
+            $"{publicBaseUrl.TrimEnd('/')}/r/{account.Code}",
             // Own-wallet clients mine the referrer's slice to this wallet; balance accounts are rewarded server-side.
-            device.IsBalanceAccount ? null : referrer?.OwnWallet,
-            device.ReferredAt,
-            device.FeeFreeUntil,
+            account.IsBalanceAccount ? null : referrer?.OwnWallet,
+            account.ReferredAt,
+            account.FeeFreeUntil,
             referees.Count,
             referees.Count(r => r.Verified),
             codeError,
@@ -189,7 +288,9 @@ public sealed class AccountService(
                 _cashouts.MinCryptoUsd,
                 _earnings.FeePercent,
                 _earnings.ReferralPercent,
-                cashouts));
+                cashouts),
+            account.Email,
+            (int)store.DeviceCount(account.AccountId));
     }
 
     public static CashoutInfo ToInfo(CashoutRecord c) => new(
@@ -261,4 +362,7 @@ public sealed class AccountService(
 
     private static string HashSecret(string secret) =>
         Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(secret)));
+
+    private static string HashCode(string code, string salt) =>
+        Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes($"{salt}:{code}")));
 }

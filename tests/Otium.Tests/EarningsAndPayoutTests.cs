@@ -36,20 +36,21 @@ public abstract class MoneyTestBase : IDisposable
 
     protected CashoutOptions Cashouts { get; } = new();
 
-    protected DeviceRecord NewAccount(string? referredBy = null, DateTimeOffset? feeFreeUntil = null, TimeSpan? age = null)
+    protected AccountRecord NewAccount(string? referredBy = null, DateTimeOffset? feeFreeUntil = null, TimeSpan? age = null, string? email = "default")
     {
         var id = Guid.NewGuid().ToString("N");
-        var device = new DeviceRecord(id, "hash", "ot" + id[..12], PoolAddress, null, id[..7].ToUpperInvariant(),
-            referredBy, referredBy is null ? null : Time.GetUtcNow(), feeFreeUntil, false, null, Time.GetUtcNow() - (age ?? TimeSpan.FromDays(30)));
-        Store.Upsert(device);
-        return device;
+        var account = new AccountRecord(id, "ot" + id[..12], PoolAddress, null, id[..7].ToUpperInvariant(),
+            email == "default" ? $"{id[..8]}@example.com" : email,
+            referredBy, referredBy is null ? null : Time.GetUtcNow(), feeFreeUntil, false, null, null, Time.GetUtcNow() - (age ?? TimeSpan.FromDays(30)));
+        Store.Upsert(account);
+        return account;
     }
 
     /// <summary>Gives an account spendable money directly (as if credited and past the hold period).</summary>
-    protected void Fund(DeviceRecord device, decimal usd) =>
-        Store.AddLedger(device.DeviceId, LedgerKinds.Earning, AccountService.ToMicros(usd), Time.GetUtcNow(), Time.GetUtcNow(), "test");
+    protected void Fund(AccountRecord device, decimal usd) =>
+        Store.AddLedger(device.AccountId, LedgerKinds.Earning, AccountService.ToMicros(usd), Time.GetUtcNow(), Time.GetUtcNow(), "test");
 
-    protected decimal Available(DeviceRecord device) => AccountService.ToUsd(Store.Balance(device.DeviceId, Time.GetUtcNow()).AvailableMicros);
+    protected decimal Available(AccountRecord device) => AccountService.ToUsd(Store.Balance(device.AccountId, Time.GetUtcNow()).AvailableMicros);
 
     public void Dispose()
     {
@@ -127,7 +128,7 @@ public sealed class EarningsCreditorTests : MoneyTestBase
     private static IReadOnlyList<HashratePoint> Points(DateTimeOffset start, int count, double hs2) =>
         Enumerable.Range(0, count).Select(i => new HashratePoint(start + TimeSpan.FromMinutes(2 * i), hs2 * 3, hs2)).ToList();
 
-    private void History(DeviceRecord device, IReadOnlyList<HashratePoint> points) =>
+    private void History(AccountRecord device, IReadOnlyList<HashratePoint> points) =>
         Pool.History[PoolAddress] = new Dictionary<string, IReadOnlyList<HashratePoint>> { [device.WorkerId] = points };
 
     [Fact]
@@ -140,10 +141,10 @@ public sealed class EarningsCreditorTests : MoneyTestBase
         var run = await Creditor.CreditOnceAsync(CancellationToken.None);
 
         Assert.Equal(1, run.WorkersCredited);
-        var balance = Store.Balance(device.DeviceId, Time.GetUtcNow());
+        var balance = Store.Balance(device.AccountId, Time.GetUtcNow());
         Assert.Equal(3240, balance.PendingMicros);
         Assert.Equal(0, balance.AvailableMicros);
-        Assert.Equal(3240, Store.Balance(device.DeviceId, Time.GetUtcNow() + TimeSpan.FromHours(49)).AvailableMicros);
+        Assert.Equal(3240, Store.Balance(device.AccountId, Time.GetUtcNow() + TimeSpan.FromHours(49)).AvailableMicros);
     }
 
     [Fact]
@@ -154,12 +155,12 @@ public sealed class EarningsCreditorTests : MoneyTestBase
         History(device, Points(start, 6, 10_000));
         await Creditor.CreditOnceAsync(CancellationToken.None);
         await Creditor.CreditOnceAsync(CancellationToken.None);
-        Assert.Equal(3240, Store.Balance(device.DeviceId, Time.GetUtcNow()).PendingMicros);
+        Assert.Equal(3240, Store.Balance(device.AccountId, Time.GetUtcNow()).PendingMicros);
 
         // Two new points later: only those are added (first one spans the 2-minute gap since the last point).
         History(device, Points(start, 8, 10_000));
         await Creditor.CreditOnceAsync(CancellationToken.None);
-        Assert.Equal(3240 + 1080, Store.Balance(device.DeviceId, Time.GetUtcNow()).PendingMicros);
+        Assert.Equal(3240 + 1080, Store.Balance(device.AccountId, Time.GetUtcNow()).PendingMicros);
     }
 
     [Fact]
@@ -168,7 +169,7 @@ public sealed class EarningsCreditorTests : MoneyTestBase
         var device = NewAccount(feeFreeUntil: Time.GetUtcNow() + TimeSpan.FromDays(10));
         History(device, Points(Time.GetUtcNow() - TimeSpan.FromMinutes(12), 6, 10_000));
         await Creditor.CreditOnceAsync(CancellationToken.None);
-        Assert.Equal(3600, Store.Balance(device.DeviceId, Time.GetUtcNow()).PendingMicros);
+        Assert.Equal(3600, Store.Balance(device.AccountId, Time.GetUtcNow()).PendingMicros);
     }
 
     [Fact]
@@ -179,8 +180,8 @@ public sealed class EarningsCreditorTests : MoneyTestBase
         History(bob, Points(Time.GetUtcNow() - TimeSpan.FromMinutes(12), 6, 10_000));
         await Creditor.CreditOnceAsync(CancellationToken.None);
 
-        Assert.Equal(3240, Store.Balance(bob.DeviceId, Time.GetUtcNow()).PendingMicros);
-        var aliceBalance = Store.Balance(alice.DeviceId, Time.GetUtcNow() + TimeSpan.FromDays(3));
+        Assert.Equal(3240, Store.Balance(bob.AccountId, Time.GetUtcNow()).PendingMicros);
+        var aliceBalance = Store.Balance(alice.AccountId, Time.GetUtcNow() + TimeSpan.FromDays(3));
         Assert.Equal(180, aliceBalance.AvailableMicros); // 5% of $0.0036
         Assert.Equal(180, aliceBalance.ReferralMicros);
     }
@@ -199,7 +200,7 @@ public sealed class EarningsCreditorTests : MoneyTestBase
         var run = await Creditor.CreditOnceAsync(CancellationToken.None);
         Assert.Equal(1, run.WorkersCredited);
         // (120 s + 600 s) × 1000 H/s = 720,000 hashes → $0.00036 gross → 324 micros after fee
-        Assert.Equal(324, Store.Balance(device.DeviceId, now).PendingMicros);
+        Assert.Equal(324, Store.Balance(device.AccountId, now).PendingMicros);
     }
 
     [Fact]
@@ -341,6 +342,16 @@ public sealed class CashoutTests : MoneyTestBase
         Store.Upsert(device);
         var error = Assert.Throws<OtiumException>(() => Service.Request(device, new CashoutRequest(CashoutMethods.PayPal, "me@example.com")));
         Assert.Contains("own wallet", error.Message);
+    }
+
+    [Fact]
+    public void Accounts_without_an_email_must_add_one_before_cashing_out()
+    {
+        var device = NewAccount(email: null);
+        Fund(device, 10m);
+        var error = Assert.Throws<OtiumException>(() => Service.Request(device, new CashoutRequest(CashoutMethods.PayPal, "me@example.com")));
+        Assert.Equal(403, error.StatusCode);
+        Assert.Equal(10m, Available(device));
     }
 
     [Fact]
