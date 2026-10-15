@@ -8,7 +8,7 @@ public sealed class ReferralOptions
     public string? PublicBaseUrl { get; set; }
 
     /// <summary>Where the landing page sends people to download the app.</summary>
-    public string DownloadUrl { get; set; } = "https://github.com/";
+    public string DownloadUrl { get; set; } = "https://github.com/Malogna/otium/releases/latest";
 
     /// <summary>Own-wallet accounts: hashes a referred friend must have mined (per the pool) to count as verified.</summary>
     public double VerificationHashes { get; set; } = 500_000_000;

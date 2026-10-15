@@ -45,5 +45,5 @@ public partial class WelcomeViewModel(AppHost host, Action started) : ViewModelB
     private void ToggleInvite() => ShowInvite = !ShowInvite;
 
     [RelayCommand]
-    private static void OpenHowItWorks() => Launch.Open("https://github.com/");
+    private static void OpenHowItWorks() => Launch.Open("https://github.com/Malogna/otium#readme");
 }
