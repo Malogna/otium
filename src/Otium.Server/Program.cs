@@ -1,6 +1,8 @@
+using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.Options;
 using Otium.Core.Accounts;
 using Otium.Core.Pools;
@@ -63,6 +65,26 @@ if (!builder.Configuration.GetValue<bool>("DisableBackgroundJobs"))
     builder.Services.AddHostedService<CashoutProcessorService>();
 }
 
+// Behind a reverse proxy, client addresses come from X-Forwarded-For, trusted only on connections from the proxy.
+var reverseProxy = builder.Configuration.GetSection(ReverseProxyOptions.Section).Get<ReverseProxyOptions>() ?? new();
+if (reverseProxy.Enabled)
+{
+    builder.Services.Configure<ForwardedHeadersOptions>(options =>
+    {
+        options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+        if (reverseProxy.KnownProxies.Length > 0 || reverseProxy.KnownNetworks.Length > 0)
+        {
+            // Replace the localhost defaults with exactly the configured proxy.
+            options.KnownProxies.Clear();
+            options.KnownIPNetworks.Clear();
+        }
+        foreach (var proxy in reverseProxy.KnownProxies)
+            options.KnownProxies.Add(IPAddress.Parse(proxy));
+        foreach (var network in reverseProxy.KnownNetworks)
+            options.KnownIPNetworks.Add(System.Net.IPNetwork.Parse(network));
+    });
+}
+
 builder.Services.AddProblemDetails();
 builder.Services.AddRateLimiter(options =>
 {
@@ -73,6 +95,8 @@ builder.Services.AddRateLimiter(options =>
 });
 
 var app = builder.Build();
+if (reverseProxy.Enabled)
+    app.UseForwardedHeaders();
 app.UseRateLimiter();
 
 // Errors meant for users travel as problem details; the app shows their "detail" text.
@@ -111,7 +135,7 @@ api.MapPost("/devices/{deviceId}/cashouts", (string deviceId, CashoutRequest bod
 });
 
 // Bandwidth usage reports. The connection's public IP enforces one paid sharer per internet connection; when deployed
-// behind a reverse proxy, enable forwarded headers so this is the client's address, not the proxy's.
+// behind a reverse proxy, set ReverseProxy:Enabled so this is the client's address, not the proxy's.
 api.MapPost("/devices/{deviceId}/bandwidth", (string deviceId, BandwidthReport body, HttpContext context, AccountService accounts, BandwidthService bandwidth) =>
 {
     var session = accounts.Authenticate(deviceId, Secret(context.Request));
