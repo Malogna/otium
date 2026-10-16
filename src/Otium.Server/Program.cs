@@ -45,6 +45,7 @@ builder.Services.AddSingleton<IEmailSender>(sp => sp.GetRequiredService<IOptions
 builder.Services.AddSingleton<PoolWalletAllocator>();
 builder.Services.AddSingleton<BandwidthService>();
 builder.Services.AddSingleton<AccountService>();
+builder.Services.AddSingleton<AccountDataService>();
 builder.Services.AddSingleton<EarningsCreditor>();
 builder.Services.AddHttpClient<IProfitFeed, WhatToMineClient>();
 builder.Services.AddHttpClient<IKryptexApi, KryptexClient>();
@@ -151,6 +152,17 @@ api.MapGet("/devices/{deviceId}/account", async (string deviceId, HttpRequest re
 
 api.MapGet("/devices/{deviceId}/invites/leaderboard", async (string deviceId, HttpRequest request, AccountService accounts, CancellationToken ct) =>
     Results.Ok(await accounts.GetLeaderboardAsync(deviceId, Secret(request), ct)));
+
+// Data-protection rights: a copy of everything stored about the account, and deleting it (money records stay, anonymized).
+api.MapGet("/devices/{deviceId}/account/export", (string deviceId, HttpContext context, AccountDataService data) =>
+{
+    var export = data.Export(deviceId, Secret(context.Request));
+    context.Response.Headers.CacheControl = "no-store";
+    return Results.File(AccountDataService.Serialize(export), "application/json", $"otium-data-{export.ExportedAt.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)}.json");
+});
+
+api.MapPost("/devices/{deviceId}/account/delete", (string deviceId, DeleteAccountRequest body, HttpRequest request, AccountDataService data) =>
+    Results.Ok(data.Delete(deviceId, Secret(request), body)));
 
 api.MapPost("/devices/{deviceId}/cashouts", (string deviceId, CashoutRequest body, HttpRequest request, AccountService accounts, CashoutService cashouts) =>
 {

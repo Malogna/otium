@@ -316,6 +316,18 @@
             <Setter Property="Foreground" Value="#FFFFFF" />
         </Style>
 
+        <!-- Irreversible actions (deleting the account). -->
+        <Style Selector="Button.danger">
+            <Setter Property="Background" Value="{DynamicResource BadBrush}" />
+            <Setter Property="Foreground" Value="#FFFFFF" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="Button.danger:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource BadBrush}" />
+            <Setter Property="Foreground" Value="#FFFFFF" />
+            <Setter Property="Opacity" Value="0.9" />
+        </Style>
+
         <Style Selector="Button.link">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
