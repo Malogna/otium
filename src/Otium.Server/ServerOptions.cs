@@ -180,6 +180,24 @@ public sealed class AdminOptions
 }
 
 /// <summary>
+/// Running behind a reverse proxy that terminates HTTPS (see docs/deploying.md). When enabled, the client's address and
+/// scheme are taken from X-Forwarded-For and X-Forwarded-Proto, but only on connections from the proxy; anyone else's
+/// headers are ignored. Per-IP rate limits and "one paid sharer per connection" depend on getting this right.
+/// </summary>
+public sealed class ReverseProxyOptions
+{
+    public const string Section = "ReverseProxy";
+
+    public bool Enabled { get; set; }
+
+    /// <summary>The proxy's addresses, e.g. 172.30.0.10. With neither list set, only a proxy on localhost is trusted.</summary>
+    public string[] KnownProxies { get; set; } = [];
+
+    /// <summary>Networks the proxy connects from, in CIDR notation, e.g. 10.0.0.0/24.</summary>
+    public string[] KnownNetworks { get; set; } = [];
+}
+
+/// <summary>
 /// Paying balance accounts for sharing unused internet bandwidth through Otium's bandwidth partner. The partner pays
 /// Otium as the publisher; these rates set what users are credited from their computers' usage reports, with limits
 /// that keep self-reported usage honest. Off until a partner agreement is in place.

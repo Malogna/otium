@@ -1,0 +1,17 @@
+# HTTPS in front of the Otium server. Caddy obtains and renews the Let's Encrypt certificate for OTIUM_DOMAIN on its
+# own (ports 80 and 443 must be reachable) and passes each visitor's address on in X-Forwarded-For, replacing any
+# X-Forwarded-For the visitor sent.
+{
+	email {$ACME_EMAIL}
+}
+
+{$OTIUM_DOMAIN} {
+	encode zstd gzip
+
+	header Strict-Transport-Security "max-age=31536000"
+
+	# Development-only endpoints never belong on the public server, even if DevMode is switched on by mistake.
+	respond /dev/* 404
+
+	reverse_proxy otium:8080
+}
