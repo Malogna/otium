@@ -220,7 +220,8 @@ public partial class HomeViewModel : ViewModelBase
         else
         {
             var towards = account.AvailableUsd + account.PendingUsd;
-            GoalText = $"{Format.Money(towards)} of {Format.Money(minimum)} to your first cash-out";
+            var which = _host.Account?.Balance.RecentCashouts.Count > 0 ? "next" : "first";
+            GoalText = $"{Format.Money(towards)} of {Format.Money(minimum)} to your {which} cash-out";
             GoalPercent = minimum > 0 ? (double)Math.Clamp(towards / minimum * 100, 0, 100) : 0;
             GoalEta = projection.TimeToCashout is { } eta && eta > TimeSpan.Zero ? $"about {Friendly(eta)} at this pace" : "";
         }
