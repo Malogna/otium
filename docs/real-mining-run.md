@@ -231,3 +231,23 @@ today's dataset sizes. Its CUDA algorithms work. This is one machine, so whether
 - **Speed gap:** find the cause of the 25–30% lower speed inside Otium (CPU contention with XMRig, or priority).
 - **Startup leftover:** `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\Otium` still starts the other worktree's dev
   build at sign-in, for the developer to remove.
+
+## Kryptex account test (16 October 2026, 17:11–17:58)
+
+The operator's own Kryptex account (a "krx…" username with auto-exchange to BTC, not recorded here), checked for
+what Otium needs from it: per-worker statistics for crediting, CPU Monero on Kryptex, and payouts.
+
+| Check | Result |
+|---|---|
+| Per-worker chart for an account (`/{coin}/api/v1/miner/chart/{account}/{worker}`) | ❌ **403** "You do not have permission to perform this action", for Pearl, Quantus and Monero workers alike. Charts are public only for wallet-address mining, which can't use auto-exchange. Crediting from charts would have paid users nothing. |
+| Worker list for an account (`/{coin}/api/v3/miner/workers/{account}`) | ✅ Public. Each worker has `avg_hashrate_30m`, `_3h` and `_24h` (strings, H/s), valid/stale/invalid shares, status, miner agent and country. Offline workers stay listed while their averages drain. |
+| XMRig 6.26.0 on Kryptex Monero | ✅ `xmr.kryptex.network:8029` with TLS, login `account.otiumtest`, password `x`: 15 minutes at about 2.4 kH/s (50% of an i7-8700K), 7 of 7 shares accepted. |
+| Crediting from the worker list | ✅ Sampling `avg_hashrate_30m` every 10 minutes and summing average × 10 minutes gave **2,582,660 hashes** against XMRig's own **2,582,772** (0.004% apart). Samples: 898, 1,435, 1,435, 537, 0 H/s. With only 7 shares this closeness is partly luck, since the pool's figure comes from share difficulty, but the method reproduces exactly what Kryptex counts and pays for. Otium's crediting now works this way (commit "Kryptex crediting: sample the worker list's 30-minute averages"). |
+| BTC withdrawal to the treasury | ⏳ Not tested. The account held 0.00000049 BTC, far below Kryptex's 0.00025 BTC withdrawal minimum, and moving funds is for the operator to do in the Kryptex dashboard (Payouts). |
+
+Still open:
+
+- **Withdrawal:** once the account passes 0.00025 BTC, withdraw to the bitcoind treasury once and note the fee and
+  the time it takes.
+- **Credited vs. paid:** after a few days of real mining, compare what Otium credited from Kryptex workers with the BTC
+  the account received, to measure the auto-exchange spread.
