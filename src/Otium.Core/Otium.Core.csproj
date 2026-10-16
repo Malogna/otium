@@ -9,4 +9,11 @@
     <InternalsVisibleTo Include="Otium.Tests" />
   </ItemGroup>
 
+  <!-- Release settings baked in at build time (read by AppIdentity): -p:OtiumServerUrl=https://... and friends. -->
+  <ItemGroup>
+    <AssemblyMetadata Include="Otium.ServerUrl" Value="$(OtiumServerUrl)" Condition="'$(OtiumServerUrl)' != ''" />
+    <AssemblyMetadata Include="Otium.FeeWallet" Value="$(OtiumFeeWallet)" Condition="'$(OtiumFeeWallet)' != ''" />
+    <AssemblyMetadata Include="Otium.HoneygainKey" Value="$(OtiumHoneygainKey)" Condition="'$(OtiumHoneygainKey)' != ''" />
+  </ItemGroup>
+
 </Project>
