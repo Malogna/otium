@@ -122,6 +122,12 @@ public partial class HomeViewModel : ViewModelBase
     [ObservableProperty] public partial string GoalEta { get; set; } = "";
     [ObservableProperty] public partial bool IsCashingOut { get; set; }
 
+    // ---------- cash-out history ----------
+
+    public ObservableCollection<CashoutRow> Cashouts { get; } = [];
+    [ObservableProperty] public partial bool HasCashouts { get; set; }
+    [ObservableProperty] public partial string CashoutsSummary { get; set; } = "";
+
     // ---------- account, invite, update ----------
 
     [ObservableProperty] public partial bool NeedsEmail { get; set; }
@@ -218,6 +224,8 @@ public partial class HomeViewModel : ViewModelBase
             GoalEta = projection.TimeToCashout is { } eta && eta > TimeSpan.Zero ? $"about {Friendly(eta)} at this pace" : "";
         }
 
+        RefreshCashouts();
+
         // Status and activity
         RefreshActivity(engines);
         RefreshInternetRow();
@@ -253,6 +261,24 @@ public partial class HomeViewModel : ViewModelBase
         HasInviteCode = InviteCode.Length > 0;
         UpdateReady = _host.Updates.ReadyVersion is not null;
         UpdateText = UpdateReady ? $"Otium {_host.Updates.ReadyVersion} is ready." : "";
+    }
+
+    private void RefreshCashouts()
+    {
+        var balance = _host.Account?.Balance;
+        var rows = (balance?.RecentCashouts ?? []).Select(CashoutRow.From).ToList();
+        if (!rows.SequenceEqual(Cashouts))
+        {
+            Cashouts.Clear();
+            foreach (var row in rows)
+                Cashouts.Add(row);
+        }
+        HasCashouts = IsBalanceMode && rows.Count > 0;
+        var open = rows.FirstOrDefault(r => r.IsPending);
+        var paidOut = balance?.PaidOutUsd ?? 0;
+        CashoutsSummary = open is not null
+            ? $"Your {open.Amount} cash-out: {open.Status.ToLowerInvariant()}"
+            : paidOut > 0 ? $"{Format.Money(paidOut)} paid out so far" : "";
     }
 
     private void RefreshActivity(IReadOnlyList<EarningsEngine> engines)
@@ -408,6 +434,13 @@ public partial class HomeViewModel : ViewModelBase
     {
         CashOut.Reset();
         IsCashingOut = true;
+    }
+
+    [RelayCommand]
+    private async Task CopyTransaction(string? transactionId)
+    {
+        if (!string.IsNullOrEmpty(transactionId))
+            await ClipboardService.CopyAsync(transactionId);
     }
 
     [RelayCommand]

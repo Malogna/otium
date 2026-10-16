@@ -16,7 +16,8 @@
 3. Otium starts when you sign in and earns only while you're away from the computer, after 3 minutes without keyboard or mouse input. It pauses the moment you come back, and also when electricity would cost more than it earns (the price is estimated from your country; in Norway, Sweden, Denmark and Finland it follows live hourly spot prices, from hvakosterstrommen.no, elprisetjustnu.se, elprisenligenu.dk and sahkotin.fi).
 4. Your balance grows in dollars. Add your email when Otium asks; that keeps the balance safe if you reinstall, lets you
    sign in on your other PCs (they all earn into one balance), and is needed before the first cash-out.
-5. Press **Cash out** to get paid by PayPal or crypto (Monero).
+5. Press **Cash out** to get paid by PayPal or crypto (Monero). The overview lists every cash-out with its status in plain
+   words (sending, being checked, claim it in PayPal, paid, returned to balance), and an email receipt arrives when it's paid.
 6. Share your invite code. Friends mine fee-free for 30 days, and you get 5% of everything they earn.
 7. Optionally, earn from your internet connection too: the overview suggests it once, explains in plain words what
    sharing unused bandwidth means, and turns it on only when you agree. It pays into the same balance.
@@ -103,6 +104,9 @@ Everything technical lives under **Advanced**:
   - a yearly total near the US tax-reporting threshold ($2,000; tax details are needed);
   - the method's provider not being set up yet.
 - Failed or returned payouts go back to the balance.
+- When a cash-out is paid (automatically, or marked paid by the operator) the owner gets an email receipt: amount,
+  method, masked destination, dates, the cash-out id and, for Monero, the transaction hash (never the tx key, which the
+  batch shares). A mail failure is logged and never affects the payout.
 
 **Own-wallet mode** (Advanced) works as before: the pool pays the user's own XMR wallet directly, a 2% fee is mined in short time slices, and referral rewards are mined to the referrer's wallet.
 
@@ -119,7 +123,7 @@ Configure `src/Otium.Server/appsettings.json` (or environment variables such as 
 | `PayPal:ClientId`, `ClientSecret`, `UseSandbox` | PayPal Payouts. Use the sandbox until PayPal approves the live account. |
 | `MoneroWallet:RpcUrl`, `Username`, `Password` | `monero-wallet-rpc` with `--rpc-login`, on localhost or a private network |
 | `Admin:Token` | Enables `/admin/*`; send it as `X-Admin-Token` |
-| `Email:SmtpHost`, `Port`, `Username`, `Password`, `From` | SMTP service for sign-in codes (Postmark, SES, Mailgun, ...) |
+| `Email:SmtpHost`, `Port`, `Username`, `Password`, `From` | SMTP service for sign-in codes and cash-out receipts (Postmark, SES, Mailgun, ...) |
 | `Referral:PublicBaseUrl`, `DownloadUrl` | Invite links and the landing page |
 | `Kryptex:Enabled`, `Account` | GPU coins on Kryptex Pool (off by default). Set up auto-exchange on that Kryptex account. |
 | `Kryptex:Coins:{algorithm}` | Kryptex coin slug, WhatToMine id and stratum host per algorithm (defaults for `pearlhash` and `quantus`) |
@@ -180,7 +184,7 @@ You need the .NET 10 SDK. On this machine it's installed per-user, so add it to 
 $env:PATH = "$env:LOCALAPPDATA\Microsoft\dotnet;$env:PATH"
 ```
 
-Run the tests (199, covering accounts and sign-in, crediting, cash-outs, fraud rules, GPU profit switching and policy, Kryptex crediting, internet sharing, live electricity prices, the simulated pool, wallet checksums and the engine):
+Run the tests (213, covering accounts and sign-in, crediting, cash-outs and receipts, fraud rules, GPU profit switching and policy, Kryptex crediting, internet sharing, live electricity prices, the simulated pool, wallet checksums and the engine):
 
 ```bash
 dotnet test

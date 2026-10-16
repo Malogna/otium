@@ -22,6 +22,8 @@ public sealed class ServerTests : IDisposable
     private readonly WebApplicationFactory<Program> _factory;
     private readonly HttpClient _http;
 
+    private const string AdminToken = "test-admin-token";
+
     public ServerTests()
     {
         _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -30,6 +32,7 @@ public sealed class ServerTests : IDisposable
             builder.UseSetting("DisableBackgroundJobs", "true");
             builder.UseSetting("Earnings:PoolWallets:0", _poolWallet);
             builder.UseSetting("Referral:PublicBaseUrl", "https://otium.example");
+            builder.UseSetting("Admin:Token", AdminToken);
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll<IMoneroPoolApi>();
@@ -383,6 +386,37 @@ public sealed class ServerTests : IDisposable
     {
         var response = await _http.GetAsync("/admin/summary");
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Marking_a_cashout_paid_by_hand_emails_a_receipt_and_shows_in_the_app()
+    {
+        var device = NewDevice();
+        await RegisterBalance(device);
+        var account = await SignIn(device, "sam@example.com");
+        var accountId = Store.FindAccountByCode(account.Code)!.AccountId;
+        Store.AddLedger(accountId, LedgerKinds.Earning, 20_000_000, _time.GetUtcNow(), _time.GetUtcNow(), "test");
+        var client = new AccountClient(_http);
+        // A brand-new account, so it waits for review rather than being sent automatically.
+        var cashout = await client.RequestCashoutAsync(device.Id, device.Secret, new CashoutRequest(CashoutMethods.PayPal, "sam@example.com"), CancellationToken.None);
+        Assert.Equal(CashoutStatuses.Review, cashout.Status);
+        Assert.Null(cashout.Note); // the review reason is for the operator only
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"/admin/cashouts/{cashout.Id}/mark-paid")
+        {
+            Content = JsonContent.Create(new { note = "PayPal txn 9XY" }),
+        };
+        request.Headers.Add("X-Admin-Token", AdminToken);
+        Assert.Equal(HttpStatusCode.OK, (await _http.SendAsync(request)).StatusCode);
+
+        var receipt = Outbox.Sent.Last();
+        Assert.Equal("sam@example.com", receipt.To);
+        Assert.Equal("Your Otium cash-out of $20.00 was sent", receipt.Subject);
+        var balance = (await Summary(device)).Balance;
+        Assert.Equal(20m, balance.PaidOutUsd);
+        var paid = Assert.Single(balance.RecentCashouts);
+        Assert.Equal(CashoutStatuses.Paid, paid.Status);
+        Assert.NotNull(paid.UpdatedAt);
     }
 
     public void Dispose()

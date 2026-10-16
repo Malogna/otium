@@ -7,9 +7,14 @@ namespace Otium.Server.Payouts;
 /// <summary>
 /// Sends queued cash-outs through their provider and follows up on ones in flight. A cash-out is marked
 /// "sending" before money moves, and only "sending" cash-outs with a provider reference are followed up,
-/// so a crash can't cause the same cash-out to be paid twice.
+/// so a crash can't cause the same cash-out to be paid twice. The owner gets an email receipt once it's paid.
 /// </summary>
-public sealed class CashoutProcessor(OtiumStore store, IEnumerable<IPayoutProvider> providers, TimeProvider time, ILogger<CashoutProcessor> logger)
+public sealed class CashoutProcessor(
+    OtiumStore store,
+    IEnumerable<IPayoutProvider> providers,
+    CashoutReceipts receipts,
+    TimeProvider time,
+    ILogger<CashoutProcessor> logger)
 {
     public const int MaxAttempts = 10;
 
@@ -36,14 +41,14 @@ public sealed class CashoutProcessor(OtiumStore store, IEnumerable<IPayoutProvid
                 }
 
                 foreach (var outcome in outcomes)
-                    Apply(batch.First(c => c.Id == outcome.CashoutId), outcome, requeueIfUnchanged: true);
+                    await ApplyAsync(batch.First(c => c.Id == outcome.CashoutId), outcome, requeueIfUnchanged: true, ct);
             }
 
             foreach (var sending in store.CashoutsWithStatus(CashoutStatuses.Sending).Where(c => c.Method == provider.Method && c.ProviderReference is not null))
             {
                 try
                 {
-                    Apply(sending, await provider.CheckAsync(sending, ct), requeueIfUnchanged: false);
+                    await ApplyAsync(sending, await provider.CheckAsync(sending, ct), requeueIfUnchanged: false, ct);
                 }
                 catch (HttpRequestException e)
                 {
@@ -53,7 +58,7 @@ public sealed class CashoutProcessor(OtiumStore store, IEnumerable<IPayoutProvid
         }
     }
 
-    private void Apply(CashoutRecord cashout, PayoutOutcome outcome, bool requeueIfUnchanged)
+    private async Task ApplyAsync(CashoutRecord cashout, PayoutOutcome outcome, bool requeueIfUnchanged, CancellationToken ct)
     {
         var now = time.GetUtcNow();
         var fresh = store.FindCashout(cashout.Id) ?? cashout;
@@ -64,6 +69,10 @@ public sealed class CashoutProcessor(OtiumStore store, IEnumerable<IPayoutProvid
                 logger.LogInformation("Cash-out {Id} failed and was refunded: {Note}", cashout.Id, outcome.Note);
                 break;
             case CashoutStatuses.Paid:
+                store.UpdateCashout(cashout.Id, outcome.Status, now, outcome.ProviderReference, outcome.Note);
+                if (fresh.Status != CashoutStatuses.Paid)
+                    await receipts.SendPaidAsync(store.FindCashout(cashout.Id)!, now, ct);
+                break;
             case CashoutStatuses.Sending:
                 store.UpdateCashout(cashout.Id, outcome.Status, now, outcome.ProviderReference, outcome.Note);
                 break;
