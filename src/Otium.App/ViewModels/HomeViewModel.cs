@@ -4,6 +4,7 @@ using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Otium.App.Services;
+using Otium.Core.Bandwidth;
 using Otium.Core.Engine;
 using Otium.Core.Projections;
 using Otium.Core.Providers;
@@ -36,6 +37,7 @@ public partial class HomeViewModel : ViewModelBase
     private double _lastRate;          // $/day while earning (after fee), remembered for when it's paused
     private double _lastElectricity;   // $/day of electricity while earning
     private EarningsEstimate? _estimate;
+    private readonly ActivityRow _internetRow;
 
     public HomeViewModel(AppHost host, Action openAdvanced)
     {
@@ -50,8 +52,17 @@ public partial class HomeViewModel : ViewModelBase
         if (host.GpuEngine is not null)
             Activity.Add(new ActivityRow { Icon = Icon("IconGpu"), Title = host.GpuProvider?.Gpus.FirstOrDefault()?.Name ?? "Graphics card" });
 
+        _internetRow = new ActivityRow { Icon = Icon("IconGlobe"), Title = "Internet connection" };
+        InternetSharing = new InternetSharingViewModel(host);
+        InternetSharing.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(InternetSharingViewModel.IsOn))
+                Refresh();
+        };
+
         foreach (var engine in host.Engines)
             engine.SnapshotChanged += _ => Dispatcher.UIThread.Post(Refresh);
+        host.Bandwidth.SnapshotChanged += _ => Dispatcher.UIThread.Post(Refresh);
         host.AccountChanged += () => Dispatcher.UIThread.Post(Refresh);
         host.Updates.Changed += () => Dispatcher.UIThread.Post(Refresh);
         host.HistoryChanged += () => Dispatcher.UIThread.Post(Refresh);
@@ -65,6 +76,9 @@ public partial class HomeViewModel : ViewModelBase
     public EmailSignInViewModel SignIn { get; }
 
     public ObservableCollection<ActivityRow> Activity { get; } = [];
+
+    /// <summary>Opt-in internet sharing: the suggestion card and its consent screen.</summary>
+    public InternetSharingViewModel InternetSharing { get; }
 
     // ---------- balance ----------
 
@@ -151,8 +165,9 @@ public partial class HomeViewModel : ViewModelBase
 
         // Projection
         var minimum = Math.Min(account.MinPayPalUsd, account.MinCryptoUsd);
-        var projection = Projection.Create(rate, electricity, _host.History.AverageEarningHoursPerDay(DateTimeOffset.Now),
+        var mining = Projection.Create(rate, electricity, _host.History.AverageEarningHoursPerDay(DateTimeOffset.Now),
             settings.OnlyWhenIdle, account.AvailableUsd + account.PendingUsd, minimum);
+        var projection = WithSharing(mining, SharingPerDay(), account.AvailableUsd + account.PendingUsd, minimum);
         _month.AnimateTo(projection.PerMonth);
         ProjectedMonthCaption = projection.PerMonth > 0 ? "projected per month" : "";
         var today = DateTimeOffset.Now.Date;
@@ -160,13 +175,16 @@ public partial class HomeViewModel : ViewModelBase
         WeekText = projection.PerWeek > 0 ? $"≈ {Format.Usd(projection.PerWeek)}" : "—";
         MonthText = projection.PerMonth > 0 ? $"≈ {Format.Usd(projection.PerMonth)}" : "—";
         var away = settings.OnlyWhenIdle ? " away" : "";
-        ProjectionBasis = rate > 0 && projection.PerDay <= 0
+        var miningLoses = rate > 0 && mining.PerDay <= 0;
+        ProjectionBasis = miningLoses && projection.PerDay <= 0
             ? "At your electricity price, mining currently costs more than it earns, so no profit is projected."
-            : projection.HoursAreMeasured
-            ? $"Based on your PC earning about {projection.HoursPerDay:0.#} hours a day, after electricity."
-            : _lastRate > 0
-                ? $"Assuming about {projection.HoursPerDay:0} hours a day{away}. Otium learns your real pattern within a day."
-                : $"Estimated from your hardware, about {projection.HoursPerDay:0} hours a day{away}. Real numbers appear once it runs.";
+            : miningLoses
+                ? "Mining doesn't pay at your electricity price, so this comes from internet sharing alone."
+                : projection.HoursAreMeasured
+                    ? $"Based on your PC earning about {projection.HoursPerDay:0.#} hours a day, after electricity."
+                    : _lastRate > 0
+                        ? $"Assuming about {projection.HoursPerDay:0} hours a day{away}. Otium learns your real pattern within a day."
+                        : $"Estimated from your hardware, about {projection.HoursPerDay:0} hours a day{away}. Real numbers appear once it runs.";
 
         var hours = _host.History.LastHours(DateTimeOffset.Now, 24);
         if (!hours.SequenceEqual(ChartValues))
@@ -198,6 +216,7 @@ public partial class HomeViewModel : ViewModelBase
 
         // Status and activity
         RefreshActivity(engines);
+        RefreshInternetRow();
         IsRunning = settings.EarningEnabled;
         ToggleText = settings.EarningEnabled ? "Pause" : "Start";
         var states = snapshots.Select(s => s.State).ToList();
@@ -205,11 +224,19 @@ public partial class HomeViewModel : ViewModelBase
         IsEarning = states.Contains(EngineState.Earning);
         IsWaiting = !IsEarning && settings.EarningEnabled && states.Contains(EngineState.WaitingForIdle);
         IsProblem = NeedsAntivirusFix || (!IsEarning && states.Contains(EngineState.Error));
+        var sharing = _host.Bandwidth.Snapshot.State == BandwidthState.Sharing;
         (StateLabel, StatusText) = Describe(settings, snapshots, earningNow.Sum(s => s.UserUsdPerDay));
-        var netNow = earningNow.Sum(s => s.NetUsdPerDay);
-        ActivityHeadline = !IsEarning ? StatusText
+        if (!IsEarning && sharing && !IsProblem && settings.EarningEnabled)
+        {
+            IsEarning = true;
+            IsWaiting = false;
+            (StateLabel, StatusText) = ("Earning", "Sharing your internet connection. Mining starts when you step away.");
+        }
+        var sharingNow = sharing ? _host.Bandwidth.Snapshot.UserUsdPerDay : 0;
+        var netNow = earningNow.Sum(s => s.NetUsdPerDay) + sharingNow;
+        ActivityHeadline = earningNow.Count == 0 && sharingNow <= 0 ? StatusText
             : netNow > 0 ? $"Earning {Format.Usd(netNow)} a day right now, after electricity"
-            : $"Earning {Format.Usd(earningNow.Sum(s => s.UserUsdPerDay))} a day, but electricity costs {Format.Usd(earningNow.Sum(s => s.ElectricityUsdPerDay))}. Otium pauses if that lasts.";
+            : $"Earning {Format.Usd(earningNow.Sum(s => s.UserUsdPerDay) + sharingNow)} a day, but electricity costs {Format.Usd(earningNow.Sum(s => s.ElectricityUsdPerDay))}. Otium pauses if that lasts.";
 
         // Account, invite, update
         NeedsEmail = IsBalanceMode && account.Email is null && account.WorkerId is not null;
@@ -249,6 +276,54 @@ public partial class HomeViewModel : ViewModelBase
                 _ => settings.EarningEnabled ? "Waiting…" : "Paused",
             };
         }
+    }
+
+    private void RefreshInternetRow()
+    {
+        var settings = _host.Settings;
+        var on = settings.BandwidthEnabled && settings.BandwidthConsentAt is not null && _host.BandwidthOffered;
+        if (on && !Activity.Contains(_internetRow))
+            Activity.Add(_internetRow);
+        else if (!on && Activity.Contains(_internetRow))
+            Activity.Remove(_internetRow);
+        if (!on)
+            return;
+
+        var b = _host.Bandwidth.Snapshot;
+        _internetRow.IsActive = b.State == BandwidthState.Sharing;
+        _internetRow.PerDay = b.State == BandwidthState.Sharing && b.UserUsdPerDay > 0 ? $"{Format.Usd(b.UserUsdPerDay)}/day" : "";
+        _internetRow.Speed = b.BytesToday > 0 ? $"{InternetSharingViewModel.FormatBytes(b.BytesToday)} today" : "";
+        _internetRow.What = b.State switch
+        {
+            BandwidthState.Sharing => "Sharing unused bandwidth",
+            BandwidthState.WaitingForIdle => "Waiting for you to step away",
+            BandwidthState.LimitReached => "Today's data limit reached",
+            BandwidthState.Starting => "Connecting…",
+            BandwidthState.Error or BandwidthState.Unavailable => b.StatusText,
+            _ => settings.EarningEnabled ? "Starting…" : "Paused",
+        };
+        if (b.Note is { } note && b.State == BandwidthState.Sharing)
+            _internetRow.What = note;
+    }
+
+    /// <summary>What internet sharing adds per day: measured while sharing, otherwise the typical estimate.</summary>
+    private double SharingPerDay()
+    {
+        if (!InternetSharing.IsOn)
+            return 0;
+        var b = _host.Bandwidth.Snapshot;
+        var hours = _host.Settings.BandwidthOnlyWhenIdle ? 8 : 16;
+        return b.State == BandwidthState.Sharing && b.UserUsdPerDay > 0 ? b.UserUsdPerDay * hours / 24 : InternetSharing.ExpectedUsdPerDay;
+    }
+
+    private static Projection WithSharing(Projection mining, double sharingPerDay, decimal towards, decimal minimum)
+    {
+        if (sharingPerDay <= 0)
+            return mining;
+        var perDay = mining.PerDay + sharingPerDay;
+        var missing = (double)(minimum - towards);
+        TimeSpan? eta = missing <= 0 ? TimeSpan.Zero : TimeSpan.FromDays(Math.Min(missing / perDay, 3650));
+        return mining with { PerDay = perDay, PerWeek = perDay * 7, PerMonth = perDay * 30, TimeToCashout = eta };
     }
 
     private string WaitingText(EngineSnapshot s)

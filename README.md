@@ -18,6 +18,8 @@
    sign in on your other PCs (they all earn into one balance), and is needed before the first cash-out.
 5. Press **Cash out** to get paid by PayPal or crypto (Monero).
 6. Share your invite code. Friends mine fee-free for 30 days, and you get 5% of everything they earn.
+7. Optionally, earn from your internet connection too: the overview suggests it once, explains in plain words what
+   sharing unused bandwidth means, and turns it on only when you agree. It pays into the same balance.
 
 The overview shows, at a glance: the balance and progress to the first cash-out (with an ETA), what each device is
 doing right now in plain words ("Mining Monero", "Waiting for you to step away · starts in 1:42"), what you can expect
@@ -27,6 +29,7 @@ this computer actually earns once there is a day of history.
 Everything technical lives under **Advanced**:
 - Details per device, including GPU algorithm and speed, power draw, and profit per day.
 - CPU usage, the idle delay, your electricity price, and switching devices on or off.
+- Internet sharing: on or off, only while away, and a daily data limit.
 - Getting paid by the pool straight to your own Monero wallet instead of an Otium balance.
 - Updates.
 
@@ -103,6 +106,9 @@ Configure `src/Otium.Server/appsettings.json` (or environment variables such as 
 | `Admin:Token` | Enables `/admin/*`; send it as `X-Admin-Token` |
 | `Email:SmtpHost`, `Port`, `Username`, `Password`, `From` | SMTP service for sign-in codes (Postmark, SES, Mailgun, ...) |
 | `Referral:PublicBaseUrl`, `DownloadUrl` | Invite links and the landing page |
+| `Bandwidth:Enabled`, `PartnerName` | Internet sharing (off by default); the partner's name appears on the consent screen |
+| `Bandwidth:UsdPerSharingHour`, `UsdPerGb` | Gross rates credited from usage reports, before the fee. Set them from the partner agreement (Honeygain pays per active device, so per hour). |
+| `Bandwidth:DailyLimitBytes`, `MaxBytesPerSecond`, `MaxReportPeriod`, `SharedConnectionWindow` | Limits on self-reported usage: daily cap, speed cap, longest report, one paid computer per connection |
 
 Run it locally:
 
@@ -114,13 +120,39 @@ Operator endpoints:
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /admin/summary` | Credited vs. pool-earned totals, money owed to users, pool address load |
+| `GET /admin/summary` | Credited vs. pool-earned totals, money owed to users, pool address load, bandwidth credited (GB and USD) to check against the partner's statements |
 | `GET /admin/cashouts?status=review` | The review queue |
 | `POST /admin/cashouts/{id}/approve` | Release a reviewed cash-out for automatic sending |
 | `POST /admin/cashouts/{id}/reject` | Reject it; the amount goes back to the balance (`{"note": "..."}`) |
 | `POST /admin/cashouts/{id}/mark-paid` | Record a payout you made by hand (`{"note": "PayPal txn ..."}`) |
 
 The app finds the server through `AppIdentity.DefaultServerUrl`, which is overridable with `OTIUM_SERVER_URL`.
+
+### Internet sharing (bandwidth)
+
+Users can also opt in to sharing unused internet bandwidth. It runs inside Otium through the
+[Honeygain SDK](https://developers.honeygain.com/docs/), with Otium as the publisher: Honeygain pays Otium per
+active device, and the server credits each user's balance from their computer's usage reports.
+
+- **Consent first.** Sharing is off until the user reads Otium's plain-language explanation and presses "I agree"
+  (on the overview or in Advanced). Consent is recorded, passed to the SDK (`hgsdk_opt_in`) and withdrawn when they
+  switch it off (`hgsdk_opt_out`). Users can share only while away and set a daily GB limit.
+- **Honest limits.** The server credits each report once, caps period length and speed, applies a daily limit, and pays
+  only one computer per public IP at a time, as partners require. If the server runs behind a reverse proxy, enable
+  forwarded headers so it sees client IPs.
+- **To ship it:**
+  1. Sign the Honeygain publisher agreement and get an API key.
+  2. Put the SDK libraries next to the app: `hgsdk.dll` (Windows), `libhgsdk.so` (Linux), `libhgsdk.dylib` (macOS).
+  3. Set the key in `AppIdentity.HoneygainApiKey` or `OTIUM_HONEYGAIN_KEY`.
+  4. On the server, set `Bandwidth:Enabled=true`, `PartnerName` and the rates.
+  
+  Without the library or key, the option stays hidden.
+- **Before launch, confirm with Honeygain:**
+  - that rewarding users in cash for opting in is allowed,
+  - whether they can supply per-device reports (the SDK's device id is available as `PartnerDeviceId`),
+  - how they treat a connection that also runs their own consumer app.
+- **AV and code signing.** Proxyware is a common antivirus "potentially unwanted" category. Keep the sharing state
+  visible in the app, and sign the Windows build with an EV certificate.
 
 ## Building the desktop app
 
@@ -188,6 +220,7 @@ src/Otium.Core               engine, provider interface, fees, power, GPU detect
                              wallet checksums, account contracts and client
 src/Otium.Providers.XMRig    CPU miner provider
 src/Otium.Providers.SrbMiner GPU miner provider with benchmarking and profit switching
+src/Otium.Providers.Honeygain internet sharing through the Honeygain SDK (loaded at runtime)
 src/Otium.App                desktop app (Welcome → Home ⇄ Advanced), Velopack updates
 src/Otium.Server             accounts and email sign-in, crediting, cash-outs, referrals, landing page, admin API
 src/Otium.DevPool            simulated MoneroOcean for dev mode

@@ -5,6 +5,7 @@ using Otium.Core.Accounts;
 using Otium.Core.Fees;
 using Otium.Core.Pools;
 using Otium.Core.Wallets;
+using Otium.Server.Bandwidth;
 using Otium.Server.Data;
 
 namespace Otium.Server.Accounts;
@@ -31,6 +32,7 @@ public sealed class AccountService(
     IOptions<ReferralOptions> referralOptions,
     IOptions<EarningsOptions> earningsOptions,
     IOptions<CashoutOptions> cashoutOptions,
+    BandwidthService bandwidth,
     TimeProvider time,
     ILogger<AccountService> logger)
 {
@@ -290,7 +292,8 @@ public sealed class AccountService(
                 _earnings.ReferralPercent,
                 cashouts),
             account.Email,
-            (int)store.DeviceCount(account.AccountId));
+            (int)store.DeviceCount(account.AccountId),
+            bandwidth.Terms(account));
     }
 
     public static CashoutInfo ToInfo(CashoutRecord c) => new(

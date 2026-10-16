@@ -50,6 +50,10 @@ public partial class SettingsViewModel : ViewModelBase
         host.Updates.Changed += () => Dispatcher.UIThread.Post(() => UpdateStatus = _host.Updates.Status);
     }
 
+    public InternetSharingViewModel InternetSharing => _internetSharing ??= new InternetSharingViewModel(_host);
+
+    private InternetSharingViewModel? _internetSharing;
+
     public EmailSignInViewModel SignIn => _signIn ??= new EmailSignInViewModel(_host, () => OnPropertyChanged(nameof(AccountText)));
 
     private EmailSignInViewModel? _signIn;

@@ -29,5 +29,6 @@
     <ProjectReference Include="..\Otium.Core\Otium.Core.csproj" />
     <ProjectReference Include="..\Otium.Providers.XMRig\Otium.Providers.XMRig.csproj" />
     <ProjectReference Include="..\Otium.Providers.SrbMiner\Otium.Providers.SrbMiner.csproj" />
+    <ProjectReference Include="..\Otium.Providers.Honeygain\Otium.Providers.Honeygain.csproj" />
   </ItemGroup>
 </Project>

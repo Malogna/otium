@@ -19,7 +19,49 @@ public sealed record AccountSummary(
     string? ReferralCodeError,
     BalanceInfo Balance,
     string? Email = null,
-    int DeviceCount = 1);
+    int DeviceCount = 1,
+    BandwidthInfo? Bandwidth = null);
+
+/// <summary>Terms for sharing unused internet bandwidth, as the server currently pays them.</summary>
+/// <param name="Available">False while the operator has no bandwidth partner set up; the app then hides the option.</param>
+/// <param name="UserUsdPerGb">What the user receives per GB shared, after Otium's fee.</param>
+/// <param name="UserUsdPerSharingHour">What the user receives per hour of being available to share, after the fee.</param>
+/// <param name="DailyLimitBytes">Most a computer is credited for per day (UTC).</param>
+/// <param name="PartnerName">The company whose customers' traffic is routed, shown on the consent screen.</param>
+public sealed record BandwidthInfo(
+    bool Available,
+    double UserUsdPerGb,
+    double UserUsdPerSharingHour,
+    long DailyLimitBytes,
+    string? PartnerName);
+
+/// <summary>
+/// Usage a computer reports for one sharing period (a few minutes). <paramref name="Sequence"/> increases by one per
+/// report, so a retried report is never credited twice.
+/// </summary>
+/// <param name="SharingSeconds">How long within the period the computer was online and available to share.</param>
+/// <param name="Provider">Id of the bandwidth provider that measured the bytes, e.g. "simulated".</param>
+public sealed record BandwidthReport(
+    long Sequence,
+    DateTimeOffset PeriodStart,
+    DateTimeOffset PeriodEnd,
+    long Bytes,
+    double SharingSeconds,
+    string Provider);
+
+public static class BandwidthReportStatuses
+{
+    public const string Credited = "credited";
+
+    /// <summary>Another computer on the same internet connection is already sharing; only one per connection earns.</summary>
+    public const string SharedConnection = "shared-connection";
+
+    /// <summary>The daily limit is reached; usage beyond it isn't paid.</summary>
+    public const string DailyLimit = "daily-limit";
+}
+
+/// <param name="Note">Plain-language explanation when less than everything was credited.</param>
+public sealed record BandwidthReportResult(string Status, long CreditedBytes, decimal CreditedUsd, string? Note);
 
 /// <summary>Asks the server to email a 6-digit sign-in code.</summary>
 public sealed record EmailCodeRequest(string Email);

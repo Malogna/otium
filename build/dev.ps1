@@ -82,6 +82,11 @@ try {
         DevMode__Enabled                      = 'true'
         DevMode__FakePayouts                  = 'true'
         Admin__Token                          = 'dev'
+        # Internet sharing with a simulated partner, paid at rates sped up like mining.
+        Bandwidth__Enabled                    = 'true'
+        Bandwidth__PartnerName                = 'A simulated partner'
+        Bandwidth__UsdPerGb                   = [string](0.10 * $Speedup)
+        Bandwidth__UsdPerSharingHour          = [string](0.0006 * $Speedup)
     }
     $processes += Start-Background 'server' 'Otium.Server' @()
     Wait-Healthy "$serverUrl/healthz" 'server'
@@ -103,7 +108,8 @@ try {
             OTIUM_SIMULATE     = '1'
             OTIUM_DEVICE_SEED  = "dev-pc$n"
         }
-        $apps += Start-Process $exe -PassThru
+        # Errors (e.g. a crash's stack trace) go to artifacts/dev/pcN.log.
+        $apps += Start-Process $exe -PassThru -RedirectStandardError (Join-Path $dev "pc$n.log") -RedirectStandardOutput (Join-Path $dev "pc$n.out.log")
     }
 
     Write-Host ''
