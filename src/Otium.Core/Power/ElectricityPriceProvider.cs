@@ -7,10 +7,17 @@ namespace Otium.Core.Power;
 /// <summary>One hour of day-ahead spot price (EUR/kWh; currency cancels out since only the shape is used).</summary>
 public sealed record SpotPricePoint(DateTimeOffset Start, double EurPerKwh);
 
-/// <summary>Wire shape of the open Nordic price APIs (hvakosterstrommen.no, elprisetjustnu.se).</summary>
+/// <summary>Wire shape of the open Nordic price APIs (hvakosterstrommen.no, elprisetjustnu.se, elprisenligenu.dk).</summary>
 internal sealed record SpotPriceEntry(
     [property: JsonPropertyName("EUR_per_kWh")] double EurPerKwh,
     [property: JsonPropertyName("time_start")] DateTimeOffset TimeStart);
+
+/// <summary>Wire shape of sahkotin.fi (Finland): hourly values in EUR/MWh, without VAT.</summary>
+internal sealed record SahkotinResponse([property: JsonPropertyName("prices")] List<SahkotinEntry>? Prices);
+
+internal sealed record SahkotinEntry(
+    [property: JsonPropertyName("date")] DateTimeOffset Date,
+    [property: JsonPropertyName("value")] double EurPerMwh);
 
 /// <summary>
 /// Turns a flat retail estimate into a live hourly price by applying today's day-ahead spot shape: the price for the
@@ -81,8 +88,7 @@ public sealed class ElectricityPriceProvider(HttpClient http, TimeProvider? time
         {
             if (_zone == zone && _day == today && HasLivePrices)
                 return;
-            var entries = await http.GetFromJsonAsync<List<SpotPriceEntry>>(zone.UrlFor(today), ct);
-            _points = (entries ?? []).Select(e => new SpotPricePoint(e.TimeStart, e.EurPerKwh)).OrderBy(p => p.Start).ToList();
+            _points = (await FetchAsync(zone, today, ct)).OrderBy(p => p.Start).ToList();
             _zone = zone;
             _day = today;
             _fetchedAt = _time.GetUtcNow();
@@ -91,12 +97,28 @@ public sealed class ElectricityPriceProvider(HttpClient http, TimeProvider? time
         {
             // Keep yesterday's shape if we have it; otherwise stay flat.
             if (_zone != zone)
+            {
+                _zone = null;
                 _points = [];
+            }
         }
         finally
         {
             _lock.Release();
         }
+    }
+
+    private async Task<IEnumerable<SpotPricePoint>> FetchAsync(SpotPriceZone zone, DateOnly day, CancellationToken ct)
+    {
+        var url = zone.UrlFor(day);
+        if (zone.Format == SpotPriceFormat.Sahkotin)
+        {
+            var response = await http.GetFromJsonAsync<SahkotinResponse>(url, ct);
+            return (response?.Prices ?? []).Select(e => new SpotPricePoint(e.Date, e.EurPerMwh / 1000));
+        }
+
+        var entries = await http.GetFromJsonAsync<List<SpotPriceEntry>>(url, ct);
+        return (entries ?? []).Select(e => new SpotPricePoint(e.TimeStart, e.EurPerKwh));
     }
 
     /// <summary>A short note for the UI, e.g. "28% below today's average".</summary>
