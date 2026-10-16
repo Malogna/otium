@@ -157,9 +157,11 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
     public async Task StartAsync(ProviderRunOptions options, CancellationToken ct)
     {
         _options = options;
+        // A restart (e.g. for a fee slice) resumes the coin being mined; after an interrupted test there's none to resume.
+        var resume = !_benchmarking;
         var eligible = await EligibleAsync(ct);
         if (eligible.Count == 0)
-            throw new InvalidOperationException("No coin your graphics card can mine pays more than its electricity right now.");
+            throw new ProviderProblemException("Graphics card isn't mining: no coin it can mine pays more than its electricity right now.");
 
         var pending = eligible.Where(a => !_store.Has(a.PoolName)).ToList();
         if (pending.Count > 0)
@@ -173,7 +175,7 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         }
 
         _benchmarking = false;
-        if (await LaunchFirstAsync(await MiningCandidatesAsync(ct), ct) is null)
+        if (await LaunchFirstAsync(await MiningCandidatesAsync(resume, ct), ct) is null)
             throw NotMining();
     }
 
@@ -248,7 +250,7 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
             _lastEvaluation = now;
             try
             {
-                var candidates = await MiningCandidatesAsync(ct);
+                var candidates = await MiningCandidatesAsync(keepCurrent: true, ct);
                 if (candidates.Count == 0)
                 {
                     // Everything usable was switched off (e.g. the server disabled this coin): stop instead of mining on.
@@ -368,13 +370,15 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         (await QuotesAsync(ct)).Select(q => q.Algorithm).ToList();
 
     /// <summary>
-    /// Measured algorithms that pay and aren't set aside: the switcher's pick first (it keeps the current one unless
-    /// another clearly pays more), then the rest best first, as fallbacks if the pick can't run.
+    /// Measured algorithms that pay and aren't set aside: the switcher's pick first, then the rest best first, as
+    /// fallbacks if the pick can't run. With <paramref name="keepCurrent"/>, the pick keeps the algorithm being mined
+    /// unless another clearly pays more; without it (right after testing, when "current" is merely the last one
+    /// tested) the best one wins outright.
     /// </summary>
-    private async Task<IReadOnlyList<GpuAlgorithm>> MiningCandidatesAsync(CancellationToken ct)
+    private async Task<IReadOnlyList<GpuAlgorithm>> MiningCandidatesAsync(bool keepCurrent, CancellationToken ct)
     {
         var scored = (await ScoreAsync(ct)).Where(s => SetAsideReason(s.Algorithm) is null).ToList();
-        var pick = _switcher.Choose(scored, _current?.PoolName, _time.GetUtcNow() - _currentSince);
+        var pick = _switcher.Choose(scored, keepCurrent ? _current?.PoolName : null, _time.GetUtcNow() - _currentSince);
         return scored
             .OrderByDescending(s => string.Equals(s.Algorithm, pick, StringComparison.OrdinalIgnoreCase))
             .Select(s => GpuAlgorithms.Find(s.Algorithm))
@@ -389,7 +393,7 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         await KillAsync();
         SetAsideFor(failed, reason, stalled: true);
 
-        var next = await LaunchFirstAsync(await MiningCandidatesAsync(ct), ct);
+        var next = await LaunchFirstAsync(await MiningCandidatesAsync(keepCurrent: false, ct), ct);
         if (next is null)
             return NotMiningStatus();
 
@@ -410,7 +414,7 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         }
 
         _benchmarking = false;
-        var choice = await LaunchFirstAsync(await MiningCandidatesAsync(ct), ct);
+        var choice = await LaunchFirstAsync(await MiningCandidatesAsync(keepCurrent: false, ct), ct);
         if (choice is null)
             return NotMiningStatus();
         return new ProviderStatus(ProviderState.Starting, 0, $"Testing done. Mining {choice.PoolName}, the best option for your card…", choice.PoolName, Problem: _notice);

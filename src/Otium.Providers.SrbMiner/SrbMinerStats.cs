@@ -53,14 +53,23 @@ internal static partial class SrbMinerStats
         return null;
     }
 
-    /// <summary>Last hashrate printed on a console line, normalised to H/s.</summary>
-    public static double? ParseConsoleHashrate(IEnumerable<string> lines)
+    /// <summary>
+    /// Last hashrate printed on a console line, normalised to H/s. With <paramref name="notBefore"/>, a line whose
+    /// "[yyyy-MM-dd HH:mm:ss]" timestamp (local time) is older counts as stale and gives null: a frozen miner stops
+    /// both its API and its console, and its last "Total" line mustn't keep it looking busy.
+    /// </summary>
+    public static double? ParseConsoleHashrate(IEnumerable<string> lines, DateTime? notBefore = null)
     {
         foreach (var line in lines.Reverse())
         {
             var match = HashrateRegex().Match(line);
-            if (match.Success && double.TryParse(match.Groups["value"].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var value))
-                return value * Multiplier(match.Groups["unit"].Value);
+            if (!match.Success || !double.TryParse(match.Groups["value"].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var value))
+                continue;
+            if (notBefore is { } cutoff && TimestampRegex().Match(line.TrimStart()) is { Success: true } stamp
+                && DateTime.TryParseExact(stamp.Value.Trim().Trim('[', ']'), "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture, DateTimeStyles.None, out var at)
+                && at < cutoff)
+                return null;
+            return value * Multiplier(match.Groups["unit"].Value);
         }
         return null;
     }

@@ -109,7 +109,8 @@ internal sealed class SrbMinerProcess : IMinerProcess
         catch (Exception e) when (e is HttpRequestException or OperationCanceledException or System.Text.Json.JsonException && !ct.IsCancellationRequested)
         {
         }
-        return SrbMinerStats.ParseConsoleHashrate(RecentLog.TakeLast(40));
+        // SRBMiner prints a "Total" line every 30 s; an older one means the miner has stopped (e.g. frozen).
+        return SrbMinerStats.ParseConsoleHashrate(RecentLog.TakeLast(40), DateTime.Now - TimeSpan.FromSeconds(90));
     }
 
     private void Append(string? line)
