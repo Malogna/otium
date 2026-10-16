@@ -260,6 +260,25 @@ public sealed class KryptexOptions
         ["pearlhash"] = new() { Coin = "prl", WhatToMineId = 469, Host = "prl.kryptex.network", Port = 7048 },
         ["quantus"] = new() { Coin = "qtc", WhatToMineId = 473, Host = "qtc.kryptex.network", Port = 7049 },
     };
+
+    /// <summary>
+    /// Kryptex's Monero (RandomX) pool, for balance accounts' CPUs routed there by <see cref="CpuMiningOptions"/>.
+    /// Port 8029 is its TLS port (7029 plain); regional hosts are xmr-eu and xmr-us.
+    /// </summary>
+    public KryptexCoin Cpu { get; set; } = new() { Coin = "xmr", Host = "xmr.kryptex.network", Port = 8029, Tls = true };
+}
+
+/// <summary>Where balance accounts' CPUs mine. Own-wallet accounts always mine to their own address on MoneroOcean.</summary>
+public sealed class CpuMiningOptions
+{
+    public const string Section = "CpuMining";
+
+    /// <summary>
+    /// Share of balance accounts (0–100) whose CPU mines Monero on Kryptex instead of MoneroOcean, chosen by a stable
+    /// hash of the worker id. 0 keeps everyone on MoneroOcean; raise it gradually (canary), 100 moves everyone.
+    /// Needs Kryptex:Enabled and Kryptex:Account.
+    /// </summary>
+    public int KryptexPercent { get; set; }
 }
 
 public sealed class KryptexCoin
@@ -272,4 +291,7 @@ public sealed class KryptexCoin
     public string Host { get; set; } = "";
 
     public int Port { get; set; }
+
+    /// <summary>Whether <see cref="Port"/> is a TLS port.</summary>
+    public bool Tls { get; set; }
 }

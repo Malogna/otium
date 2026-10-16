@@ -187,10 +187,12 @@ public sealed class EarningsEngine : IAsyncDisposable
         if (_running is null && !await PassesProfitGateAsync(config, now, ct))
             return;
 
+        // A new pool route from the server changes the options, which restarts the miner on the new pool.
         var desired = new ProviderRunOptions(
             config.FeeSchedule.TargetAt(_ledger.MiningTime, now),
             config.WorkerName,
-            config.UsagePercent);
+            config.UsagePercent,
+            config.CpuPool);
 
         if (_running is null || _running != desired)
         {

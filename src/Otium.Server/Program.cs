@@ -26,6 +26,7 @@ builder.Services.Configure<AdminOptions>(builder.Configuration.GetSection(AdminO
 builder.Services.Configure<BandwidthOptions>(builder.Configuration.GetSection(BandwidthOptions.Section));
 builder.Services.Configure<GpuPolicyOptions>(builder.Configuration.GetSection(GpuPolicyOptions.Section));
 builder.Services.Configure<KryptexOptions>(builder.Configuration.GetSection(KryptexOptions.Section));
+builder.Services.Configure<CpuMiningOptions>(builder.Configuration.GetSection(CpuMiningOptions.Section));
 
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton(_ => new OtiumStore(builder.Configuration.GetConnectionString("Otium") ?? "Data Source=otium.db"));
@@ -47,6 +48,7 @@ builder.Services.AddHttpClient<IProfitFeed, WhatToMineClient>();
 builder.Services.AddHttpClient<IKryptexApi, KryptexClient>();
 builder.Services.AddSingleton<GpuPolicyService>();
 builder.Services.AddSingleton<KryptexCreditor>();
+builder.Services.AddSingleton<CpuPoolRouter>();
 if (builder.Configuration.GetValue<bool>("DevMode:FakePayouts"))
 {
     // Development: cash-outs "arrive" after a few seconds without touching a wallet, THORChain or PayPal.

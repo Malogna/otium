@@ -34,6 +34,7 @@ public sealed class AccountService(
     IOptions<EarningsOptions> earningsOptions,
     IOptions<CashoutOptions> cashoutOptions,
     CashoutMethodCatalog cashoutMethods,
+    Gpu.CpuPoolRouter cpuRouter,
     BandwidthService bandwidth,
     TimeProvider time,
     ILogger<AccountService> logger)
@@ -338,7 +339,8 @@ public sealed class AccountService(
                 methods),
             account.Email,
             (int)store.DeviceCount(account.AccountId),
-            bandwidth.Terms(account));
+            bandwidth.Terms(account),
+            cpuRouter.For(account));
     }
 
     public static CashoutInfo ToInfo(CashoutRecord c) => new(

@@ -20,7 +20,21 @@ public sealed record AccountSummary(
     BalanceInfo Balance,
     string? Email = null,
     int DeviceCount = 1,
-    BandwidthInfo? Bandwidth = null);
+    BandwidthInfo? Bandwidth = null,
+    CpuPoolRoute? CpuPool = null);
+
+/// <summary>
+/// Where a balance account's CPU mines, decided by the server so the pool can change (or fail over) without an app
+/// release. Null for own-wallet accounts, which mine to their own address on MoneroOcean.
+/// </summary>
+/// <param name="Kind">"moneroocean" or "kryptex", for display and diagnostics.</param>
+/// <param name="User">The stratum login: the pool wallet (MoneroOcean) or "account.worker" (Kryptex).</param>
+/// <param name="Password">The stratum password: the worker id (MoneroOcean) or "x" (Kryptex).</param>
+public sealed record CpuPoolRoute(string Kind, string Host, int Port, bool Tls, string User, string Password)
+{
+    public const string MoneroOcean = "moneroocean";
+    public const string Kryptex = "kryptex";
+}
 
 /// <summary>Terms for sharing unused internet bandwidth, as the server currently pays them.</summary>
 /// <param name="Available">False while the operator has no bandwidth partner set up; the app then hides the option.</param>
