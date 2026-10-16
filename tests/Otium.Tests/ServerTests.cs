@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
+using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -48,11 +49,14 @@ public sealed class ServerTests : IDisposable
     {
         public Dictionary<string, double> Hashes { get; } = [];
 
+        /// <summary>Simulates the pool API being unreachable.</summary>
+        public bool Down { get; set; }
+
         public Task<MoneroNetworkStats> GetNetworkStatsAsync(CancellationToken ct) =>
-            Task.FromResult(new MoneroNetworkStats(1, 1, 1, DateTimeOffset.UtcNow));
+            Down ? throw new HttpRequestException("pool down") : Task.FromResult(new MoneroNetworkStats(1, 1, 1, DateTimeOffset.UtcNow));
 
         public Task<PoolMinerStats?> GetMinerStatsAsync(string walletAddress, CancellationToken ct) =>
-            Task.FromResult<PoolMinerStats?>(new PoolMinerStats(Hashes.GetValueOrDefault(walletAddress), 0, 0, 0));
+            Down ? throw new HttpRequestException("pool down") : Task.FromResult<PoolMinerStats?>(new PoolMinerStats(Hashes.GetValueOrDefault(walletAddress), 0, 0, 0));
 
         public Task<AlgoProfits> GetAlgoProfitsAsync(CancellationToken ct) =>
             Task.FromResult(new AlgoProfits(new Dictionary<string, double>(), 1, DateTimeOffset.UtcNow));
@@ -450,6 +454,113 @@ public sealed class ServerTests : IDisposable
     {
         var response = await _http.GetAsync("/admin/summary");
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    // ---------- operator dashboard ----------
+
+    private async Task<HttpResponseMessage> Admin(HttpMethod method, string path, object? body = null)
+    {
+        using var request = new HttpRequestMessage(method, path) { Content = body is null ? null : JsonContent.Create(body) };
+        request.Headers.Add("X-Admin-Token", AdminToken);
+        return await _http.SendAsync(request);
+    }
+
+    /// <summary>A signed-in account with a cash-out waiting for review (new accounts always wait).</summary>
+    private async Task<(Device Device, CashoutInfo Cashout)> CashoutInReview(string email, long micros = 20_000_000)
+    {
+        var device = NewDevice();
+        await RegisterBalance(device);
+        var account = await SignIn(device, email);
+        Store.AddLedger(Store.FindAccountByCode(account.Code)!.AccountId, LedgerKinds.Earning, micros, _time.GetUtcNow(), _time.GetUtcNow(), "test");
+        var cashout = await new AccountClient(_http).RequestCashoutAsync(device.Id, device.Secret,
+            new CashoutRequest(CashoutMethods.PayPal, email), CancellationToken.None);
+        return (device, cashout);
+    }
+
+    [Fact]
+    public async Task The_dashboard_page_holds_no_data_and_locks_itself_down()
+    {
+        var page = await _http.GetAsync("/admin");
+
+        Assert.Equal(HttpStatusCode.OK, page.StatusCode);
+        Assert.Equal("text/html", page.Content.Headers.ContentType!.MediaType);
+        var csp = page.Headers.GetValues("Content-Security-Policy").Single();
+        Assert.Contains("script-src 'self'", csp);
+        Assert.Contains("frame-ancestors 'none'", csp);
+        Assert.DoesNotContain("unsafe-inline", csp);
+        Assert.Equal("no-store", page.Headers.CacheControl!.ToString());
+        var html = await page.Content.ReadAsStringAsync();
+        Assert.Contains("Otium operator", html);
+        Assert.DoesNotContain("<script>", html); // only the external script, which the policy allows
+        Assert.DoesNotContain(AdminToken, html);
+
+        Assert.Equal(HttpStatusCode.OK, (await _http.GetAsync("/admin/dashboard.js")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await _http.GetAsync("/admin/dashboard.css")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await _http.GetAsync("/admin/cashouts")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Without_an_admin_token_there_is_no_dashboard()
+    {
+        using var factory = _factory.WithWebHostBuilder(b => b.UseSetting("Admin:Token", ""));
+        using var http = factory.CreateClient();
+
+        Assert.Equal(HttpStatusCode.NotFound, (await http.GetAsync("/admin")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await http.GetAsync("/admin/dashboard.js")).StatusCode);
+    }
+
+    [Fact]
+    public async Task The_review_queue_shows_what_a_reviewer_needs_and_approving_queues_it()
+    {
+        var (_, cashout) = await CashoutInReview("rev@example.com");
+
+        var queue = await (await Admin(HttpMethod.Get, "/admin/cashouts?status=review")).Content.ReadFromJsonAsync<JsonElement>();
+        var entry = queue.EnumerateArray().Single(e => e.GetProperty("id").GetString() == cashout.Id);
+        Assert.Equal("rev@example.com", entry.GetProperty("destination").GetString()); // full destination for the operator
+        Assert.Equal("rev@example.com", entry.GetProperty("accountEmail").GetString());
+        Assert.Equal(20m, entry.GetProperty("amountUsd").GetDecimal());
+        Assert.Equal(20_000_000, entry.GetProperty("micros").GetInt64());
+        Assert.Equal(20m, entry.GetProperty("lifetimeEarnedUsd").GetDecimal());
+        Assert.Equal(0, entry.GetProperty("otherAccountsUsingDestination").GetInt64());
+        Assert.False(string.IsNullOrEmpty(entry.GetProperty("note").GetString()));
+
+        Assert.Equal(HttpStatusCode.OK, (await Admin(HttpMethod.Post, $"/admin/cashouts/{cashout.Id}/approve")).StatusCode);
+        Assert.Equal(CashoutStatuses.Queued, Store.FindCashout(cashout.Id)!.Status);
+        // Approving twice does nothing: it's no longer in review.
+        Assert.Equal(HttpStatusCode.NotFound, (await Admin(HttpMethod.Post, $"/admin/cashouts/{cashout.Id}/approve")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Rejecting_returns_the_money_and_tells_the_user_why()
+    {
+        var (device, cashout) = await CashoutInReview("rej@example.com");
+
+        var response = await Admin(HttpMethod.Post, $"/admin/cashouts/{cashout.Id}/reject", new { note = "please use your own PayPal" });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var balance = (await Summary(device)).Balance;
+        Assert.Equal(20m, balance.AvailableUsd);
+        var rejected = Assert.Single(balance.RecentCashouts);
+        Assert.Equal(CashoutStatuses.Failed, rejected.Status);
+        Assert.Equal("please use your own PayPal", rejected.Note);
+    }
+
+    [Fact]
+    public async Task The_summary_still_shows_the_ledger_when_the_pool_is_down()
+    {
+        await CashoutInReview("sum@example.com", micros: 7_500_000);
+        _pool.Down = true;
+
+        var response = await Admin(HttpMethod.Get, "/admin/summary");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var summary = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(7.5m, summary.GetProperty("creditedToUsersUsd").GetDecimal());
+        Assert.Equal(7.5m, summary.GetProperty("moneroOceanCreditedToUsersUsd").GetDecimal());
+        Assert.Equal(1, summary.GetProperty("reviewQueue").GetInt32());
+        Assert.Equal(0m, summary.GetProperty("owedToUsersUsd").GetDecimal());
+        Assert.Equal(7.5m, summary.GetProperty("inOpenCashoutsUsd").GetDecimal());
+        Assert.False(string.IsNullOrEmpty(summary.GetProperty("poolError").GetString()));
     }
 
     [Fact]

@@ -542,6 +542,10 @@ public sealed class OtiumStore
         QueryCashouts($"SELECT * FROM cashouts WHERE status IN ({string.Join(",", statuses.Select((_, i) => $"$s{i}"))}) ORDER BY created_at",
             statuses.Select((s, i) => ($"$s{i}", (object?)s)).ToArray());
 
+    /// <summary>Cash-outs debited from balances but not paid yet.</summary>
+    public long OpenCashoutMicros() =>
+        Scalar<long>("SELECT COALESCE(SUM(micros), 0) FROM cashouts WHERE status IN ('queued','review','sending')");
+
     /// <summary>Everything ever paid out to an account.</summary>
     public long PaidOutMicros(string accountId) =>
         Scalar<long>("SELECT COALESCE(SUM(micros), 0) FROM cashouts WHERE account_id = $d AND status = 'paid'", ("$d", accountId));
