@@ -16,12 +16,14 @@ namespace Otium.App.ViewModels;
 public partial class SettingsViewModel : ViewModelBase
 {
     private readonly AppHost _host;
+    private readonly Action _accountDeleted;
     private readonly DispatcherTimer _saveDebounce;
     private bool _loading = true;
 
-    public SettingsViewModel(AppHost host)
+    public SettingsViewModel(AppHost host, Action? accountDeleted = null)
     {
         _host = host;
+        _accountDeleted = accountDeleted ?? (() => { });
         // Saving restarts the engine when CPU usage changes, so wait for the user to stop dragging.
         _saveDebounce = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _saveDebounce.Tick += (_, _) =>
@@ -62,6 +64,10 @@ public partial class SettingsViewModel : ViewModelBase
     public EmailSignInViewModel SignIn => _signIn ??= new EmailSignInViewModel(_host, () => OnPropertyChanged(nameof(AccountText)));
 
     private EmailSignInViewModel? _signIn;
+
+    public YourDataViewModel YourData => _yourData ??= new YourDataViewModel(_host, _accountDeleted);
+
+    private YourDataViewModel? _yourData;
 
     public string AccountText => _host.Settings.Account.Email is { } email
         ? $"Signed in as {email}" + (_host.Settings.Account.DeviceCount > 1 ? $" · {_host.Settings.Account.DeviceCount} computers share this balance" : "")

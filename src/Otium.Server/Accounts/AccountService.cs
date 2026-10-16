@@ -88,7 +88,8 @@ public sealed class AccountService(
             account = account with { PoolWallet = await allocator.AssignAsync(ct) };
 
         string? codeError = null;
-        if (!string.IsNullOrWhiteSpace(request.ReferralCode) && account.ReferredByCode is null)
+        // ReferredAt stays set when the referrer deleted their account, so the invite can't be swapped for another one.
+        if (!string.IsNullOrWhiteSpace(request.ReferralCode) && account.ReferredByCode is null && account.ReferredAt is null)
         {
             codeError = TryBind(ref account, ReferralCodes.Normalize(request.ReferralCode), now);
             if (codeError is not null)
@@ -164,6 +165,10 @@ public sealed class AccountService(
             throw new OtiumException(400, "That doesn't look like an email address.");
 
         var address = EmailAddresses.Normalize(request.Email);
+        var deleting = request.Purpose == EmailCodePurposes.DeleteAccount;
+        if (deleting && session.Account.Email != address)
+            throw new OtiumException(400, "Use the email address this account is signed in with.");
+
         var now = time.GetUtcNow();
         if (store.EmailCodesSince(address, now - TimeSpan.FromHours(1)) >= MaxCodesPerEmailPerHour
             || store.DeviceEmailCodesSince(session.Device.DeviceId, now - TimeSpan.FromHours(1)) >= MaxCodesPerDevicePerHour)
@@ -172,6 +177,17 @@ public sealed class AccountService(
         var code = RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6", System.Globalization.CultureInfo.InvariantCulture);
         var salt = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(16));
         store.AddEmailCode(address, session.Device.DeviceId, HashCode(code, salt), salt, now + CodeLifetime, now);
+
+        if (deleting)
+        {
+            await email.SendAsync(
+                request.Email.Trim(),
+                $"Your code to delete your Otium account: {code}",
+                $"Your code to permanently delete your Otium account is:\n\n    {code}\n\nIt expires in {CodeLifetime.TotalMinutes:0} minutes. " +
+                "If you didn't ask for it, don't share it with anyone; your account stays as it is.",
+                ct);
+            return;
+        }
 
         var existing = store.FindAccountByEmail(address);
         var purpose = existing is null || existing.AccountId == session.Account.AccountId
@@ -189,19 +205,7 @@ public sealed class AccountService(
         var session = Authenticate(deviceId, secret);
         var address = EmailAddresses.Normalize(request.Email);
         var now = time.GetUtcNow();
-
-        var stored = store.LatestEmailCode(address, session.Device.DeviceId, now)
-                     ?? throw new OtiumException(400, "That code has expired. Request a new one.");
-        if (stored.Attempts >= MaxCodeAttempts)
-            throw new OtiumException(400, "Too many wrong tries. Request a new code.");
-
-        var presented = Encoding.ASCII.GetBytes(HashCode((request.Code ?? "").Trim(), stored.Salt));
-        if (!CryptographicOperations.FixedTimeEquals(presented, Encoding.ASCII.GetBytes(stored.CodeHash)))
-        {
-            store.CountEmailCodeAttempt(stored.Id);
-            throw new OtiumException(400, "That code isn't right. Check the email and try again.");
-        }
-        store.UseEmailCode(stored.Id);
+        ConsumeEmailCode(address, session.Device.DeviceId, request.Code);
 
         var current = session.Account;
         var owner = store.FindAccountByEmail(address);
@@ -230,6 +234,26 @@ public sealed class AccountService(
         }
 
         return Summarize(store.FindAccount(owner.AccountId)!, publicBaseUrl, null);
+    }
+
+    /// <summary>
+    /// Checks the newest code emailed to <paramref name="address"/> at this computer's request and marks it used, so
+    /// each code works once. Throws with a user-facing reason when it's missing, expired, locked or wrong.
+    /// </summary>
+    public void ConsumeEmailCode(string address, string deviceId, string? code)
+    {
+        var stored = store.LatestEmailCode(address, deviceId, time.GetUtcNow())
+                     ?? throw new OtiumException(400, "That code has expired. Request a new one.");
+        if (stored.Attempts >= MaxCodeAttempts)
+            throw new OtiumException(400, "Too many wrong tries. Request a new code.");
+
+        var presented = Encoding.ASCII.GetBytes(HashCode((code ?? "").Trim(), stored.Salt));
+        if (!CryptographicOperations.FixedTimeEquals(presented, Encoding.ASCII.GetBytes(stored.CodeHash)))
+        {
+            store.CountEmailCodeAttempt(stored.Id);
+            throw new OtiumException(400, "That code isn't right. Check the email and try again.");
+        }
+        store.UseEmailCode(stored.Id);
     }
 
     // ---------- referrals ----------

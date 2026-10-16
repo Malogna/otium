@@ -49,6 +49,44 @@ public sealed class StoreMigrationTests : IDisposable
         Assert.Equal(2_000_000, again.Balance(account.AccountId, DateTimeOffset.UtcNow).AvailableMicros);
     }
 
+    [Fact]
+    public void Version_three_databases_gain_the_deletion_time()
+    {
+        // Version 3 accounts had no deleted_at column; the rest of the schema is created on demand.
+        using (var connection = new SqliteConnection($"Data Source={_dbPath};Pooling=False"))
+        {
+            connection.Open();
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = """
+                CREATE TABLE accounts (account_id TEXT PRIMARY KEY, worker_id TEXT NOT NULL UNIQUE, pool_wallet TEXT NULL,
+                    own_wallet TEXT NULL, code TEXT NOT NULL UNIQUE, email TEXT NULL UNIQUE, referred_by TEXT NULL, referred_at TEXT NULL,
+                    fee_free_until TEXT NULL, verified INTEGER NOT NULL DEFAULT 0, last_checked_at TEXT NULL, merged_into TEXT NULL,
+                    created_at TEXT NOT NULL);
+                INSERT INTO accounts (account_id, worker_id, pool_wallet, code, email, created_at)
+                    VALUES ('acc1', 'otabc', 'pool', 'ABCDEFG', 'a@b.co', '2026-10-01T00:00:00.0000000Z');
+                PRAGMA user_version = 3;
+                """;
+            cmd.ExecuteNonQuery();
+        }
+
+        var store = new OtiumStore($"Data Source={_dbPath};Pooling=False");
+
+        var account = store.FindAccount("acc1");
+        Assert.NotNull(account);
+        Assert.Equal("a@b.co", account.Email);
+        Assert.Null(account.DeletedAt);
+
+        var now = new DateTimeOffset(2026, 10, 16, 12, 0, 0, TimeSpan.Zero);
+        Assert.True(store.AnonymizeAccount("acc1", (_, d) => d, now));
+        var deleted = store.FindAccount("acc1")!;
+        Assert.Equal(now, deleted.DeletedAt);
+        Assert.Null(deleted.Email);
+        Assert.Null(store.FindAccountByWorker("otabc"));
+
+        // Opening again is a no-op.
+        Assert.Equal(now, new OtiumStore($"Data Source={_dbPath};Pooling=False").FindAccount("acc1")!.DeletedAt);
+    }
+
     public void Dispose()
     {
         SqliteConnection.ClearAllPools();

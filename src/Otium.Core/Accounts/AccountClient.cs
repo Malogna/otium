@@ -16,6 +16,10 @@ public interface IAccountClient
 
     Task<BandwidthReportResult> ReportBandwidthAsync(string deviceId, string deviceSecret, BandwidthReport report, CancellationToken ct);
 
+    Task<byte[]> ExportAccountDataAsync(string deviceId, string deviceSecret, CancellationToken ct);
+
+    Task<DeleteAccountResult> DeleteAccountAsync(string deviceId, string deviceSecret, DeleteAccountRequest request, CancellationToken ct);
+
     Task<Switching.GpuPolicy> GetGpuPolicyAsync(CancellationToken ct);
 
     Task<InviteLeaderboard> GetInviteLeaderboardAsync(string deviceId, string deviceSecret, CancellationToken ct);
@@ -88,6 +92,23 @@ public sealed class AccountClient(HttpClient http) : IAccountClient
     {
         using var response = await PostAsync(deviceId, deviceSecret, "bandwidth", report, ct);
         return await ReadAsync<BandwidthReportResult>(response, ct);
+    }
+
+    /// <summary>A copy of everything the server stores about the account, as a JSON document to save as-is.</summary>
+    public async Task<byte[]> ExportAccountDataAsync(string deviceId, string deviceSecret, CancellationToken ct)
+    {
+        using var message = new HttpRequestMessage(HttpMethod.Get, $"api/v1/devices/{Uri.EscapeDataString(deviceId)}/account/export");
+        message.Headers.Add(SecretHeader, deviceSecret);
+        using var response = await http.SendAsync(message, ct);
+        if (!response.IsSuccessStatusCode)
+            throw new AccountRequestException(await ReadProblemDetailAsync(response, ct), (int)response.StatusCode);
+        return await response.Content.ReadAsByteArrayAsync(ct);
+    }
+
+    public async Task<DeleteAccountResult> DeleteAccountAsync(string deviceId, string deviceSecret, DeleteAccountRequest request, CancellationToken ct)
+    {
+        using var response = await PostAsync(deviceId, deviceSecret, "account/delete", request, ct);
+        return await ReadAsync<DeleteAccountResult>(response, ct);
     }
 
     private async Task<HttpResponseMessage> PostAsync(string deviceId, string deviceSecret, string path, object body, CancellationToken ct)
