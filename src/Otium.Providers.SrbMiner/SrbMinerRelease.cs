@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using Otium.Core.Gpu;
+using Otium.Core.Switching;
 
 namespace Otium.Providers.SrbMiner;
 
@@ -40,28 +41,42 @@ public static class SrbMinerRelease
     public static string BinaryName => OperatingSystem.IsWindows() ? "SRBMiner-MULTI.exe" : "SRBMiner-MULTI";
 }
 
-/// <param name="PoolName">MoneroOcean's algorithm name (used in the "worker~algo" password pin and its stats).</param>
+/// <param name="PoolName">The algorithm's name in the GPU policy and on MoneroOcean (its "worker~algo" password pin and stats).</param>
 /// <param name="MinerName">SRBMiner's --algorithm value.</param>
 /// <param name="DevFeePercent">SRBMiner's developer fee for this algorithm.</param>
 /// <param name="MinMemoryGb">Approximate VRAM needed (DAG sizes grow over time); cards below it are skipped.</param>
-public sealed record GpuAlgorithm(string PoolName, string MinerName, double DevFeePercent, double MinMemoryGb, IReadOnlySet<GpuVendor> Vendors)
+/// <param name="DefaultTier">Tier used when the server's policy can't be fetched (see <see cref="GpuTiers"/>).</param>
+/// <param name="DefaultRoute">Pool kind used without a policy; Kryptex coins need the policy's route, so they wait for it.</param>
+public sealed record GpuAlgorithm(
+    string PoolName,
+    string MinerName,
+    double DevFeePercent,
+    double MinMemoryGb,
+    IReadOnlySet<GpuVendor> Vendors,
+    string DefaultTier = GpuTiers.FreePowerOnly,
+    string DefaultRoute = GpuRoutes.MoneroOcean)
 {
     public bool Supports(IReadOnlyList<GpuInfo> gpus) =>
         gpus.Count > 0 && gpus.All(g => Vendors.Contains(g.Vendor) && (g.MemoryGb <= 0 || g.MemoryGb + 0.25 >= MinMemoryGb));
 }
 
-/// <summary>GPU algorithms MoneroOcean pays for (converted to XMR) that SRBMiner can mine.</summary>
+/// <summary>
+/// GPU algorithms SRBMiner can mine. The server's GPU policy decides which are mined and where; as of October 2026
+/// the MoneroOcean algorithms lose money at normal electricity prices, so they only run on free power, while Pearl
+/// and Quantus are mined on Kryptex Pool (auto-exchanged) for balance accounts.
+/// </summary>
 public static class GpuAlgorithms
 {
     private static readonly IReadOnlySet<GpuVendor> NvidiaAmd = new HashSet<GpuVendor> { GpuVendor.Nvidia, GpuVendor.Amd };
 
     public static readonly IReadOnlyList<GpuAlgorithm> All =
     [
+        new("pearlhash", "pearlhash", 2.0, 8, NvidiaAmd, GpuTiers.Primary, GpuRoutes.Kryptex),
+        new("quantus", "quantus", 2.0, 2, NvidiaAmd, GpuTiers.Primary, GpuRoutes.Kryptex),
         new("kawpow", "kawpow", 0.85, 6, NvidiaAmd),
         new("autolykos2", "autolykos2", 1.0, 4, NvidiaAmd),
         new("etchash", "etchash", 0.65, 4, NvidiaAmd),
         new("cn/gpu", "cryptonight_gpu", 0.85, 2, NvidiaAmd),
-        new("pearlhash", "pearlhash", 2.0, 8, NvidiaAmd),
     ];
 
     public static GpuAlgorithm? Find(string poolName) =>

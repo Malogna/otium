@@ -59,6 +59,51 @@ public static class DevPoolHost
         app.MapGet("/miner/{wallet}/chart/hashrate/allWorkers", (string wallet, SimulatedPool pool) =>
             Results.Ok(pool.WorkerCharts(wallet).ToDictionary(w => w.Key, w => w.Value.Select(p => new { ts = p.Ts, hs = p.Hs, hs2 = p.Hs2 }))));
 
+        // ---------- Kryptex Pool (Pearl, Quantus) and WhatToMine, for the GPU policy ----------
+
+        // Simulated miners report Kryptex work with the wallet "kryptex:{coin}:{account}" and no XMR value.
+        app.MapGet("/kryptex/{coin}/api/v1/pool/info", (string coin) => Results.Ok(new { fee = 0.03, fee_type = "PPS+", ticker = coin }));
+
+        app.MapGet("/kryptex/{coin}/api/v3/miner/workers/{account}", (string coin, string account, SimulatedPool pool) =>
+        {
+            var workers = pool.WorkerCharts(KryptexWallet(coin, account))
+                .Select(w => new { worker = w.Key, hashrate = w.Value.LastOrDefault()?.Hs ?? 0, scheme = "pps" })
+                .ToList();
+            return Results.Ok(new { count = workers.Count, results = workers });
+        });
+
+        app.MapGet("/kryptex/{coin}/api/v1/miner/chart/{account}/{worker}", (string coin, string account, string worker, SimulatedPool pool) =>
+            Results.Ok(pool.WorkerCharts(KryptexWallet(coin, account)).GetValueOrDefault(worker, [])
+                .Select(p => new { timestamp = p.Ts / 1000, hashrate = p.Hs, shares = 0 })));
+
+        // WhatToMine coin JSON shaped so that revenue per H/s per day comes out at roughly October 2026's real rate,
+        // sped up like everything else: revenue = block_reward × 86400 / block_time / nethash × price.
+        app.MapGet("/wtm/coins/{file}", (string file, SimulatedPool pool) =>
+        {
+            var id = file.Replace(".json", "", StringComparison.Ordinal);
+            var usdPerHashDay = id switch
+            {
+                "469" => 3.4e-14, // Pearl: an RTX 4090 at ~310 TH/s grosses about $10.5 a day
+                "473" => 1.6e-9,  // Quantus
+                _ => 0,
+            } * pool.Speedup;
+            if (usdPerHashDay <= 0)
+                return Results.NotFound();
+            const double nethash = 1e15, blockTime = 100, btcUsd = 100_000, priceBtc = 1e-5; // a coin worth $1
+            return Results.Ok(new
+            {
+                id = int.Parse(id, System.Globalization.CultureInfo.InvariantCulture),
+                block_time = blockTime.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                block_reward24 = usdPerHashDay * nethash * blockTime / 86_400 / (priceBtc * btcUsd),
+                nethash,
+                exchange_rate24 = priceBtc,
+                revenue = "$1.00",
+                btc_revenue = (1.0 / btcUsd).ToString("0.########", System.Globalization.CultureInfo.InvariantCulture),
+                lagging = false,
+                timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            });
+        });
+
         // ---------- simulation controls ----------
 
         app.MapPost("/dev/report", (MinerReport report, SimulatedPool pool) =>
@@ -71,4 +116,6 @@ public static class DevPoolHost
 
         app.Run();
     }
+
+    public static string KryptexWallet(string coin, string account) => $"kryptex:{coin}:{account}";
 }

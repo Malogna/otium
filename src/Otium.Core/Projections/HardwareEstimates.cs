@@ -27,6 +27,31 @@ public static class HardwareEstimates
         ("6600", 14, 120), ("5700", 18, 160), ("5600", 15, 140), ("580", 11, 140), ("570", 10, 130),
     ];
 
+    /// <summary>
+    /// Pearl (pearlhash) TH/s by GPU model. Pearl runs on tensor cores, so GTX cards and unknown models get none.
+    /// Rough figures back-calculated from WhatToMine's October 2026 profitability (RTX 4090 ≈ 310 TH/s); the miner
+    /// benchmarks the real speed on first run.
+    /// </summary>
+    private static readonly (string Key, double Ths)[] PearlSpeeds =
+    [
+        ("5090", 300), ("5080", 190), ("5070 ti", 150), ("5070", 110), ("5060", 60),
+        ("4090", 310), ("4080", 200), ("4070 ti", 150), ("4070", 100), ("4060 ti", 70), ("4060", 55),
+        ("3090", 120), ("3080 ti", 110), ("3080", 104), ("3070 ti", 80), ("3070", 75), ("3060 ti", 60), ("3060", 45),
+        ("2080", 50), ("2070", 40), ("2060", 35), ("9070", 50),
+    ];
+
+    /// <summary>Pearl hashrate in H/s, or null when the card can't usefully mine it.</summary>
+    public static double? PearlHashrate(GpuInfo gpu)
+    {
+        var name = gpu.Name.ToLowerInvariant();
+        foreach (var (key, ths) in PearlSpeeds)
+        {
+            if (name.Contains(key, StringComparison.Ordinal))
+                return ths * 1e12;
+        }
+        return null;
+    }
+
     public static double CpuHashrate(int logicalThreads, int usagePercent)
     {
         var perThread = OperatingSystem.IsMacOS() && RuntimeInformation.ProcessArchitecture == Architecture.Arm64

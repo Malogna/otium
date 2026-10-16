@@ -456,6 +456,10 @@ public sealed class OtiumStore
         return new BalanceTotals(available, pending, lifetime, referral);
     }
 
+    /// <summary>Earnings credited to users for a source, identified by its ledger reference prefix (e.g. "kx:").</summary>
+    public long CreditedWithReferencePrefix(string prefix) =>
+        Scalar<long>("SELECT COALESCE(SUM(micros), 0) FROM ledger WHERE kind = 'earning' AND reference LIKE $p", ("$p", prefix + "%"));
+
     /// <summary>Gross earnings credited to an account (before any cash-outs), for referral verification.</summary>
     public long LifetimeEarningMicros(string accountId) =>
         Scalar<long>("SELECT COALESCE(SUM(micros), 0) FROM ledger WHERE account_id = $d AND kind = 'earning'", ("$d", accountId));

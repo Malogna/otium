@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using Otium.Core.Pools;
+using Otium.Core.Switching;
 using Otium.Core.Wallets;
 
 namespace Otium.Core.Providers;
@@ -16,9 +17,17 @@ public sealed class SimulatedProvider(
     string algo,
     double fullSpeedHps,
     double normalizedPerHash,
-    TimeProvider? time = null) : IComputeProvider
+    TimeProvider? time = null,
+    Func<GpuPolicy?>? policy = null) : IComputeProvider
 {
     public static bool IsEnabled => Environment.GetEnvironmentVariable("OTIUM_SIMULATE") is "1" or "true";
+
+    /// <summary>Simulated speeds (H/s) for Kryptex coins, like an RTX 3080.</summary>
+    private static readonly Dictionary<string, double> KryptexSpeeds = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["pearlhash"] = 104e12,
+        ["quantus"] = 1.0e9,
+    };
 
     private readonly TimeProvider _time = time ?? TimeProvider.System;
 
@@ -64,24 +73,51 @@ public sealed class SimulatedProvider(
             return new ProviderStatus(ProviderState.Starting, 0, "Warming up (simulated)…", $"simulated {algo}");
 
         var usage = device == DeviceKind.Cpu ? Math.Clamp(options.UsagePercent, 1, 100) / 100.0 : 1.0;
-        var hashrate = fullSpeedHps * usage * (0.95 + Random.Shared.NextDouble() * 0.1);
+        var jitter = 0.95 + Random.Shared.NextDouble() * 0.1;
+
+        // Like the real GPU miner, follow the server's policy: mine the best Kryptex coin when there is one.
+        var kryptex = device == DeviceKind.Gpu ? BestKryptexAlgorithm() : null;
+        var mined = kryptex?.Policy.Algorithm ?? algo;
+        var hashrate = (kryptex is null ? fullSpeedHps * usage : KryptexSpeeds[kryptex.Policy.Algorithm]) * jitter;
+        object report = kryptex is { } k
+            ? new { wallet = $"kryptex:{k.Coin}:{k.Route.User}", worker = options.WorkerName, algo = mined, hashrate, normalizedHashrate = 0.0, rig = _rig }
+            : new { wallet = options.Target.WalletAddress, worker = options.WorkerName, algo, hashrate, normalizedHashrate = hashrate * normalizedPerHash, rig = _rig };
         try
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
             timeout.CancelAfter(TimeSpan.FromSeconds(3));
-            await http.PostAsJsonAsync(new Uri(MoneroOceanClient.ApiBase, "dev/report"),
-                new { wallet = options.Target.WalletAddress, worker = options.WorkerName, algo, hashrate, normalizedHashrate = hashrate * normalizedPerHash, rig = _rig },
-                timeout.Token);
+            await http.PostAsJsonAsync(new Uri(MoneroOceanClient.ApiBase, "dev/report"), report, timeout.Token);
         }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
         {
-            return new ProviderStatus(ProviderState.Running, hashrate, "Simulated pool not reachable", $"simulated {algo}");
+            return new ProviderStatus(ProviderState.Running, hashrate, "Simulated pool not reachable", $"simulated {mined}");
         }
-        return new ProviderStatus(ProviderState.Running, hashrate, null, $"simulated {algo}");
+        return new ProviderStatus(ProviderState.Running, hashrate, null, $"simulated {mined}");
+    }
+
+    private sealed record KryptexChoice(GpuAlgorithmPolicy Policy, GpuPoolRoute Route, string Coin);
+
+    private KryptexChoice? BestKryptexAlgorithm()
+    {
+        if (policy?.Invoke() is not { } current)
+            return null;
+        return current.Algorithms
+            .Where(a => a.Tier == GpuTiers.Primary && a.UsdPerHashPerSecondDay > 0 && KryptexSpeeds.ContainsKey(a.Algorithm))
+            .Select(a => (a, route: current.Route(a.Route)))
+            .Where(x => x.route is { Kind: GpuRoutes.Kryptex, User.Length: > 0 })
+            .OrderByDescending(x => x.a.UsdPerHashPerSecondDay * KryptexSpeeds[x.a.Algorithm])
+            .Select(x => new KryptexChoice(x.a, x.route!, x.route!.Name[(GpuRoutes.Kryptex.Length + 1)..]))
+            .FirstOrDefault();
     }
 
     public async Task<RevenueEstimate> EstimateRevenueAsync(double hashrateHps, CancellationToken ct)
     {
+        if (device == DeviceKind.Gpu && BestKryptexAlgorithm() is { } k)
+        {
+            // 2% miner fee and the pool's fee, as with the real miner.
+            var usd = hashrateHps * k.Policy.UsdPerHashPerSecondDay * 0.98 * (1 - k.Policy.PoolFeePercent / 100);
+            return new RevenueEstimate(usd, usd, "USD");
+        }
         var network = await pool.GetNetworkStatsAsync(ct);
         var xmr = MoneroProfit.XmrPerDay(hashrateHps * normalizedPerHash, network);
         return new RevenueEstimate(xmr, xmr * network.PriceUsd, PayoutCurrency);

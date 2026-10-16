@@ -134,6 +134,8 @@ public partial class WelcomeViewModel : ViewModelBase
         EstimateError = null;
         try
         {
+            if (_host.EffectiveGpuPolicy is null)
+                await _host.RefreshGpuPolicyAsync(CancellationToken.None); // so graphics cards are priced at what they'd really mine
             var estimate = await _host.EstimateAsync(CancellationToken.None);
             var projection = Projection.Create(estimate.GrossUsdPerDay, estimate.ElectricityUsdPerDay, null, _host.Settings.OnlyWhenIdle, 0, 1);
 
@@ -141,7 +143,7 @@ public partial class WelcomeViewModel : ViewModelBase
             foreach (var device in estimate.Devices)
             {
                 var icon = Icon(device.Device == DeviceKind.Cpu ? "IconCpu" : "IconGpu");
-                var what = device.Device == DeviceKind.Cpu ? "Mines Monero" : "Mines whatever pays best (e.g. Ravencoin)";
+                var what = device.Device == DeviceKind.Cpu ? "Mines Monero" : $"Mines whatever pays best (now {device.Coin})";
                 EstimateRows.Add(new EstimateRow(icon, device.Name, what, $"{Format.Usd(device.GrossUsdPerDay)}/day"));
             }
 

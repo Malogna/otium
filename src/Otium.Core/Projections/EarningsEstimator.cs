@@ -2,6 +2,7 @@ using Otium.Core.Gpu;
 using Otium.Core.Pools;
 using Otium.Core.Power;
 using Otium.Core.Providers;
+using Otium.Core.Switching;
 
 namespace Otium.Core.Projections;
 
@@ -26,7 +27,8 @@ public sealed class EarningsEstimator(IMoneroPoolApi pool)
         IReadOnlyList<GpuInfo> gpus,
         double pricePerKwh,
         double feePercent,
-        CancellationToken ct)
+        CancellationToken ct,
+        GpuPolicy? gpuPolicy = null)
     {
         var network = await pool.GetNetworkStatsAsync(ct);
         var keep = 1 - feePercent / 100.0;
@@ -37,14 +39,23 @@ public sealed class EarningsEstimator(IMoneroPoolApi pool)
         var cpuUsd = MoneroProfit.XmrPerDay(cpuHps, network) * network.PriceUsd * keep;
         devices.Add(new DeviceEstimate(DeviceKind.Cpu, cpuName, "Monero", cpuHps, cpuUsd, cpuPower.ExtraWatts(cpuUsagePercent)));
 
-        // GPUs: KawPow is a safe, widely paid baseline; the real miner then switches to whatever pays more.
+        // GPUs: Pearl when the server's policy has it (it pays the most on RTX cards in late 2026), otherwise KawPow
+        // as a widely paid baseline. The real miner benchmarks and switches to whatever pays more.
         if (gpus.Count > 0)
         {
+            var pearl = gpuPolicy?.For("pearlhash") is { Tier: GpuTiers.Primary, UsdPerHashPerSecondDay: > 0 } p ? p : null;
             var profits = await pool.GetAlgoProfitsAsync(ct);
             var kawpowPerHash = profits.For("kawpow"); // XMR per day per H/s
             foreach (var gpu in gpus.Where(g => g.Vendor is GpuVendor.Nvidia or GpuVendor.Amd))
             {
                 var (hps, watts) = HardwareEstimates.Gpu(gpu);
+                if (pearl is not null && HardwareEstimates.PearlHashrate(gpu) is { } pearlHps)
+                {
+                    // 2% miner fee, the pool's fee, then Otium's.
+                    var pearlUsd = pearlHps * pearl.UsdPerHashPerSecondDay * 0.98 * (1 - pearl.PoolFeePercent / 100) * keep;
+                    devices.Add(new DeviceEstimate(DeviceKind.Gpu, gpu.Name, "Pearl", pearlHps, pearlUsd, watts));
+                    continue;
+                }
                 var usd = hps * kawpowPerHash * profits.XmrPriceUsd * keep;
                 devices.Add(new DeviceEstimate(DeviceKind.Gpu, gpu.Name, "Ravencoin", hps, usd, watts));
             }

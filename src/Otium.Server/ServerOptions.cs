@@ -144,3 +144,58 @@ public sealed class BandwidthOptions
     /// </summary>
     public TimeSpan SharedConnectionWindow { get; set; } = TimeSpan.FromMinutes(15);
 }
+
+/// <summary>
+/// Which GPU algorithms apps may mine. The server re-scores them from live feeds; these settings override that.
+/// </summary>
+public sealed class GpuPolicyOptions
+{
+    public const string Section = "GpuPolicy";
+
+    public TimeSpan RefreshInterval { get; set; } = TimeSpan.FromMinutes(10);
+
+    /// <summary>Kill switch: algorithms listed here are disabled for every app at the next policy refresh.</summary>
+    public string[] Disabled { get; set; } = [];
+
+    /// <summary>Per-algorithm tier overrides ("primary", "free-power-only", "disabled").</summary>
+    public Dictionary<string, string> Tiers { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+}
+
+/// <summary>
+/// Kryptex Pool for GPU coins MoneroOcean doesn't pay for (Pearl, Quantus). Work is mined to the operator's Kryptex
+/// account with auto-exchange, under each user's worker id, and credited from Kryptex's per-worker hashrate history.
+/// </summary>
+public sealed class KryptexOptions
+{
+    public const string Section = "Kryptex";
+
+    public bool Enabled { get; set; }
+
+    /// <summary>The operator's Kryptex account name (miners log in as "Account.worker"); auto-exchange is set up there.</summary>
+    public string? Account { get; set; }
+
+    public string ApiBase { get; set; } = "https://pool.kryptex.com/";
+
+    /// <summary>WhatToMine, the live profitability feed for these coins.</summary>
+    public string WhatToMineBase { get; set; } = "https://whattomine.com/";
+
+    public TimeSpan CreditInterval { get; set; } = TimeSpan.FromMinutes(10);
+
+    public Dictionary<string, KryptexCoin> Coins { get; set; } = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["pearlhash"] = new() { Coin = "prl", WhatToMineId = 469, Host = "prl.kryptex.network", Port = 7048 },
+        ["quantus"] = new() { Coin = "qtc", WhatToMineId = 473, Host = "qtc.kryptex.network", Port = 7049 },
+    };
+}
+
+public sealed class KryptexCoin
+{
+    /// <summary>Kryptex's coin slug in API paths, e.g. "prl".</summary>
+    public string Coin { get; set; } = "";
+
+    public int WhatToMineId { get; set; }
+
+    public string Host { get; set; } = "";
+
+    public int Port { get; set; }
+}

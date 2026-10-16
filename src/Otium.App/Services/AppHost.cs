@@ -12,6 +12,7 @@ using Otium.Core.Projections;
 using Otium.Core.Providers;
 using Otium.Core.Accounts;
 using Otium.Core.Settings;
+using Otium.Core.Switching;
 using Otium.Core.Wallets;
 using Otium.Providers.Honeygain;
 using Otium.Providers.SrbMiner;
@@ -33,6 +34,7 @@ public sealed class AppHost : IAsyncDisposable
     private volatile EngineConfig _cpuConfig;
     private volatile EngineConfig _gpuConfig;
     private volatile BandwidthConfig _bandwidthConfig;
+    private volatile GpuPolicy? _gpuPolicy;
 
     private AppHost()
     {
@@ -72,12 +74,13 @@ public sealed class AppHost : IAsyncDisposable
         GpuPowerMeter = new GpuPowerMeter(_nvml, () => Settings.GpuWatts, Gpus.Count);
         _gpuConfig = BuildConfig(100, "g");
         var gpuProvider = new SrbMinerGpuProvider(
-            _http, Pool, Paths.EnginesDir, Paths.GpuBenchmarksFile, Gpus, GpuPowerMeter, () => Settings.ElectricityPricePerKwh);
+            _http, Pool, Paths.EnginesDir, Paths.GpuBenchmarksFile, Gpus, GpuPowerMeter, () => Settings.ElectricityPricePerKwh,
+            policy: () => EffectiveGpuPolicy);
         if (IsSimulated)
         {
             var gpuLedger = new JsonFileStore<EarningsLedger>(Paths.GpuLedgerFile);
             // kawpow at RTX 3080-like speed; the factor converts to the XMR-equivalent rate the simulated pool pays for.
-            var simulatedGpu = new SimulatedProvider(_http, Pool, DeviceKind.Gpu, "kawpow", 45e6, 8.7e-5);
+            var simulatedGpu = new SimulatedProvider(_http, Pool, DeviceKind.Gpu, "kawpow", 45e6, 8.7e-5, policy: () => EffectiveGpuPolicy);
             GpuEngine = new EarningsEngine(simulatedGpu, new EstimatedCpuPowerMeter(new CpuPowerModel(200, 30)), idle, () => _gpuConfig, gpuLedger.Load(), gpuLedger.Save);
         }
         else if (gpuProvider.IsSupportedOnThisPlatform)
@@ -137,6 +140,14 @@ public sealed class AppHost : IAsyncDisposable
     public EarningsEngine? GpuEngine { get; }
 
     public IEnumerable<EarningsEngine> Engines => GpuEngine is null ? [Engine] : [Engine, GpuEngine];
+
+    /// <summary>
+    /// The server's GPU policy as it applies to this user: Kryptex coins are mined to Otium's account, so own-wallet
+    /// users only get the MoneroOcean algorithms. Null until fetched (the GPU miner then falls back to MoneroOcean).
+    /// </summary>
+    public GpuPolicy? EffectiveGpuPolicy => _gpuPolicy is { } policy
+        ? Settings.PayoutMode == PayoutMode.Balance ? policy : policy.WithoutOperatorPools()
+        : null;
 
     /// <summary>Shares unused internet bandwidth when the user has opted in.</summary>
     public BandwidthSharer Bandwidth { get; }
@@ -254,7 +265,7 @@ public sealed class AppHost : IAsyncDisposable
     /// <summary>What this computer could earn per 24 h of mining, from its hardware and today's payouts.</summary>
     public Task<EarningsEstimate> EstimateAsync(CancellationToken ct) =>
         Estimator.EstimateAsync(CpuInfo.Name, Environment.ProcessorCount, Settings.CpuUsagePercent, PowerModel,
-            Settings.GpuEnabled ? Gpus : [], Settings.ElectricityPricePerKwh, EffectiveFeePercent, ct);
+            Settings.GpuEnabled ? Gpus : [], Settings.ElectricityPricePerKwh, EffectiveFeePercent, ct, EffectiveGpuPolicy);
 
     /// <summary>Samples running totals into the hour-by-hour history (call about once a minute).</summary>
     public void RecordHistory()
@@ -400,6 +411,7 @@ public sealed class AppHost : IAsyncDisposable
             Apply(summary);
             referral.RegisteredPayoutAddress = ownWallet;
             LastServerError = null;
+            await RefreshGpuPolicyAsync(client, ct);
         }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException or UriFormatException or InvalidOperationException or AccountRequestException)
         {
@@ -409,6 +421,21 @@ public sealed class AppHost : IAsyncDisposable
         SaveSettings();
         ApplyDeviceSwitches();
         AccountChanged?.Invoke();
+    }
+
+    /// <summary>Fetches the GPU policy (it needs no account, so the welcome screen's estimate can use it).</summary>
+    public Task RefreshGpuPolicyAsync(CancellationToken ct) => RefreshGpuPolicyAsync(CreateClient(), ct);
+
+    /// <summary>Fetches the GPU policy; on failure the last one stays in effect.</summary>
+    private async Task RefreshGpuPolicyAsync(AccountClient client, CancellationToken ct)
+    {
+        try
+        {
+            _gpuPolicy = await client.GetGpuPolicyAsync(ct);
+        }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or AccountRequestException or System.Text.Json.JsonException)
+        {
+        }
     }
 
     /// <summary>Asks the server to pay out the available balance. Throws <see cref="AccountRequestException"/> with a user-facing reason.</summary>

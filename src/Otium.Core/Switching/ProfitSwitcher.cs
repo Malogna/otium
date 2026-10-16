@@ -6,9 +6,10 @@ public sealed record BenchmarkResult(string Algorithm, double HashrateHps, doubl
     public bool Succeeded => Failure is null && HashrateHps > 0;
 }
 
-/// <param name="RevenuePerHashPerSecondDay">Coin earned per day per 1 H/s (e.g. XMR from MoneroOcean's coinProfit).</param>
+/// <param name="RevenuePerHashPerSecondDay">Earned per day per 1 H/s, in the unit priced by the coin price passed to Score.</param>
 /// <param name="DevFeePercent">Miner developer fee for this algorithm.</param>
-public sealed record AlgorithmQuote(string Algorithm, double RevenuePerHashPerSecondDay, double DevFeePercent);
+/// <param name="PoolFeePercent">This algorithm's pool fee; null uses the switcher's default.</param>
+public sealed record AlgorithmQuote(string Algorithm, double RevenuePerHashPerSecondDay, double DevFeePercent, double? PoolFeePercent = null);
 
 public sealed record ScoredOption(string Algorithm, double HashrateHps, double GrossUsdPerDay, double ElectricityUsdPerDay, double? ExtraWatts)
 {
@@ -43,7 +44,7 @@ public sealed class ProfitSwitcher
         {
             if (!quoteByAlgo.TryGetValue(b.Algorithm, out var quote) || quote.RevenuePerHashPerSecondDay <= 0)
                 continue;
-            var coins = b.HashrateHps * quote.RevenuePerHashPerSecondDay * (1 - quote.DevFeePercent / 100) * (1 - PoolFeePercent / 100);
+            var coins = b.HashrateHps * quote.RevenuePerHashPerSecondDay * (1 - quote.DevFeePercent / 100) * (1 - (quote.PoolFeePercent ?? PoolFeePercent) / 100);
             var watts = b.ExtraWatts ?? fallbackWatts;
             options.Add(new ScoredOption(b.Algorithm, b.HashrateHps, coins * coinPriceUsd, Power.Electricity.CostPerDay(watts, pricePerKwh), b.ExtraWatts));
         }

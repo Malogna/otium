@@ -15,6 +15,8 @@ public interface IAccountClient
     Task<AccountSummary> VerifyEmailCodeAsync(string deviceId, string deviceSecret, EmailVerifyRequest request, CancellationToken ct);
 
     Task<BandwidthReportResult> ReportBandwidthAsync(string deviceId, string deviceSecret, BandwidthReport report, CancellationToken ct);
+
+    Task<Switching.GpuPolicy> GetGpuPolicyAsync(CancellationToken ct);
 }
 
 /// <summary>Thrown when the server rejects a request with a message meant for the user.</summary>
@@ -63,6 +65,13 @@ public sealed class AccountClient(HttpClient http) : IAccountClient
     {
         using var response = await PostAsync(deviceId, deviceSecret, "email/verify", request, ct);
         return await ReadAsync<AccountSummary>(response, ct);
+    }
+
+    /// <summary>Which GPU algorithms to mine and where (public; the same for everyone).</summary>
+    public async Task<Switching.GpuPolicy> GetGpuPolicyAsync(CancellationToken ct)
+    {
+        using var response = await http.GetAsync("api/v1/gpu-policy", ct);
+        return await ReadAsync<Switching.GpuPolicy>(response, ct);
     }
 
     public async Task<BandwidthReportResult> ReportBandwidthAsync(string deviceId, string deviceSecret, BandwidthReport report, CancellationToken ct)

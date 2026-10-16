@@ -13,22 +13,32 @@ public sealed record GpuPoolEndpoint(string Host, int Port)
     public override string ToString() => $"{Host}:{Port}";
 }
 
+/// <summary>How the miner logs in to a pool.</summary>
+public sealed record PoolLogin(GpuPoolEndpoint Pool, string Wallet, string Password)
+{
+    /// <summary>MoneroOcean: the account's wallet, with the worker and algorithm pinned in the password.</summary>
+    public static PoolLogin MoneroOcean(GpuPoolEndpoint pool, string wallet, string worker, GpuAlgorithm algorithm) =>
+        new(pool, wallet, $"{SrbMinerArgs.SanitizeWorker(worker)}~{algorithm.PoolName}");
+
+    /// <summary>Kryptex: "account.worker", so the pool reports this worker's hashrate separately for crediting.</summary>
+    public static PoolLogin Kryptex(GpuPoolEndpoint pool, string account, string worker) =>
+        new(pool, $"{account}.{SrbMinerArgs.SanitizeWorker(worker)}", "x");
+}
+
 internal static class SrbMinerArgs
 {
     public static IReadOnlyList<string> Build(
         GpuAlgorithm algorithm,
-        GpuPoolEndpoint pool,
-        string wallet,
-        string worker,
+        PoolLogin login,
         int apiPort,
         IReadOnlyList<GpuInfo> gpus)
     {
         var args = new List<string>
         {
             "--algorithm", algorithm.MinerName,
-            "--pool", pool.ToString(),
-            "--wallet", wallet,
-            "--password", $"{SanitizeWorker(worker)}~{algorithm.PoolName}",
+            "--pool", login.Pool.ToString(),
+            "--wallet", login.Wallet,
+            "--password", login.Password,
             "--disable-cpu", // the CPU belongs to the XMRig provider
             "--api-enable",
             "--api-port", apiPort.ToString(System.Globalization.CultureInfo.InvariantCulture),
