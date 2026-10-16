@@ -12,54 +12,213 @@
         <ResourceDictionary>
             <ResourceDictionary.ThemeDictionaries>
                 <ResourceDictionary x:Key="Light">
-                    <SolidColorBrush x:Key="PageBackground" Color="#F5F6F8" />
+                    <SolidColorBrush x:Key="PageBackground" Color="#F3F5F8" />
                     <SolidColorBrush x:Key="CardBackground" Color="#FFFFFF" />
-                    <SolidColorBrush x:Key="CardBorder" Color="#E2E5EA" />
-                    <SolidColorBrush x:Key="MutedText" Color="#5B6472" />
-                    <SolidColorBrush x:Key="GoodBrush" Color="#1F8A5B" />
-                    <SolidColorBrush x:Key="GoodSoft" Color="#E3F4EC" />
+                    <SolidColorBrush x:Key="CardBorder" Color="#E4E8EE" />
+                    <SolidColorBrush x:Key="SubtleBackground" Color="#F0F3F6" />
+                    <SolidColorBrush x:Key="MutedText" Color="#5B6575" />
+                    <SolidColorBrush x:Key="AccentBrush" Color="#16A672" />
+                    <SolidColorBrush x:Key="GoodBrush" Color="#138A5E" />
+                    <SolidColorBrush x:Key="GoodSoft" Color="#DDF5EA" />
                     <SolidColorBrush x:Key="WarnBrush" Color="#9A6200" />
-                    <SolidColorBrush x:Key="WarnSoft" Color="#FFF3DC" />
+                    <SolidColorBrush x:Key="WarnSoft" Color="#FFF1D6" />
                     <SolidColorBrush x:Key="BadBrush" Color="#B42318" />
-                    <SolidColorBrush x:Key="BadSoft" Color="#FDE8E6" />
-                    <SolidColorBrush x:Key="NeutralSoft" Color="#ECEEF1" />
+                    <SolidColorBrush x:Key="BadSoft" Color="#FDE6E3" />
+                    <SolidColorBrush x:Key="NeutralSoft" Color="#ECEFF3" />
+                    <SolidColorBrush x:Key="ChartBar" Color="#16A672" />
+                    <SolidColorBrush x:Key="ChartBarFaint" Color="#C9EBDD" />
+                    <BoxShadows x:Key="CardShadow">0 6 24 0 #140F1A2A</BoxShadows>
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="Dark">
-                    <SolidColorBrush x:Key="PageBackground" Color="#0F1216" />
-                    <SolidColorBrush x:Key="CardBackground" Color="#171B21" />
-                    <SolidColorBrush x:Key="CardBorder" Color="#272D36" />
-                    <SolidColorBrush x:Key="MutedText" Color="#9AA4B2" />
-                    <SolidColorBrush x:Key="GoodBrush" Color="#46C08A" />
-                    <SolidColorBrush x:Key="GoodSoft" Color="#15301F" />
+                    <SolidColorBrush x:Key="PageBackground" Color="#0B0E13" />
+                    <SolidColorBrush x:Key="CardBackground" Color="#141922" />
+                    <SolidColorBrush x:Key="CardBorder" Color="#222936" />
+                    <SolidColorBrush x:Key="SubtleBackground" Color="#1A202A" />
+                    <SolidColorBrush x:Key="MutedText" Color="#8D98AA" />
+                    <SolidColorBrush x:Key="AccentBrush" Color="#3DDC97" />
+                    <SolidColorBrush x:Key="GoodBrush" Color="#46D394" />
+                    <SolidColorBrush x:Key="GoodSoft" Color="#12301F" />
                     <SolidColorBrush x:Key="WarnBrush" Color="#F2B544" />
                     <SolidColorBrush x:Key="WarnSoft" Color="#33270F" />
                     <SolidColorBrush x:Key="BadBrush" Color="#F47066" />
                     <SolidColorBrush x:Key="BadSoft" Color="#3A1714" />
-                    <SolidColorBrush x:Key="NeutralSoft" Color="#222831" />
+                    <SolidColorBrush x:Key="NeutralSoft" Color="#1F2630" />
+                    <SolidColorBrush x:Key="ChartBar" Color="#3DDC97" />
+                    <SolidColorBrush x:Key="ChartBarFaint" Color="#1D3A2E" />
+                    <BoxShadows x:Key="CardShadow">0 8 28 0 #40000000</BoxShadows>
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
+
+            <!-- The hero card keeps the same vivid gradient in both themes. -->
+            <LinearGradientBrush x:Key="HeroGradient" StartPoint="0%,0%" EndPoint="100%,100%">
+                <GradientStop Color="#1DB97F" Offset="0" />
+                <GradientStop Color="#0E8A8A" Offset="0.6" />
+                <GradientStop Color="#0B6E8F" Offset="1" />
+            </LinearGradientBrush>
+            <SolidColorBrush x:Key="HeroText" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="HeroMuted" Color="#D8F3EA" />
+            <SolidColorBrush x:Key="HeroChip" Color="#26FFFFFF" />
+
+            <!-- Line icons on a 24×24 grid, drawn with a 2px stroke. -->
+            <StreamGeometry x:Key="IconCpu">M7 4h10a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3z M9.5 9.5h5v5h-5z M9 1v3 M15 1v3 M9 20v3 M15 20v3 M20 9h3 M20 15h3 M1 9h3 M1 15h3</StreamGeometry>
+            <StreamGeometry x:Key="IconGpu">M2 6h17a3 3 0 0 1 3 3v6a3 3 0 0 1-3 3H2 M2 4v17 M8 12a3 3 0 1 0 6 0a3 3 0 1 0-6 0 M17.5 10v4 M7 18v3 M13 18v3</StreamGeometry>
+            <StreamGeometry x:Key="IconBolt">M13 2L4.5 13.5h6.5L10 22l8.5-11.5H12z</StreamGeometry>
+            <StreamGeometry x:Key="IconWallet">M4 6.5A2.5 2.5 0 0 1 6.5 4H18v3.5 M4 6.5V17a3 3 0 0 0 3 3h13V9H6.5A2.5 2.5 0 0 1 4 6.5z M16.5 14.5h0.01</StreamGeometry>
+            <StreamGeometry x:Key="IconGift">M3 8h18v4H3z M5 12v9h14v-9 M12 8v13 M12 8C10 4 6 4 6 6.5S9 8 12 8 M12 8c2-4 6-4 6-1.5S15 8 12 8</StreamGeometry>
+            <StreamGeometry x:Key="IconShield">M12 2.5l8 3v6c0 5-3.4 8.6-8 10.5c-4.6-1.9-8-5.5-8-10.5v-6z M8.5 12l2.5 2.5 4.5-5</StreamGeometry>
+            <StreamGeometry x:Key="IconChart">M3 3v18h18 M7 15l4-4 3 3 6-7</StreamGeometry>
+            <StreamGeometry x:Key="IconMoon">M20.5 13.5A8.5 8.5 0 1 1 10.5 3.5a6.5 6.5 0 0 0 10 10z</StreamGeometry>
+            <StreamGeometry x:Key="IconPlay">M7 4.5v15l12.5-7.5z</StreamGeometry>
+            <StreamGeometry x:Key="IconPause">M8 5v14 M16 5v14</StreamGeometry>
+            <StreamGeometry x:Key="IconSliders">M4 6h9 M17 6h3 M4 12h3 M11 12h9 M4 18h11 M19 18h1 M15 4v4 M9 10v4 M17 16v4</StreamGeometry>
+            <StreamGeometry x:Key="IconCheck">M5 12.5l4.5 4.5L19 7.5</StreamGeometry>
+            <StreamGeometry x:Key="IconArrowRight">M5 12h14 M13 6l6 6-6 6</StreamGeometry>
+            <StreamGeometry x:Key="IconArrowLeft">M19 12H5 M11 6l-6 6 6 6</StreamGeometry>
+            <StreamGeometry x:Key="IconLeaf">M5 19c0-8 5-14 15-15c-1 10-7 15-15 15z M5 19l7-7</StreamGeometry>
+            <StreamGeometry x:Key="IconClock">M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18z M12 7v5l3 2</StreamGeometry>
         </ResourceDictionary>
     </Application.Resources>
 
     <Application.Styles>
         <FluentTheme>
             <FluentTheme.Palettes>
-                <ColorPaletteResources x:Key="Light" Accent="#1F8A5B" />
-                <ColorPaletteResources x:Key="Dark" Accent="#3FBF87" />
+                <ColorPaletteResources x:Key="Light" Accent="#16A672" />
+                <ColorPaletteResources x:Key="Dark" Accent="#2FC487" />
             </FluentTheme.Palettes>
         </FluentTheme>
 
+        <!-- ===== Surfaces ===== -->
         <Style Selector="Border.card">
             <Setter Property="Background" Value="{DynamicResource CardBackground}" />
             <Setter Property="BorderBrush" Value="{DynamicResource CardBorder}" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="12" />
-            <Setter Property="Padding" Value="20" />
+            <Setter Property="CornerRadius" Value="18" />
+            <Setter Property="Padding" Value="22" />
+            <Setter Property="BoxShadow" Value="{DynamicResource CardShadow}" />
         </Style>
 
-        <Style Selector="TextBlock.h1">
-            <Setter Property="FontSize" Value="26" />
+        <!-- Cards ease up into place when they appear. -->
+        <Style Selector="Border.card, Border.hero, Border.rise">
+            <Style.Animations>
+                <Animation Duration="0:0:0.45" Easing="CubicEaseOut" FillMode="Backward">
+                    <KeyFrame Cue="0%">
+                        <Setter Property="Opacity" Value="0" />
+                        <Setter Property="(TranslateTransform.Y)" Value="14" />
+                    </KeyFrame>
+                    <KeyFrame Cue="100%">
+                        <Setter Property="Opacity" Value="1" />
+                        <Setter Property="(TranslateTransform.Y)" Value="0" />
+                    </KeyFrame>
+                </Animation>
+            </Style.Animations>
+        </Style>
+        <Style Selector="Border.delay1">
+            <Style.Animations>
+                <Animation Duration="0:0:0.55" Delay="0:0:0.08" Easing="CubicEaseOut" FillMode="Backward">
+                    <KeyFrame Cue="0%"><Setter Property="Opacity" Value="0" /><Setter Property="(TranslateTransform.Y)" Value="14" /></KeyFrame>
+                    <KeyFrame Cue="100%"><Setter Property="Opacity" Value="1" /><Setter Property="(TranslateTransform.Y)" Value="0" /></KeyFrame>
+                </Animation>
+            </Style.Animations>
+        </Style>
+        <Style Selector="Border.delay2">
+            <Style.Animations>
+                <Animation Duration="0:0:0.6" Delay="0:0:0.16" Easing="CubicEaseOut" FillMode="Backward">
+                    <KeyFrame Cue="0%"><Setter Property="Opacity" Value="0" /><Setter Property="(TranslateTransform.Y)" Value="14" /></KeyFrame>
+                    <KeyFrame Cue="100%"><Setter Property="Opacity" Value="1" /><Setter Property="(TranslateTransform.Y)" Value="0" /></KeyFrame>
+                </Animation>
+            </Style.Animations>
+        </Style>
+
+        <Style Selector="Border.hero">
+            <Setter Property="Background" Value="{StaticResource HeroGradient}" />
+            <Setter Property="CornerRadius" Value="24" />
+            <Setter Property="Padding" Value="28" />
+            <Setter Property="BoxShadow" Value="0 14 36 0 #331DB97F" />
+        </Style>
+        <Style Selector="Border.hero TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource HeroText}" />
+        </Style>
+        <Style Selector="Border.hero TextBlock.heroMuted">
+            <Setter Property="Foreground" Value="{StaticResource HeroMuted}" />
+        </Style>
+        <Style Selector="Border.heroChip">
+            <Setter Property="Background" Value="{StaticResource HeroChip}" />
+            <Setter Property="CornerRadius" Value="999" />
+            <Setter Property="Padding" Value="12,5" />
+        </Style>
+
+        <Style Selector="Border.tile">
+            <Setter Property="Background" Value="{DynamicResource SubtleBackground}" />
+            <Setter Property="CornerRadius" Value="14" />
+            <Setter Property="Padding" Value="14,12" />
+        </Style>
+
+        <Style Selector="Border.iconBadge">
+            <Setter Property="Width" Value="40" />
+            <Setter Property="Height" Value="40" />
+            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="Background" Value="{DynamicResource GoodSoft}" />
+        </Style>
+
+        <!-- ===== Icons ===== -->
+        <Style Selector="Path.icon">
+            <Setter Property="Stroke" Value="{DynamicResource AccentBrush}" />
+            <Setter Property="StrokeThickness" Value="2" />
+            <Setter Property="StrokeLineCap" Value="Round" />
+            <Setter Property="StrokeJoin" Value="Round" />
+            <Setter Property="Width" Value="20" />
+            <Setter Property="Height" Value="20" />
+            <Setter Property="Stretch" Value="Uniform" />
+        </Style>
+        <Style Selector="Path.icon.onHero">
+            <Setter Property="Stroke" Value="{StaticResource HeroText}" />
+        </Style>
+        <Style Selector="Path.icon.filled">
+            <Setter Property="Fill" Value="{DynamicResource AccentBrush}" />
+        </Style>
+
+        <!-- ===== Live indicator: a dot with a soft pulse while earning ===== -->
+        <Style Selector="Ellipse.liveDot">
+            <Setter Property="Width" Value="10" />
+            <Setter Property="Height" Value="10" />
+            <Setter Property="Fill" Value="{DynamicResource MutedText}" />
+        </Style>
+        <Style Selector="Ellipse.liveDot.on">
+            <Setter Property="Fill" Value="{DynamicResource AccentBrush}" />
+        </Style>
+        <Style Selector="Ellipse.pulse">
+            <Setter Property="Width" Value="10" />
+            <Setter Property="Height" Value="10" />
+            <Setter Property="Fill" Value="{DynamicResource AccentBrush}" />
+            <Setter Property="Opacity" Value="0" />
+        </Style>
+        <Style Selector="Ellipse.pulse.on">
+            <Style.Animations>
+                <Animation Duration="0:0:1.6" IterationCount="Infinite" Easing="CubicEaseOut">
+                    <KeyFrame Cue="0%"><Setter Property="Opacity" Value="0.55" /><Setter Property="(ScaleTransform.ScaleX)" Value="1" /><Setter Property="(ScaleTransform.ScaleY)" Value="1" /></KeyFrame>
+                    <KeyFrame Cue="100%"><Setter Property="Opacity" Value="0" /><Setter Property="(ScaleTransform.ScaleX)" Value="2.8" /><Setter Property="(ScaleTransform.ScaleY)" Value="2.8" /></KeyFrame>
+                </Animation>
+            </Style.Animations>
+        </Style>
+
+        <!-- ===== Tabs (Advanced) ===== -->
+        <Style Selector="TabItem">
+            <Setter Property="FontSize" Value="15" />
             <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="MinHeight" Value="40" />
+            <Setter Property="Padding" Value="10,0" />
+        </Style>
+
+        <!-- ===== Typography ===== -->
+        <Style Selector="TextBlock.display">
+            <Setter Property="FontSize" Value="54" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="LetterSpacing" Value="-1" />
+        </Style>
+        <Style Selector="TextBlock.h1">
+            <Setter Property="FontSize" Value="30" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="LetterSpacing" Value="-0.5" />
             <Setter Property="TextWrapping" Value="Wrap" />
         </Style>
         <Style Selector="TextBlock.h2">
@@ -72,10 +231,10 @@
         </Style>
         <Style Selector="TextBlock.label">
             <Setter Property="Foreground" Value="{DynamicResource MutedText}" />
-            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontSize" Value="12.5" />
         </Style>
         <Style Selector="TextBlock.value">
-            <Setter Property="FontSize" Value="24" />
+            <Setter Property="FontSize" Value="22" />
             <Setter Property="FontWeight" Value="SemiBold" />
         </Style>
         <Style Selector="TextBlock.error">
@@ -90,42 +249,114 @@
             <Setter Property="Foreground" Value="{DynamicResource BadBrush}" />
         </Style>
 
+        <!-- ===== Status pills ===== -->
         <Style Selector="Border.pill">
             <Setter Property="CornerRadius" Value="999" />
             <Setter Property="Padding" Value="12,4" />
             <Setter Property="Background" Value="{DynamicResource NeutralSoft}" />
             <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
-        <Style Selector="Border.pill.earning">
-            <Setter Property="Background" Value="{DynamicResource GoodSoft}" />
-        </Style>
-        <Style Selector="Border.pill.earning > TextBlock">
-            <Setter Property="Foreground" Value="{DynamicResource GoodBrush}" />
-        </Style>
-        <Style Selector="Border.pill.paused">
-            <Setter Property="Background" Value="{DynamicResource WarnSoft}" />
-        </Style>
-        <Style Selector="Border.pill.paused > TextBlock">
-            <Setter Property="Foreground" Value="{DynamicResource WarnBrush}" />
-        </Style>
-        <Style Selector="Border.pill.problem">
-            <Setter Property="Background" Value="{DynamicResource BadSoft}" />
-        </Style>
-        <Style Selector="Border.pill.problem > TextBlock">
-            <Setter Property="Foreground" Value="{DynamicResource BadBrush}" />
-        </Style>
+        <Style Selector="Border.pill.earning"><Setter Property="Background" Value="{DynamicResource GoodSoft}" /></Style>
+        <Style Selector="Border.pill.earning > TextBlock"><Setter Property="Foreground" Value="{DynamicResource GoodBrush}" /></Style>
+        <Style Selector="Border.pill.paused"><Setter Property="Background" Value="{DynamicResource WarnSoft}" /></Style>
+        <Style Selector="Border.pill.paused > TextBlock"><Setter Property="Foreground" Value="{DynamicResource WarnBrush}" /></Style>
+        <Style Selector="Border.pill.problem"><Setter Property="Background" Value="{DynamicResource BadSoft}" /></Style>
+        <Style Selector="Border.pill.problem > TextBlock"><Setter Property="Foreground" Value="{DynamicResource BadBrush}" /></Style>
 
         <Style Selector="Border.banner">
             <Setter Property="Background" Value="{DynamicResource BadSoft}" />
-            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="CornerRadius" Value="16" />
             <Setter Property="Padding" Value="18" />
         </Style>
 
+        <!-- ===== Buttons: rounded, with a gentle lift on hover ===== -->
+        <Style Selector="Button">
+            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="Transitions">
+                <Transitions>
+                    <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.15" Easing="CubicEaseOut" />
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="Button:pointerover">
+            <Setter Property="RenderTransform" Value="translateY(-1px)" />
+        </Style>
+        <Style Selector="Button:pressed">
+            <Setter Property="RenderTransform" Value="scale(0.98)" />
+        </Style>
         <Style Selector="Button.big">
-            <Setter Property="Padding" Value="22,10" />
+            <Setter Property="Padding" Value="22,12" />
             <Setter Property="FontSize" Value="15" />
             <Setter Property="FontWeight" Value="SemiBold" />
-            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="CornerRadius" Value="14" />
+        </Style>
+
+        <!-- White button on the gradient hero. -->
+        <Style Selector="Button.onHero">
+            <Setter Property="Background" Value="#FFFFFF" />
+            <Setter Property="Foreground" Value="#0E7660" />
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
+        <Style Selector="Button.onHero:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#F0FFF8" />
+            <Setter Property="Foreground" Value="#0B5E4C" />
+        </Style>
+        <Style Selector="Button.onHero:disabled /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#4DFFFFFF" />
+            <Setter Property="Foreground" Value="#B3FFFFFF" />
+        </Style>
+        <Style Selector="Button.ghostOnHero">
+            <Setter Property="Background" Value="#26FFFFFF" />
+            <Setter Property="Foreground" Value="#FFFFFF" />
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
+        <Style Selector="Button.ghostOnHero:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#3DFFFFFF" />
+            <Setter Property="Foreground" Value="#FFFFFF" />
+        </Style>
+
+        <Style Selector="Button.link">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="4,2" />
+        </Style>
+        <Style Selector="Button.link:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+
+        <!-- ===== Progress bars animate to their new value ===== -->
+        <Style Selector="ProgressBar.goal">
+            <Setter Property="Height" Value="10" />
+            <Setter Property="MinHeight" Value="10" />
+            <Setter Property="CornerRadius" Value="999" />
+            <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+            <Setter Property="Background" Value="{DynamicResource NeutralSoft}" />
+            <Setter Property="Transitions">
+                <Transitions>
+                    <DoubleTransition Property="Value" Duration="0:0:0.8" Easing="CubicEaseOut" />
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="ProgressBar.onHero">
+            <Setter Property="Foreground" Value="#FFFFFF" />
+            <Setter Property="Background" Value="#33FFFFFF" />
+        </Style>
+
+        <!-- Step dots in onboarding. -->
+        <Style Selector="Border.stepDot">
+            <Setter Property="Width" Value="8" />
+            <Setter Property="Height" Value="8" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Background" Value="{DynamicResource CardBorder}" />
+            <Setter Property="Transitions">
+                <Transitions>
+                    <DoubleTransition Property="Width" Duration="0:0:0.25" Easing="CubicEaseOut" />
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="Border.stepDot.active">
+            <Setter Property="Width" Value="24" />
+            <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
         </Style>
     </Application.Styles>
 </Application>

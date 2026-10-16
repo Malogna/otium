@@ -17,7 +17,7 @@ public static class Format
     private static readonly string[] HashUnits = ["H/s", "kH/s", "MH/s", "GH/s", "TH/s", "PH/s", "EH/s"];
 
     /// <summary>Cents-precision dollars for balances and cash-outs, e.g. "$12.34", independent of the system locale.</summary>
-    public static string Money(decimal usd) => $"${usd.ToString("0.00", Culture)}";
+    public static string Money(decimal usd) => $"${usd.ToString("#,0.00", Culture)}";
 
     public static string Hashrate(double hps)
     {
