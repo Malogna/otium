@@ -18,7 +18,9 @@
    sign in on your other PCs (they all earn into one balance), and is needed before the first cash-out.
 5. Press **Cash out** to get paid by PayPal or crypto (Monero). The overview lists every cash-out with its status in plain
    words (sending, being checked, claim it in PayPal, paid, returned to balance), and an email receipt arrives when it's paid.
-6. Share your invite code. Friends mine fee-free for 30 days, and you get 5% of everything they earn.
+6. Share your invite code. Friends mine fee-free for 30 days, and you get 5% of everything they earn. The Invites page
+   has ready-made messages (short, explained, for gamers) that you can edit, one-click sharing to WhatsApp, Discord and
+   email, and a monthly leaderboard of top inviters, counted by friends who actually started earning.
 7. Optionally, earn from your internet connection too: the overview suggests it once, explains in plain words what
    sharing unused bandwidth means, and turns it on only when you agree. It pays into the same balance.
 
@@ -184,7 +186,7 @@ You need the .NET 10 SDK. On this machine it's installed per-user, so add it to 
 $env:PATH = "$env:LOCALAPPDATA\Microsoft\dotnet;$env:PATH"
 ```
 
-Run the tests (213, covering accounts and sign-in, crediting, cash-outs and receipts, fraud rules, GPU profit switching and policy, Kryptex crediting, internet sharing, live electricity prices, the simulated pool, wallet checksums and the engine):
+Run the tests (222, covering accounts and sign-in, crediting, cash-outs and receipts, invites and the leaderboard, fraud rules, GPU profit switching and policy, Kryptex crediting, internet sharing, live electricity prices, the simulated pool, wallet checksums and the engine):
 
 ```bash
 dotnet test

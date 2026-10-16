@@ -105,6 +105,9 @@ api.MapPost("/devices", async (RegisterDeviceRequest body, HttpRequest request, 
 api.MapGet("/devices/{deviceId}/account", async (string deviceId, HttpRequest request, AccountService accounts, IOptions<ReferralOptions> options, CancellationToken ct) =>
     Results.Ok(await accounts.GetSummaryAsync(deviceId, Secret(request), PublicBase(request, options), ct)));
 
+api.MapGet("/devices/{deviceId}/invites/leaderboard", async (string deviceId, HttpRequest request, AccountService accounts, CancellationToken ct) =>
+    Results.Ok(await accounts.GetLeaderboardAsync(deviceId, Secret(request), ct)));
+
 api.MapPost("/devices/{deviceId}/cashouts", (string deviceId, CashoutRequest body, HttpRequest request, AccountService accounts, CashoutService cashouts) =>
 {
     var session = accounts.Authenticate(deviceId, Secret(request));

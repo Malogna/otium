@@ -113,6 +113,46 @@ public sealed class AccountService(
         return Summarize(store.FindAccount(session.Account.AccountId)!, publicBaseUrl, null);
     }
 
+    // ---------- invite leaderboard ----------
+
+    public const int LeaderboardSize = 10;
+
+    /// <summary>This month's top inviters by friends who started earning, with the caller's own place.</summary>
+    public async Task<InviteLeaderboard> GetLeaderboardAsync(string deviceId, string secret, CancellationToken ct)
+    {
+        var session = Authenticate(deviceId, secret);
+        await RefreshVerificationsAsync(session.Account, ct); // so the caller's own count is current
+        var now = time.GetUtcNow();
+        var since = new DateTimeOffset(now.Year, now.Month, 1, 0, 0, 0, TimeSpan.Zero);
+
+        // Codes of merged accounts keep crediting the surviving account, so count them there.
+        var byAccount = new Dictionary<string, (string Code, int Friends)>(StringComparer.Ordinal);
+        foreach (var (code, friends) in store.VerifiedReferralsSince(since))
+        {
+            if (store.Resolve(store.FindAccountByCode(code)) is not { } referrer)
+                continue;
+            var current = byAccount.GetValueOrDefault(referrer.AccountId, (Code: referrer.Code, Friends: 0));
+            byAccount[referrer.AccountId] = (referrer.Code, current.Friends + (int)friends);
+        }
+
+        var ranked = byAccount
+            .OrderByDescending(e => e.Value.Friends)
+            .ThenBy(e => e.Value.Code, StringComparer.Ordinal)
+            .Select(e => (AccountId: e.Key, e.Value.Code, e.Value.Friends))
+            .ToList();
+        var ranks = new int[ranked.Count];
+        for (var i = 0; i < ranked.Count; i++)
+            ranks[i] = i > 0 && ranked[i].Friends == ranked[i - 1].Friends ? ranks[i - 1] : i + 1;
+
+        var me = ranked.FindIndex(e => e.AccountId == session.Account.AccountId);
+        var top = ranked.Take(LeaderboardSize).Select((e, i) => new InviteLeaderboardEntry(
+            ranks[i],
+            e.AccountId == session.Account.AccountId ? "You" : ReferralCodes.Mask(e.Code),
+            e.Friends,
+            e.AccountId == session.Account.AccountId)).ToList();
+        return new InviteLeaderboard(since, top, me >= 0 ? ranks[me] : null, me >= 0 ? ranked[me].Friends : 0);
+    }
+
     // ---------- email sign-in ----------
 
     public async Task SendSignInCodeAsync(string deviceId, string secret, EmailCodeRequest request, CancellationToken ct)
