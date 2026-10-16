@@ -16,12 +16,16 @@
     pwsh build/dev.ps1 -Computers 2    # two computers, to try signing in on a second PC
     pwsh build/dev.ps1 -Reset          # wipe dev data first
     pwsh build/dev.ps1 -RealMiners     # real XMRig/SRBMiner on this PC, real MoneroOcean (see below)
+    pwsh build/dev.ps1 -RealMiners -Wallet <xmr> -KryptexAccount krxABC123   # also Pearl/Quantus on real Kryptex
 
 .NOTES
     -RealMiners tests the real engines on this hardware: the app downloads XMRig and SRBMiner and mines on the real
     MoneroOcean pool, crediting the dev pool wallet (the Monero general fund, so nobody is paid). The GPU mines
     MoneroOcean's algorithms even though they usually lose money, so they can be tested without a Kryptex account.
     Data lives in artifacts/dev-real; internet sharing is off. Stop it after a few minutes: this uses real electricity.
+
+    -KryptexAccount (with -RealMiners) routes Pearl and Quantus to that real Kryptex Pool account, priced by the live
+    WhatToMine feed, as the production server does. MoneroOcean's GPU algorithms then keep their normal tiers.
 #>
 param(
     [ValidateRange(1, 4)] [int] $Computers = 1,
@@ -32,7 +36,9 @@ param(
     # Route every balance account's CPU to the simulated Kryptex Monero pool instead of MoneroOcean.
     [switch] $KryptexCpu,
     # With -RealMiners: the Monero address the real pool credits (MoneroOcean refuses the dev default).
-    [string] $Wallet
+    [string] $Wallet,
+    # With -RealMiners: a Kryptex Pool account (e.g. krxABC123) to mine Pearl/Quantus into, instead of skipping them.
+    [string] $KryptexAccount
 )
 
 $ErrorActionPreference = 'Stop'
@@ -125,11 +131,25 @@ try {
         Set-DevEnv @{
             OTIUM_POOL_API                    = ''        # the real MoneroOcean
             Bandwidth__Enabled                = 'false'
-            Kryptex__Enabled                  = 'false'
-            # Let the GPU mine MoneroOcean's algorithms despite electricity, to exercise SRBMiner.
-            GpuPolicy__Tiers__kawpow          = 'primary'
-            GpuPolicy__Tiers__autolykos2      = 'primary'
-            GpuPolicy__Tiers__etchash         = 'primary'
+        }
+        if ($KryptexAccount) {
+            # Pearl/Quantus on the real Kryptex Pool and WhatToMine, as in production.
+            Set-DevEnv @{
+                Kryptex__Enabled              = 'true'
+                Kryptex__Account              = $KryptexAccount.Trim()
+                Kryptex__ApiBase              = 'https://pool.kryptex.com/'
+                Kryptex__WhatToMineBase       = 'https://whattomine.com/'
+                Kryptex__CreditInterval       = '00:10:00'
+            }
+        }
+        else {
+            Set-DevEnv @{
+                Kryptex__Enabled              = 'false'
+                # Let the GPU mine MoneroOcean's algorithms despite electricity, to exercise SRBMiner.
+                GpuPolicy__Tiers__kawpow      = 'primary'
+                GpuPolicy__Tiers__autolykos2  = 'primary'
+                GpuPolicy__Tiers__etchash     = 'primary'
+            }
         }
     }
     $processes += Start-Background 'server' 'Otium.Server' @()

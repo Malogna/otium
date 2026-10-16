@@ -297,6 +297,7 @@ public partial class HomeViewModel : ViewModelBase
             row.What = s.State switch
             {
                 _ when !enabled => "Switched off in settings",
+                EngineState.Starting or EngineState.Error when s.Problem is { } problem => problem,
                 EngineState.Earning => $"Mining {Coins.ForAlgorithm(s.Detail ?? (i == 0 ? "rx/0" : null)).Name}" +
                                        (s.CurrentRole != PayoutRole.User ? " (short fee slice)" : ""),
                 EngineState.Starting when s.Detail?.Contains("Testing", StringComparison.Ordinal) == true => s.Detail,
@@ -388,6 +389,8 @@ public partial class HomeViewModel : ViewModelBase
             return ("Ready", "Otium starts earning when you step away from your computer.");
         if (states.Contains(EngineState.PausedUnprofitable))
             return ("Paused", "Electricity would cost more than you'd earn right now. Otium checks again every 30 minutes.");
+        if (snapshots.FirstOrDefault(s => s.State == EngineState.Error && s.Problem is not null) is { } explained)
+            return ("Needs attention", explained.Problem!);
         if (states.Contains(EngineState.Error))
             return ("Needs attention", "Something went wrong. Otium retries automatically; see Advanced for details.");
         return ("Starting", "Getting ready…");

@@ -40,6 +40,8 @@ public sealed class AppHost : IAsyncDisposable
     {
         Paths = AppPaths.Default;
         Paths.EnsureCreated();
+        // Miners an earlier Otium left running (crash, killed process) would mine on unseen; stop them first.
+        MinerLifetime.StopOrphans(Paths.EnginesDir, Path.Combine(Paths.Root, "otium.lock"));
         _settingsStore = new JsonFileStore<AppSettings>(Paths.SettingsFile);
         Settings = _settingsStore.Load();
         EnsureDeviceSecrets();
@@ -74,7 +76,8 @@ public sealed class AppHost : IAsyncDisposable
         _gpuConfig = BuildConfig(100, "g");
         var gpuProvider = new SrbMinerGpuProvider(
             _http, Pool, Paths.EnginesDir, Paths.GpuBenchmarksFile, Gpus, GpuPowerMeter, EffectivePricePerKwh,
-            policy: () => EffectiveGpuPolicy);
+            policy: () => EffectiveGpuPolicy,
+            freeMemoryGb: gpu => gpu.Vendor == GpuVendor.Nvidia ? _nvml?.ReadFreeMemoryGb(gpu.Index) : null);
         if (IsSimulated)
         {
             var gpuLedger = new JsonFileStore<EarningsLedger>(Paths.GpuLedgerFile);

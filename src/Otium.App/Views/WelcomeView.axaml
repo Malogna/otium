@@ -153,7 +153,7 @@
                             <Grid ColumnDefinitions="Auto,*">
                                 <Path Classes="icon" Data="{StaticResource IconCheck}" VerticalAlignment="Top" Margin="0,2,0,0" />
                                 <TextBlock Grid.Column="1" Margin="12,0,0,0" TextWrapping="Wrap"
-                                           Text="It runs mining software (XMRig, and SRBMiner for graphics cards). Some antivirus tools flag these; Otium shows you how to allow them. If Windows Firewall asks about them, click Allow." />
+                                           Text="It runs mining software (XMRig, and SRBMiner for graphics cards). Some antivirus tools flag these; Otium shows you how to allow them. If Windows Firewall asks to allow them, choose Cancel: they only need outgoing connections." />
                             </Grid>
                             <Grid ColumnDefinitions="Auto,*">
                                 <Path Classes="icon" Data="{StaticResource IconCheck}" VerticalAlignment="Top" Margin="0,2,0,0" />
