@@ -23,7 +23,8 @@ public sealed record EngineConfig(
     bool NeverRunAtLoss,
     double PricePerKwh,
     FeeSchedule FeeSchedule,
-    string WorkerName);
+    string WorkerName,
+    Accounts.CpuPoolRoute? CpuPool = null);
 
 public sealed record EngineSnapshot
 {

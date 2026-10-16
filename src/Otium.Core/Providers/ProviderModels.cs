@@ -26,7 +26,8 @@ public enum PayoutRole
 public sealed record MiningTarget(string WalletAddress, PayoutRole Role);
 
 /// <param name="UsagePercent">Share of the device to use (CPU threads for CPU providers; GPU providers may ignore it).</param>
-public sealed record ProviderRunOptions(MiningTarget Target, string WorkerName, int UsagePercent);
+/// <param name="Pool">The server's pool route for this CPU, overriding the provider's default pool; null for own-wallet mining.</param>
+public sealed record ProviderRunOptions(MiningTarget Target, string WorkerName, int UsagePercent, Accounts.CpuPoolRoute? Pool = null);
 
 /// <param name="Detail">Short provider-specific note for the UI, e.g. the algorithm being mined.</param>
 /// <param name="IsCalibrating">

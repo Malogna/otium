@@ -56,7 +56,13 @@ Everything technical lives under **Advanced**:
 ```
 
 **Mining**
-- The CPU runs XMRig on MoneroOcean, which pays XMR.
+- The CPU runs XMRig (RandomX). For balance accounts the **server decides the pool** and sends it with the account
+  summary, so moving users needs no app release: MoneroOcean (pays XMR to the operator's wallet) by default, or
+  Monero on **Kryptex Pool** under the operator's Kryptex account (`account.worker`, auto-exchanged to BTC, PPS+ 1%).
+  `CpuMining:KryptexPercent` moves a stable share of accounts (a canary, by a hash of the worker id) and 100 moves
+  everyone; raising it only ever adds accounts. Kryptex CPU work is credited at the same Monero network value as
+  MoneroOcean work (block reward ÷ difficulty × price, minus the pool fee), so a move doesn't change what a user earns.
+  Own-wallet users always mine to their own address on MoneroOcean.
 - The GPU runs SRBMiner on whichever algorithm pays most after miner and pool fees and measured electricity. Which
   algorithms are allowed, on which pool and at what rate comes from the server's **GPU policy**
   (`GET /api/v1/gpu-policy`, `src/Otium.Server/Gpu`), rebuilt every 10 minutes from live feeds:
@@ -152,6 +158,8 @@ Configure `src/Otium.Server/appsettings.json` (or environment variables such as 
 | `Referral:PublicBaseUrl`, `DownloadUrl` | Invite links and the landing page |
 | `Kryptex:Enabled`, `Account` | GPU coins on Kryptex Pool (off by default). Set up auto-exchange on that Kryptex account. |
 | `Kryptex:Coins:{algorithm}` | Kryptex coin slug, WhatToMine id and stratum host per algorithm (defaults for `pearlhash` and `quantus`) |
+| `Kryptex:Cpu:Coin`, `Host`, `Port`, `Tls` | Kryptex's Monero pool for CPUs (default `xmr.kryptex.network:8029`, TLS) |
+| `CpuMining:KryptexPercent` | Share of balance accounts (0–100) whose CPU mines on Kryptex instead of MoneroOcean; default 0 |
 | `GpuPolicy:Disabled`, `Tiers`, `RefreshInterval` | Kill switch, tier overrides and refresh interval for the GPU policy |
 | `Bandwidth:Enabled`, `PartnerName` | Internet sharing (off by default); the partner's name appears on the consent screen |
 | `Bandwidth:UsdPerSharingHour`, `UsdPerGb` | Gross rates credited from usage reports, before the fee. Set them from the partner agreement (Honeygain pays per active device, so per hour). |
@@ -245,6 +253,7 @@ Sign-in codes are printed in the console. Closing the app window stops everythin
 | `-Computers 2` | Two simulated PCs, to try signing in on a second computer |
 | `-Reset` | Wipe dev data (`artifacts/dev`) first |
 | `-Speedup N` | Change the earnings speed-up |
+| `-KryptexCpu` | Route every balance account's CPU to the simulated Kryptex Monero pool instead of MoneroOcean |
 
 Operator dashboard while it runs: http://localhost:5080/admin (token `dev`). Or the raw summary:
 `curl -H "X-Admin-Token: dev" http://localhost:5080/admin/summary`. It compares what

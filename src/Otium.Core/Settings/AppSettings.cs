@@ -145,6 +145,9 @@ public sealed class AccountState
 
     /// <summary>The coin last used to cash out.</summary>
     public string? LastCashoutMethod { get; set; }
+
+    /// <summary>Where the server last said this account's CPU should mine (kept so it survives a restart offline).</summary>
+    public Accounts.CpuPoolRoute? CpuPool { get; set; }
 }
 
 public sealed class ReferralState

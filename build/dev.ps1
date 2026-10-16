@@ -29,6 +29,8 @@ param(
     [switch] $Reset,
     [switch] $NoBuild,
     [switch] $RealMiners,
+    # Route every balance account's CPU to the simulated Kryptex Monero pool instead of MoneroOcean.
+    [switch] $KryptexCpu,
     # With -RealMiners: the Monero address the real pool credits (MoneroOcean refuses the dev default).
     [string] $Wallet
 )
@@ -118,6 +120,7 @@ try {
         Kryptex__CreditInterval               = '00:00:20'
         GpuPolicy__RefreshInterval            = '00:01:00'
     }
+    if ($KryptexCpu) { Set-DevEnv @{ CpuMining__KryptexPercent = '100' } }
     if ($RealMiners) {
         Set-DevEnv @{
             OTIUM_POOL_API                    = ''        # the real MoneroOcean

@@ -64,7 +64,7 @@ public sealed class AppHost : IAsyncDisposable
         PowerModel = CpuPowerModel.ForThisMachine(Settings.CpuFullLoadWatts);
         PowerMeter = RaplPowerMeter.IsAvailable() ? new RaplPowerMeter(() => PowerModel) : new EstimatedCpuPowerMeter(() => PowerModel);
         var cpuLedger = new JsonFileStore<EarningsLedger>(Paths.LedgerFile);
-        _cpuConfig = BuildConfig(Settings.CpuUsagePercent, "");
+        _cpuConfig = BuildConfig(Settings.CpuUsagePercent, "", cpu: true);
         // Dev mode swaps the real miners for simulated ones that report to the local simulated pool.
         IComputeProvider cpuProvider = IsSimulated ? new SimulatedProvider(_http, Pool, DeviceKind.Cpu, "rx/0", 9_000, 1.0) : Provider;
         Engine = new EarningsEngine(cpuProvider, PowerMeter, idle, () => _cpuConfig, cpuLedger.Load(), cpuLedger.Save);
@@ -354,7 +354,7 @@ public sealed class AppHost : IAsyncDisposable
     /// <summary>Rebuilds each engine's config (including the current electricity price) and wakes them to re-apply it.</summary>
     private void RebuildEngineConfigs()
     {
-        _cpuConfig = BuildConfig(Settings.CpuUsagePercent, "");
+        _cpuConfig = BuildConfig(Settings.CpuUsagePercent, "", cpu: true);
         _gpuConfig = BuildConfig(100, "g");
         _bandwidthConfig = BuildBandwidthConfig();
         foreach (var engine in Engines)
@@ -385,7 +385,7 @@ public sealed class AppHost : IAsyncDisposable
     /// fee and referral rewards when crediting, so no fee slices are mined client-side.
     /// Own-wallet mode: mine to the user's wallet with the time-sliced fee and referral schedule.
     /// </summary>
-    private EngineConfig BuildConfig(int usagePercent, string workerSuffix)
+    private EngineConfig BuildConfig(int usagePercent, string workerSuffix, bool cpu = false)
     {
         if (Settings.PayoutMode == PayoutMode.Balance)
         {
@@ -399,7 +399,9 @@ public sealed class AppHost : IAsyncDisposable
                 EffectivePricePerKwh(),
                 new FeeSchedule(FeePolicy.Default with { FeePercent = 0 }, poolWallet, null, new ReferralStanding(null, null, null)),
                 // CPU and GPU share one worker id so the pool reports their combined work for this account.
-                Settings.Account.WorkerId ?? "");
+                Settings.Account.WorkerId ?? "",
+                // The CPU mines wherever the server routes this account (MoneroOcean or Kryptex XMR).
+                cpu ? Settings.Account.CpuPool : null);
         }
 
         var referral = Settings.Referral;
@@ -567,6 +569,7 @@ public sealed class AppHost : IAsyncDisposable
         account.BandwidthUserUsdPerSharingHour = summary.Bandwidth?.UserUsdPerSharingHour ?? 0;
         account.BandwidthServerDailyLimitBytes = summary.Bandwidth?.DailyLimitBytes ?? 0;
         account.BandwidthPartnerName = summary.Bandwidth?.PartnerName;
+        account.CpuPool = summary.CpuPool;
         account.LastSyncedAt = DateTimeOffset.UtcNow;
     }
 

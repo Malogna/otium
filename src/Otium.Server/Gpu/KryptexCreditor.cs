@@ -1,11 +1,14 @@
 using Microsoft.Extensions.Options;
+using Otium.Core.Pools;
 using Otium.Server.Data;
 using Otium.Server.Earnings;
 
 namespace Otium.Server.Gpu;
 
 /// <summary>
-/// Credits balance accounts for GPU coins mined on Kryptex (Pearl, Quantus). Kryptex keeps per-worker hashrate history
+/// Credits balance accounts for coins mined on Kryptex: GPU coins (Pearl, Quantus) at the GPU policy's live rate, and
+/// Monero from CPUs routed there at the same network value MoneroOcean crediting uses (block reward ÷ difficulty ×
+/// price), so moving a user between the two pools doesn't change what they earn. Kryptex keeps per-worker hashrate history
 /// for the operator's account, and each user mines under their own worker id, so each run integrates the new points
 /// into hashes and credits their value at the policy's live rate, after the pool fee. As with MoneroOcean, Otium carries
 /// the pool's luck and the price between crediting and Kryptex's auto-exchange; the admin summary shows what Kryptex
@@ -15,6 +18,7 @@ public sealed class KryptexCreditor(
     OtiumStore store,
     IKryptexApi kryptex,
     GpuPolicyService policy,
+    IMoneroPoolApi monero,
     IOptions<KryptexOptions> kryptexOptions,
     IOptions<EarningsOptions> earningsOptions,
     TimeProvider time,
@@ -39,14 +43,19 @@ public sealed class KryptexCreditor(
         var workers = 0;
         long userMicros = 0, referralMicros = 0;
 
+        var rates = new List<(string Coin, double UsdPerHash)>();
         foreach (var (algorithm, coin) in options.Coins)
         {
             // Work already done is paid even if the algorithm was just switched off, at the last known rate.
-            var rate = current.For(algorithm) is { UsdPerHashPerSecondDay: > 0 } a ? a : null;
-            if (rate is null)
-                continue;
-            var usdPerHash = rate.UsdPerHashPerSecondDay / 86_400 * (1 - rate.PoolFeePercent / 100);
+            if (current.For(algorithm) is { UsdPerHashPerSecondDay: > 0 } rate)
+                rates.Add((coin.Coin, rate.UsdPerHashPerSecondDay / 86_400 * (1 - rate.PoolFeePercent / 100)));
+        }
+        if (options.Cpu.Coin.Length > 0 && await MoneroUsdPerHashAsync(options.Cpu.Coin, ct) is { } cpuRate)
+            rates.Add((options.Cpu.Coin, cpuRate));
 
+        foreach (var (coinSlug, usdPerHash) in rates)
+        {
+            var coin = new KryptexCoin { Coin = coinSlug };
             var prefix = $"kx:{coin.Coin}:";
             IEnumerable<string> names;
             try
@@ -102,6 +111,38 @@ public sealed class KryptexCreditor(
             logger.LogInformation("Credited {Workers} Kryptex workers: ${Users} to users, ${Referrals} referral rewards", workers, result.UsersUsd, result.ReferralsUsd);
         return result;
     }
+
+    /// <summary>
+    /// Monero's value per hash after Kryptex's pool fee, from the same network data MoneroOcean crediting uses. Null when
+    /// it can't be priced right now; the work is credited on a later run instead.
+    /// </summary>
+    private async Task<double?> MoneroUsdPerHashAsync(string coin, CancellationToken ct)
+    {
+        try
+        {
+            var network = await monero.GetNetworkStatsAsync(ct);
+            if (network.Difficulty <= 0 || network.PriceUsd <= 0)
+                return null;
+            double fee;
+            try
+            {
+                fee = (await kryptex.GetPoolInfoAsync(coin, ct)).FeePercent;
+            }
+            catch (Exception e) when (e is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+            {
+                fee = DefaultCpuFeePercent;
+            }
+            return network.BlockRewardXmr / network.Difficulty * network.PriceUsd * (1 - fee / 100);
+        }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            logger.LogWarning(e, "Monero network stats unavailable; Kryptex CPU work will be credited next run");
+            return null;
+        }
+    }
+
+    /// <summary>Kryptex's XMR pool fee (PPS+, October 2026), used when its pool info can't be read.</summary>
+    public const double DefaultCpuFeePercent = 1.0;
 
     /// <summary>
     /// Hashes represented by the points after <paramref name="lastMs"/>. Each point stands for the time since the

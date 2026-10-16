@@ -59,10 +59,10 @@ public static class DevPoolHost
         app.MapGet("/miner/{wallet}/chart/hashrate/allWorkers", (string wallet, SimulatedPool pool) =>
             Results.Ok(pool.WorkerCharts(wallet).ToDictionary(w => w.Key, w => w.Value.Select(p => new { ts = p.Ts, hs = p.Hs, hs2 = p.Hs2 }))));
 
-        // ---------- Kryptex Pool (Pearl, Quantus) and WhatToMine, for the GPU policy ----------
+        // ---------- Kryptex Pool (Pearl, Quantus, and Monero for CPUs routed there) and WhatToMine ----------
 
         // Simulated miners report Kryptex work with the wallet "kryptex:{coin}:{account}" and no XMR value.
-        app.MapGet("/kryptex/{coin}/api/v1/pool/info", (string coin) => Results.Ok(new { fee = 0.03, fee_type = "PPS+", ticker = coin }));
+        app.MapGet("/kryptex/{coin}/api/v1/pool/info", (string coin) => Results.Ok(new { fee = coin == "xmr" ? 0.01 : 0.03, fee_type = "PPS+", ticker = coin }));
 
         app.MapGet("/kryptex/{coin}/api/v3/miner/workers/{account}", (string coin, string account, SimulatedPool pool) =>
         {

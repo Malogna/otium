@@ -248,6 +248,55 @@ public sealed class KryptexCreditingTests : IDisposable
         Assert.Equal("otium", policy.Route(policy.For("pearlhash")!.Route)!.User);
     }
 
+    private async Task<(string Device, string Secret, AccountSummary Summary)> RegisterBalance(HttpClient http)
+    {
+        var secret = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32));
+        var device = Guid.NewGuid().ToString("N");
+        var register = await http.PostAsJsonAsync("/api/v1/devices", new RegisterDeviceRequest(device, secret, null, null));
+        return (device, secret, (await register.Content.ReadFromJsonAsync<AccountSummary>())!);
+    }
+
+    [Fact]
+    public async Task Balance_accounts_mine_on_moneroocean_until_the_operator_moves_them()
+    {
+        var (_, _, summary) = await RegisterBalance(_http);
+
+        var route = summary.CpuPool!;
+        Assert.Equal(CpuPoolRoute.MoneroOcean, route.Kind);
+        Assert.Equal("gulf.moneroocean.stream", route.Host);
+        Assert.Equal(20128, route.Port);
+        Assert.True(route.Tls);
+        Assert.Equal(summary.PoolWallet, route.User);
+        Assert.Equal(summary.WorkerId, route.Password);
+    }
+
+    [Fact]
+    public async Task At_100_percent_every_balance_account_mines_monero_on_kryptex()
+    {
+        using var factory = _factory.WithWebHostBuilder(b => b.UseSetting("CpuMining:KryptexPercent", "100"));
+        using var http = factory.CreateClient();
+
+        var (_, _, summary) = await RegisterBalance(http);
+
+        Assert.Equal(new CpuPoolRoute(CpuPoolRoute.Kryptex, "xmr.kryptex.network", 8029, true, $"otium.{summary.WorkerId}", "x"), summary.CpuPool);
+    }
+
+    [Fact]
+    public async Task Cpu_work_on_kryptex_monero_is_credited_at_the_network_value()
+    {
+        var (device, secret, summary) = await RegisterBalance(_http);
+        var t0 = _time.GetUtcNow().AddMinutes(-20);
+        // The fake network values one hash at $1 (reward 1 / difficulty 1 × $1), so 0.001 H/s for 20 minutes is $1.20.
+        _kryptex.Charts[$"xmr:{summary.WorkerId}"] = [new(t0, 0.001), new(t0.AddMinutes(10), 0.001)];
+
+        var result = await _factory.Services.GetRequiredService<KryptexCreditor>().CreditOnceAsync(CancellationToken.None);
+
+        Assert.Equal(1, result.WorkersCredited);
+        var balance = (await new AccountClient(_http).GetSummaryAsync(device, secret, CancellationToken.None)).Balance;
+        // Minus Kryptex's pool fee (3% from the fake pool info) and Otium's 10%.
+        Assert.Equal(decimal.Round((decimal)(1.2 * 0.97 * 0.9), 2, MidpointRounding.ToZero), balance.PendingUsd);
+    }
+
     [Fact]
     public async Task Each_users_kryptex_worker_is_credited_once_after_fees()
     {
