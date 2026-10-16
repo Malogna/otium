@@ -80,6 +80,27 @@ automatically" (one UAC prompt adds a Defender exclusion for the engines folder)
    --pool prl.kryptex.network:7048 --wallet <account>.test --api-enable`, comparing `gpu.total` with the Kryptex
    worker chart.
 
+## Fixed afterwards (engine follow-up)
+
+- **Issue 2:** a GPU miner with no hashrate for 3 minutes, or one that exits, now counts as failed. Otium tries the next
+  algorithm and says so plainly ("Graphics card isn't mining kawpow: its dataset doesn't fit in the graphics card's free
+  memory… Trying … instead"). The failed algorithm is set aside for 1 hour, doubling after each failure up to 24 hours, so
+  it isn't retried in a loop. When nothing is left to try, the app shows "Graphics card isn't mining: <reason>" and when
+  it tries again. Hashes from SRBMiner's first dev-fee round (60 s after its "doing the first devfee mining round" line)
+  count neither as earnings nor as benchmark samples. A benchmark also only passes if the card is still hashing in its
+  last 30 s.
+- **Issue 3:** on Windows, miners join a Job Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, so they and SRBMiner's
+  watchdog child die with Otium, however it exits. On Linux and macOS, Otium kills them with their child processes on
+  normal exit, SIGTERM, SIGHUP or an unhandled exception. At startup, every platform stops miners left running from
+  this install's engines folder. That cleanup is skipped while another Otium holds the same data folder's `otium.lock`.
+- **Issue 4:** onboarding, Settings and the antivirus cards now tell users to choose **Cancel** at the Windows Firewall
+  prompt. The miners only make outgoing connections, and Otium reads both stats APIs at `127.0.0.1`, which the
+  firewall doesn't filter.
+- **Issue 1 (partly):** before launching an algorithm, Otium compares the free VRAM (NVML, NVIDIA only) with its
+  `MinMemoryGb`. If it doesn't fit, Otium skips that algorithm for 10 minutes and explains that other apps are using the
+  graphics memory. A skipped algorithm isn't recorded as a failed benchmark. This doesn't replace the retest with free
+  VRAM: at 7.5 GB free, etchash still failed in the direct run.
+
 ## Fixed in this change
 
 - `KryptexClient.ParseWorkers` reads `hashrate` (number or string) and falls back to `avg_hashrate_30m`, the live

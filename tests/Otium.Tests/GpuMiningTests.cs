@@ -208,6 +208,23 @@ public class SrbMinerTests
     }
 
     [Fact]
+    public void Real_srbminer_dev_fee_and_failure_lines_are_recognised()
+    {
+        Assert.True(SrbMinerStats.StartedFirstDevFeeRound(["[2026-10-16 15:01:37] Hold on, doing the first devfee mining round[0]"]));
+        Assert.False(SrbMinerStats.StartedFirstDevFeeRound(["[2026-10-16 15:01:38] Connected to gulf.moneroocean.stream:10128 [0]"]));
+
+        Assert.StartsWith("its dataset doesn't fit in the graphics card's free memory",
+            SrbMinerStats.DescribeProblem(["[2026-10-16 15:02:23] Couldn't set epoch 611 on GPU0 [0]", "[2026-10-16 15:02:32] Total: 0.00 H/s [P:108.4W EFF: A:0 R:0 HW:0]"]));
+        Assert.Equal("the miner reported \"OCL Error code -52 [clEnqueueNDRangeKernel [2]]\"",
+            SrbMinerStats.DescribeProblem(["[2026-10-16 14:52:10] OCL Error code -52 [clEnqueueNDRangeKernel [2]]"]));
+        Assert.Null(SrbMinerStats.DescribeProblem(
+        [
+            "[2026-10-16 14:58:41] GPU0 RTX 3080: 0.00 H/s [T:63C FAN:40% P:91.1W EFF:- CC:1230 MC:5001 A:0 R:0 HW:0]",
+            "[2026-10-16 14:58:41] Total: 0.00 H/s [P:91.1W EFF: A:0 R:0 HW:0]",
+        ]));
+    }
+
+    [Fact]
     public void Release_assets_cover_windows_and_linux_x64_only()
     {
         Assert.Equal("SRBMiner-Multi-3-7-6-win64.zip", SrbMinerRelease.For(OSPlatform.Windows, Architecture.X64)!.FileName);
@@ -240,10 +257,21 @@ public sealed class SrbMinerProviderTests : IDisposable
         _provider = CreateProvider(policy: null, pricePerKwh: 0, benchmarks: "bench.json");
     }
 
-    private SrbMinerGpuProvider CreateProvider(Func<GpuPolicy?>? policy, double pricePerKwh, string? benchmarks = null) =>
+    private SrbMinerGpuProvider CreateProvider(Func<GpuPolicy?>? policy, double pricePerKwh, string? benchmarks = null, Func<GpuInfo, double?>? freeMemoryGb = null) =>
         new(new HttpClient(), _pool, Path.Combine(_dir, "engines"), Path.Combine(_dir, benchmarks ?? $"bench-{Guid.NewGuid():N}.json"),
             [Rtx3080], _meter, () => pricePerKwh, _factory, _time,
-            asset: SrbMinerRelease.For(OSPlatform.Windows, Architecture.X64), policy: policy);
+            asset: SrbMinerRelease.For(OSPlatform.Windows, Architecture.X64), policy: policy, freeMemoryGb: freeMemoryGb);
+
+    /// <summary>SRBMiner 3.7.6's own output from the real run (docs/real-mining-run.md) when kawpow's dataset didn't fit.</summary>
+    private static readonly string[] RealDevFeeThenEpochFailure =
+    [
+        "[2026-10-16 15:01:32] HTTP API enabled on port 21987",
+        "[2026-10-16 15:01:37] Hold on, doing the first devfee mining round[0]",
+        "[2026-10-16 15:01:38] Connected to gulf.moneroocean.stream:10128 [0]",
+        "[2026-10-16 15:02:23] Couldn't set epoch 611 on GPU0 [0]",
+        "[2026-10-16 15:02:32] GPU0 RTX 3080: 0.00 H/s [T:64C FAN:52% P:108.4W EFF:- CC:1200 MC:5001 A:0 R:0 HW:0]",
+        "[2026-10-16 15:02:32] Total: 0.00 H/s [P:108.4W EFF: A:0 R:0 HW:0]",
+    ];
 
     private sealed class FakePool : IMoneroPoolApi
     {
@@ -276,13 +304,16 @@ public sealed class SrbMinerProviderTests : IDisposable
     private sealed class FakeProcess(double hashrate) : IMinerProcess
     {
         public double Hashrate { get; set; } = hashrate;
+        /// <summary>When set, decides the hashrate on each read instead (e.g. a miner that stops after a while).</summary>
+        public Func<double>? Script { get; set; }
         public bool Exited { get; set; }
         public bool HasExited => Exited;
         public int? ExitCode => Exited ? 1 : null;
-        public IReadOnlyList<string> RecentLog => ["not enough GPU memory"];
+        public List<string> Log { get; } = ["not enough GPU memory"];
+        public IReadOnlyList<string> RecentLog => Log.ToArray();
         public bool Disposed { get; private set; }
 
-        public Task<double?> ReadHashrateAsync(CancellationToken ct) => Task.FromResult<double?>(Hashrate);
+        public Task<double?> ReadHashrateAsync(CancellationToken ct) => Task.FromResult<double?>(Script?.Invoke() ?? Hashrate);
 
         public ValueTask DisposeAsync()
         {
@@ -295,6 +326,11 @@ public sealed class SrbMinerProviderTests : IDisposable
     {
         /// <summary>Hashrate the fake "card" reaches per algorithm; 0 means the miner crashes.</summary>
         public Dictionary<string, double> Speeds { get; } = new() { ["kawpow"] = 30e6, ["autolykos2"] = 200e6, ["pearlhash"] = 104e12 };
+        /// <summary>Algorithms whose miner keeps running but never hashes (like kawpow on the real RTX 3080 run).</summary>
+        public HashSet<string> Stalls { get; } = [];
+        /// <summary>Lines every new miner prints first, e.g. SRBMiner's dev-fee round.</summary>
+        public List<string> StartupLog { get; } = [];
+        public Action<string, FakeProcess>? OnStart { get; set; }
         public List<(string Algorithm, string Password, FakeProcess Process, string Pool, string Wallet)> Launches { get; } = [];
 
         public IMinerProcess Start(string binary, IReadOnlyList<string> arguments, int apiPort)
@@ -302,7 +338,12 @@ public sealed class SrbMinerProviderTests : IDisposable
             string Arg(string flag) => arguments[arguments.ToList().IndexOf(flag) + 1];
             var algo = Arg("--algorithm");
             var speed = Speeds.GetValueOrDefault(algo);
-            var process = new FakeProcess(speed) { Exited = speed == 0 };
+            var stalls = Stalls.Contains(algo);
+            var process = new FakeProcess(stalls ? 0 : speed) { Exited = speed == 0 && !stalls };
+            process.Log.InsertRange(0, StartupLog);
+            if (stalls)
+                process.Log.AddRange(RealDevFeeThenEpochFailure);
+            OnStart?.Invoke(algo, process);
             Launches.Add((algo, Arg("--password"), process, Arg("--pool"), Arg("--wallet")));
             return process;
         }
@@ -400,6 +441,178 @@ public sealed class SrbMinerProviderTests : IDisposable
         Assert.Null(own.For("pearlhash"));
         Assert.NotNull(own.For("kawpow"));
         Assert.Single(own.Routes);
+    }
+
+    /// <summary>Ticks until <paramref name="until"/> holds (returning that status) or <paramref name="max"/> passes.</summary>
+    private async Task<ProviderStatus> RunUntil(Func<ProviderStatus, bool> until, TimeSpan max)
+    {
+        ProviderStatus status = ProviderStatus.Stopped(true);
+        var end = _time.GetUtcNow() + max;
+        while (_time.GetUtcNow() < end)
+        {
+            _time.Advance(TimeSpan.FromSeconds(5));
+            status = await _provider.GetStatusAsync(CancellationToken.None);
+            if (until(status))
+                return status;
+        }
+        throw new Xunit.Sdk.XunitException($"Condition not reached in {max}; last status: {status}");
+    }
+
+    /// <summary>Benchmarks kawpow and autolykos2, then mines autolykos2 (the better payer on the fake card).</summary>
+    private async Task MineAutolykosAfterBenchmarks()
+    {
+        await _provider.StartAsync(Options, CancellationToken.None);
+        await RunFor(SrbMinerGpuProvider.BenchmarkDuration * 2 + TimeSpan.FromSeconds(10));
+        Assert.Equal("autolykos2", _provider.CurrentAlgorithm);
+        Assert.Equal(ProviderState.Running, (await RunFor(TimeSpan.FromMinutes(2))).State);
+    }
+
+    private void StallCurrentMiner(string algorithm)
+    {
+        var process = _factory.Launches[^1].Process;
+        process.Hashrate = 0;
+        process.Log.AddRange(RealDevFeeThenEpochFailure.Skip(3));
+        _factory.Stalls.Add(algorithm);
+    }
+
+    [Fact]
+    public async Task A_miner_stuck_at_zero_hashrate_is_failed_over_and_the_reason_shown()
+    {
+        await MineAutolykosAfterBenchmarks();
+        StallCurrentMiner("autolykos2");
+        var stuck = _factory.Launches[^1].Process;
+
+        // Within the grace period it's just "starting"...
+        var status = await RunFor(SrbMinerGpuProvider.StallTimeout - TimeSpan.FromSeconds(10));
+        Assert.Equal(ProviderState.Starting, status.State);
+        Assert.Equal("autolykos2", _provider.CurrentAlgorithm);
+
+        // ...then it has failed: the next algorithm runs and the app says why, plainly.
+        status = await RunUntil(s => s.Problem is not null, TimeSpan.FromSeconds(30));
+        Assert.Equal(ProviderState.Starting, status.State);
+        Assert.Equal("kawpow", _factory.Launches[^1].Algorithm);
+        Assert.True(stuck.Disposed);
+        Assert.StartsWith("Graphics card isn't mining autolykos2: its dataset doesn't fit in the graphics card's free memory", status.Problem);
+        Assert.Contains("Trying kawpow instead", status.Problem);
+        Assert.NotNull(_provider.SetAsideReason("autolykos2"));
+
+        // kawpow hashes, so the notice clears; autolykos2 pays more but isn't retried while it's set aside.
+        var autolykosLaunches = _factory.Launches.Count(l => l.Algorithm == "autolykos2");
+        status = await RunFor(TimeSpan.FromMinutes(50));
+        Assert.Equal(ProviderState.Running, status.State);
+        Assert.Null(status.Problem);
+        Assert.Contains("autolykos2 wasn't mining", status.Detail);
+        Assert.Equal(autolykosLaunches, _factory.Launches.Count(l => l.Algorithm == "autolykos2"));
+
+        // After the cool-down it gets another chance at the next re-check.
+        await RunFor(SrbMinerGpuProvider.StallCooldown);
+        Assert.Equal(autolykosLaunches + 1, _factory.Launches.Count(l => l.Algorithm == "autolykos2"));
+    }
+
+    [Fact]
+    public async Task A_miner_that_exits_while_mining_is_replaced_by_the_next_algorithm()
+    {
+        await MineAutolykosAfterBenchmarks();
+        _factory.Launches[^1].Process.Exited = true;
+
+        var status = await RunFor(TimeSpan.FromSeconds(5));
+        Assert.Equal("kawpow", _factory.Launches[^1].Algorithm);
+        Assert.StartsWith("Graphics card isn't mining autolykos2:", status.Problem);
+    }
+
+    [Fact]
+    public async Task When_no_algorithm_mines_it_says_so_plainly_and_backs_off_instead_of_looping()
+    {
+        await MineAutolykosAfterBenchmarks();
+        StallCurrentMiner("autolykos2");
+        _factory.Stalls.Add("kawpow");
+
+        var status = await RunUntil(s => s.State == ProviderState.Error, TimeSpan.FromMinutes(10));
+        Assert.StartsWith("Graphics card isn't mining: its dataset doesn't fit in the graphics card's free memory", status.Problem);
+        Assert.Contains("Otium tries again in", status.Problem);
+        Assert.All(_factory.Launches, l => Assert.True(l.Process.Disposed));
+
+        // The engine retries every minute; that mustn't relaunch a miner that just failed.
+        var launches = _factory.Launches.Count;
+        var refused = await Assert.ThrowsAsync<ProviderProblemException>(() => _provider.StartAsync(Options, CancellationToken.None));
+        Assert.StartsWith("Graphics card isn't mining:", refused.Message);
+        Assert.Equal(launches, _factory.Launches.Count);
+
+        // After the cool-down both are tried again; failing again sets them aside for twice as long.
+        _time.Advance(SrbMinerGpuProvider.StallCooldown + TimeSpan.FromMinutes(10));
+        await _provider.StartAsync(Options, CancellationToken.None);
+        Assert.True(_factory.Launches.Count > launches);
+        status = await RunUntil(s => s.State == ProviderState.Error, TimeSpan.FromMinutes(10));
+        Assert.Contains("Otium tries again in 2 hours", status.Problem);
+    }
+
+    [Fact]
+    public async Task A_benchmark_taken_during_the_dev_fee_round_does_not_count()
+    {
+        // As on the real RTX 3080: SRBMiner first hashes for its developer, then can't build kawpow's dataset for the
+        // user's pool, while its API still shows the old speed for a while. The old check took 3 samples and passed.
+        _factory.OnStart = (algorithm, process) =>
+        {
+            if (algorithm != "kawpow")
+                return;
+            process.Log.Clear();
+            process.Log.AddRange(RealDevFeeThenEpochFailure);
+            var launched = _time.GetUtcNow();
+            process.Script = () => _time.GetUtcNow() - launched < TimeSpan.FromSeconds(100) ? 33.5e6 : 0;
+        };
+
+        await _provider.StartAsync(Options, CancellationToken.None);
+        await RunFor(SrbMinerGpuProvider.BenchmarkDuration + TimeSpan.FromSeconds(5));
+
+        var kawpow = _provider.Benchmarks.Single(b => b.Algorithm == "kawpow");
+        Assert.False(kawpow.Succeeded);
+        Assert.StartsWith("its dataset doesn't fit", kawpow.Failure);
+        Assert.Equal("autolykos2", _factory.Launches[^1].Algorithm);
+    }
+
+    [Fact]
+    public async Task Hashes_during_the_dev_fee_round_are_not_reported_as_the_users()
+    {
+        _factory.StartupLog.Add("[2026-10-16 15:01:37] Hold on, doing the first devfee mining round[0]");
+        await _provider.StartAsync(Options, CancellationToken.None);
+
+        var status = await RunFor(TimeSpan.FromSeconds(30));
+        Assert.Equal(ProviderState.Starting, status.State);
+        Assert.Equal(0, status.HashrateHps);
+        status = await RunFor(TimeSpan.FromSeconds(40));
+        Assert.Equal(30e6, status.HashrateHps);
+
+        // A card that keeps hashing after the round still passes its benchmark.
+        await RunUntil(s => !s.IsCalibrating, SrbMinerGpuProvider.BenchmarkDuration * 2);
+        Assert.All(_provider.Benchmarks, b => Assert.True(b.Succeeded));
+        status = await RunFor(TimeSpan.FromSeconds(10));
+        Assert.Equal(0, status.HashrateHps);
+        Assert.Contains("fee round", status.Message);
+    }
+
+    [Fact]
+    public async Task Too_little_free_graphics_memory_skips_an_algorithm_and_says_why()
+    {
+        double freeGb = 5; // e.g. a game holds 7 GB of the 12 GB card
+        var provider = CreateProvider(policy: null, pricePerKwh: 0, freeMemoryGb: _ => freeGb);
+
+        await provider.StartAsync(Options, CancellationToken.None);
+        Assert.Equal("autolykos2", _factory.Launches.Single().Algorithm); // kawpow needs about 6 GB
+        Assert.Contains($"{5.0:0.0} GB of 12 GB free, kawpow needs about 6 GB", provider.SetAsideReason("kawpow")); // the user's number format
+        await RunForProvider(provider, SrbMinerGpuProvider.BenchmarkDuration + TimeSpan.FromSeconds(10));
+        Assert.DoesNotContain(provider.Benchmarks, b => b.Algorithm == "kawpow"); // not a failure: tested once memory frees up
+        Assert.Equal("autolykos2", provider.CurrentAlgorithm);
+
+        await provider.StopAsync(CancellationToken.None);
+        freeGb = 1;
+        var refused = await Assert.ThrowsAsync<ProviderProblemException>(() => provider.StartAsync(Options, CancellationToken.None));
+        Assert.StartsWith($"Graphics card isn't mining: other apps are using most of the graphics card's memory ({1.0:0.0} GB of 12 GB free", refused.Message);
+
+        freeGb = 11;
+        _time.Advance(SrbMinerGpuProvider.LowMemoryCooldown);
+        await provider.StartAsync(Options, CancellationToken.None);
+        Assert.Equal("kawpow", _factory.Launches[^1].Algorithm);
+        Assert.True((await provider.GetStatusAsync(CancellationToken.None)).IsCalibrating);
     }
 
     private async Task<ProviderStatus> RunForProvider(SrbMinerGpuProvider provider, TimeSpan duration)

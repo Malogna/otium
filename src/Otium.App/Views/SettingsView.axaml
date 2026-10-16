@@ -72,7 +72,7 @@
                         <Button Content="Test GPU again" Command="{Binding RetestGpuCommand}" />
                     </StackPanel>
                     <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
-                               Text="If Windows Firewall asks about XMRig or SRBMiner, click Allow." />
+                               Text="If Windows Firewall asks whether SRBMiner or XMRig may accept connections, choose Cancel. Mining only needs outgoing connections, and Otium reads the miners' stats from inside this computer, which the firewall never blocks." />
                 </StackPanel>
             </StackPanel>
         </Border>

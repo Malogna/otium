@@ -50,7 +50,7 @@
                            Text="Antivirus tools treat crypto miners as threats, often with a 'Trojan' label, because criminals hide the same miners on other people's computers. Otium only downloads the official releases and checks every file against its published fingerprint. If you want to continue, allow only the Otium engines folder below, then press Try again. Don't turn off your antivirus." />
                 <SelectableTextBlock Text="{Binding BlockedPath}" FontFamily="Consolas, Menlo, monospace" TextWrapping="Wrap" />
                 <TextBlock Classes="muted" FontSize="13" IsVisible="{Binding IsWindows}" TextWrapping="Wrap"
-                           Text="Windows Security → Virus &amp; threat protection → Manage settings → Exclusions → Add an exclusion → Folder. Try again then downloads fresh copies, so there's nothing to restore." />
+                           Text="Windows Security → Virus &amp; threat protection → Manage settings → Exclusions → Add an exclusion → Folder. Try again then downloads fresh copies, so there's nothing to restore. If Windows Firewall then asks about SRBMiner or XMRig, choose Cancel: the miners only need outgoing connections." />
                 <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Text="{Binding AllowResult}"
                            IsVisible="{Binding AllowResult, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                 <StackPanel Orientation="Horizontal" Spacing="8">
