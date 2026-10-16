@@ -202,6 +202,22 @@ public sealed class GpuPolicyTests
     }
 
     [Fact]
+    public void Kryptex_chart_points_count_whether_hashrates_are_numbers_or_strings()
+    {
+        // Wallet-address charts send numbers (October 2026); account charts aren't verified yet, so accept strings too.
+        using var chart = JsonDocument.Parse("""
+            [{"timestamp":1792166400,"hashrate":4506.4,"shares":3},
+             {"timestamp":1792167000,"hashrate":"4600.5","shares":2},
+             {"timestamp":1792167600,"hashrate":null}]
+            """);
+
+        var points = KryptexClient.ParseChart(chart.RootElement);
+
+        Assert.Equal([4506.4, 4600.5], points.Select(p => p.Hashrate));
+        Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(1792166400), points[0].Time);
+    }
+
+    [Fact]
     public void Kryptex_history_integrates_only_new_points_and_caps_gaps()
     {
         var t0 = new DateTimeOffset(2026, 10, 16, 12, 0, 0, TimeSpan.Zero);
