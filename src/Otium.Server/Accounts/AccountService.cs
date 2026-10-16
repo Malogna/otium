@@ -33,6 +33,7 @@ public sealed class AccountService(
     IOptions<ReferralOptions> referralOptions,
     IOptions<EarningsOptions> earningsOptions,
     IOptions<CashoutOptions> cashoutOptions,
+    CashoutMethodCatalog cashoutMethods,
     BandwidthService bandwidth,
     TimeProvider time,
     ILogger<AccountService> logger)
@@ -309,6 +310,7 @@ public sealed class AccountService(
         var referees = store.FindReferees(account.Code);
         var totals = store.Balance(account.AccountId, now);
         var cashouts = store.CashoutsFor(account.AccountId).Select(ToInfo).ToList();
+        var methods = cashoutMethods.Current;
 
         return new AccountSummary(
             account.WorkerId,
@@ -328,11 +330,12 @@ public sealed class AccountService(
                 ToUsd(totals.LifetimeMicros),
                 ToUsd(totals.ReferralMicros),
                 _cashouts.MinPayPalUsd,
-                _cashouts.MinCryptoUsd,
+                methods.Where(m => m.Method != CashoutMethods.PayPal).Select(m => m.MinUsd).DefaultIfEmpty(_cashouts.MinCryptoUsd).Min(),
                 _earnings.FeePercent,
                 _earnings.ReferralPercent,
                 cashouts,
-                ToUsd(store.PaidOutMicros(account.AccountId))),
+                ToUsd(store.PaidOutMicros(account.AccountId)),
+                methods),
             account.Email,
             (int)store.DeviceCount(account.AccountId),
             bandwidth.Terms(account));
@@ -353,13 +356,21 @@ public sealed class AccountService(
         _ => null,
     };
 
-    /// <summary>The Monero transaction hash of a paid crypto cash-out (never the tx key, which the batch shares).</summary>
+    /// <summary>
+    /// The transaction that delivered a paid crypto cash-out: the payout itself, or THORChain's outbound for a swap
+    /// (never a Monero tx key, which the batch shares). Null for PayPal and for manual notes.
+    /// </summary>
     public static string? TransactionId(CashoutRecord c)
     {
-        if (c.Method != CashoutMethods.Monero || c.Status != CashoutStatuses.Paid || c.ProviderReference is null)
+        if (c.Status != CashoutStatuses.Paid || c.ProviderReference is null || c.Method == CashoutMethods.PayPal)
             return null;
-        var hash = c.ProviderReference.Split(' ', 2)[0];
-        return hash.Length == 64 && hash.All(char.IsAsciiHexDigit) ? hash : null;
+        var id = c.ProviderReference.Split(' ', 2)[0];
+        var hex = id.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? id[2..] : id;
+        return c.Method switch
+        {
+            CashoutMethods.Solana => id.Length is >= 80 and <= 90 && id.All(char.IsAsciiLetterOrDigit) ? id : null,
+            _ => hex.Length == 64 && hex.All(char.IsAsciiHexDigit) ? id : null,
+        };
     }
 
     public static decimal ToUsd(long micros) => decimal.Round(micros / (decimal)OtiumStore.MicrosPerDollar, 2, MidpointRounding.ToZero);

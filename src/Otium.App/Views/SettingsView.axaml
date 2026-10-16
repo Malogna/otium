@@ -149,7 +149,7 @@
                     <StackPanel Spacing="2">
                         <TextBlock Text="Otium balance (recommended)" FontWeight="SemiBold" />
                         <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap"
-                                   Text="Earnings collect in your Otium balance. Cash out by PayPal or crypto whenever you like." />
+                                   Text="Earnings collect in your Otium balance, counted in dollars. Cash out to your own wallet in BTC, ETH, BNB or SOL whenever you like." />
                     </StackPanel>
                 </RadioButton>
                 <RadioButton GroupName="payout" IsChecked="{Binding UseOwnWallet}">

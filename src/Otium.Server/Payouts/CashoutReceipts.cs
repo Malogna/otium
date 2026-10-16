@@ -32,27 +32,40 @@ public sealed class CashoutReceipts(OtiumStore store, IEmailSender email, ILogge
         }
     }
 
+    /// <summary>"Monero (XMR)", "Ether (ETH) on Ethereum", "BNB on BNB Smart Chain (BEP-20)", "PayPal".</summary>
+    private static string MethodLabel(string method)
+    {
+        var network = CashoutMethods.Network(method);
+        var label = CashoutMethods.Label(method);
+        return network.Length > 0 && network != CashoutMethods.Name(method) ? $"{label} on {network}" : label;
+    }
+
     public static (string Subject, string Body) Compose(CashoutRecord cashout, DateTimeOffset paidAt)
     {
         var amount = "$" + AccountService.ToUsd(cashout.Micros).ToString("0.00", CultureInfo.InvariantCulture);
-        var isPayPal = cashout.Method == CashoutMethods.PayPal;
         var transaction = AccountService.TransactionId(cashout);
 
         var body = new StringBuilder()
             .AppendLine($"Your cash-out of {amount} has been sent.")
             .AppendLine()
             .AppendLine($"  Amount:     {amount}")
-            .AppendLine($"  Method:     {(isPayPal ? "PayPal" : "Monero (XMR)")}")
+            .AppendLine($"  Method:     {MethodLabel(cashout.Method)}")
             .AppendLine($"  To:         {AccountService.MaskDestination(cashout.Method, cashout.Destination)}")
             .AppendLine(CultureInfo.InvariantCulture, $"  Requested:  {cashout.CreatedAt.UtcDateTime:d MMMM yyyy, HH:mm} UTC")
             .AppendLine(CultureInfo.InvariantCulture, $"  Sent:       {paidAt.UtcDateTime:d MMMM yyyy, HH:mm} UTC")
             .AppendLine($"  Reference:  {cashout.Id}");
         if (transaction is not null)
             body.AppendLine($"  Transaction: {transaction}");
+        if (CashoutMethods.ExplorerUrl(cashout.Method, transaction) is { } explorer)
+            body.AppendLine($"  View it:    {explorer}");
         body.AppendLine()
-            .AppendLine(isPayPal
-                ? "It's in your PayPal account now. If you didn't have a PayPal account for this email yet, PayPal has sent you a link to claim it."
-                : "Monero needs 10 network confirmations before you can spend it, which usually takes about 20 minutes.")
+            .AppendLine(cashout.Method switch
+            {
+                CashoutMethods.PayPal => "It's in your PayPal account now. If you didn't have a PayPal account for this email yet, PayPal has sent you a link to claim it.",
+                CashoutMethods.Monero => "Monero needs 10 network confirmations before you can spend it, which usually takes about 20 minutes.",
+                CashoutMethods.Bitcoin => "Your wallet shows it once the transaction confirms, usually within an hour.",
+                _ => "It was swapped from Bitcoin through THORChain and sent to your address, so it's in your wallet now.",
+            })
             .AppendLine()
             .AppendLine("You can see all your cash-outs in the Otium app. If you didn't ask for this cash-out, reply to this email.")
             .AppendLine()

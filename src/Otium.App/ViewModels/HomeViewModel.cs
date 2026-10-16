@@ -175,7 +175,7 @@ public partial class HomeViewModel : ViewModelBase
         _balance.AnimateTo((double)balanceValue);
 
         // Projection
-        var minimum = Math.Min(account.MinPayPalUsd, account.MinCryptoUsd);
+        var minimum = account.MinCryptoUsd;
         var mining = Projection.Create(rate, electricity, _host.History.AverageEarningHoursPerDay(DateTimeOffset.Now),
             settings.OnlyWhenIdle, account.AvailableUsd + account.PendingUsd, minimum);
         var projection = WithSharing(mining, SharingPerDay(), account.AvailableUsd + account.PendingUsd, minimum);
@@ -215,7 +215,7 @@ public partial class HomeViewModel : ViewModelBase
         {
             GoalText = "You can cash out now";
             GoalPercent = 100;
-            GoalEta = $"PayPal from {Format.Money(account.MinPayPalUsd)}, crypto from {Format.Money(account.MinCryptoUsd)}";
+            GoalEta = $"In BTC, ETH, BNB or SOL, from {Format.Money(account.MinCryptoUsd)}";
         }
         else
         {
@@ -436,6 +436,13 @@ public partial class HomeViewModel : ViewModelBase
     {
         CashOut.Reset();
         IsCashingOut = true;
+    }
+
+    [RelayCommand]
+    private void OpenTransaction(string? url)
+    {
+        if (!string.IsNullOrEmpty(url))
+            Launch.Open(url);
     }
 
     [RelayCommand]

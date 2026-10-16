@@ -14,12 +14,16 @@ public sealed class CashoutProcessor(
     IEnumerable<IPayoutProvider> providers,
     CashoutReceipts receipts,
     TimeProvider time,
-    ILogger<CashoutProcessor> logger)
+    ILogger<CashoutProcessor> logger,
+    CashoutMethodCatalog? catalog = null)
 {
     public const int MaxAttempts = 10;
 
     public async Task ProcessOnceAsync(CancellationToken ct)
     {
+        if (catalog is not null)
+            await catalog.RefreshAsync(ct);
+
         foreach (var provider in providers.Where(p => p.IsConfigured))
         {
             var queued = store.CashoutsWithStatus(CashoutStatuses.Queued).Where(c => c.Method == provider.Method).ToList();

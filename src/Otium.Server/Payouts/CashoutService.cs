@@ -16,6 +16,8 @@ public sealed class CashoutService(
     OtiumStore store,
     IEnumerable<IPayoutProvider> providers,
     IOptions<CashoutOptions> options,
+    CashoutMethodCatalog catalog,
+    SanctionsList sanctions,
     TimeProvider time,
     ILogger<CashoutService> logger)
 {
@@ -33,17 +35,29 @@ public sealed class CashoutService(
             throw new OtiumException(400, "Your earnings are paid by the pool straight to your own wallet, so there's nothing to cash out here.");
         if (account.Email is null)
             throw new OtiumException(403, "Add your email first, so your balance can never get lost.");
-        if (!CashoutMethods.IsKnown(method))
-            throw new OtiumException(400, "Choose PayPal or Monero.");
-        if (method == CashoutMethods.PayPal && !IsEmail(destination))
-            throw new OtiumException(400, "That doesn't look like an email address.");
-        if (method == CashoutMethods.Monero && !MoneroAddress.TryValidate(destination, out _, out var addressError))
+        if (!CashoutMethods.IsKnown(method) || !_options.OfferedMethods.Contains(method))
+            throw new OtiumException(400, $"Choose one of: {string.Join(", ", catalog.Current.Select(m => m.Name))}.");
+        if (method == CashoutMethods.PayPal)
+        {
+            if (!IsEmail(destination))
+                throw new OtiumException(400, "That doesn't look like an email address.");
+        }
+        else if (!CryptoAddresses.TryValidate(method, destination, out var addressError))
+        {
             throw new OtiumException(400, addressError!);
+        }
+        if (catalog.Find(method)?.UnavailableReason is { } unavailable)
+            throw new OtiumException(409, $"{CashoutMethods.Name(method)} payouts are {unavailable}. Choose another coin or try again later.");
+        if (sanctions.IsSanctioned(method, destination))
+        {
+            logger.LogWarning("Refused a cash-out by {Account} to a sanctioned {Method} address", account.AccountId, method);
+            throw new OtiumException(403, "This address can't receive payouts from Otium.");
+        }
         if (store.HasOpenCashout(account.AccountId))
             throw new OtiumException(409, "You already have a cash-out on its way. You can request the next one when it arrives.");
 
         var now = time.GetUtcNow();
-        var minimum = method == CashoutMethods.PayPal ? _options.MinPayPalUsd : _options.MinCryptoUsd;
+        var minimum = _options.MinimumFor(method);
         var available = AccountService.ToUsd(store.Balance(account.AccountId, now).AvailableMicros);
         if (available < minimum)
             throw new OtiumException(400, $"You need at least ${Money(minimum)} available to cash out this way (you have ${Money(available)}).");
@@ -65,6 +79,8 @@ public sealed class CashoutService(
     {
         if (providers.FirstOrDefault(p => p.Method == method) is not { IsConfigured: true })
             return "provider not configured: pay manually, then mark paid";
+        if (!sanctions.IsLoaded(method))
+            return "sanctions list not loaded yet: check the address, then approve";
         if (amount > _options.AutoApproveMaxUsd)
             return $"amount above automatic limit (${Money(_options.AutoApproveMaxUsd)})";
         if (now - account.CreatedAt < _options.MinAccountAgeForAuto && !store.CashoutsFor(account.AccountId).Any(c => c.Status == Core.Accounts.CashoutStatuses.Paid))

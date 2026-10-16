@@ -21,7 +21,7 @@
                         <TextBlock Classes="h1" FontSize="36" HorizontalAlignment="Center" TextAlignment="Center"
                                    Text="Earn money while your computer rests" />
                         <TextBlock Classes="muted" FontSize="16" HorizontalAlignment="Center" TextAlignment="Center"
-                                   Text="Otium rents out your computer's spare power and pays you for it. No setup, no crypto knowledge needed." />
+                                   Text="One app for every way your computer can earn while you're away: mining, internet sharing and more, set up and switched for you. Close to one click; a little tech know-how helps." />
                     </StackPanel>
 
                     <Border Classes="card delay1" Padding="18">
@@ -43,8 +43,8 @@
                             <Grid ColumnDefinitions="Auto,*">
                                 <Border Classes="iconBadge"><Path Classes="icon" Data="{StaticResource IconWallet}" /></Border>
                                 <StackPanel Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center">
-                                    <TextBlock FontWeight="SemiBold" Text="Paid in dollars" />
-                                    <TextBlock Classes="muted" FontSize="13" Text="Cash out with PayPal or crypto, starting from $2." />
+                                    <TextBlock FontWeight="SemiBold" Text="Paid in crypto" />
+                                    <TextBlock Classes="muted" FontSize="13" Text="Earnings count in dollars. Cash out to your own wallet in BTC, ETH, BNB or SOL, from $5." />
                                 </StackPanel>
                             </Grid>
                         </StackPanel>

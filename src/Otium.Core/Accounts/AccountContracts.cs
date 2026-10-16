@@ -90,6 +90,7 @@ public static class EmailAddresses
 /// <param name="ReferralPercent">What a referrer earns, as a percent of each invited friend's earnings.</param>
 /// <param name="RecentCashouts">The latest cash-outs, newest first.</param>
 /// <param name="PaidOutUsd">Everything ever paid out to this account.</param>
+/// <param name="Methods">The ways the server pays out right now, in display order; null from older servers.</param>
 public sealed record BalanceInfo(
     decimal AvailableUsd,
     decimal PendingUsd,
@@ -100,18 +101,97 @@ public sealed record BalanceInfo(
     double FeePercent,
     double ReferralPercent,
     IReadOnlyList<CashoutInfo> RecentCashouts,
-    decimal PaidOutUsd = 0);
+    decimal PaidOutUsd = 0,
+    IReadOnlyList<CashoutMethodInfo>? Methods = null);
+
+/// <summary>One way to cash out, as the server offers it right now.</summary>
+/// <param name="Method">A <see cref="CashoutMethods"/> id, e.g. "btc".</param>
+/// <param name="Name">Coin name for the UI, e.g. "Bitcoin".</param>
+/// <param name="Network">Where it arrives, e.g. "BNB Smart Chain"; the user's address must be on this network.</param>
+/// <param name="MinUsd">Smallest cash-out this way.</param>
+/// <param name="FeeNote">What fees come out of the amount, in plain words, or null when Otium pays them.</param>
+/// <param name="UnavailableReason">Why it's paused right now (e.g. the swap network halted the coin), or null.</param>
+public sealed record CashoutMethodInfo(
+    string Method,
+    string Name,
+    string Network,
+    decimal MinUsd,
+    string? FeeNote,
+    string? UnavailableReason)
+{
+    public bool Available => UnavailableReason is null;
+}
 
 public static class CashoutMethods
 {
+    public const string Bitcoin = "btc";
+    public const string Ethereum = "eth";
+    public const string Bnb = "bnb";
+    public const string Solana = "sol";
+
+    // Older methods, kept so existing cash-outs still read correctly; servers can still enable them.
     public const string PayPal = "paypal";
     public const string Monero = "xmr";
 
-    public static bool IsKnown(string method) => method is PayPal or Monero;
+    /// <summary>Crypto the user can choose, in display order.</summary>
+    public static readonly IReadOnlyList<string> Crypto = [Bitcoin, Ethereum, Bnb, Solana];
+
+    public static bool IsKnown(string method) => method is PayPal or Monero || Crypto.Contains(method);
+
+    public static string Name(string method) => method switch
+    {
+        Bitcoin => "Bitcoin",
+        Ethereum => "Ether",
+        Bnb => "BNB",
+        Solana => "Solana",
+        Monero => "Monero",
+        PayPal => "PayPal",
+        _ => method.ToUpperInvariant(),
+    };
+
+    /// <summary>"Bitcoin (BTC)", or just "BNB" when the name is the ticker.</summary>
+    public static string Label(string method) => Name(method) == Ticker(method) || method == PayPal ? Name(method) : $"{Name(method)} ({Ticker(method)})";
+
+    /// <summary>Ticker shown next to amounts, e.g. "BTC".</summary>
+    public static string Ticker(string method) => method switch
+    {
+        Bitcoin => "BTC",
+        Ethereum => "ETH",
+        Bnb => "BNB",
+        Solana => "SOL",
+        Monero => "XMR",
+        _ => method.ToUpperInvariant(),
+    };
+
+    public static string Network(string method) => method switch
+    {
+        Bitcoin => "Bitcoin",
+        Ethereum => "Ethereum",
+        Bnb => "BNB Smart Chain (BEP-20)",
+        Solana => "Solana",
+        Monero => "Monero",
+        _ => "",
+    };
+
+    /// <summary>A block explorer page for a payout transaction, or null when there's none to show.</summary>
+    public static string? ExplorerUrl(string method, string? transactionId)
+    {
+        if (string.IsNullOrEmpty(transactionId))
+            return null;
+        var evm = transactionId.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? transactionId : "0x" + transactionId;
+        return method switch
+        {
+            Bitcoin => $"https://mempool.space/tx/{transactionId.ToLowerInvariant()}",
+            Ethereum => $"https://etherscan.io/tx/{evm.ToLowerInvariant()}",
+            Bnb => $"https://bscscan.com/tx/{evm.ToLowerInvariant()}",
+            Solana => $"https://solscan.io/tx/{transactionId}",
+            _ => null,
+        };
+    }
 }
 
-/// <param name="Method"><see cref="CashoutMethods.PayPal"/> or <see cref="CashoutMethods.Monero"/>.</param>
-/// <param name="Destination">PayPal email address or XMR address.</param>
+/// <param name="Method">A <see cref="CashoutMethods"/> id the server offers, e.g. "btc".</param>
+/// <param name="Destination">The user's address for that coin (or a PayPal email, where PayPal is enabled).</param>
 public sealed record CashoutRequest(string Method, string Destination);
 
 public static class CashoutStatuses
@@ -135,7 +215,7 @@ public static class CashoutStatuses
 /// <param name="Destination">Masked, e.g. <c>al••@example.com</c>.</param>
 /// <param name="Note">Why it failed, or what the user still needs to do (claim it in PayPal); otherwise null.</param>
 /// <param name="UpdatedAt">When the status last changed; for a paid cash-out, when it was paid.</param>
-/// <param name="TransactionId">Monero transaction hash once paid, so the user can look it up.</param>
+/// <param name="TransactionId">The transaction that delivered the coins once paid, so the user can look it up.</param>
 public sealed record CashoutInfo(
     string Id,
     string Method,

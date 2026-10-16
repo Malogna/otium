@@ -71,6 +71,15 @@ internal static class AdminDashboard
               </section>
 
               <section>
+                <h2>Payouts</h2>
+                <div class="tiles">
+                  <div class="tile"><span class="label">Bitcoin treasury</span><strong id="treasury"></strong><span class="muted" id="treasury-detail"></span></div>
+                  <div class="tile"><span class="label">Sanctions screening</span><strong id="sanctions"></strong><span class="muted">OFAC addresses loaded</span></div>
+                </div>
+                <ul class="addresses" id="methods"></ul>
+              </section>
+
+              <section>
                 <h2>Check against the pools</h2>
                 <table class="compare">
                   <thead><tr><th>Source</th><th>Pool or partner says</th><th>Credited to users</th><th>Difference</th></tr></thead>
@@ -242,6 +251,26 @@ internal static class AdminDashboard
               $("mo-margin").textContent = (margin >= 0 ? "+" : "−") + usd(Math.abs(margin));
               $("mo-margin").className = margin >= 0 ? "num good" : "num bad";
             }
+            if (!s.treasuryConfigured) {
+              $("treasury").textContent = "not set up";
+              $("treasury-detail").textContent = "set BitcoinWallet:RpcUrl to pay crypto automatically";
+            } else if (s.treasuryError) {
+              $("treasury").textContent = "unavailable";
+              $("treasury-detail").textContent = s.treasuryError;
+            } else {
+              $("treasury").textContent = `${Number(s.treasuryBtc).toFixed(8)} BTC`;
+              const open = Number(s.inOpenCashoutsUsd || 0);
+              const low = s.treasuryUsd != null && Number(s.treasuryUsd) < open;
+              $("treasury-detail").textContent = `≈ ${usd(s.treasuryUsd)}` + (low ? ` — less than the ${usd(open)} of open cash-outs: top it up` : "");
+              $("treasury-detail").className = low ? "bad" : "muted";
+            }
+            $("sanctions").textContent = Number(s.sanctionedAddressesLoaded || 0).toLocaleString("en-US");
+            $("methods").replaceChildren(...(s.payoutMethods || []).map(m => {
+              const li = el("li");
+              li.append(el("span", `${m.name}: `), el("span", m.available ? `on, from ${usd(m.minUsd)}` : `paused (${m.unavailableReason})`, m.available ? "good" : "bad"));
+              return li;
+            }));
+
             $("mo-credited").textContent = usd(s.moneroOceanCreditedToUsersUsd);
             $("kx-credited").textContent = usd(s.kryptexCreditedToUsersUsd);
             $("bw-credited").textContent = `${usd(s.bandwidthCreditedToUsersUsd)} for ${Number(s.bandwidthCreditedGb).toFixed(3)} GB`;
@@ -270,7 +299,8 @@ internal static class AdminDashboard
             tr.append(el("td", micros(c.micros), "num"));
 
             const where = el("td");
-            where.append(el("div", c.method === "paypal" ? "PayPal" : "Monero"), el("div", c.destination, "mono"));
+            const names = { btc: "Bitcoin", eth: "Ether", bnb: "BNB (BNB Smart Chain)", sol: "Solana", xmr: "Monero", paypal: "PayPal" };
+            where.append(el("div", names[c.method] || c.method), el("div", c.destination, "mono"));
             if (c.otherAccountsUsingDestination > 0)
               where.append(el("div", `⚠ also used by ${c.otherAccountsUsingDestination} other account(s)`, "flag"));
             tr.append(where);
@@ -297,7 +327,7 @@ internal static class AdminDashboard
             }
             if (status === "review" || status === "queued" || status === "sending") {
               buttons.append(button("Mark paid", "", () => {
-                const note = prompt("Payment reference (for example the PayPal transaction id). The user gets an email receipt.", "");
+                const note = prompt("Transaction id of the payment you made by hand. The user gets an email receipt.", "");
                 if (note !== null) act(c, "mark-paid", note || "manual");
               }));
             }

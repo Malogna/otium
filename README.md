@@ -1,6 +1,9 @@
 # Otium
 
-*Latin for "idle time".* Otium is a one-click desktop app for Windows, macOS and Linux that earns money from a computer's spare power while nobody is using it. People cash out with PayPal or crypto.
+*Latin for "idle time".* Otium is a desktop app for Windows, macOS and Linux that brings the different ways a computer can earn
+while nobody is using it (CPU and GPU mining, internet sharing, and more to come) into one place, set up and switched
+automatically, as close to one click as possible. It's for people with some tech knowledge: users cash out in crypto
+(BTC, ETH, BNB or SOL) to their own wallet.
 
 | First launch | What this PC could earn | Overview | Advanced |
 |---|---|---|---|
@@ -12,12 +15,13 @@
 
 1. Install and open Otium. Three short screens explain it, show what this computer could earn per month (from its
    processor and graphics card, today's payouts and your electricity price), and summarise what will happen.
-2. Press **Start earning**. No wallet and no settings are needed.
+2. Press **Start earning**. No settings are needed to start; you only need a wallet address when you cash out.
 3. Otium starts when you sign in and earns only while you're away from the computer, after 3 minutes without keyboard or mouse input. It pauses the moment you come back, and also when electricity would cost more than it earns (the price is estimated from your country; in Norway, Sweden, Denmark and Finland it follows live hourly spot prices, from hvakosterstrommen.no, elprisetjustnu.se, elprisenligenu.dk and sahkotin.fi).
 4. Your balance grows in dollars. Add your email when Otium asks; that keeps the balance safe if you reinstall, lets you
    sign in on your other PCs (they all earn into one balance), and is needed before the first cash-out.
-5. Press **Cash out** to get paid by PayPal or crypto (Monero). The overview lists every cash-out with its status in plain
-   words (sending, being checked, claim it in PayPal, paid, returned to balance), and an email receipt arrives when it's paid.
+5. Press **Cash out**, pick BTC, ETH, BNB or SOL and paste your wallet address (checked as you type, including the
+   network). The overview lists every cash-out with its status in plain words (sending, swapping, being checked, paid,
+   returned to balance) and a link to the transaction, and an email receipt arrives when it's paid.
 6. Share your invite code. Friends mine fee-free for 30 days, and you get 5% of everything they earn. The Invites page
    has ready-made messages (short, explained, for gamers) that you can edit, one-click sharing to WhatsApp, Discord and
    email, and a monthly leaderboard of top inviters, counted by friends who actually started earning.
@@ -48,7 +52,7 @@ Everything technical lives under **Advanced**:
                 │ hashes, worker = account id            └───────┬──────────────────┬───────────┘
                 ▼                                                │ pool stats       │ payouts
         MoneroOcean pool  ── pays XMR ──▶ operator wallet ◀──────┘                  ▼
-                                                              PayPal Payouts API / monero-wallet-rpc
+                                       Bitcoin treasury (bitcoind) ── BTC, or swapped via THORChain ──▶ users' wallets
 ```
 
 **Mining**
@@ -95,20 +99,34 @@ Everything technical lives under **Advanced**:
 
 **Cash-outs** (`src/Otium.Server/Payouts`)
 - The whole available balance is debited in one database transaction.
-- **Sent automatically:**
-  - Crypto through `monero-wallet-rpc`: up to 15 cash-outs share one transaction, and Otium pays the network fee.
-  - PayPal through the PayPal Payouts API: one batch per cash-out, using the cash-out id as `sender_batch_id` so a retry can never pay twice.
+- **Sent automatically, in crypto only, from the operator's Bitcoin treasury** (a bitcoind wallet):
+  - **BTC:** up to 25 cash-outs share one transaction (`sendmany`), and Otium pays the network fee.
+  - **ETH, BNB (BNB Smart Chain) and SOL:** swapped through [THORChain](https://dev.thorchain.org/), a decentralised
+    swap network with no account, API key or KYC. For each cash-out the server asks THORNode for a quote with the
+    user's address as the destination, sends BTC to THORChain's vault with the quote's memo, and THORChain delivers
+    the coin straight to the user (usually 10–30 minutes). THORChain's fees (about $0.25–0.50) come out of the amount,
+    which is why the minimums are $5 for BTC and BNB and $8 for ETH and SOL. If a swap fails, THORChain returns the BTC
+    to the treasury and the cash-out goes back to the user's balance. A coin THORChain has paused (SOL as of October
+    2026) shows as paused in the app until it resumes.
+  - The treasury is fed automatically by Kryptex (GPU coins auto-exchanged to BTC; point its payouts at the bitcoind
+    wallet). MoneroOcean still pays XMR, which has to be swapped to BTC to top the treasury up until THORChain's
+    announced native Monero support goes live.
+  - PayPal and Monero payouts still exist in the code but are off; add `paypal` or `xmr` to `Cashouts:Methods` to
+    offer them again.
+- **Screened:** cash-outs to addresses on OFAC's sanctions list are refused (lists from
+  [0xB10C/ofac-sanctioned-digital-currency-addresses](https://github.com/0xB10C/ofac-sanctioned-digital-currency-addresses),
+  refreshed twice a day). Until the lists have loaded, crypto cash-outs wait for review instead of going out unscreened.
 - **Held for review:**
   - accounts younger than 2 days;
   - amounts over $50;
   - a destination already used by another account;
   - the daily automatic payout budget being used up;
   - a yearly total near the US tax-reporting threshold ($2,000; tax details are needed);
-  - the method's provider not being set up yet.
+  - the method's provider not being set up yet, or the sanctions lists not having loaded.
 - Failed or returned payouts go back to the balance.
 - When a cash-out is paid (automatically, or marked paid by the operator) the owner gets an email receipt: amount,
-  method, masked destination, dates, the cash-out id and, for Monero, the transaction hash (never the tx key, which the
-  batch shares). A mail failure is logged and never affects the payout.
+  coin and network, masked address, dates, the cash-out id and the transaction with a block-explorer link. A mail
+  failure is logged and never affects the payout.
 
 **Own-wallet mode** (Advanced) works as before: the pool pays the user's own XMR wallet directly, a 2% fee is mined in short time slices, and referral rewards are mined to the referrer's wallet.
 
@@ -121,9 +139,12 @@ Configure `src/Otium.Server/appsettings.json` (or environment variables such as 
 | `ConnectionStrings:Otium` | SQLite database path |
 | `Earnings:PoolWallets` | Operator XMR addresses (subaddresses of one wallet). Balance mode is off until at least one is set or the wallet RPC is configured. |
 | `Earnings:FeePercent`, `ReferralPercent`, `HoldPeriod` | Business terms; defaults 10%, 5%, 48 h |
-| `Cashouts:*` | Minimums ($5 PayPal, $2 crypto), automatic-approval limit, daily budget, minimum account age |
-| `PayPal:ClientId`, `ClientSecret`, `UseSandbox` | PayPal Payouts. Use the sandbox until PayPal approves the live account. |
-| `MoneroWallet:RpcUrl`, `Username`, `Password` | `monero-wallet-rpc` with `--rpc-login`, on localhost or a private network |
+| `Cashouts:Methods`, `MinUsd:{method}` | Payout methods offered (default `btc`, `eth`, `bnb`, `sol`) and their minimums |
+| `Cashouts:*` | Automatic-approval limit, daily budget, minimum account age |
+| `BitcoinWallet:RpcUrl`, `Username`, `Password`, `Wallet`, `ConfTarget` | The Bitcoin treasury: bitcoind's JSON-RPC (pruned is fine) on localhost or a private network. Crypto payouts are paused until it's set. |
+| `Thorchain:ApiBase` | THORNode API used for prices, quotes and swap status (default: Liquify's public gateway) |
+| `Sanctions:ListUrls:{list}`, `RefreshInterval` | Sanctioned-address lists (btc, evm, bsc, sol) and how often to reload them |
+| `PayPal:*`, `MoneroWallet:*` | Older payout methods, off by default (see above). The Monero wallet RPC is still used to create pool addresses. |
 | `Admin:Token` | Enables `/admin/*`; send it as `X-Admin-Token` |
 | `Email:SmtpHost`, `Port`, `Username`, `Password`, `From` | SMTP service for sign-in codes and cash-out receipts (Postmark, SES, Mailgun, ...) |
 | `Referral:PublicBaseUrl`, `DownloadUrl` | Invite links and the landing page |
@@ -276,10 +297,14 @@ build/                       dev.ps1 (dev mode), package.ps1 (installers), icon 
   - EU: MiCA may apply to holding or transferring crypto for users.
   - The design keeps balances in USD for compute bought from users and never offers a withdrawable crypto balance, but this needs counsel to confirm.
   - Collect tax details (W-9/W-8) before anyone passes the yearly reporting threshold.
-- **PayPal approval.** Payouts must be enabled on a business account, and PayPal pre-approves crypto-related businesses. Describe the mining revenue source honestly. Until approved, PayPal cash-outs land in the review queue for manual payment.
+- **Crypto payouts and regulation.** Paying users in crypto from balances Otium holds may make Otium a crypto-asset
+  service provider (MiCA in the EU/EEA) or a money transmitter (US), with know-your-customer duties that the current
+  no-KYC design doesn't meet. Get counsel's view before launch; the cash-out flow can add identity checks later
+  without a redesign.
 - **Deploy the server** behind HTTPS with backups of the SQLite database. Set the `OTIUM_SERVER_URL` repository
   variable so release builds use it.
-- **Fund the hot wallet** in `monero-wallet-rpc` and keep only what payouts need in it.
+- **Fund the Bitcoin treasury** (bitcoind) and keep only a few weeks of payouts in it; point Kryptex's BTC payouts at
+  it. The admin dashboard shows its balance and warns when it's below the open cash-outs.
 - **Code signing** for Windows and macOS: see [docs/code-signing.md](docs/code-signing.md) (Azure Artifact Signing or
   a cloud-HSM certificate for Windows, Developer ID and notarization for macOS).
 - **Real-machine run:** do a real mining run on your RTX 3080 to confirm SRBMiner's stats format and the GPU speed units
