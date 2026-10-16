@@ -76,7 +76,9 @@ internal static partial class SrbMinerStats
 
     /// <summary>
     /// The most telling problem in SRBMiner's recent output, in plain words for the app, or null if none is known.
-    /// "Couldn't set epoch" (3.7.6) means the coin's dataset (DAG) didn't fit in the free graphics memory.
+    /// "Couldn't set epoch" (3.7.6) means the coin's dataset (DAG) couldn't be loaded onto the card. It isn't
+    /// necessarily a memory shortage: on the RTX 3080 retest it happened with 10.9 GB of 12 GB free, so the app says
+    /// only what failed (low free memory is reported separately, from NVML, before launch).
     /// </summary>
     public static string? DescribeProblem(IEnumerable<string> lines)
     {
@@ -85,7 +87,9 @@ internal static partial class SrbMinerStats
         {
             var line = Clean(raw);
             if (MemoryProblemRegex().IsMatch(line))
-                return "its dataset doesn't fit in the graphics card's free memory (other apps, such as games or 3D editors, may be using it)";
+                return "it ran out of graphics memory (other apps, such as games or 3D editors, may be using it)";
+            if (EpochProblemRegex().IsMatch(line))
+                return $"the miner couldn't load this coin's dataset onto the graphics card (\"{line}\")";
             if (generic is null && ErrorRegex().IsMatch(line))
                 generic = line;
         }
@@ -133,8 +137,11 @@ internal static partial class SrbMinerStats
     [GeneratedRegex(@"(?i)total[^0-9]*(?<value>[0-9]+(?:\.[0-9]+)?)\s*(?<unit>[kMGTP]?)H/s")]
     private static partial Regex HashrateRegex();
 
-    [GeneratedRegex(@"(?i)couldn'?t set epoch|out of memory|not enough (gpu |video |graphics )?memory|memory allocation|dag.*(fail|error|couldn)")]
+    [GeneratedRegex(@"(?i)out of memory|not enough (gpu |video |graphics )?memory|memory allocation fail|MEM_OBJECT_ALLOCATION_FAILURE")]
     private static partial Regex MemoryProblemRegex();
+
+    [GeneratedRegex(@"(?i)couldn'?t set epoch|dag.*(fail|error|couldn)")]
+    private static partial Regex EpochProblemRegex();
 
     [GeneratedRegex(@"(?i)\berror\b|\bfailed\b|couldn'?t|can'?t|unable to")]
     private static partial Regex ErrorRegex();

@@ -213,8 +213,10 @@ public class SrbMinerTests
         Assert.True(SrbMinerStats.StartedFirstDevFeeRound(["[2026-10-16 15:01:37] Hold on, doing the first devfee mining round[0]"]));
         Assert.False(SrbMinerStats.StartedFirstDevFeeRound(["[2026-10-16 15:01:38] Connected to gulf.moneroocean.stream:10128 [0]"]));
 
-        Assert.StartsWith("its dataset doesn't fit in the graphics card's free memory",
+        // Seen on the retest with 10.9 GB of VRAM free, so it mustn't be blamed on memory.
+        Assert.Equal("the miner couldn't load this coin's dataset onto the graphics card (\"Couldn't set epoch 611 on GPU0\")",
             SrbMinerStats.DescribeProblem(["[2026-10-16 15:02:23] Couldn't set epoch 611 on GPU0 [0]", "[2026-10-16 15:02:32] Total: 0.00 H/s [P:108.4W EFF: A:0 R:0 HW:0]"]));
+        Assert.StartsWith("it ran out of graphics memory", SrbMinerStats.DescribeProblem(["not enough GPU memory"]));
         Assert.Equal("the miner reported \"OCL Error code -52 [clEnqueueNDRangeKernel [2]]\"",
             SrbMinerStats.DescribeProblem(["[2026-10-16 14:52:10] OCL Error code -52 [clEnqueueNDRangeKernel [2]]"]));
         Assert.Null(SrbMinerStats.DescribeProblem(
@@ -492,7 +494,7 @@ public sealed class SrbMinerProviderTests : IDisposable
         Assert.Equal(ProviderState.Starting, status.State);
         Assert.Equal("kawpow", _factory.Launches[^1].Algorithm);
         Assert.True(stuck.Disposed);
-        Assert.StartsWith("Graphics card isn't mining autolykos2: its dataset doesn't fit in the graphics card's free memory", status.Problem);
+        Assert.StartsWith("Graphics card isn't mining autolykos2: the miner couldn't load this coin's dataset onto the graphics card (\"Couldn't set epoch 611 on GPU0\")", status.Problem);
         Assert.Contains("Trying kawpow instead", status.Problem);
         Assert.NotNull(_provider.SetAsideReason("autolykos2"));
 
@@ -528,7 +530,7 @@ public sealed class SrbMinerProviderTests : IDisposable
         _factory.Stalls.Add("kawpow");
 
         var status = await RunUntil(s => s.State == ProviderState.Error, TimeSpan.FromMinutes(10));
-        Assert.StartsWith("Graphics card isn't mining: its dataset doesn't fit in the graphics card's free memory", status.Problem);
+        Assert.StartsWith("Graphics card isn't mining: the miner couldn't load this coin's dataset onto the graphics card", status.Problem);
         Assert.Contains("Otium tries again in", status.Problem);
         Assert.All(_factory.Launches, l => Assert.True(l.Process.Disposed));
 
@@ -566,7 +568,7 @@ public sealed class SrbMinerProviderTests : IDisposable
 
         var kawpow = _provider.Benchmarks.Single(b => b.Algorithm == "kawpow");
         Assert.False(kawpow.Succeeded);
-        Assert.StartsWith("its dataset doesn't fit", kawpow.Failure);
+        Assert.StartsWith("the miner couldn't load this coin's dataset", kawpow.Failure);
         Assert.Equal("autolykos2", _factory.Launches[^1].Algorithm);
     }
 
