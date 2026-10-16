@@ -13,7 +13,7 @@
 1. Install and open Otium. Three short screens explain it, show what this computer could earn per month (from its
    processor and graphics card, today's payouts and your electricity price), and summarise what will happen.
 2. Press **Start earning**. No wallet and no settings are needed.
-3. Otium starts when you sign in and earns only while you're away from the computer, after 3 minutes without keyboard or mouse input. It pauses the moment you come back, and also when electricity would cost more than it earns (the price is estimated from your country).
+3. Otium starts when you sign in and earns only while you're away from the computer, after 3 minutes without keyboard or mouse input. It pauses the moment you come back, and also when electricity would cost more than it earns (the price is estimated from your country; in Norway, Sweden, Denmark and Finland it follows live hourly spot prices, from hvakosterstrommen.no, elprisetjustnu.se, elprisenligenu.dk and sahkotin.fi).
 4. Your balance grows in dollars. Add your email when Otium asks; that keeps the balance safe if you reinstall, lets you
    sign in on your other PCs (they all earn into one balance), and is needed before the first cash-out.
 5. Press **Cash out** to get paid by PayPal or crypto (Monero).
@@ -180,7 +180,7 @@ You need the .NET 10 SDK. On this machine it's installed per-user, so add it to 
 $env:PATH = "$env:LOCALAPPDATA\Microsoft\dotnet;$env:PATH"
 ```
 
-Run the tests (175, covering accounts and sign-in, crediting, cash-outs, fraud rules, GPU profit switching and policy, Kryptex crediting, internet sharing, the simulated pool, wallet checksums and the engine):
+Run the tests (199, covering accounts and sign-in, crediting, cash-outs, fraud rules, GPU profit switching and policy, Kryptex crediting, internet sharing, live electricity prices, the simulated pool, wallet checksums and the engine):
 
 ```bash
 dotnet test
