@@ -7,6 +7,7 @@ using Otium.Core.Gpu;
 using Otium.Core.Platform;
 using Otium.Core.Pools;
 using Otium.Core.Power;
+using Otium.Core.Projections;
 using Otium.Core.Providers;
 using Otium.Core.Accounts;
 using Otium.Core.Settings;
@@ -25,6 +26,8 @@ public sealed class AppHost : IAsyncDisposable
     private readonly JsonFileStore<AppSettings> _settingsStore;
     private readonly HttpClient _http;
     private readonly Nvml? _nvml;
+    private readonly JsonFileStore<EarningsHistory> _historyStore;
+    private DateTimeOffset _lastHistorySample = DateTimeOffset.UtcNow;
     private volatile EngineConfig _cpuConfig;
     private volatile EngineConfig _gpuConfig;
 
@@ -46,6 +49,9 @@ public sealed class AppHost : IAsyncDisposable
         _http.DefaultRequestHeaders.UserAgent.ParseAdd($"{AppIdentity.Name}/0.1");
         Pool = new MoneroOceanClient(_http);
         var idle = IdleDetector.ForThisPlatform();
+        _historyStore = new JsonFileStore<EarningsHistory>(Paths.HistoryFile);
+        History = _historyStore.Load();
+        Estimator = new EarningsEstimator(Pool);
 
         // CPU
         Provider = new XmrigProvider(_http, Pool, Paths.EnginesDir);
@@ -80,6 +86,10 @@ public sealed class AppHost : IAsyncDisposable
     }
 
     public static AppHost Create() => new();
+
+    public EarningsHistory History { get; }
+
+    public EarningsEstimator Estimator { get; }
 
     /// <summary>Dev mode (OTIUM_SIMULATE=1): simulated miners instead of XMRig/SRBMiner.</summary>
     public bool IsSimulated { get; }
@@ -190,6 +200,33 @@ public sealed class AppHost : IAsyncDisposable
                 engine.Disable();
         }
     }
+
+    /// <summary>Fee shown in estimates: the server's fee for balance accounts, the mined fee for own-wallet mode.</summary>
+    public double EffectiveFeePercent => Settings.PayoutMode == PayoutMode.Balance
+        ? (Account?.Balance.FeePercent ?? (Settings.Account.FeePercent > 0 ? Settings.Account.FeePercent : 10))
+        : FeePolicy.Default.FeePercent;
+
+    /// <summary>What this computer could earn per 24 h of mining, from its hardware and today's payouts.</summary>
+    public Task<EarningsEstimate> EstimateAsync(CancellationToken ct) =>
+        Estimator.EstimateAsync(CpuInfo.Name, Environment.ProcessorCount, Settings.CpuUsagePercent, PowerModel,
+            Settings.GpuEnabled ? Gpus : [], Settings.ElectricityPricePerKwh, EffectiveFeePercent, ct);
+
+    /// <summary>Samples running totals into the hour-by-hour history (call about once a minute).</summary>
+    public void RecordHistory()
+    {
+        var now = DateTimeOffset.Now;
+        var snapshots = Engines.Select(e => e.Snapshot).ToList();
+        var earning = snapshots.Any(s => s.State == EngineState.Earning);
+        History.Record(now,
+            snapshots.Sum(s => s.TotalUserUsd),
+            snapshots.Sum(s => s.TotalElectricityUsd),
+            earning ? now - _lastHistorySample : TimeSpan.Zero);
+        _lastHistorySample = now;
+        _historyStore.Save(History);
+        HistoryChanged?.Invoke();
+    }
+
+    public event Action? HistoryChanged;
 
     /// <summary>Stops every miner (so none is left orphaned), then lets Velopack install the update and relaunch.</summary>
     public async Task ApplyUpdateAndRestartAsync()

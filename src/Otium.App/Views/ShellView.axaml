@@ -6,9 +6,14 @@
              x:DataType="vm:ShellViewModel">
 
     <Grid RowDefinitions="Auto,*">
-        <StackPanel Orientation="Horizontal" Spacing="12" Margin="16,12,16,0">
-            <Button Content="← Back" Command="{Binding BackCommand}" />
-            <TextBlock Text="Advanced" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" />
+        <StackPanel Orientation="Horizontal" Spacing="12" Margin="22,16,22,0">
+            <Button AutomationProperties.Name="Back to overview" Command="{Binding BackCommand}" ToolTip.Tip="Back to overview">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <Path Classes="icon" Data="{StaticResource IconArrowLeft}" Width="16" Height="16" />
+                    <TextBlock Text="Overview" />
+                </StackPanel>
+            </Button>
+            <TextBlock Classes="h1" Text="Advanced" VerticalAlignment="Center" />
         </StackPanel>
 
         <TabControl Grid.Row="1" Padding="0" Margin="12,4,12,0">

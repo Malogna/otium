@@ -5,56 +5,204 @@
              x:Class="Otium.App.Views.WelcomeView"
              x:DataType="vm:WelcomeViewModel">
 
-    <ScrollViewer>
-        <StackPanel MaxWidth="520" Margin="24,56,24,32" HorizontalAlignment="Center" Spacing="22">
-            <Image Source="/Assets/otium.png" Width="96" Height="96" HorizontalAlignment="Center" />
+    <Grid RowDefinitions="*,Auto">
+        <Carousel SelectedIndex="{Binding Step}">
+            <Carousel.PageTransition>
+                <PageSlide Duration="0:0:0.35" Orientation="Horizontal" SlideInEasing="CubicEaseOut" SlideOutEasing="CubicEaseIn" />
+            </Carousel.PageTransition>
 
-            <StackPanel Spacing="10">
-                <TextBlock Classes="h1" FontSize="34" HorizontalAlignment="Center" TextAlignment="Center"
-                           Text="Earn money while your computer rests" />
-                <TextBlock Classes="muted" FontSize="16" HorizontalAlignment="Center" TextAlignment="Center"
-                           Text="Otium puts your computer's spare power to work when you're not using it. Cash out with PayPal or crypto." />
-            </StackPanel>
-
-            <TextBlock Classes="good" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" Text="{Binding SignedInText}"
-                       IsVisible="{Binding SignedInText, Converter={x:Static ObjectConverters.IsNotNull}}" />
-
-            <TextBlock Classes="error" HorizontalAlignment="Center" IsVisible="{Binding !IsSupported}"
-                       Text="Sorry, Otium doesn't support this type of computer yet." />
-
-            <Button Classes="accent big" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
-                    FontSize="18" Padding="0,16" Command="{Binding StartCommand}" Content="Start earning" />
-
-            <StackPanel Spacing="6">
-                <TextBlock Classes="muted" FontSize="13" TextAlignment="Center" Text="{Binding DevicesLine}" />
-                <TextBlock Classes="muted" FontSize="12" TextAlignment="Center" TextWrapping="Wrap"
-                           Text="By starting you agree that Otium runs crypto-mining software (XMRig and SRBMiner) on this computer and starts when you sign in. It pauses whenever you use the computer or when electricity would cost more than it earns. Some antivirus tools flag miners; Otium shows you how to allow them." />
-            </StackPanel>
-
-            <StackPanel Spacing="8" HorizontalAlignment="Center">
-                <Button Classes="link" HorizontalAlignment="Center" Background="Transparent" BorderThickness="0"
-                        Command="{Binding ToggleSignInCommand}">
-                    <TextBlock Text="Already use Otium on another computer? Sign in" Foreground="{DynamicResource GoodBrush}" />
-                </Button>
-                <Border Classes="card" Width="360" IsVisible="{Binding ShowSignIn}">
-                    <StackPanel Spacing="6">
-                        <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
-                                   Text="Enter the email you use with Otium. Your balance and invite code come with you." />
-                        <views:EmailSignInView DataContext="{Binding SignIn}" />
+            <!-- ===== Step 1: what Otium is ===== -->
+            <ScrollViewer>
+                <StackPanel MaxWidth="520" Margin="24,48,24,24" Spacing="26" HorizontalAlignment="Center">
+                    <Border Classes="rise" HorizontalAlignment="Center" CornerRadius="28" BoxShadow="0 16 40 0 #401DB97F">
+                        <Image Source="/Assets/otium.png" Width="104" Height="104" />
+                    </Border>
+                    <StackPanel Spacing="10">
+                        <TextBlock Classes="h1" FontSize="36" HorizontalAlignment="Center" TextAlignment="Center"
+                                   Text="Earn money while your computer rests" />
+                        <TextBlock Classes="muted" FontSize="16" HorizontalAlignment="Center" TextAlignment="Center"
+                                   Text="Otium rents out your computer's spare power and pays you for it. No setup, no crypto knowledge needed." />
                     </StackPanel>
-                </Border>
-                <Button Classes="link" HorizontalAlignment="Center" Background="Transparent" BorderThickness="0"
-                        Command="{Binding ToggleInviteCommand}">
-                    <TextBlock Text="Have an invite code?" Foreground="{DynamicResource GoodBrush}" />
-                </Button>
-                <StackPanel Spacing="4" IsVisible="{Binding ShowInvite}" HorizontalAlignment="Center">
-                    <TextBox Text="{Binding InviteCode}" PlaceholderText="e.g. 7KQ2M9X" Width="220"
-                             HorizontalContentAlignment="Center" FontFamily="Consolas, Menlo, monospace" />
-                    <TextBlock Classes="error" HorizontalAlignment="Center" Text="{Binding InviteError}"
-                               IsVisible="{Binding InviteError, Converter={x:Static ObjectConverters.IsNotNull}}" />
-                    <TextBlock Classes="muted" FontSize="12" HorizontalAlignment="Center" Text="Your first 30 days are fee-free." />
+
+                    <Border Classes="card delay1" Padding="18">
+                        <StackPanel Spacing="14">
+                            <Grid ColumnDefinitions="Auto,*">
+                                <Border Classes="iconBadge"><Path Classes="icon" Data="{StaticResource IconMoon}" /></Border>
+                                <StackPanel Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center">
+                                    <TextBlock FontWeight="SemiBold" Text="Only while you're away" />
+                                    <TextBlock Classes="muted" FontSize="13" Text="It never slows you down. Touch the mouse and it steps aside." />
+                                </StackPanel>
+                            </Grid>
+                            <Grid ColumnDefinitions="Auto,*">
+                                <Border Classes="iconBadge"><Path Classes="icon" Data="{StaticResource IconLeaf}" /></Border>
+                                <StackPanel Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center">
+                                    <TextBlock FontWeight="SemiBold" Text="Never costs you money" />
+                                    <TextBlock Classes="muted" FontSize="13" Text="It pauses whenever electricity would cost more than it earns." />
+                                </StackPanel>
+                            </Grid>
+                            <Grid ColumnDefinitions="Auto,*">
+                                <Border Classes="iconBadge"><Path Classes="icon" Data="{StaticResource IconWallet}" /></Border>
+                                <StackPanel Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center">
+                                    <TextBlock FontWeight="SemiBold" Text="Paid in dollars" />
+                                    <TextBlock Classes="muted" FontSize="13" Text="Cash out with PayPal or crypto, starting from $2." />
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <TextBlock Classes="error" HorizontalAlignment="Center" IsVisible="{Binding !IsSupported}"
+                               Text="Sorry, Otium doesn't support this type of computer yet." />
+
+                    <StackPanel Spacing="8" HorizontalAlignment="Center">
+                        <Button Classes="link" HorizontalAlignment="Center" AutomationProperties.Name="Sign in" Command="{Binding ToggleSignInCommand}">
+                            <TextBlock Text="Already use Otium on another computer? Sign in" Foreground="{DynamicResource GoodBrush}" />
+                        </Button>
+                        <Border Classes="card" Width="380" IsVisible="{Binding ShowSignIn}">
+                            <StackPanel Spacing="6">
+                                <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
+                                           Text="Enter the email you use with Otium. Your balance and invite code come with you." />
+                                <views:EmailSignInView DataContext="{Binding SignIn}" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
                 </StackPanel>
+            </ScrollViewer>
+
+            <!-- ===== Step 2: what this PC could earn ===== -->
+            <ScrollViewer>
+                <StackPanel MaxWidth="560" Margin="24,40,24,24" Spacing="18" HorizontalAlignment="Center">
+                    <StackPanel Spacing="6">
+                        <TextBlock Classes="h1" HorizontalAlignment="Center" TextAlignment="Center" Text="Here's what your PC could earn" />
+                        <TextBlock Classes="good" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" Text="{Binding SignedInText}"
+                                   IsVisible="{Binding SignedInText, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                    </StackPanel>
+
+                    <Border Classes="hero">
+                        <StackPanel Spacing="4" HorizontalAlignment="Center">
+                            <TextBlock Classes="heroMuted" HorizontalAlignment="Center" Text="Estimated for this computer" />
+                            <TextBlock Classes="display" HorizontalAlignment="Center" Text="{Binding MonthlyEstimate}"
+                                       IsVisible="{Binding !IsEstimating}" />
+                            <ProgressBar IsIndeterminate="True" Width="160" Margin="0,24" IsVisible="{Binding IsEstimating}" Classes="goal onHero" />
+                            <TextBlock Classes="heroMuted" FontSize="13" MaxWidth="440" TextAlignment="Center" TextWrapping="Wrap"
+                                       HorizontalAlignment="Center" Text="{Binding EstimateDetail}" />
+                            <TextBlock Classes="heroMuted" FontSize="13" TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center"
+                                       Text="{Binding EstimateError}" IsVisible="{Binding EstimateError, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Classes="card delay1" Padding="18">
+                        <StackPanel Spacing="12">
+                            <ItemsControl ItemsSource="{Binding EstimateRows}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate><StackPanel Spacing="12" /></ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:EstimateRow">
+                                        <Grid ColumnDefinitions="Auto,*,Auto">
+                                            <Border Classes="iconBadge"><Path Classes="icon" Data="{Binding Icon}" /></Border>
+                                            <StackPanel Grid.Column="1" Margin="14,0" VerticalAlignment="Center">
+                                                <TextBlock FontWeight="SemiBold" Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Classes="muted" FontSize="12.5" Text="{Binding What}" />
+                                            </StackPanel>
+                                            <TextBlock Grid.Column="2" VerticalAlignment="Center" FontWeight="SemiBold" Text="{Binding PerDay}" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <Separator Background="{DynamicResource CardBorder}" Margin="0,2" />
+                            <CheckBox IsVisible="{Binding HasGpu}" IsChecked="{Binding UseGpu}">
+                                <TextBlock Text="{Binding GpuName, StringFormat='Also use my {0}'}" TextWrapping="Wrap" />
+                            </CheckBox>
+                            <Grid ColumnDefinitions="Auto,*,Auto">
+                                <Path Classes="icon" Data="{StaticResource IconBolt}" Width="16" Height="16" />
+                                <TextBlock Grid.Column="1" Classes="muted" FontSize="13" Margin="8,0" VerticalAlignment="Center" Text="{Binding ElectricityLine}" />
+                                <Button Grid.Column="2" Classes="link" AutomationProperties.Name="Change electricity price" Command="{Binding EditPriceCommand}">
+                                    <TextBlock Text="Change" FontSize="13" Foreground="{DynamicResource GoodBrush}" />
+                                </Button>
+                            </Grid>
+                            <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsEditingPrice}">
+                                <NumericUpDown Value="{Binding ElectricityPrice}" Minimum="0" Maximum="5" Increment="0.01" FormatString="0.000" Width="150" />
+                                <TextBlock Classes="muted" VerticalAlignment="Center" Text="$ per kWh, from your power bill" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                    <TextBlock Classes="muted" FontSize="12" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"
+                               Text="Estimates use today's payouts and typical speeds for your hardware. Real numbers appear within minutes of starting." />
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- ===== Step 3: summary and start ===== -->
+            <ScrollViewer>
+                <StackPanel MaxWidth="520" Margin="24,40,24,24" Spacing="20" HorizontalAlignment="Center">
+                    <TextBlock Classes="h1" HorizontalAlignment="Center" TextAlignment="Center" Text="Ready when you are" />
+                    <Border Classes="card delay1" Padding="20">
+                        <StackPanel Spacing="14">
+                            <Grid ColumnDefinitions="Auto,*">
+                                <Path Classes="icon" Data="{StaticResource IconCheck}" VerticalAlignment="Top" Margin="0,2,0,0" />
+                                <TextBlock Grid.Column="1" Margin="12,0,0,0" TextWrapping="Wrap"
+                                           Text="Otium starts with your computer and earns only after a few minutes without keyboard or mouse." />
+                            </Grid>
+                            <Grid ColumnDefinitions="Auto,*">
+                                <Path Classes="icon" Data="{StaticResource IconCheck}" VerticalAlignment="Top" Margin="0,2,0,0" />
+                                <TextBlock Grid.Column="1" Margin="12,0,0,0" TextWrapping="Wrap"
+                                           Text="It runs mining software (XMRig, and SRBMiner for graphics cards). Some antivirus tools flag these; Otium shows you how to allow them." />
+                            </Grid>
+                            <Grid ColumnDefinitions="Auto,*">
+                                <Path Classes="icon" Data="{StaticResource IconCheck}" VerticalAlignment="Top" Margin="0,2,0,0" />
+                                <TextBlock Grid.Column="1" Margin="12,0,0,0" TextWrapping="Wrap" Text="{Binding FeeLine}" />
+                            </Grid>
+                            <Grid ColumnDefinitions="Auto,*">
+                                <Path Classes="icon" Data="{StaticResource IconCheck}" VerticalAlignment="Top" Margin="0,2,0,0" />
+                                <TextBlock Grid.Column="1" Margin="12,0,0,0" TextWrapping="Wrap"
+                                           Text="You can pause, change anything or uninstall at any time." />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <StackPanel Spacing="8" HorizontalAlignment="Center">
+                        <Button Classes="link" HorizontalAlignment="Center" AutomationProperties.Name="Have an invite code?" Command="{Binding ToggleInviteCommand}">
+                            <TextBlock Text="Have an invite code?" Foreground="{DynamicResource GoodBrush}" />
+                        </Button>
+                        <StackPanel Spacing="4" IsVisible="{Binding ShowInvite}" HorizontalAlignment="Center">
+                            <TextBox Text="{Binding InviteCode}" PlaceholderText="e.g. 7KQ2M9X" Width="220"
+                                     HorizontalContentAlignment="Center" FontFamily="Consolas, Menlo, monospace" />
+                            <TextBlock Classes="error" HorizontalAlignment="Center" Text="{Binding InviteError}"
+                                       IsVisible="{Binding InviteError, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                            <TextBlock Classes="muted" FontSize="12" HorizontalAlignment="Center" Text="Your first 30 days are fee-free." />
+                        </StackPanel>
+                    </StackPanel>
+                    <TextBlock Classes="muted" FontSize="12" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"
+                               IsVisible="{Binding IsSimulated}"
+                               Text="Dev mode: simulated processor and graphics card, simulated pool, fake payouts." />
+                </StackPanel>
+            </ScrollViewer>
+        </Carousel>
+
+        <!-- ===== Footer: progress dots and navigation ===== -->
+        <Grid Grid.Row="1" ColumnDefinitions="*,Auto,*" Margin="28,8,28,28" MaxWidth="560">
+            <Button Classes="link" HorizontalAlignment="Left" IsVisible="{Binding !IsStep0}" AutomationProperties.Name="Back" Command="{Binding BackCommand}">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <Path Classes="icon" Data="{StaticResource IconArrowLeft}" Width="16" Height="16" Stroke="{DynamicResource MutedText}" />
+                    <TextBlock Text="Back" Foreground="{DynamicResource MutedText}" />
+                </StackPanel>
+            </Button>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                <Border Classes="stepDot" Classes.active="{Binding IsStep0}" />
+                <Border Classes="stepDot" Classes.active="{Binding IsStep1}" />
+                <Border Classes="stepDot" Classes.active="{Binding IsStep2}" />
             </StackPanel>
-        </StackPanel>
-    </ScrollViewer>
+            <Button Grid.Column="2" Classes="accent big" HorizontalAlignment="Right" IsVisible="{Binding !IsStep2}" AutomationProperties.Name="Next" Command="{Binding NextCommand}">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="Next" />
+                    <Path Classes="icon" Data="{StaticResource IconArrowRight}" Width="16" Height="16" Stroke="White" />
+                </StackPanel>
+            </Button>
+            <Button Grid.Column="2" Classes="accent big" HorizontalAlignment="Right" IsVisible="{Binding IsStep2}" AutomationProperties.Name="Start earning" Command="{Binding StartCommand}">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Path Classes="icon filled" Data="{StaticResource IconPlay}" Width="14" Height="14" Stroke="White" Fill="White" />
+                    <TextBlock Text="Start earning" />
+                </StackPanel>
+            </Button>
+        </Grid>
+    </Grid>
 </UserControl>

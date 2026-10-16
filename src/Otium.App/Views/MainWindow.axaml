@@ -12,6 +12,10 @@
         Background="{DynamicResource PageBackground}"
         Title="Otium">
 
-    <ContentControl Content="{Binding CurrentPage}" />
+    <TransitioningContentControl Content="{Binding CurrentPage}">
+        <TransitioningContentControl.PageTransition>
+            <CrossFade Duration="0:0:0.22" />
+        </TransitioningContentControl.PageTransition>
+    </TransitioningContentControl>
 
 </Window>

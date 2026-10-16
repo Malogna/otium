@@ -2,19 +2,27 @@
 
 *Latin for "idle time".* Otium is a one-click desktop app for Windows, macOS and Linux that earns money from a computer's spare power while nobody is using it. People cash out with PayPal or crypto.
 
-| First launch | Home | Cash out | Advanced |
+| First launch | What this PC could earn | Overview | Advanced |
 |---|---|---|---|
-| ![Welcome](docs/welcome.png) | ![Home](docs/home.png) | ![Cash out](docs/cashout.png) | ![Advanced](docs/advanced.png) |
+| ![Welcome](docs/welcome.png) | ![Estimate](docs/estimate.png) | ![Overview](docs/home.png) | ![Advanced](docs/advanced.png) |
+
+<sub>Dev mode at real-world speed: simulated i7-8700K and RTX 3080 with electricity at $0.15/kWh, where mining doesn't pay. Otium says so plainly instead of promising money.</sub>
 
 ## For users: one button
 
-1. Install and open Otium.
+1. Install and open Otium. Three short screens explain it, show what this computer could earn per month (from its
+   processor and graphics card, today's payouts and your electricity price), and summarise what will happen.
 2. Press **Start earning**. No wallet and no settings are needed.
 3. Otium starts when you sign in and earns only while you're away from the computer, after 3 minutes without keyboard or mouse input. It pauses the moment you come back, and also when electricity would cost more than it earns (the price is estimated from your country).
 4. Your balance grows in dollars. Add your email when Otium asks; that keeps the balance safe if you reinstall, lets you
    sign in on your other PCs (they all earn into one balance), and is needed before the first cash-out.
 5. Press **Cash out** to get paid by PayPal or crypto (Monero).
 6. Share your invite code. Friends mine fee-free for 30 days, and you get 5% of everything they earn.
+
+The overview shows, at a glance: the balance and progress to the first cash-out (with an ETA), what each device is
+doing right now in plain words ("Mining Monero", "Waiting for you to step away · starts in 1:42"), what you can expect
+today, this week and this month, and an hour-by-hour chart of the last 24 hours. Projections use how many hours a day
+this computer actually earns once there is a day of history.
 
 Everything technical lives under **Advanced**:
 - Details per device, including GPU algorithm and speed, power draw, and profit per day.

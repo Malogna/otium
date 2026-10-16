@@ -58,6 +58,11 @@ public partial class App : Application
             };
             accountTimer.Start();
 
+            // Hour-by-hour earnings history for the chart and projections.
+            var historyTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(1) };
+            historyTimer.Tick += (_, _) => _host.RecordHistory();
+            historyTimer.Start();
+
             if (_host.Updates.IsEnabled)
             {
                 var host = _host;

@@ -2,21 +2,38 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Otium.App.ViewModels"
              xmlns:views="using:Otium.App.Views"
+             xmlns:controls="using:Otium.App.Controls"
              x:Class="Otium.App.Views.HomeView"
              x:DataType="vm:HomeViewModel">
 
     <Grid RowDefinitions="Auto,*">
         <!-- Header -->
-        <Grid Margin="24,16,24,0" ColumnDefinitions="Auto,*,Auto">
+        <Grid Margin="26,18,26,0" ColumnDefinitions="Auto,*,Auto">
             <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                 <Image Source="/Assets/otium.png" Width="30" Height="30" />
-                <TextBlock Text="Otium" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center" />
+                <TextBlock Text="Otium" FontSize="20" FontWeight="Bold" VerticalAlignment="Center" />
             </StackPanel>
-            <Button Grid.Column="2" Content="Advanced" Command="{Binding OpenAdvancedCommand}" />
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10">
+                <Border Classes="pill" Classes.earning="{Binding IsEarning}" Classes.paused="{Binding IsWaiting}" Classes.problem="{Binding IsProblem}">
+                    <StackPanel Orientation="Horizontal" Spacing="7">
+                        <Panel Width="10" Height="10" VerticalAlignment="Center">
+                            <Ellipse Classes="pulse" Classes.on="{Binding IsEarning}" />
+                            <Ellipse Classes="liveDot" Classes.on="{Binding IsEarning}" />
+                        </Panel>
+                        <TextBlock Text="{Binding StateLabel}" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Border>
+                <Button AutomationProperties.Name="Advanced" Command="{Binding OpenAdvancedCommand}" ToolTip.Tip="Advanced">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Path Classes="icon" Data="{StaticResource IconSliders}" Width="16" Height="16" Stroke="{DynamicResource MutedText}" />
+                        <TextBlock Text="Advanced" />
+                    </StackPanel>
+                </Button>
+            </StackPanel>
         </Grid>
 
         <ScrollViewer Grid.Row="1">
-            <StackPanel MaxWidth="560" Margin="24,20,24,32" Spacing="16">
+            <StackPanel MaxWidth="640" Margin="22,18,22,32" Spacing="16">
 
                 <!-- Update ready -->
                 <Border Classes="card" IsVisible="{Binding UpdateReady}" Padding="14">
@@ -26,47 +43,51 @@
                     </Grid>
                 </Border>
 
-                <!-- Balance + switch -->
-                <Border Classes="card" Padding="28">
+                <!-- ===== Hero: balance, projection, main actions, cash-out goal ===== -->
+                <Border Classes="hero">
                     <StackPanel Spacing="18">
-                        <StackPanel Spacing="2" HorizontalAlignment="Center">
-                            <TextBlock Classes="muted" HorizontalAlignment="Center" Text="{Binding BalanceCaption}" />
-                            <TextBlock HorizontalAlignment="Center" FontSize="52" FontWeight="Bold" Text="{Binding Balance}" />
-                            <TextBlock Classes="muted" FontSize="13" HorizontalAlignment="Center" Text="{Binding PendingText}"
-                                       IsVisible="{Binding PendingText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                        </StackPanel>
-
-                        <StackPanel Spacing="8" HorizontalAlignment="Center">
-                            <Border Classes="pill" HorizontalAlignment="Center"
-                                    Classes.earning="{Binding IsEarning}"
-                                    Classes.paused="{Binding IsWaiting}"
-                                    Classes.problem="{Binding IsProblem}">
-                                <TextBlock Text="{Binding StateLabel}" FontWeight="SemiBold" />
+                        <Grid ColumnDefinitions="*,Auto">
+                            <StackPanel Spacing="0">
+                                <TextBlock Classes="heroMuted" Text="{Binding BalanceCaption}" />
+                                <TextBlock Classes="display" Text="{Binding Balance}" />
+                                <TextBlock Classes="heroMuted" FontSize="13" Text="{Binding PendingText}"
+                                           IsVisible="{Binding PendingText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                            </StackPanel>
+                            <Border Grid.Column="1" Classes="heroChip" VerticalAlignment="Top"
+                                    IsVisible="{Binding ProjectedMonthCaption, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                                <StackPanel HorizontalAlignment="Right">
+                                    <TextBlock Text="{Binding ProjectedMonth}" FontSize="18" FontWeight="Bold" HorizontalAlignment="Right" />
+                                    <TextBlock Classes="heroMuted" FontSize="11.5" Text="{Binding ProjectedMonthCaption}" HorizontalAlignment="Right" />
+                                </StackPanel>
                             </Border>
-                            <TextBlock HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="440"
-                                       Text="{Binding StatusText}" />
+                        </Grid>
+
+                        <StackPanel Spacing="6" IsVisible="{Binding IsBalanceMode}">
+                            <ProgressBar Classes="goal onHero" Value="{Binding GoalPercent}" Maximum="100" />
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Classes="heroMuted" FontSize="12.5" Text="{Binding GoalText}" />
+                                <TextBlock Grid.Column="1" Classes="heroMuted" FontSize="12.5" Text="{Binding GoalEta}" />
+                            </Grid>
                         </StackPanel>
 
                         <Grid ColumnDefinitions="*,12,*">
-                            <Button Classes="big" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
-                                    Content="{Binding ToggleText}" Command="{Binding ToggleCommand}" />
-                            <Button Grid.Column="2" Classes="accent big" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
-                                    Content="Cash out" Command="{Binding StartCashOutCommand}" IsEnabled="{Binding CanCashOut}"
-                                    IsVisible="{Binding IsBalanceMode}" />
+                            <Button Classes="big ghostOnHero" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" AutomationProperties.Name="{Binding ToggleText}" Command="{Binding ToggleCommand}">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Path Classes="icon onHero" Data="{StaticResource IconPause}" Width="15" Height="15" IsVisible="{Binding IsRunning}" />
+                                    <Path Classes="icon onHero" Data="{StaticResource IconPlay}" Width="15" Height="15" Fill="White" IsVisible="{Binding !IsRunning}" />
+                                    <TextBlock Text="{Binding ToggleText}" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+                            <Button Grid.Column="2" Classes="big onHero" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                                    AutomationProperties.Name="Cash out" Command="{Binding StartCashOutCommand}" IsEnabled="{Binding CanCashOut}" IsVisible="{Binding IsBalanceMode}">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Path Classes="icon" Data="{StaticResource IconWallet}" Width="16" Height="16" Stroke="#0E7660" />
+                                    <TextBlock Text="Cash out" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
                         </Grid>
-                        <TextBlock Classes="muted" FontSize="12" HorizontalAlignment="Center" Text="{Binding CashOutHint}" />
-                        <TextBlock Classes="muted" FontSize="12" HorizontalAlignment="Center" Text="{Binding AccountLine}"
+                        <TextBlock Classes="heroMuted" FontSize="12" HorizontalAlignment="Center" Text="{Binding AccountLine}"
                                    IsVisible="{Binding AccountLine, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                    </StackPanel>
-                </Border>
-
-                <!-- Protect the balance with an email (also how a second PC signs in) -->
-                <Border Classes="card" IsVisible="{Binding NeedsEmail}">
-                    <StackPanel Spacing="10">
-                        <TextBlock Classes="h2" Text="Protect your balance" />
-                        <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap"
-                                   Text="Add your email so your money is safe if you reinstall or switch computers. You'll need it to cash out, and you can use it to sign in on your other PCs." />
-                        <views:EmailSignInView DataContext="{Binding SignIn}" />
                     </StackPanel>
                 </Border>
 
@@ -88,7 +109,7 @@
                         </StackPanel>
                         <TextBlock Classes="error" Text="{Binding Error}" IsVisible="{Binding Error, Converter={x:Static ObjectConverters.IsNotNull}}" />
                         <TextBlock Classes="good" TextWrapping="Wrap" Text="{Binding Result}" IsVisible="{Binding Result, Converter={x:Static ObjectConverters.IsNotNull}}" />
-                        <Button Classes="accent" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                        <Button Classes="accent big" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
                                 Content="Send my money" Command="{Binding ConfirmCommand}" />
                         <ItemsControl ItemsSource="{Binding Recent}">
                             <ItemsControl.ItemTemplate>
@@ -104,19 +125,113 @@
                     </StackPanel>
                 </Border>
 
-                <!-- Invite -->
-                <Border Classes="card" IsVisible="{Binding HasInviteCode}">
-                    <StackPanel Spacing="10">
-                        <TextBlock Classes="h2" TextWrapping="Wrap" Text="{Binding InviteTitle}" />
-                        <Grid ColumnDefinitions="*,Auto">
-                            <Border Background="{DynamicResource NeutralSoft}" CornerRadius="10" Padding="14,6" HorizontalAlignment="Left">
-                                <SelectableTextBlock Text="{Binding InviteCode}" FontSize="22" FontWeight="Bold" LetterSpacing="3"
-                                                     FontFamily="Consolas, Menlo, monospace" />
-                            </Border>
-                            <Button Grid.Column="1" Classes="accent" VerticalAlignment="Center" Content="Copy invite" Command="{Binding CopyInviteCommand}" />
-                        </Grid>
-                        <TextBlock Classes="good" FontSize="12" Text="{Binding CopiedText}" />
+                <!-- ===== Right now ===== -->
+                <Border Classes="card delay1">
+                    <StackPanel Spacing="14">
+                        <StackPanel Spacing="2">
+                            <TextBlock Classes="h2" Text="Right now" />
+                            <TextBlock Classes="muted" FontSize="13" Text="{Binding ActivityHeadline}" />
+                        </StackPanel>
+                        <ItemsControl ItemsSource="{Binding Activity}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate><StackPanel Spacing="10" /></ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:ActivityRow">
+                                    <Border Classes="tile">
+                                        <Grid ColumnDefinitions="Auto,*,Auto">
+                                            <Panel>
+                                                <Border Classes="iconBadge" Background="{DynamicResource CardBackground}">
+                                                    <Path Classes="icon" Data="{Binding Icon}" />
+                                                </Border>
+                                                <Panel Width="10" Height="10" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-2,-2,0">
+                                                    <Ellipse Classes="pulse" Classes.on="{Binding IsActive}" />
+                                                    <Ellipse Classes="liveDot" Classes.on="{Binding IsActive}" />
+                                                </Panel>
+                                            </Panel>
+                                            <StackPanel Grid.Column="1" Margin="14,0" VerticalAlignment="Center" Spacing="1">
+                                                <TextBlock FontWeight="SemiBold" Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Classes="muted" FontSize="12.5" Text="{Binding What}" TextTrimming="CharacterEllipsis" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right" Spacing="1">
+                                                <TextBlock HorizontalAlignment="Right" FontWeight="SemiBold" Text="{Binding PerDay}" />
+                                                <TextBlock HorizontalAlignment="Right" Classes="muted" FontSize="12" Text="{Binding Speed}" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
                     </StackPanel>
+                </Border>
+
+                <!-- ===== Projections + chart ===== -->
+                <Border Classes="card delay2">
+                    <StackPanel Spacing="14">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Classes="h2" Text="Your earnings" />
+                            <Path Grid.Column="1" Classes="icon" Data="{StaticResource IconChart}" />
+                        </Grid>
+                        <Grid ColumnDefinitions="*,10,*,10,*">
+                            <Border Classes="tile">
+                                <StackPanel>
+                                    <TextBlock Classes="label" Text="Today so far" />
+                                    <TextBlock Classes="value" Text="{Binding TodayText}" />
+                                </StackPanel>
+                            </Border>
+                            <Border Grid.Column="2" Classes="tile">
+                                <StackPanel>
+                                    <TextBlock Classes="label" Text="This week" />
+                                    <TextBlock Classes="value" Text="{Binding WeekText}" />
+                                </StackPanel>
+                            </Border>
+                            <Border Grid.Column="4" Classes="tile">
+                                <StackPanel>
+                                    <TextBlock Classes="label" Text="This month" />
+                                    <TextBlock Classes="value" Text="{Binding MonthText}" />
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+                        <controls:EarningsChart Height="72" Values="{Binding ChartValues}"
+                                                BarBrush="{DynamicResource ChartBar}" FaintBrush="{DynamicResource ChartBarFaint}" />
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Classes="muted" FontSize="12" Text="{Binding ChartCaption}" />
+                            <TextBlock Grid.Column="1" Classes="muted" FontSize="12" Text="last 24 h" />
+                        </Grid>
+                        <TextBlock Classes="muted" FontSize="12" Text="{Binding ProjectionBasis}" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Protect the balance with an email (also how a second PC signs in) -->
+                <Border Classes="card" IsVisible="{Binding NeedsEmail}">
+                    <Grid ColumnDefinitions="Auto,*">
+                        <Border Classes="iconBadge" VerticalAlignment="Top"><Path Classes="icon" Data="{StaticResource IconShield}" /></Border>
+                        <StackPanel Grid.Column="1" Margin="14,0,0,0" Spacing="10">
+                            <StackPanel Spacing="2">
+                                <TextBlock Classes="h2" Text="Protect your balance" />
+                                <TextBlock Classes="muted" FontSize="13"
+                                           Text="Add your email so your money is safe if you reinstall or switch computers. You'll need it to cash out, and it lets your other PCs earn into the same balance." />
+                            </StackPanel>
+                            <views:EmailSignInView DataContext="{Binding SignIn}" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <!-- ===== Invite ===== -->
+                <Border Classes="card delay2" IsVisible="{Binding HasInviteCode}">
+                    <Grid ColumnDefinitions="Auto,*,Auto">
+                        <Border Classes="iconBadge"><Path Classes="icon" Data="{StaticResource IconGift}" /></Border>
+                        <StackPanel Grid.Column="1" Margin="14,0" VerticalAlignment="Center" Spacing="2">
+                            <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" Text="{Binding InviteTitle}" />
+                            <TextBlock Classes="muted" FontSize="12.5">
+                                <Run Text="Your code " /><Run Text="{Binding InviteCode}" FontFamily="Consolas, Menlo, monospace" FontWeight="Bold" />
+                                <Run Text=" · they get 30 days fee-free" />
+                            </TextBlock>
+                            <TextBlock Classes="good" FontSize="12" Text="{Binding CopiedText}"
+                                       IsVisible="{Binding CopiedText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                        </StackPanel>
+                        <Button Grid.Column="2" Classes="accent" VerticalAlignment="Center" Content="Copy invite" Command="{Binding CopyInviteCommand}" />
+                    </Grid>
                 </Border>
             </StackPanel>
         </ScrollViewer>
