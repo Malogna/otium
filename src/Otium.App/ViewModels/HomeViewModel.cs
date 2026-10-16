@@ -99,6 +99,10 @@ public partial class HomeViewModel : ViewModelBase
     [ObservableProperty] public partial bool IsRunning { get; set; }
     [ObservableProperty] public partial string ToggleText { get; set; } = "Start";
     [ObservableProperty] public partial bool NeedsAntivirusFix { get; set; }
+    [ObservableProperty] public partial string? AllowResult { get; set; }
+    [ObservableProperty] public partial bool IsAllowing { get; set; }
+
+    public bool CanAllowAutomatically => WindowsSecurity.IsSupported;
     [ObservableProperty] public partial string ActivityHeadline { get; set; } = "";
 
     // ---------- projections & chart ----------
@@ -272,7 +276,7 @@ public partial class HomeViewModel : ViewModelBase
                 EngineState.Installing => "Downloading its engine (one time)…",
                 EngineState.WaitingForIdle => WaitingText(s),
                 EngineState.PausedUnprofitable => "Paused: electricity would cost more than it earns",
-                EngineState.Error => s.EngineBlocked ? "Blocked by antivirus: see Advanced" : "Hit a problem, retrying…",
+                EngineState.Error => s.EngineBlocked ? "Blocked by antivirus" : "Hit a problem, retrying…",
                 _ => settings.EarningEnabled ? "Waiting…" : "Paused",
             };
         }
@@ -343,7 +347,7 @@ public partial class HomeViewModel : ViewModelBase
         if (!settings.EarningEnabled)
             return ("Paused", "Press Start to earn while you're away from your computer.");
         if (NeedsAntivirusFix)
-            return ("Needs your OK", "Your antivirus blocked the earning engine. Open Advanced to allow it.");
+            return ("Needs your OK", "Your antivirus blocked the earning engines. Allow them above to start earning.");
         if (_host.MiningBlocker is { } blocker)
             return ("Connecting", blocker);
         if (states.Contains(EngineState.Earning))
@@ -390,6 +394,14 @@ public partial class HomeViewModel : ViewModelBase
 
     [RelayCommand]
     private void OpenAdvanced() => _openAdvanced();
+
+    [RelayCommand]
+    private async Task AllowAutomatically()
+    {
+        IsAllowing = true;
+        AllowResult = await _host.AllowEnginesInWindowsSecurityAsync() ?? "Allowed. Downloading the engines again…";
+        IsAllowing = false;
+    }
 
     [RelayCommand]
     private void StartCashOut()

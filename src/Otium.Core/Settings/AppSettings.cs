@@ -30,6 +30,15 @@ public sealed class AppSettings
     /// <summary>True until the user enters their own price.</summary>
     public bool ElectricityPriceIsEstimate { get; set; } = true;
 
+    /// <summary>
+    /// Whether to subtract electricity at all. False for users who don't pay for power (included in rent, solar,
+    /// employer's machine): the price is treated as 0, so mining runs whenever it earns anything.
+    /// </summary>
+    public bool PayForElectricity { get; set; } = true;
+
+    /// <summary>Day-ahead bidding zone for live hourly prices (e.g. "NO1"); null until resolved for the region.</summary>
+    public string? ElectricityZone { get; set; } = SpotPriceZone.DefaultForCurrentRegion()?.Code;
+
     public int CpuUsagePercent { get; set; } = 50;
 
     public bool CpuEnabled { get; set; } = true;

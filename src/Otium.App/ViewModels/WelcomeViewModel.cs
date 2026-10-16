@@ -30,6 +30,8 @@ public partial class WelcomeViewModel : ViewModelBase
         InviteCode = host.Settings.Referral.CodeUsed ?? "";
         UseGpu = host.Settings.GpuEnabled;
         ElectricityPrice = (decimal)host.Settings.ElectricityPricePerKwh;
+        PayForElectricity = host.Settings.PayForElectricity;
+        _ready = true;
         SignIn = new EmailSignInViewModel(host, OnSignedIn);
         _ = LoadEstimateAsync();
     }
@@ -103,9 +105,44 @@ public partial class WelcomeViewModel : ViewModelBase
     [ObservableProperty] public partial decimal? ElectricityPrice { get; set; }
     [ObservableProperty] public partial bool UseGpu { get; set; }
 
-    public string ElectricityLine =>
-        $"Electricity at {Format.Money((decimal)_host.Settings.ElectricityPricePerKwh)}/kWh" +
-        (_host.Settings.ElectricityPriceIsEstimate ? $" (typical for {CountryName})" : "");
+    private readonly bool _ready;
+
+    /// <summary>Whether electricity is subtracted at all; users whose power is included or free can say no.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DontPayForElectricity), nameof(ElectricityLine))]
+    public partial bool PayForElectricity { get; set; }
+
+    public bool DontPayForElectricity
+    {
+        get => !PayForElectricity;
+        set => PayForElectricity = !value;
+    }
+
+    public string ElectricityLine
+    {
+        get
+        {
+            if (!_host.Settings.PayForElectricity)
+                return "Electricity isn't counted, so Otium earns whenever your computer is free.";
+            var line = $"Electricity at {Format.Money((decimal)_host.Settings.ElectricityPricePerKwh)}/kWh";
+            if (_host.Settings.ElectricityPriceIsEstimate)
+                line += $" (typical for {CountryName})";
+            if (_host.ElectricityPrices.HasLivePrices && _host.ElectricityPrices.Zone is { } zone)
+                line += $", following today's hourly prices in {zone.Code}";
+            return line + ".";
+        }
+    }
+
+    partial void OnPayForElectricityChanged(bool value)
+    {
+        if (!_ready)
+            return;
+        _host.Settings.PayForElectricity = value;
+        if (!value)
+            IsEditingPrice = false;
+        _host.SaveSettings();
+        _ = LoadEstimateAsync();
+    }
 
     partial void OnUseGpuChanged(bool value)
     {
@@ -136,6 +173,8 @@ public partial class WelcomeViewModel : ViewModelBase
         {
             if (_host.EffectiveGpuPolicy is null)
                 await _host.RefreshGpuPolicyAsync(CancellationToken.None); // so graphics cards are priced at what they'd really mine
+            await _host.RefreshElectricityAsync(CancellationToken.None); // live hourly prices where available
+            OnPropertyChanged(nameof(ElectricityLine));
             var estimate = await _host.EstimateAsync(CancellationToken.None);
             var projection = Projection.Create(estimate.GrossUsdPerDay, estimate.ElectricityUsdPerDay, null, _host.Settings.OnlyWhenIdle, 0, 1);
 

@@ -58,9 +58,15 @@ public partial class App : Application
             };
             accountTimer.Start();
 
-            // Hour-by-hour earnings history for the chart and projections.
+            // Hour-by-hour earnings history for the chart and projections, and the live electricity price (its hourly
+            // shape changes without any settings change, so re-apply it every minute; the daily fetch is cached).
+            _ = _host.RefreshElectricityAsync(CancellationToken.None);
             var historyTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(1) };
-            historyTimer.Tick += (_, _) => _host.RecordHistory();
+            historyTimer.Tick += (_, _) =>
+            {
+                _host.RecordHistory();
+                _ = _host.RefreshElectricityAsync(CancellationToken.None);
+            };
             historyTimer.Start();
 
             if (_host.Updates.IsEnabled)

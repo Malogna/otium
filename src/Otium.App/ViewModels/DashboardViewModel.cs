@@ -64,6 +64,8 @@ public partial class DashboardViewModel : ViewModelBase
 
     [ObservableProperty] public partial bool IsBlocked { get; set; }
     [ObservableProperty] public partial string BlockedPath { get; set; } = "";
+    [ObservableProperty] public partial string? AllowResult { get; set; }
+    [ObservableProperty] public partial bool IsAllowing { get; set; }
 
     [ObservableProperty] public partial string EarnPerDay { get; set; } = "—";
     [ObservableProperty] public partial string ElectricityPerDay { get; set; } = "—";
@@ -110,7 +112,8 @@ public partial class DashboardViewModel : ViewModelBase
 
         var blocked = snapshots.FirstOrDefault(s => s.EngineBlocked);
         IsBlocked = blocked is not null;
-        BlockedPath = blocked?.EngineBlockedPath ?? "";
+        // One exclusion covers every engine (CPU and GPU), so name their shared folder rather than the blocked one.
+        BlockedPath = blocked is null ? "" : _host.Paths.EnginesDir;
 
         var withNumbers = Devices.Where(d => d.HasNumbers).Select(d => d.Snapshot).ToList();
         var any = withNumbers.Count > 0;
@@ -217,4 +220,12 @@ public partial class DashboardViewModel : ViewModelBase
 
     [RelayCommand]
     private void RetryEngine() => _host.ApplyDeviceSwitchesAfterBlock();
+
+    [RelayCommand]
+    private async Task AllowAutomatically()
+    {
+        IsAllowing = true;
+        AllowResult = await _host.AllowEnginesInWindowsSecurityAsync() ?? "Allowed. Downloading the engines again…";
+        IsAllowing = false;
+    }
 }

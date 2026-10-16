@@ -15,21 +15,35 @@
     pwsh build/dev.ps1                 # one simulated computer
     pwsh build/dev.ps1 -Computers 2    # two computers, to try signing in on a second PC
     pwsh build/dev.ps1 -Reset          # wipe dev data first
+    pwsh build/dev.ps1 -RealMiners     # real XMRig/SRBMiner on this PC, real MoneroOcean (see below)
+
+.NOTES
+    -RealMiners tests the real engines on this hardware: the app downloads XMRig and SRBMiner and mines on the real
+    MoneroOcean pool, crediting the dev pool wallet (the Monero general fund, so nobody is paid). The GPU mines
+    MoneroOcean's algorithms even though they usually lose money, so they can be tested without a Kryptex account.
+    Data lives in artifacts/dev-real; internet sharing is off. Stop it after a few minutes: this uses real electricity.
 #>
 param(
     [ValidateRange(1, 4)] [int] $Computers = 1,
     [double] $Speedup = 3000,
     [switch] $Reset,
-    [switch] $NoBuild
+    [switch] $NoBuild,
+    [switch] $RealMiners,
+    # With -RealMiners: the Monero address the real pool credits (MoneroOcean refuses the dev default).
+    [string] $Wallet
 )
 
 $ErrorActionPreference = 'Stop'
 $root = Resolve-Path (Join-Path $PSScriptRoot '..')
-$dev = Join-Path $root 'artifacts/dev'
+$dev = Join-Path $root ($RealMiners ? 'artifacts/dev-real' : 'artifacts/dev')
 $poolUrl = 'http://localhost:5090'
 $serverUrl = 'http://localhost:5080'
 # Any valid mainnet address works here: the simulated pool never pays anyone. (Monero project's general fund.)
 $devPoolWallet = '44AFFq5kSiGBoZ4NMDwYtN18obc8AemS33DBLWs3H7otXft3XjrpDtQGv7SqSsaBYBb98uNbr2VBBEt7f2wfn3RVGQBEP3A'
+if ($RealMiners) {
+    if (-not $Wallet) { throw 'With -RealMiners, pass -Wallet <your Monero address>: MoneroOcean refuses the dev default (the Monero general fund).' }
+    $devPoolWallet = $Wallet.Trim()
+}
 
 if ($Reset -and (Test-Path $dev)) { Remove-Item $dev -Recurse -Force }
 New-Item -ItemType Directory -Force $dev | Out-Null
@@ -64,9 +78,11 @@ function Wait-Healthy([string] $url, [string] $name) {
 
 $processes = @()
 try {
-    # Simulated pool
-    $processes += Start-Background 'devpool' 'Otium.DevPool' @('--Speedup', $Speedup, '--Urls', $poolUrl)
-    Wait-Healthy "$poolUrl/network/stats" 'devpool'
+    # Simulated pool (not used with real miners, which talk to the real MoneroOcean)
+    if (-not $RealMiners) {
+        $processes += Start-Background 'devpool' 'Otium.DevPool' @('--Speedup', $Speedup, '--Urls', $poolUrl)
+        Wait-Healthy "$poolUrl/network/stats" 'devpool'
+    }
 
     # Server with fast dev timings and fake payouts
     Set-DevEnv @{
@@ -95,6 +111,17 @@ try {
         Kryptex__CreditInterval               = '00:00:20'
         GpuPolicy__RefreshInterval            = '00:01:00'
     }
+    if ($RealMiners) {
+        Set-DevEnv @{
+            OTIUM_POOL_API                    = ''        # the real MoneroOcean
+            Bandwidth__Enabled                = 'false'
+            Kryptex__Enabled                  = 'false'
+            # Let the GPU mine MoneroOcean's algorithms despite electricity, to exercise SRBMiner.
+            GpuPolicy__Tiers__kawpow          = 'primary'
+            GpuPolicy__Tiers__autolykos2      = 'primary'
+            GpuPolicy__Tiers__etchash         = 'primary'
+        }
+    }
     $processes += Start-Background 'server' 'Otium.Server' @()
     Wait-Healthy "$serverUrl/healthz" 'server'
 
@@ -111,8 +138,8 @@ try {
         Set-DevEnv @{
             OTIUM_HOME         = $home_
             OTIUM_SERVER_URL   = $serverUrl
-            OTIUM_POOL_API     = $poolUrl
-            OTIUM_SIMULATE     = '1'
+            OTIUM_POOL_API     = $RealMiners ? '' : $poolUrl
+            OTIUM_SIMULATE     = $RealMiners ? '' : '1'
             OTIUM_DEVICE_SEED  = "dev-pc$n"
         }
         # Errors (e.g. a crash's stack trace) go to artifacts/dev/pcN.log.
@@ -123,7 +150,7 @@ try {
     Write-Host "Otium dev mode is running ($Computers computer(s), earnings ×$Speedup)." -ForegroundColor Green
     Write-Host "  Simulated pool : $poolUrl"
     Write-Host "  Server         : $serverUrl   (admin token: dev, e.g. GET /admin/summary)"
-    Write-Host "  Logs and data  : artifacts/dev"
+    Write-Host "  Logs and data  : $dev"
     Write-Host '  Sign-in codes appear below. Close the app window(s) or press Ctrl+C to stop everything.'
     Write-Host ''
 

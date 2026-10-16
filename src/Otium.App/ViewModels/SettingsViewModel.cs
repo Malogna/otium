@@ -37,6 +37,10 @@ public partial class SettingsViewModel : ViewModelBase
         ElectricityPrice = (decimal)s.ElectricityPricePerKwh;
         CpuFullLoadWatts = s.CpuFullLoadWatts is { } w ? (decimal)w : null;
         NeverRunAtLoss = s.NeverRunAtLoss;
+        PayForElectricity = s.PayForElectricity;
+        var country = SpotPriceZone.Find(s.ElectricityZone)?.Country ?? RegionCountry();
+        Zones = SpotPriceZone.ForCountry(country);
+        SelectedZone = SpotPriceZone.Find(s.ElectricityZone);
         PayoutAddress = s.PayoutAddress;
         ServerUrl = s.ServerUrl;
         StartWithSystem = AutoStart.IsEnabled();
@@ -46,6 +50,7 @@ public partial class SettingsViewModel : ViewModelBase
         GpuWatts = s.GpuWatts is { } gw ? (decimal)gw : null;
         _loading = false;
         _ = RefreshBenchmarksAsync();
+        _ = RefreshLivePriceAsync();
         UpdateStatus = host.Updates.Status;
         host.Updates.Changed += () => Dispatcher.UIThread.Post(() => UpdateStatus = _host.Updates.Status);
     }
@@ -96,6 +101,69 @@ public partial class SettingsViewModel : ViewModelBase
     {
         get => !UseBalance;
         set => UseBalance = !value;
+    }
+
+    /// <summary>Price zones with live hourly prices in the user's country (empty where none are available yet).</summary>
+    public IReadOnlyList<SpotPriceZone> Zones { get; }
+
+    public bool HasZones => Zones.Count > 0;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(LivePriceNote))]
+    public partial bool PayForElectricity { get; set; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(LivePriceNote))]
+    public partial SpotPriceZone? SelectedZone { get; set; }
+
+    public string LivePriceNote
+    {
+        get
+        {
+            if (!PayForElectricity)
+                return "Electricity isn't counted, so Otium earns whenever your computer is free.";
+            if (!HasZones)
+                return "Live hourly prices aren't available in your country yet, so Otium uses your price all day.";
+            var prices = _host.ElectricityPrices;
+            return prices.HasLivePrices && prices.Describe() is { } now
+                ? $"Following today's hourly prices in {prices.Zone!.Code}: {now}. Otium pauses in expensive hours and earns in cheap ones."
+                : "Live hourly prices will load shortly.";
+        }
+    }
+
+    partial void OnPayForElectricityChanged(bool value)
+    {
+        if (_loading)
+            return;
+        _host.Settings.PayForElectricity = value;
+        _host.SaveSettings();
+    }
+
+    partial void OnSelectedZoneChanged(SpotPriceZone? value)
+    {
+        if (_loading || value is null)
+            return;
+        _host.Settings.ElectricityZone = value.Code;
+        _host.SaveSettings();
+        _ = RefreshLivePriceAsync();
+    }
+
+    private async Task RefreshLivePriceAsync()
+    {
+        await _host.RefreshElectricityAsync(CancellationToken.None);
+        OnPropertyChanged(nameof(LivePriceNote));
+    }
+
+    private static string RegionCountry()
+    {
+        try
+        {
+            return System.Globalization.RegionInfo.CurrentRegion.TwoLetterISORegionName;
+        }
+        catch (ArgumentException)
+        {
+            return "";
+        }
     }
 
     public string ElectricityNote => _host.Settings.ElectricityPriceIsEstimate
