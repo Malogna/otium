@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Otium.App.ViewModels"
              xmlns:views="using:Otium.App.Views"
+             xmlns:power="using:Otium.Core.Power"
              x:Class="Otium.App.Views.SettingsView"
              x:DataType="vm:SettingsViewModel">
 
@@ -71,7 +72,7 @@
                         <Button Content="Test GPU again" Command="{Binding RetestGpuCommand}" />
                     </StackPanel>
                     <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
-                               Text="If Windows asks whether SRBMiner may use networks, you can choose Cancel: Otium reads its statistics on this computer only." />
+                               Text="If Windows Firewall asks about XMRig or SRBMiner, click Allow." />
                 </StackPanel>
             </StackPanel>
         </Border>
@@ -108,6 +109,19 @@
         <Border Classes="card">
             <StackPanel Spacing="14">
                 <TextBlock Classes="h2" Text="Electricity" />
+                <ToggleSwitch IsChecked="{Binding PayForElectricity}"
+                              OnContent="I pay for this computer's electricity" OffContent="I pay for this computer's electricity" />
+                <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding HasZones}">
+                    <ComboBox ItemsSource="{Binding Zones}" SelectedItem="{Binding SelectedZone}" MinWidth="280" IsEnabled="{Binding PayForElectricity}">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="power:SpotPriceZone">
+                                <TextBlock Text="{Binding Label}" />
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <TextBlock VerticalAlignment="Center" Classes="muted" Text="your price area" />
+                </StackPanel>
+                <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Text="{Binding LivePriceNote}" />
                 <StackPanel Orientation="Horizontal" Spacing="8">
                     <NumericUpDown Value="{Binding ElectricityPrice}" Minimum="0" Maximum="5" Increment="0.01" FormatString="0.000" Width="160" />
                     <TextBlock VerticalAlignment="Center" Text="$ per kWh" />

@@ -57,6 +57,7 @@ public sealed class AppHost : IAsyncDisposable
         _historyStore = new JsonFileStore<EarningsHistory>(Paths.HistoryFile);
         History = _historyStore.Load();
         Estimator = new EarningsEstimator(Pool);
+        ElectricityPrices = new ElectricityPriceProvider(_http);
 
         // CPU
         Provider = new XmrigProvider(_http, Pool, Paths.EnginesDir);
@@ -74,7 +75,7 @@ public sealed class AppHost : IAsyncDisposable
         GpuPowerMeter = new GpuPowerMeter(_nvml, () => Settings.GpuWatts, Gpus.Count);
         _gpuConfig = BuildConfig(100, "g");
         var gpuProvider = new SrbMinerGpuProvider(
-            _http, Pool, Paths.EnginesDir, Paths.GpuBenchmarksFile, Gpus, GpuPowerMeter, () => Settings.ElectricityPricePerKwh,
+            _http, Pool, Paths.EnginesDir, Paths.GpuBenchmarksFile, Gpus, GpuPowerMeter, EffectivePricePerKwh,
             policy: () => EffectiveGpuPolicy);
         if (IsSimulated)
         {
@@ -106,6 +107,31 @@ public sealed class AppHost : IAsyncDisposable
     public EarningsHistory History { get; }
 
     public EarningsEstimator Estimator { get; }
+
+    /// <summary>Live day-ahead spot shape that varies the electricity price through the day.</summary>
+    public ElectricityPriceProvider ElectricityPrices { get; }
+
+    /// <summary>
+    /// The electricity price to charge mining with right now: zero when the user doesn't pay for power, otherwise
+    /// their retail rate scaled by today's live hourly spot shape (so cheap hours cost less, expensive hours more).
+    /// </summary>
+    public double EffectivePricePerKwh()
+    {
+        if (!Settings.PayForElectricity)
+            return 0;
+        var shape = ElectricityPrices.CurrentMultiplier() ?? 1.0;
+        return Math.Max(0, Settings.ElectricityPricePerKwh * shape);
+    }
+
+    /// <summary>The day's average price (zero when the user doesn't pay), for projections that span a whole day.</summary>
+    public double AveragePricePerKwh() => Settings.PayForElectricity ? Settings.ElectricityPricePerKwh : 0;
+
+    /// <summary>Fetches today's live prices for the user's zone. Non-fatal; the flat price is used if it fails.</summary>
+    public async Task RefreshElectricityAsync(CancellationToken ct)
+    {
+        await ElectricityPrices.RefreshAsync(SpotPriceZone.Find(Settings.ElectricityZone), ct);
+        RebuildEngineConfigs();
+    }
 
     /// <summary>Dev mode (OTIUM_SIMULATE=1): simulated miners instead of XMRig/SRBMiner.</summary>
     public bool IsSimulated { get; }
@@ -265,7 +291,7 @@ public sealed class AppHost : IAsyncDisposable
     /// <summary>What this computer could earn per 24 h of mining, from its hardware and today's payouts.</summary>
     public Task<EarningsEstimate> EstimateAsync(CancellationToken ct) =>
         Estimator.EstimateAsync(CpuInfo.Name, Environment.ProcessorCount, Settings.CpuUsagePercent, PowerModel,
-            Settings.GpuEnabled ? Gpus : [], Settings.ElectricityPricePerKwh, EffectiveFeePercent, ct, EffectiveGpuPolicy);
+            Settings.GpuEnabled ? Gpus : [], AveragePricePerKwh(), EffectiveFeePercent, ct, EffectiveGpuPolicy);
 
     /// <summary>Samples running totals into the hour-by-hour history (call about once a minute).</summary>
     public void RecordHistory()
@@ -299,6 +325,19 @@ public sealed class AppHost : IAsyncDisposable
         Updates.ApplyAndRestart();
     }
 
+    /// <summary>
+    /// One-click fix for an antivirus block on Windows: after the user's OK at the Windows prompt, allows only the
+    /// engines folder in Microsoft Defender, then retries (which downloads fresh copies of the removed engines).
+    /// Returns null on success, or a user-facing reason.
+    /// </summary>
+    public async Task<string?> AllowEnginesInWindowsSecurityAsync()
+    {
+        var problem = await WindowsSecurity.AllowFolderAsync(Paths.EnginesDir);
+        if (problem is null)
+            ApplyDeviceSwitchesAfterBlock();
+        return problem;
+    }
+
     /// <summary>"Try again" after an antivirus block: re-enabling clears the engine's blocked/error state.</summary>
     public void ApplyDeviceSwitchesAfterBlock()
     {
@@ -309,6 +348,12 @@ public sealed class AppHost : IAsyncDisposable
     public void SaveSettings()
     {
         _settingsStore.Save(Settings);
+        RebuildEngineConfigs();
+    }
+
+    /// <summary>Rebuilds each engine's config (including the current electricity price) and wakes them to re-apply it.</summary>
+    private void RebuildEngineConfigs()
+    {
         _cpuConfig = BuildConfig(Settings.CpuUsagePercent, "");
         _gpuConfig = BuildConfig(100, "g");
         _bandwidthConfig = BuildBandwidthConfig();
@@ -351,7 +396,7 @@ public sealed class AppHost : IAsyncDisposable
                 Settings.OnlyWhenIdle,
                 TimeSpan.FromMinutes(Math.Max(1, Settings.IdleMinutes)),
                 Settings.NeverRunAtLoss,
-                Settings.ElectricityPricePerKwh,
+                EffectivePricePerKwh(),
                 new FeeSchedule(FeePolicy.Default with { FeePercent = 0 }, poolWallet, null, new ReferralStanding(null, null, null)),
                 // CPU and GPU share one worker id so the pool reports their combined work for this account.
                 Settings.Account.WorkerId ?? "");
@@ -365,7 +410,7 @@ public sealed class AppHost : IAsyncDisposable
             Settings.OnlyWhenIdle,
             TimeSpan.FromMinutes(Math.Max(1, Settings.IdleMinutes)),
             Settings.NeverRunAtLoss,
-            Settings.ElectricityPricePerKwh,
+            EffectivePricePerKwh(),
             new FeeSchedule(FeePolicy.Default, Settings.PayoutAddress, FeeWallet, standing),
             $"ot{DeviceId[..8]}{workerSuffix}");
     }

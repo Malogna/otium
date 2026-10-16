@@ -43,6 +43,29 @@
                     </Grid>
                 </Border>
 
+                <!-- Antivirus removed the engines: the fix, right where the user sees "Needs your OK" -->
+                <Border Classes="card" IsVisible="{Binding NeedsAntivirusFix}">
+                    <Grid ColumnDefinitions="Auto,*">
+                        <Border Classes="iconBadge" VerticalAlignment="Top" Background="{DynamicResource WarnSoft}">
+                            <Path Classes="icon" Data="{StaticResource IconShield}" Stroke="{DynamicResource WarnBrush}" />
+                        </Border>
+                        <StackPanel Grid.Column="1" Margin="14,0,0,0" Spacing="10">
+                            <StackPanel Spacing="2">
+                                <TextBlock Classes="h2" Text="Your antivirus blocked the earning engines" />
+                                <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap"
+                                           Text="Antivirus tools treat every crypto miner as a threat, including the official ones Otium downloads and verifies. Allowing Otium's engines folder fixes it; Windows will ask for your permission first, and nothing else is changed." />
+                            </StackPanel>
+                            <TextBlock FontSize="13" TextWrapping="Wrap" Text="{Binding AllowResult}"
+                                       IsVisible="{Binding AllowResult, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button Classes="accent" Content="Allow automatically" Command="{Binding AllowAutomaticallyCommand}"
+                                        IsVisible="{Binding CanAllowAutomatically}" IsEnabled="{Binding !IsAllowing}" />
+                                <Button Content="Show me how" Command="{Binding OpenAdvancedCommand}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
                 <!-- ===== Hero: balance, projection, main actions, cash-out goal ===== -->
                 <Border Classes="hero">
                     <StackPanel Spacing="18">

@@ -113,10 +113,18 @@
                             <CheckBox IsVisible="{Binding HasGpu}" IsChecked="{Binding UseGpu}">
                                 <TextBlock Text="{Binding GpuName, StringFormat='Also use my {0}'}" TextWrapping="Wrap" />
                             </CheckBox>
+                            <StackPanel Spacing="4">
+                                <TextBlock FontWeight="SemiBold" FontSize="13" Text="Do you pay for this computer's electricity?" />
+                                <StackPanel Orientation="Horizontal" Spacing="16">
+                                    <RadioButton GroupName="power" IsChecked="{Binding PayForElectricity}" Content="Yes, count it" />
+                                    <RadioButton GroupName="power" IsChecked="{Binding DontPayForElectricity}" Content="No, it's included or free" />
+                                </StackPanel>
+                            </StackPanel>
                             <Grid ColumnDefinitions="Auto,*,Auto">
                                 <Path Classes="icon" Data="{StaticResource IconBolt}" Width="16" Height="16" />
-                                <TextBlock Grid.Column="1" Classes="muted" FontSize="13" Margin="8,0" VerticalAlignment="Center" Text="{Binding ElectricityLine}" />
-                                <Button Grid.Column="2" Classes="link" AutomationProperties.Name="Change electricity price" Command="{Binding EditPriceCommand}">
+                                <TextBlock Grid.Column="1" Classes="muted" FontSize="13" Margin="8,0" VerticalAlignment="Center" TextWrapping="Wrap" Text="{Binding ElectricityLine}" />
+                                <Button Grid.Column="2" Classes="link" AutomationProperties.Name="Change electricity price" Command="{Binding EditPriceCommand}"
+                                        IsVisible="{Binding PayForElectricity}">
                                     <TextBlock Text="Change" FontSize="13" Foreground="{DynamicResource GoodBrush}" />
                                 </Button>
                             </Grid>
@@ -145,7 +153,7 @@
                             <Grid ColumnDefinitions="Auto,*">
                                 <Path Classes="icon" Data="{StaticResource IconCheck}" VerticalAlignment="Top" Margin="0,2,0,0" />
                                 <TextBlock Grid.Column="1" Margin="12,0,0,0" TextWrapping="Wrap"
-                                           Text="It runs mining software (XMRig, and SRBMiner for graphics cards). Some antivirus tools flag these; Otium shows you how to allow them." />
+                                           Text="It runs mining software (XMRig, and SRBMiner for graphics cards). Some antivirus tools flag these; Otium shows you how to allow them. If Windows Firewall asks about them, click Allow." />
                             </Grid>
                             <Grid ColumnDefinitions="Auto,*">
                                 <Path Classes="icon" Data="{StaticResource IconCheck}" VerticalAlignment="Top" Margin="0,2,0,0" />
