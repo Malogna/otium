@@ -77,6 +77,35 @@
         </Border>
 
         <Border Classes="card">
+            <StackPanel Spacing="12" DataContext="{Binding InternetSharing}" x:DataType="vm:InternetSharingViewModel">
+                <TextBlock Classes="h2" Text="Internet sharing" />
+                <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" IsVisible="{Binding !IsOffered}" Text="{Binding UnavailableText}" />
+
+                <!-- On: status and limits -->
+                <StackPanel Spacing="10" IsVisible="{Binding IsOn}">
+                    <TextBlock TextWrapping="Wrap" Text="{Binding StatusText}" />
+                    <ToggleSwitch IsChecked="{Binding OnlyWhenAway}"
+                                  OnContent="Only share while I'm away from the computer" OffContent="Only share while I'm away from the computer" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <NumericUpDown Value="{Binding DailyLimitGb}" Minimum="0.1" Maximum="100" Increment="0.5" FormatString="0.#" Width="140" />
+                        <TextBlock VerticalAlignment="Center" Text="GB a day at most" />
+                    </StackPanel>
+                    <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap" Text="{Binding ConsentText}" />
+                    <Button Content="Turn off internet sharing" Command="{Binding TurnOffCommand}" IsEnabled="{Binding !IsBusy}" />
+                </StackPanel>
+
+                <!-- Offered but off: the explanation to agree to -->
+                <StackPanel Spacing="10" IsVisible="{Binding CanTurnOn}">
+                    <TextBlock TextWrapping="Wrap" FontSize="13">
+                        <Run Text="Earn a little extra from internet you don't use" />
+                        <Run Text="{Binding EstimateText, Mode=OneWay, StringFormat=' ({0})'}" />
+                    </TextBlock>
+                    <views:InternetSharingConsentView />
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <Border Classes="card">
             <StackPanel Spacing="14">
                 <TextBlock Classes="h2" Text="Electricity" />
                 <StackPanel Orientation="Horizontal" Spacing="8">

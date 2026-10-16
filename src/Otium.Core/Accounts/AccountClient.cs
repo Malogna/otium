@@ -13,6 +13,8 @@ public interface IAccountClient
     Task SendEmailCodeAsync(string deviceId, string deviceSecret, EmailCodeRequest request, CancellationToken ct);
 
     Task<AccountSummary> VerifyEmailCodeAsync(string deviceId, string deviceSecret, EmailVerifyRequest request, CancellationToken ct);
+
+    Task<BandwidthReportResult> ReportBandwidthAsync(string deviceId, string deviceSecret, BandwidthReport report, CancellationToken ct);
 }
 
 /// <summary>Thrown when the server rejects a request with a message meant for the user.</summary>
@@ -61,6 +63,12 @@ public sealed class AccountClient(HttpClient http) : IAccountClient
     {
         using var response = await PostAsync(deviceId, deviceSecret, "email/verify", request, ct);
         return await ReadAsync<AccountSummary>(response, ct);
+    }
+
+    public async Task<BandwidthReportResult> ReportBandwidthAsync(string deviceId, string deviceSecret, BandwidthReport report, CancellationToken ct)
+    {
+        using var response = await PostAsync(deviceId, deviceSecret, "bandwidth", report, ct);
+        return await ReadAsync<BandwidthReportResult>(response, ct);
     }
 
     private async Task<HttpResponseMessage> PostAsync(string deviceId, string deviceSecret, string path, object body, CancellationToken ct)

@@ -16,6 +16,7 @@
     <ProjectReference Include="..\..\src\Otium.Core\Otium.Core.csproj" />
     <ProjectReference Include="..\..\src\Otium.Providers.XMRig\Otium.Providers.XMRig.csproj" />
     <ProjectReference Include="..\..\src\Otium.Providers.SrbMiner\Otium.Providers.SrbMiner.csproj" />
+    <ProjectReference Include="..\..\src\Otium.Providers.Honeygain\Otium.Providers.Honeygain.csproj" />
     <ProjectReference Include="..\..\src\Otium.Server\Otium.Server.csproj" />
     <ProjectReference Include="..\..\src\Otium.DevPool\Otium.DevPool.csproj" />
   </ItemGroup>

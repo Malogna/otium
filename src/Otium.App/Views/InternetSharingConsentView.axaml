@@ -1,0 +1,23 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Otium.App.ViewModels"
+             x:Class="Otium.App.Views.InternetSharingConsentView"
+             x:DataType="vm:InternetSharingViewModel">
+
+    <!-- What the user agrees to before internet sharing can run. Same text on the overview and in Advanced. -->
+    <StackPanel Spacing="12">
+        <Border Classes="tile">
+            <StackPanel Spacing="8">
+                <TextBlock FontWeight="SemiBold" Text="How it works" />
+                <TextBlock TextWrapping="Wrap" FontSize="13" Text="{Binding ConsentText}" />
+                <TextBlock Classes="muted" TextWrapping="Wrap" FontSize="12.5" Text="{Binding LimitsText}" />
+            </StackPanel>
+        </Border>
+        <TextBlock Classes="error" TextWrapping="Wrap" Text="{Binding Error}"
+                   IsVisible="{Binding Error, Converter={x:Static ObjectConverters.IsNotNull}}" />
+        <StackPanel Orientation="Horizontal" Spacing="10">
+            <Button Classes="accent" Content="I agree, turn it on" Command="{Binding AgreeCommand}" IsEnabled="{Binding !IsBusy}" />
+            <Button Content="Not now" Command="{Binding NotNowCommand}" />
+        </StackPanel>
+    </StackPanel>
+</UserControl>

@@ -104,3 +104,43 @@ public sealed class AdminOptions
     /// <summary>Shared secret for the /admin endpoints (send as X-Admin-Token). Admin endpoints are disabled while empty.</summary>
     public string Token { get; set; } = "";
 }
+
+/// <summary>
+/// Paying balance accounts for sharing unused internet bandwidth through Otium's bandwidth partner. The partner pays
+/// Otium as the publisher; these rates set what users are credited from their computers' usage reports, with limits
+/// that keep self-reported usage honest. Off until a partner agreement is in place.
+/// </summary>
+public sealed class BandwidthOptions
+{
+    public const string Section = "Bandwidth";
+
+    public bool Enabled { get; set; }
+
+    /// <summary>Shown to users on the consent screen as the company whose customers' traffic is routed.</summary>
+    public string? PartnerName { get; set; }
+
+    /// <summary>Gross USD per GB shared (before Otium's fee), for partners that pay by volume and report it to the app.</summary>
+    public double UsdPerGb { get; set; }
+
+    /// <summary>
+    /// Gross USD per hour a computer is online and available. Honeygain pays publishers per daily active device,
+    /// weighted by uptime, and reports no volume to the app, so this is the rate that matters with it. The default
+    /// (about $0.43 a month for a computer sharing around the clock) is a placeholder: set it from the partner agreement.
+    /// </summary>
+    public double UsdPerSharingHour { get; set; } = 0.0006;
+
+    /// <summary>Most a computer is credited for per UTC day.</summary>
+    public long DailyLimitBytes { get; set; } = 10L * 1024 * 1024 * 1024;
+
+    /// <summary>Faster average rates than this are implausible for proxy traffic and are capped.</summary>
+    public long MaxBytesPerSecond { get; set; } = 2 * 1024 * 1024;
+
+    /// <summary>Longest period one report may cover; longer reports are cut to this.</summary>
+    public TimeSpan MaxReportPeriod { get; set; } = TimeSpan.FromMinutes(15);
+
+    /// <summary>
+    /// Only one computer per internet connection (public IP) is paid at a time, as partners require. Another computer
+    /// on the same connection can take over after this much time without credited reports from the first.
+    /// </summary>
+    public TimeSpan SharedConnectionWindow { get; set; } = TimeSpan.FromMinutes(15);
+}

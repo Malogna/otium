@@ -74,7 +74,8 @@ public sealed class EarningsCreditor(
                 if (hashes <= 0)
                     continue;
 
-                var (user, referral) = Credit(account, workerId, hashes * usdPerHash, newestMs.Value, now);
+                var (userMicros, referralMicros) = Credit(store, _options, account, hashes * usdPerHash, $"{workerId}@{newestMs.Value}", now);
+                var (user, referral) = (AccountService.ToUsd(userMicros), AccountService.ToUsd(referralMicros));
                 users += user;
                 referrals += referral;
                 workers++;
@@ -111,15 +112,22 @@ public sealed class EarningsCreditor(
         return (hashes, newest);
     }
 
-    private (decimal User, decimal Referral) Credit(AccountRecord account, string workerId, double grossUsd, long newestMs, DateTimeOffset now)
+    /// <summary>
+    /// Credits gross earnings to an account: the user's share after Otium's fee (none while fee-free), plus the referral
+    /// reward to whoever invited them, paid out of the fee. Both are held for the hold period. Shared by mining and
+    /// bandwidth crediting so every way of earning follows the same rules.
+    /// </summary>
+    /// <returns>Micro-dollars credited to the user and to the referrer.</returns>
+    internal static (long UserMicros, long ReferralMicros) Credit(
+        OtiumStore store, EarningsOptions options, AccountRecord account, double grossUsd, string reference, DateTimeOffset now)
     {
         var feeFree = account.FeeFreeUntil is { } until && now < until;
-        var fee = feeFree ? 0 : _options.FeePercent / 100.0;
-        var availableAt = now + _options.HoldPeriod;
+        var fee = feeFree ? 0 : options.FeePercent / 100.0;
+        var availableAt = now + options.HoldPeriod;
 
         var userMicros = (long)(grossUsd * (1 - fee) * OtiumStore.MicrosPerDollar);
         if (userMicros > 0)
-            store.AddLedger(account.AccountId, LedgerKinds.Earning, userMicros, now, availableAt, $"{workerId}@{newestMs}");
+            store.AddLedger(account.AccountId, LedgerKinds.Earning, userMicros, now, availableAt, reference);
 
         long referralMicros = 0;
         if (account.ReferredByCode is { } code
@@ -127,12 +135,12 @@ public sealed class EarningsCreditor(
             && now < referredAt + FeePolicy.Default.ReferrerRewardPeriod
             && store.Resolve(store.FindAccountByCode(code)) is { IsBalanceAccount: true } referrer)
         {
-            referralMicros = (long)(grossUsd * _options.ReferralPercent / 100.0 * OtiumStore.MicrosPerDollar);
+            referralMicros = (long)(grossUsd * options.ReferralPercent / 100.0 * OtiumStore.MicrosPerDollar);
             if (referralMicros > 0)
-                store.AddLedger(referrer.AccountId, LedgerKinds.Referral, referralMicros, now, availableAt, $"ref:{workerId}@{newestMs}");
+                store.AddLedger(referrer.AccountId, LedgerKinds.Referral, referralMicros, now, availableAt, $"ref:{reference}");
         }
 
-        return (AccountService.ToUsd(userMicros), AccountService.ToUsd(referralMicros));
+        return (userMicros, referralMicros);
     }
 }
 

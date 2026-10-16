@@ -6,6 +6,7 @@ using Otium.Core.Accounts;
 using Otium.Core.Pools;
 using Otium.Server;
 using Otium.Server.Accounts;
+using Otium.Server.Bandwidth;
 using Otium.Server.Data;
 using Otium.Server.Earnings;
 using Otium.Server.Payouts;
@@ -18,6 +19,7 @@ builder.Services.Configure<CashoutOptions>(builder.Configuration.GetSection(Cash
 builder.Services.Configure<PayPalOptions>(builder.Configuration.GetSection(PayPalOptions.Section));
 builder.Services.Configure<MoneroWalletOptions>(builder.Configuration.GetSection(MoneroWalletOptions.Section));
 builder.Services.Configure<AdminOptions>(builder.Configuration.GetSection(AdminOptions.Section));
+builder.Services.Configure<BandwidthOptions>(builder.Configuration.GetSection(BandwidthOptions.Section));
 
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton(_ => new OtiumStore(builder.Configuration.GetConnectionString("Otium") ?? "Data Source=otium.db"));
@@ -29,6 +31,7 @@ builder.Services.AddSingleton<IEmailSender>(sp => sp.GetRequiredService<IOptions
     ? new SmtpEmailSender(sp.GetRequiredService<IOptions<EmailOptions>>())
     : sp.GetRequiredService<OutboxEmailSender>());
 builder.Services.AddSingleton<PoolWalletAllocator>();
+builder.Services.AddSingleton<BandwidthService>();
 builder.Services.AddSingleton<AccountService>();
 builder.Services.AddSingleton<EarningsCreditor>();
 if (builder.Configuration.GetValue<bool>("DevMode:FakePayouts"))
@@ -98,6 +101,15 @@ api.MapPost("/devices/{deviceId}/cashouts", (string deviceId, CashoutRequest bod
     return Results.Ok(cashouts.Request(session.Account, body));
 });
 
+// Bandwidth usage reports. The connection's public IP enforces one paid sharer per internet connection; when deployed
+// behind a reverse proxy, enable forwarded headers so this is the client's address, not the proxy's.
+api.MapPost("/devices/{deviceId}/bandwidth", (string deviceId, BandwidthReport body, HttpContext context, AccountService accounts, BandwidthService bandwidth) =>
+{
+    var session = accounts.Authenticate(deviceId, Secret(context.Request));
+    var ip = context.Connection.RemoteIpAddress?.MapToIPv4().ToString() ?? "unknown";
+    return Results.Ok(bandwidth.Report(session, body, ip));
+});
+
 api.MapPost("/devices/{deviceId}/email/code", async (string deviceId, EmailCodeRequest body, HttpRequest request, AccountService accounts, CancellationToken ct) =>
 {
     await accounts.SendSignInCodeAsync(deviceId, Secret(request), body, ct);
@@ -141,6 +153,7 @@ admin.MapGet("/summary", async (OtiumStore store, IMoneroPoolApi pool, TimeProvi
             poolEarnedXmr += stats.PaidXmr + stats.PendingXmr;
     }
     var price = (await pool.GetNetworkStatsAsync(ct)).PriceUsd;
+    var bandwidthTotals = store.BandwidthTotals();
     return Results.Ok(new
     {
         creditedToUsersUsd = AccountService.ToUsd(totals.Credited),
@@ -151,6 +164,9 @@ admin.MapGet("/summary", async (OtiumStore store, IMoneroPoolApi pool, TimeProvi
         poolEarnedUsdAtTodaysPrice = Math.Round(poolEarnedXmr * price, 2),
         reviewQueue = store.CashoutsWithStatus(CashoutStatuses.Review).Count,
         poolAddresses = store.PoolWalletLoads().Select(w => new { w.Address, w.Accounts }),
+        // Compare with the bandwidth partner's publisher statements.
+        bandwidthCreditedGb = Math.Round(bandwidthTotals.Bytes / BandwidthService.BytesPerGb, 3),
+        bandwidthCreditedToUsersUsd = AccountService.ToUsd(bandwidthTotals.Micros),
     });
 });
 

@@ -56,6 +56,21 @@ public sealed class AppSettings
 
     public bool AcceptedTerms { get; set; }
 
+    /// <summary>Share unused internet bandwidth through Otium's partner. Off until the user opts in.</summary>
+    public bool BandwidthEnabled { get; set; }
+
+    /// <summary>When the user agreed to the bandwidth-sharing explanation; sharing never runs without it.</summary>
+    public DateTimeOffset? BandwidthConsentAt { get; set; }
+
+    /// <summary>Share only while the user is away, like mining. Off by default because sharing barely uses the computer.</summary>
+    public bool BandwidthOnlyWhenIdle { get; set; }
+
+    /// <summary>Most data to share per day, in GB.</summary>
+    public double BandwidthDailyLimitGb { get; set; } = 2;
+
+    /// <summary>The user answered "Not now" to the internet sharing suggestion on the overview.</summary>
+    public bool BandwidthPromptDismissed { get; set; }
+
     public string ServerUrl { get; set; } = AppIdentity.DefaultServerUrl;
 
     public ReferralState Referral { get; set; } = new();
@@ -98,6 +113,17 @@ public sealed class AccountState
     public decimal MinCryptoUsd { get; set; } = 2m;
 
     public double FeePercent { get; set; }
+
+    /// <summary>Bandwidth sharing terms as last announced by the server.</summary>
+    public bool BandwidthAvailable { get; set; }
+
+    public double BandwidthUserUsdPerGb { get; set; }
+
+    public double BandwidthUserUsdPerSharingHour { get; set; }
+
+    public long BandwidthServerDailyLimitBytes { get; set; }
+
+    public string? BandwidthPartnerName { get; set; }
 
     /// <summary>Last PayPal email used, to prefill the cash-out form.</summary>
     public string? LastPayPalEmail { get; set; }

@@ -55,6 +55,21 @@ public sealed record CashoutRecord(
     string? Note,
     int Attempts);
 
+/// <summary>A bandwidth usage report as received, with what was credited for it.</summary>
+public sealed record BandwidthReportRecord(
+    string DeviceId,
+    long Seq,
+    string AccountId,
+    string Ip,
+    DateTimeOffset PeriodStart,
+    DateTimeOffset PeriodEnd,
+    long Bytes,
+    double Seconds,
+    long CreditedBytes,
+    long CreditedMicros,
+    string Status,
+    DateTimeOffset CreatedAt);
+
 public sealed record BalanceTotals(long AvailableMicros, long PendingMicros, long LifetimeMicros, long ReferralMicros);
 
 /// <param name="Salt">Random per-code salt so a leaked database doesn't reveal codes by lookup.</param>
@@ -67,7 +82,7 @@ public sealed record EmailCodeRecord(long Id, string Email, string DeviceId, str
 public sealed class OtiumStore
 {
     public const long MicrosPerDollar = 1_000_000;
-    private const int SchemaVersion = 2;
+    private const int SchemaVersion = 3;
 
     private readonly string _connectionString;
 
@@ -191,6 +206,24 @@ public sealed class OtiumStore
         Execute("""
             CREATE INDEX IF NOT EXISTS ix_ledger_account ON ledger(account_id);
             CREATE INDEX IF NOT EXISTS ix_cashouts_account ON cashouts(account_id);
+
+            -- Version 3: bandwidth sharing. One row per usage report a computer sends (idempotent by device + sequence).
+            CREATE TABLE IF NOT EXISTS bandwidth_reports (
+                device_id       TEXT NOT NULL,
+                seq             INTEGER NOT NULL,
+                account_id      TEXT NOT NULL,
+                ip              TEXT NOT NULL,
+                period_start    TEXT NOT NULL,
+                period_end      TEXT NOT NULL,
+                bytes           INTEGER NOT NULL,
+                seconds         REAL NOT NULL,
+                credited_bytes  INTEGER NOT NULL,
+                credited_micros INTEGER NOT NULL,
+                status          TEXT NOT NULL,
+                created_at      TEXT NOT NULL,
+                PRIMARY KEY (device_id, seq)
+            );
+            CREATE INDEX IF NOT EXISTS ix_bandwidth_ip ON bandwidth_reports(ip, period_end);
             """);
         Execute($"PRAGMA user_version = {SchemaVersion};");
     }
@@ -341,6 +374,63 @@ public sealed class OtiumStore
     public void CountEmailCodeAttempt(long id) => Execute("UPDATE email_codes SET attempts = attempts + 1 WHERE id = $id", ("$id", id));
 
     public void UseEmailCode(long id) => Execute("UPDATE email_codes SET used = 1 WHERE id = $id", ("$id", id));
+
+    // ---------- bandwidth ----------
+
+    public BandwidthReportRecord? FindBandwidthReport(string deviceId, long seq) =>
+        QueryBandwidth("SELECT * FROM bandwidth_reports WHERE device_id = $d AND seq = $s", ("$d", deviceId), ("$s", seq)).FirstOrDefault();
+
+    public void AddBandwidthReport(BandwidthReportRecord r) =>
+        Execute("""
+            INSERT INTO bandwidth_reports (device_id, seq, account_id, ip, period_start, period_end, bytes, seconds,
+                                           credited_bytes, credited_micros, status, created_at)
+            VALUES ($d, $s, $a, $ip, $ps, $pe, $b, $sec, $cb, $cm, $st, $c)
+            """,
+            ("$d", r.DeviceId), ("$s", r.Seq), ("$a", r.AccountId), ("$ip", r.Ip), ("$ps", Format(r.PeriodStart)),
+            ("$pe", Format(r.PeriodEnd)), ("$b", r.Bytes), ("$sec", r.Seconds), ("$cb", r.CreditedBytes),
+            ("$cm", r.CreditedMicros), ("$st", r.Status), ("$c", Format(r.CreatedAt)));
+
+    /// <summary>Bytes already credited to a computer for periods ending after <paramref name="since"/>.</summary>
+    public long CreditedBandwidthBytesSince(string deviceId, DateTimeOffset since) =>
+        Scalar<long>("SELECT COALESCE(SUM(credited_bytes), 0) FROM bandwidth_reports WHERE device_id = $d AND period_end > $s",
+            ("$d", deviceId), ("$s", Format(since)));
+
+    /// <summary>Another computer that was sharing (and paid for it) from this internet connection in the window, if any.</summary>
+    public string? OtherSharerOnIp(string ip, string deviceId, DateTimeOffset since) =>
+        QueryBandwidth("""
+            SELECT * FROM bandwidth_reports WHERE ip = $ip AND device_id <> $d AND period_end > $s AND status <> 'shared-connection'
+            ORDER BY period_end DESC LIMIT 1
+            """, ("$ip", ip), ("$d", deviceId), ("$s", Format(since))).FirstOrDefault()?.DeviceId;
+
+    public (long Bytes, long Micros) BandwidthTotals() =>
+        QueryBandwidth("SELECT * FROM bandwidth_reports").Aggregate((0L, 0L), (t, r) => (t.Item1 + r.CreditedBytes, t.Item2 + r.CreditedMicros));
+
+    private IReadOnlyList<BandwidthReportRecord> QueryBandwidth(string sql, params (string, object?)[] parameters)
+    {
+        using var connection = Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = sql;
+        Bind(cmd, parameters);
+        using var r = cmd.ExecuteReader();
+        var list = new List<BandwidthReportRecord>();
+        while (r.Read())
+        {
+            list.Add(new BandwidthReportRecord(
+                r.GetString(r.GetOrdinal("device_id")),
+                r.GetInt64(r.GetOrdinal("seq")),
+                r.GetString(r.GetOrdinal("account_id")),
+                r.GetString(r.GetOrdinal("ip")),
+                Parse(r.GetString(r.GetOrdinal("period_start"))),
+                Parse(r.GetString(r.GetOrdinal("period_end"))),
+                r.GetInt64(r.GetOrdinal("bytes")),
+                r.GetDouble(r.GetOrdinal("seconds")),
+                r.GetInt64(r.GetOrdinal("credited_bytes")),
+                r.GetInt64(r.GetOrdinal("credited_micros")),
+                r.GetString(r.GetOrdinal("status")),
+                Parse(r.GetString(r.GetOrdinal("created_at")))));
+        }
+        return list;
+    }
 
     // ---------- ledger ----------
 

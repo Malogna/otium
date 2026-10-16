@@ -1,6 +1,7 @@
 using System.Net.Http;
 using System.Security.Cryptography;
 using Otium.Core;
+using Otium.Core.Bandwidth;
 using Otium.Core.Engine;
 using Otium.Core.Fees;
 using Otium.Core.Gpu;
@@ -12,6 +13,7 @@ using Otium.Core.Providers;
 using Otium.Core.Accounts;
 using Otium.Core.Settings;
 using Otium.Core.Wallets;
+using Otium.Providers.Honeygain;
 using Otium.Providers.SrbMiner;
 using Otium.Providers.XMRig;
 
@@ -30,6 +32,7 @@ public sealed class AppHost : IAsyncDisposable
     private DateTimeOffset _lastHistorySample = DateTimeOffset.UtcNow;
     private volatile EngineConfig _cpuConfig;
     private volatile EngineConfig _gpuConfig;
+    private volatile BandwidthConfig _bandwidthConfig;
 
     private AppHost()
     {
@@ -83,6 +86,16 @@ public sealed class AppHost : IAsyncDisposable
             var gpuLedger = new JsonFileStore<EarningsLedger>(Paths.GpuLedgerFile);
             GpuEngine = new EarningsEngine(gpuProvider, GpuPowerMeter, idle, () => _gpuConfig, gpuLedger.Load(), gpuLedger.Save);
         }
+
+        // Internet sharing (opt-in): usage is reported to the Otium server, which credits the balance.
+        var bandwidthLedger = new JsonFileStore<BandwidthLedger>(Paths.BandwidthLedgerFile);
+        _bandwidthConfig = BuildBandwidthConfig();
+        IBandwidthProvider bandwidthProvider = IsSimulated
+            ? new SimulatedBandwidthProvider()
+            : new HoneygainBandwidthProvider(AppContext.BaseDirectory, AppIdentity.ResolveHoneygainApiKey());
+        Bandwidth = new BandwidthSharer(bandwidthProvider, idle, () => _bandwidthConfig,
+            (report, ct) => CreateClient().ReportBandwidthAsync(DeviceId, Settings.DeviceSecret, report, ct),
+            bandwidthLedger.Load(), bandwidthLedger.Save);
     }
 
     public static AppHost Create() => new();
@@ -125,6 +138,14 @@ public sealed class AppHost : IAsyncDisposable
 
     public IEnumerable<EarningsEngine> Engines => GpuEngine is null ? [Engine] : [Engine, GpuEngine];
 
+    /// <summary>Shares unused internet bandwidth when the user has opted in.</summary>
+    public BandwidthSharer Bandwidth { get; }
+
+    /// <summary>The server pays for sharing and this computer can run the partner's component.</summary>
+    public bool BandwidthOffered => Settings.PayoutMode == PayoutMode.Balance
+                                    && Settings.Account.BandwidthAvailable
+                                    && Bandwidth.Provider.UnavailableReason is null;
+
     public FeeSchedule FeeSchedule => _cpuConfig.FeeSchedule;
 
     public bool IsEarning => Engines.Any(e => e.Enabled);
@@ -153,6 +174,26 @@ public sealed class AppHost : IAsyncDisposable
     {
         foreach (var engine in Engines)
             engine.Start();
+        Bandwidth.Start();
+    }
+
+    /// <summary>
+    /// Opts in to (or out of) internet sharing. Turning it on records the user's consent (given on Otium's explanation
+    /// screen) with the partner component too; turning it off withdraws it there as well.
+    /// </summary>
+    public async Task SetBandwidthSharingAsync(bool on)
+    {
+        var provider = Bandwidth.Provider;
+        if (on && provider.UnavailableReason is null)
+            await provider.OptInAsync(CancellationToken.None); // before starting: the partner won't share without it
+
+        Settings.BandwidthEnabled = on;
+        Settings.BandwidthConsentAt = on ? Settings.BandwidthConsentAt ?? DateTimeOffset.UtcNow : null;
+        SaveSettings();
+        ApplyDeviceSwitches();
+
+        if (!on && provider.UnavailableReason is null)
+            await provider.OptOutAsync(CancellationToken.None);
     }
 
     /// <summary>The main switch: turns earning on for every device the user has enabled, or off for all.</summary>
@@ -191,6 +232,10 @@ public sealed class AppHost : IAsyncDisposable
         Toggle(Engine, on && Settings.CpuEnabled);
         if (GpuEngine is not null)
             Toggle(GpuEngine, on && Settings.GpuEnabled);
+        if (on && Settings.BandwidthEnabled && Settings.BandwidthConsentAt is not null)
+            Bandwidth.Enable();
+        else
+            Bandwidth.Disable();
 
         static void Toggle(EarningsEngine engine, bool enabled)
         {
@@ -217,8 +262,9 @@ public sealed class AppHost : IAsyncDisposable
         var now = DateTimeOffset.Now;
         var snapshots = Engines.Select(e => e.Snapshot).ToList();
         var earning = snapshots.Any(s => s.State == EngineState.Earning);
+        // Earning hours count mining only: they scale the mining projection. Sharing is projected separately.
         History.Record(now,
-            snapshots.Sum(s => s.TotalUserUsd),
+            snapshots.Sum(s => s.TotalUserUsd) + Bandwidth.Snapshot.TotalUserUsd,
             snapshots.Sum(s => s.TotalElectricityUsd),
             earning ? now - _lastHistorySample : TimeSpan.Zero);
         _lastHistorySample = now;
@@ -233,9 +279,11 @@ public sealed class AppHost : IAsyncDisposable
     {
         foreach (var engine in Engines)
             await engine.DisposeAsync();
+        await Bandwidth.DisposeAsync();
         await Provider.DisposeAsync();
         if (GpuProvider is not null)
             await GpuProvider.DisposeAsync();
+        await Bandwidth.Provider.DisposeAsync();
         _settingsStore.Save(Settings);
         Updates.ApplyAndRestart();
     }
@@ -252,8 +300,10 @@ public sealed class AppHost : IAsyncDisposable
         _settingsStore.Save(Settings);
         _cpuConfig = BuildConfig(Settings.CpuUsagePercent, "");
         _gpuConfig = BuildConfig(100, "g");
+        _bandwidthConfig = BuildBandwidthConfig();
         foreach (var engine in Engines)
             engine.Nudge();
+        Bandwidth.Nudge();
     }
 
     /// <summary>Settings affecting the power estimate need the model rebuilt.</summary>
@@ -307,6 +357,24 @@ public sealed class AppHost : IAsyncDisposable
             Settings.ElectricityPricePerKwh,
             new FeeSchedule(FeePolicy.Default, Settings.PayoutAddress, FeeWallet, standing),
             $"ot{DeviceId[..8]}{workerSuffix}");
+    }
+
+    private BandwidthConfig BuildBandwidthConfig()
+    {
+        var account = Settings.Account;
+        var userLimit = (long)(Math.Clamp(Settings.BandwidthDailyLimitGb, 0.1, 100) * 1024 * 1024 * 1024);
+        var serverLimit = account.BandwidthServerDailyLimitBytes > 0 ? account.BandwidthServerDailyLimitBytes : long.MaxValue;
+        return new BandwidthConfig(
+            Settings.BandwidthEnabled && Settings.BandwidthConsentAt is not null && BandwidthOfferedBySettings() && account.WorkerId is not null,
+            Settings.BandwidthOnlyWhenIdle,
+            TimeSpan.FromMinutes(Math.Max(1, Settings.IdleMinutes)),
+            Math.Min(userLimit, serverLimit),
+            account.BandwidthUserUsdPerGb,
+            account.BandwidthUserUsdPerSharingHour,
+            account.WorkerId ?? "");
+
+        // Bandwidth isn't constructed yet on the first call, so check the provider separately in BandwidthOffered.
+        bool BandwidthOfferedBySettings() => Settings.PayoutMode == PayoutMode.Balance && account.BandwidthAvailable;
     }
 
     /// <summary>
@@ -413,6 +481,11 @@ public sealed class AppHost : IAsyncDisposable
         account.MinPayPalUsd = summary.Balance.MinPayPalUsd;
         account.MinCryptoUsd = summary.Balance.MinCryptoUsd;
         account.FeePercent = summary.Balance.FeePercent;
+        account.BandwidthAvailable = summary.Bandwidth?.Available ?? false;
+        account.BandwidthUserUsdPerGb = summary.Bandwidth?.UserUsdPerGb ?? 0;
+        account.BandwidthUserUsdPerSharingHour = summary.Bandwidth?.UserUsdPerSharingHour ?? 0;
+        account.BandwidthServerDailyLimitBytes = summary.Bandwidth?.DailyLimitBytes ?? 0;
+        account.BandwidthPartnerName = summary.Bandwidth?.PartnerName;
         account.LastSyncedAt = DateTimeOffset.UtcNow;
     }
 
@@ -440,9 +513,11 @@ public sealed class AppHost : IAsyncDisposable
     {
         foreach (var engine in Engines)
             await engine.DisposeAsync();
+        await Bandwidth.DisposeAsync();
         await Provider.DisposeAsync();
         if (GpuProvider is not null)
             await GpuProvider.DisposeAsync();
+        await Bandwidth.Provider.DisposeAsync();
         _nvml?.Dispose();
         _settingsStore.Save(Settings);
         _http.Dispose();

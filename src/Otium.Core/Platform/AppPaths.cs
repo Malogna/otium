@@ -16,6 +16,8 @@ public sealed class AppPaths(string root)
 
     public string HistoryFile => Path.Combine(Root, "history.json");
 
+    public string BandwidthLedgerFile => Path.Combine(Root, "bandwidth.json");
+
     /// <summary>Downloaded engines live in one folder, so an antivirus exclusion can be kept this narrow.</summary>
     public string EnginesDir => Path.Combine(Root, "engines");
 

@@ -48,4 +48,17 @@ public static class AppIdentity
         var wallet = string.IsNullOrWhiteSpace(overridden) ? FeeWalletAddress : overridden.Trim();
         return wallet.Length == 0 ? null : wallet;
     }
+
+    /// <summary>
+    /// Honeygain SDK publisher key for internet sharing, from the Honeygain developer dashboard. Empty means internet
+    /// sharing is unavailable in this build. Release builds can set it here or via OTIUM_HONEYGAIN_KEY.
+    /// </summary>
+    public const string HoneygainApiKey = "";
+
+    public static string? ResolveHoneygainApiKey()
+    {
+        var overridden = Environment.GetEnvironmentVariable("OTIUM_HONEYGAIN_KEY");
+        var key = string.IsNullOrWhiteSpace(overridden) ? HoneygainApiKey : overridden.Trim();
+        return key.Length == 0 ? null : key;
+    }
 }
