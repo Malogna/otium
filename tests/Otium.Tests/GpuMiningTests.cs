@@ -121,7 +121,8 @@ public class SrbMinerTests
     [Fact]
     public void Arguments_pin_the_algorithm_in_the_password_and_leave_the_cpu_alone()
     {
-        var args = SrbMinerArgs.Build(GpuAlgorithms.Find("cn/gpu")!, GpuPoolEndpoint.MoneroOcean, "WALLET", "sc12345678g", 40001, [Rtx3080]);
+        var cnGpu = GpuAlgorithms.Find("cn/gpu")!;
+        var args = SrbMinerArgs.Build(cnGpu, PoolLogin.MoneroOcean(GpuPoolEndpoint.MoneroOcean, "WALLET", "sc12345678g", cnGpu), 40001, [Rtx3080]);
         string Value(string flag) => args[args.ToList().IndexOf(flag) + 1];
 
         Assert.Equal("cryptonight_gpu", Value("--algorithm"));
@@ -200,11 +201,14 @@ public sealed class SrbMinerProviderTests : IDisposable
         File.WriteAllText(Path.Combine(engineDir, SrbMinerRelease.BinaryName), "x");
         File.WriteAllText(Path.Combine(engineDir, ".verified"), "x");
 
-        _provider = new SrbMinerGpuProvider(
-            new HttpClient(), _pool, Path.Combine(_dir, "engines"), Path.Combine(_dir, "bench.json"),
-            [Rtx3080], _meter, () => 0.15, _factory, _time,
-            asset: SrbMinerRelease.For(OSPlatform.Windows, Architecture.X64));
+        // Free electricity, so MoneroOcean's "free power only" algorithms take part (these tests cover switching itself).
+        _provider = CreateProvider(policy: null, pricePerKwh: 0, benchmarks: "bench.json");
     }
+
+    private SrbMinerGpuProvider CreateProvider(Func<GpuPolicy?>? policy, double pricePerKwh, string? benchmarks = null) =>
+        new(new HttpClient(), _pool, Path.Combine(_dir, "engines"), Path.Combine(_dir, benchmarks ?? $"bench-{Guid.NewGuid():N}.json"),
+            [Rtx3080], _meter, () => pricePerKwh, _factory, _time,
+            asset: SrbMinerRelease.For(OSPlatform.Windows, Architecture.X64), policy: policy);
 
     private sealed class FakePool : IMoneroPoolApi
     {
@@ -255,16 +259,16 @@ public sealed class SrbMinerProviderTests : IDisposable
     private sealed class FakeFactory : IMinerProcessFactory
     {
         /// <summary>Hashrate the fake "card" reaches per algorithm; 0 means the miner crashes.</summary>
-        public Dictionary<string, double> Speeds { get; } = new() { ["kawpow"] = 30e6, ["autolykos2"] = 200e6 };
-        public List<(string Algorithm, string Password, FakeProcess Process)> Launches { get; } = [];
+        public Dictionary<string, double> Speeds { get; } = new() { ["kawpow"] = 30e6, ["autolykos2"] = 200e6, ["pearlhash"] = 104e12 };
+        public List<(string Algorithm, string Password, FakeProcess Process, string Pool, string Wallet)> Launches { get; } = [];
 
         public IMinerProcess Start(string binary, IReadOnlyList<string> arguments, int apiPort)
         {
-            var algo = arguments[arguments.ToList().IndexOf("--algorithm") + 1];
-            var password = arguments[arguments.ToList().IndexOf("--password") + 1];
+            string Arg(string flag) => arguments[arguments.ToList().IndexOf(flag) + 1];
+            var algo = Arg("--algorithm");
             var speed = Speeds.GetValueOrDefault(algo);
             var process = new FakeProcess(speed) { Exited = speed == 0 };
-            Launches.Add((algo, password, process));
+            Launches.Add((algo, Arg("--password"), process, Arg("--pool"), Arg("--wallet")));
             return process;
         }
     }
@@ -277,6 +281,100 @@ public sealed class SrbMinerProviderTests : IDisposable
         {
             _time.Advance(TimeSpan.FromSeconds(5));
             status = await _provider.GetStatusAsync(CancellationToken.None);
+        }
+        return status;
+    }
+
+    private static GpuPolicy Policy(string pearlTier = GpuTiers.Primary) => new(
+        DateTimeOffset.UtcNow,
+        [
+            new GpuAlgorithmPolicy("pearlhash", pearlTier, "kryptex-prl", 3.4e-14, 3),
+            new GpuAlgorithmPolicy("kawpow", GpuTiers.FreePowerOnly, GpuRoutes.MoneroOcean, 7.6e-12 * 545, 1),
+            new GpuAlgorithmPolicy("autolykos2", GpuTiers.FreePowerOnly, GpuRoutes.MoneroOcean, 2.43e-12 * 545, 1),
+        ],
+        [
+            new GpuPoolRoute(GpuRoutes.MoneroOcean, GpuRoutes.MoneroOcean, "gulf.moneroocean.stream", 10128, null),
+            new GpuPoolRoute("kryptex-prl", GpuRoutes.Kryptex, "prl.kryptex.network", 7048, "otium"),
+        ]);
+
+    [Fact]
+    public async Task Policy_sends_pearl_to_kryptex_and_skips_algorithms_that_lose_money()
+    {
+        var provider = CreateProvider(() => Policy(), pricePerKwh: 0.15);
+
+        await provider.StartAsync(Options, CancellationToken.None);
+
+        // Only Pearl is tested: the MoneroOcean algorithms are "free power only" and power costs $0.15/kWh.
+        var launch = _factory.Launches.Single();
+        Assert.Equal("pearlhash", launch.Algorithm);
+        Assert.Equal("prl.kryptex.network:7048", launch.Pool);
+        Assert.Equal("otium.sc1234abcdg", launch.Wallet);
+        Assert.Contains("1 of 1", (await RunForProvider(provider, TimeSpan.FromSeconds(30))).Message);
+
+        await RunForProvider(provider, SrbMinerGpuProvider.BenchmarkDuration);
+        Assert.Equal("pearlhash", provider.CurrentAlgorithm);
+        var estimate = await provider.EstimateRevenueAsync(104e12, CancellationToken.None);
+        Assert.Equal(104e12 * 3.4e-14 * 0.98 * 0.97, estimate.UsdPerDay, precision: 6);
+    }
+
+    [Fact]
+    public async Task The_kill_switch_stops_a_coin_at_the_next_check()
+    {
+        var policy = Policy();
+        var provider = CreateProvider(() => policy, pricePerKwh: 0.15);
+        await provider.StartAsync(Options, CancellationToken.None);
+        await RunForProvider(provider, SrbMinerGpuProvider.BenchmarkDuration + TimeSpan.FromSeconds(10));
+        Assert.Equal("pearlhash", provider.CurrentAlgorithm);
+
+        policy = Policy(GpuTiers.Disabled);
+        ProviderStatus? stopped = null;
+        var deadline = _time.GetUtcNow() + SrbMinerGpuProvider.ReevaluateEvery + TimeSpan.FromSeconds(10);
+        while (stopped is null && _time.GetUtcNow() < deadline)
+        {
+            _time.Advance(TimeSpan.FromSeconds(5));
+            if (await provider.GetStatusAsync(CancellationToken.None) is { State: ProviderState.Error } s)
+                stopped = s;
+        }
+
+        Assert.NotNull(stopped);
+        Assert.Contains("pearlhash", stopped.Message);
+        Assert.True(_factory.Launches[^1].Process.Disposed);
+        var offer = await provider.GetExpectedOfferAsync(CancellationToken.None);
+        Assert.Equal(0, offer!.GrossUsdPerDay); // the engine pauses instead of retrying a coin that's off
+    }
+
+    [Fact]
+    public async Task Without_a_policy_only_moneroocean_runs_and_only_on_free_power()
+    {
+        var paid = CreateProvider(policy: null, pricePerKwh: 0.15);
+        var offer = await paid.GetExpectedOfferAsync(CancellationToken.None);
+        Assert.Equal(0, offer!.GrossUsdPerDay);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => paid.StartAsync(Options, CancellationToken.None));
+
+        var free = CreateProvider(policy: null, pricePerKwh: 0);
+        await free.StartAsync(Options, CancellationToken.None);
+        Assert.Equal("kawpow", _factory.Launches[^1].Algorithm);
+        Assert.DoesNotContain(_factory.Launches, l => l.Algorithm == "pearlhash"); // Kryptex coins need the policy's route
+    }
+
+    [Fact]
+    public void Own_wallet_users_get_only_moneroocean_algorithms()
+    {
+        var own = Policy().WithoutOperatorPools();
+
+        Assert.Null(own.For("pearlhash"));
+        Assert.NotNull(own.For("kawpow"));
+        Assert.Single(own.Routes);
+    }
+
+    private async Task<ProviderStatus> RunForProvider(SrbMinerGpuProvider provider, TimeSpan duration)
+    {
+        ProviderStatus status = ProviderStatus.Stopped(true);
+        var end = _time.GetUtcNow() + duration;
+        while (_time.GetUtcNow() < end)
+        {
+            _time.Advance(TimeSpan.FromSeconds(5));
+            status = await provider.GetStatusAsync(CancellationToken.None);
         }
         return status;
     }

@@ -8,12 +8,14 @@ using Otium.Core.Wallets;
 namespace Otium.Providers.SrbMiner;
 
 /// <summary>
-/// GPU mining with SRBMiner-Multi on MoneroOcean. MoneroOcean exchanges whatever the GPU mines into XMR and pays
-/// the same wallet as the CPU miner, so all earnings land in one place.
+/// GPU mining with SRBMiner-Multi, following the Otium server's GPU policy: which algorithms to mine, on which pool
+/// (MoneroOcean, which converts to XMR, or Kryptex Pool for coins like Pearl and Quantus) and what each pays now.
+/// Without a policy (server unreachable) it falls back to MoneroOcean's own per-algorithm payouts.
 ///
-/// On first run each supported algorithm is benchmarked for real (the hashes still count for the user). After that,
-/// it mines whichever algorithm pays the most after miner fees and measured electricity, and re-checks every
-/// <see cref="ReevaluateEvery"/> using MoneroOcean's live per-algorithm payouts.
+/// On first run each usable algorithm is benchmarked for real (the hashes still count for the user). After that,
+/// it mines whichever algorithm pays the most after miner and pool fees and measured electricity, and re-checks every
+/// <see cref="ReevaluateEvery"/>. Algorithms that usually lose money run only when electricity is free, and anything
+/// the server disables (the kill switch) is dropped at the next re-check.
 /// </summary>
 public sealed class SrbMinerGpuProvider : IComputeProvider
 {
@@ -33,6 +35,7 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
     private readonly BenchmarkStore _store;
     private readonly EngineInstaller _installer;
     private readonly SrbMinerAsset? _asset;
+    private readonly Func<GpuPolicy?> _policy;
     private readonly List<(double Hashrate, double? Watts)> _samples = [];
 
     private IMinerProcess? _process;
@@ -58,8 +61,10 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         TimeProvider? time = null,
         GpuPoolEndpoint? endpoint = null,
         ProfitSwitcher? switcher = null,
-        SrbMinerAsset? asset = null)
+        SrbMinerAsset? asset = null,
+        Func<GpuPolicy?>? policy = null)
     {
+        _policy = policy ?? (() => null);
         _pool = pool;
         _gpus = gpus.Where(g => g.Vendor is GpuVendor.Nvidia or GpuVendor.Amd).ToList();
         _meter = meter;
@@ -75,7 +80,7 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
 
     public string Id => "srbminer-gpu";
 
-    public string DisplayName => "GPU mining (best algorithm, paid in XMR)";
+    public string DisplayName => "GPU mining (best paying coin)";
 
     public DeviceKind Device => DeviceKind.Gpu;
 
@@ -113,7 +118,7 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         _options = options;
         var eligible = await EligibleAsync(ct);
         if (eligible.Count == 0)
-            throw new InvalidOperationException("MoneroOcean isn't paying for any GPU algorithm your graphics card supports right now.");
+            throw new InvalidOperationException("No coin your graphics card can mine pays more than its electricity right now.");
 
         var pending = eligible.Where(a => !_store.Has(a.PoolName)).ToList();
         if (pending.Count > 0)
@@ -182,7 +187,14 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
             try
             {
                 var choice = await ChooseAsync(ct);
-                if (choice is not null && choice != _current)
+                if (choice is null)
+                {
+                    // Everything usable was switched off (e.g. the server disabled this coin): stop instead of mining on.
+                    var stopped = _current.PoolName;
+                    await KillAsync();
+                    return new ProviderStatus(ProviderState.Error, 0, $"Stopped mining {stopped}: it isn't paying right now. Otium checks again shortly.");
+                }
+                if (choice != _current)
                 {
                     var from = _current.PoolName;
                     await LaunchAsync(choice, ct);
@@ -204,21 +216,26 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
             detail);
     }
 
+    /// <summary>USD per day for the current algorithm (rates are in USD, so "coin" here is USD).</summary>
     public async Task<RevenueEstimate> EstimateRevenueAsync(double hashrateHps, CancellationToken ct)
     {
         if (_current is null || hashrateHps <= 0)
-            return new RevenueEstimate(0, 0, PayoutCurrency);
+            return new RevenueEstimate(0, 0, "USD");
 
-        var profits = await _pool.GetAlgoProfitsAsync(ct);
-        var xmr = hashrateHps * profits.For(_current.PoolName)
-                  * (1 - _current.DevFeePercent / 100) * (1 - _switcher.PoolFeePercent / 100);
-        return new RevenueEstimate(xmr, xmr * profits.XmrPriceUsd, PayoutCurrency);
+        var quote = (await QuotesAsync(ct)).FirstOrDefault(q => q.Algorithm == _current).Quote;
+        if (quote is null)
+            return new RevenueEstimate(0, 0, "USD");
+        var usd = hashrateHps * quote.RevenuePerHashPerSecondDay
+                  * (1 - quote.DevFeePercent / 100) * (1 - (quote.PoolFeePercent ?? _switcher.PoolFeePercent) / 100);
+        return new RevenueEstimate(usd, usd, "USD");
     }
 
     public async Task<ProfitOffer?> GetExpectedOfferAsync(CancellationToken ct)
     {
         var eligible = await EligibleAsync(ct);
-        if (eligible.Count == 0 || eligible.Any(a => !_store.Has(a.PoolName)))
+        if (eligible.Count == 0)
+            return new ProfitOffer(0, null, "No coin pays right now"); // lets the engine pause instead of failing to start
+        if (eligible.Any(a => !_store.Has(a.PoolName)))
             return null; // still needs benchmarking: run to find out
 
         var best = (await ScoreAsync(ct)).FirstOrDefault();
@@ -228,13 +245,40 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
     /// <summary>Every measured algorithm with today's payout, best first. Shown in Settings.</summary>
     public async Task<IReadOnlyList<ScoredOption>> ScoreAsync(CancellationToken ct)
     {
-        var profits = await _pool.GetAlgoProfitsAsync(ct);
-        var quotes = GpuAlgorithms.All
-            .Where(a => a.Supports(_gpus))
-            .Select(a => new AlgorithmQuote(a.PoolName, profits.For(a.PoolName), a.DevFeePercent));
+        var quotes = (await QuotesAsync(ct)).Select(q => q.Quote);
         var fallbackWatts = _meter.Read(100) is { IsMeasured: false } estimate ? estimate.ExtraWatts : GpuPowerMeter.DefaultEstimatedWatts * _gpus.Count;
-        return _switcher.Score(_store.Results, quotes, profits.XmrPriceUsd, _pricePerKwh(), fallbackWatts);
+        return _switcher.Score(_store.Results, quotes, 1.0, _pricePerKwh(), fallbackWatts);
     }
+
+    /// <summary>
+    /// What each usable algorithm pays now, in USD per H/s per day: from the server's policy, or straight from
+    /// MoneroOcean when there is none. "Usable" means primary, or free-power-only while electricity costs nothing.
+    /// </summary>
+    internal async Task<IReadOnlyList<(GpuAlgorithm Algorithm, AlgorithmQuote Quote)>> QuotesAsync(CancellationToken ct)
+    {
+        var freePower = _pricePerKwh() <= 0;
+        var supported = GpuAlgorithms.All.Where(a => a.Supports(_gpus));
+
+        if (_policy() is { } policy)
+        {
+            var list = new List<(GpuAlgorithm, AlgorithmQuote)>();
+            foreach (var a in supported)
+            {
+                if (policy.For(a.PoolName) is { UsdPerHashPerSecondDay: > 0 } p && Usable(p.Tier, freePower) && policy.Route(p.Route) is not null)
+                    list.Add((a, new AlgorithmQuote(a.PoolName, p.UsdPerHashPerSecondDay, a.DevFeePercent, p.PoolFeePercent)));
+            }
+            return list;
+        }
+
+        var profits = await _pool.GetAlgoProfitsAsync(ct);
+        return supported
+            .Where(a => a.DefaultRoute == GpuRoutes.MoneroOcean && Usable(a.DefaultTier, freePower) && profits.For(a.PoolName) > 0)
+            .Select(a => (a, new AlgorithmQuote(a.PoolName, profits.For(a.PoolName) * profits.XmrPriceUsd, a.DevFeePercent)))
+            .ToList();
+    }
+
+    private static bool Usable(string tier, bool freePower) =>
+        tier == GpuTiers.Primary || (tier == GpuTiers.FreePowerOnly && freePower);
 
     public async Task<PayoutBalance?> GetPayoutBalanceAsync(string walletAddress, CancellationToken ct)
     {
@@ -246,11 +290,8 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
 
     public async ValueTask DisposeAsync() => await KillAsync();
 
-    private async Task<IReadOnlyList<GpuAlgorithm>> EligibleAsync(CancellationToken ct)
-    {
-        var profits = await _pool.GetAlgoProfitsAsync(ct);
-        return GpuAlgorithms.All.Where(a => a.Supports(_gpus) && profits.For(a.PoolName) > 0).ToList();
-    }
+    private async Task<IReadOnlyList<GpuAlgorithm>> EligibleAsync(CancellationToken ct) =>
+        (await QuotesAsync(ct)).Select(q => q.Algorithm).ToList();
 
     private async Task<GpuAlgorithm?> ChooseAsync(CancellationToken ct)
     {
@@ -304,9 +345,21 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         _samples.Clear();
 
         var apiPort = SrbMinerProcessFactory.FreeLoopbackPort();
-        var args = SrbMinerArgs.Build(algorithm, _endpoint, options.Target.WalletAddress, options.WorkerName, apiPort, _gpus);
+        var args = SrbMinerArgs.Build(algorithm, LoginFor(algorithm, options), apiPort, _gpus);
         ct.ThrowIfCancellationRequested();
         _process = _factory.Start(binary, args, apiPort);
+    }
+
+    /// <summary>Kryptex coins log in to the operator's account as "account.worker"; MoneroOcean uses the pool wallet.</summary>
+    private PoolLogin LoginFor(GpuAlgorithm algorithm, ProviderRunOptions options)
+    {
+        var policy = _policy();
+        var route = policy?.For(algorithm.PoolName) is { } p ? policy.Route(p.Route) : null;
+        if (route is { Kind: GpuRoutes.Kryptex, User.Length: > 0 })
+            return PoolLogin.Kryptex(new GpuPoolEndpoint(route.Host, route.Port), route.User!, options.WorkerName);
+        if (algorithm.DefaultRoute != GpuRoutes.MoneroOcean)
+            throw new InvalidOperationException($"{algorithm.PoolName} needs Otium's pool settings, which aren't available right now.");
+        return PoolLogin.MoneroOcean(_endpoint, options.Target.WalletAddress, options.WorkerName, algorithm);
     }
 
     private async Task KillAsync()

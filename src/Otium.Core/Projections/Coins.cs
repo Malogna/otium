@@ -13,6 +13,7 @@ public static class Coins
         ["etchash"] = new("Ethereum Classic", "ETC"),
         ["cn/gpu"] = new("Ryo", "RYO"),
         ["pearlhash"] = new("Pearl", "PRL"),
+        ["quantus"] = new("Quantus", "QUANTUS"),
     };
 
     public static CoinInfo ForAlgorithm(string? algorithm)

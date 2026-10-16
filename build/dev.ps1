@@ -87,6 +87,13 @@ try {
         Bandwidth__PartnerName                = 'A simulated partner'
         Bandwidth__UsdPerGb                   = [string](0.10 * $Speedup)
         Bandwidth__UsdPerSharingHour          = [string](0.0006 * $Speedup)
+        # GPU coins on a simulated Kryptex Pool, priced by a simulated WhatToMine feed.
+        Kryptex__Enabled                      = 'true'
+        Kryptex__Account                      = 'otium-dev'
+        Kryptex__ApiBase                      = "$poolUrl/kryptex/"
+        Kryptex__WhatToMineBase               = "$poolUrl/wtm/"
+        Kryptex__CreditInterval               = '00:00:20'
+        GpuPolicy__RefreshInterval            = '00:01:00'
     }
     $processes += Start-Background 'server' 'Otium.Server' @()
     Wait-Healthy "$serverUrl/healthz" 'server'

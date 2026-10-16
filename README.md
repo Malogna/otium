@@ -49,7 +49,19 @@ Everything technical lives under **Advanced**:
 ```
 
 **Mining**
-- The CPU runs XMRig. The GPU runs SRBMiner on whichever algorithm pays most after fees and measured electricity (kawpow, autolykos2, etchash, cn/gpu or pearlhash). MoneroOcean converts everything to XMR.
+- The CPU runs XMRig on MoneroOcean, which pays XMR.
+- The GPU runs SRBMiner on whichever algorithm pays most after miner and pool fees and measured electricity. Which
+  algorithms are allowed, on which pool and at what rate comes from the server's **GPU policy**
+  (`GET /api/v1/gpu-policy`, `src/Otium.Server/Gpu`), rebuilt every 10 minutes from live feeds:
+  - **Pearl and Quantus** (primary) are mined on **Kryptex Pool** into the operator's Kryptex account as
+    `account.workerid`, with auto-exchange to BTC/USDT. They are priced from WhatToMine's network data and Kryptex's
+    live pool fee (3% in October 2026). Own-wallet users don't get them, since that pool pays Otium's account.
+  - **kawpow, autolykos2, etchash, cn/gpu** (MoneroOcean, paid in XMR) lose money at normal electricity prices as of
+    October 2026, so they are "free power only": not tested or mined unless the electricity price is 0.
+  - **Kill switch:** `GpuPolicy:Disabled` turns an algorithm off for every app at the next refresh (useful when Pearl's
+    announced upgrade ends consumer-GPU mining). A failed, lagging or more than 2-hour-old feed disables a coin
+    automatically. `GpuPolicy:Tiers` overrides tiers.
+  - Without a policy (server unreachable) the app falls back to MoneroOcean's own rates, still free-power-only.
 - Each account mines under its own worker id to one of the operator's pool addresses.
 
 **Crediting** (`src/Otium.Server/Earnings`)
@@ -58,7 +70,10 @@ Everything technical lives under **Advanced**:
 - Credits are reduced by the fee (10% by default; 0% during a referral fee-free period).
 - Credits are held 48 hours before they can be cashed out.
 - Referrers get 5% of a friend's gross earnings, paid out of the fee.
-- The operator carries the pool's luck. `GET /admin/summary` compares what was credited against what the pool actually paid.
+- Kryptex coins are credited the same way from Kryptex's per-worker hashrate history (`/{coin}/api/v1/miner/chart/{account}/{worker}`):
+  hashes × the policy's USD rate, minus Kryptex's fee, then Otium's fee and referral split.
+- The operator carries the pool's luck and the price until Kryptex's auto-exchange. `GET /admin/summary` compares what was
+  credited (including `kryptexCreditedToUsersUsd`) against what the pools actually paid.
 
 **Accounts and sign-in** (`src/Otium.Server/Accounts`)
 - The first time a computer connects it gets its own account: no sign-up step.
@@ -106,6 +121,9 @@ Configure `src/Otium.Server/appsettings.json` (or environment variables such as 
 | `Admin:Token` | Enables `/admin/*`; send it as `X-Admin-Token` |
 | `Email:SmtpHost`, `Port`, `Username`, `Password`, `From` | SMTP service for sign-in codes (Postmark, SES, Mailgun, ...) |
 | `Referral:PublicBaseUrl`, `DownloadUrl` | Invite links and the landing page |
+| `Kryptex:Enabled`, `Account` | GPU coins on Kryptex Pool (off by default). Set up auto-exchange on that Kryptex account. |
+| `Kryptex:Coins:{algorithm}` | Kryptex coin slug, WhatToMine id and stratum host per algorithm (defaults for `pearlhash` and `quantus`) |
+| `GpuPolicy:Disabled`, `Tiers`, `RefreshInterval` | Kill switch, tier overrides and refresh interval for the GPU policy |
 | `Bandwidth:Enabled`, `PartnerName` | Internet sharing (off by default); the partner's name appears on the consent screen |
 | `Bandwidth:UsdPerSharingHour`, `UsdPerGb` | Gross rates credited from usage reports, before the fee. Set them from the partner agreement (Honeygain pays per active device, so per hour). |
 | `Bandwidth:DailyLimitBytes`, `MaxBytesPerSecond`, `MaxReportPeriod`, `SharedConnectionWindow` | Limits on self-reported usage: daily cap, speed cap, longest report, one paid computer per connection |
@@ -162,7 +180,7 @@ You need the .NET 10 SDK. On this machine it's installed per-user, so add it to 
 $env:PATH = "$env:LOCALAPPDATA\Microsoft\dotnet;$env:PATH"
 ```
 
-Run the tests (119, covering accounts and sign-in, crediting, cash-outs, fraud rules, GPU profit switching, the simulated pool, wallet checksums and the engine):
+Run the tests (175, covering accounts and sign-in, crediting, cash-outs, fraud rules, GPU profit switching and policy, Kryptex crediting, internet sharing, the simulated pool, wallet checksums and the engine):
 
 ```bash
 dotnet test
@@ -175,7 +193,8 @@ pwsh build/dev.ps1
 ```
 
 This starts everything locally, with no real mining and no real money:
-- **Otium.DevPool**, a simulated MoneroOcean (same API). Earnings are sped up 3000× so balances move in minutes.
+- **Otium.DevPool**, a simulated MoneroOcean, Kryptex Pool and WhatToMine (same APIs). Earnings are sped up 3000× so
+  balances move in minutes; `-Speedup 1` shows real-world numbers.
 - **Otium.Server** with dev timings: credits every 20 s, a 1-minute hold, no new-account review, and fake PayPal/Monero
   payouts that are marked paid 15 s later.
 - **The app** with simulated CPU and GPU miners.
@@ -223,7 +242,7 @@ src/Otium.Providers.SrbMiner GPU miner provider with benchmarking and profit swi
 src/Otium.Providers.Honeygain internet sharing through the Honeygain SDK (loaded at runtime)
 src/Otium.App                desktop app (Welcome → Home ⇄ Advanced), Velopack updates
 src/Otium.Server             accounts and email sign-in, crediting, cash-outs, referrals, landing page, admin API
-src/Otium.DevPool            simulated MoneroOcean for dev mode
+src/Otium.DevPool            simulated MoneroOcean, Kryptex Pool and WhatToMine for dev mode
 tests/Otium.Tests            unit and API tests
 build/                       dev.ps1 (dev mode), package.ps1 (installers), icon generator, icons
 ```
@@ -240,4 +259,8 @@ build/                       dev.ps1 (dev mode), package.ps1 (installers), icon 
 - **Deploy the server** behind HTTPS with backups of the SQLite database. Set `AppIdentity.DefaultServerUrl`.
 - **Fund the hot wallet** in `monero-wallet-rpc` and keep only what payouts need in it.
 - **Code signing** for Windows and macOS: add the certificates as the CI secrets listed in the workflow.
-- **Real-machine run:** do a real mining run on your RTX 3080 to confirm SRBMiner's stats format and the GPU speed units.
+- **Real-machine run:** do a real mining run on your RTX 3080 to confirm SRBMiner's stats format and the GPU speed units
+  (including `pearlhash` and `quantus`, and that Kryptex's per-worker chart reports H/s).
+- **Kryptex:** confirm in writing that one operator account may aggregate an app's whole install base, and ask how Pearl's
+  August 2026 "rank-penalty" softfork treats a large pooled account. Kryptex runs a competing consumer app, so keep
+  MoneroOcean as the fallback route.

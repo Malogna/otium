@@ -9,6 +9,7 @@ using Otium.Server.Accounts;
 using Otium.Server.Bandwidth;
 using Otium.Server.Data;
 using Otium.Server.Earnings;
+using Otium.Server.Gpu;
 using Otium.Server.Payouts;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -20,6 +21,8 @@ builder.Services.Configure<PayPalOptions>(builder.Configuration.GetSection(PayPa
 builder.Services.Configure<MoneroWalletOptions>(builder.Configuration.GetSection(MoneroWalletOptions.Section));
 builder.Services.Configure<AdminOptions>(builder.Configuration.GetSection(AdminOptions.Section));
 builder.Services.Configure<BandwidthOptions>(builder.Configuration.GetSection(BandwidthOptions.Section));
+builder.Services.Configure<GpuPolicyOptions>(builder.Configuration.GetSection(GpuPolicyOptions.Section));
+builder.Services.Configure<KryptexOptions>(builder.Configuration.GetSection(KryptexOptions.Section));
 
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton(_ => new OtiumStore(builder.Configuration.GetConnectionString("Otium") ?? "Data Source=otium.db"));
@@ -34,6 +37,10 @@ builder.Services.AddSingleton<PoolWalletAllocator>();
 builder.Services.AddSingleton<BandwidthService>();
 builder.Services.AddSingleton<AccountService>();
 builder.Services.AddSingleton<EarningsCreditor>();
+builder.Services.AddHttpClient<IProfitFeed, WhatToMineClient>();
+builder.Services.AddHttpClient<IKryptexApi, KryptexClient>();
+builder.Services.AddSingleton<GpuPolicyService>();
+builder.Services.AddSingleton<KryptexCreditor>();
 if (builder.Configuration.GetValue<bool>("DevMode:FakePayouts"))
 {
     // Development: cash-outs "arrive" after a few seconds without touching PayPal or a wallet.
@@ -51,6 +58,8 @@ builder.Services.AddSingleton<CashoutProcessor>();
 if (!builder.Configuration.GetValue<bool>("DisableBackgroundJobs"))
 {
     builder.Services.AddHostedService<EarningsCreditorService>();
+    if (builder.Configuration.GetValue<bool>("Kryptex:Enabled"))
+        builder.Services.AddHostedService<KryptexCreditorService>();
     builder.Services.AddHostedService<CashoutProcessorService>();
 }
 
@@ -119,6 +128,9 @@ api.MapPost("/devices/{deviceId}/email/code", async (string deviceId, EmailCodeR
 api.MapPost("/devices/{deviceId}/email/verify", (string deviceId, EmailVerifyRequest body, HttpRequest request, AccountService accounts, IOptions<ReferralOptions> options) =>
     Results.Ok(accounts.VerifySignInCode(deviceId, Secret(request), body, PublicBase(request, options))));
 
+// Which GPU algorithms to mine and where; the same for every app, rebuilt from live feeds every few minutes.
+api.MapGet("/gpu-policy", async (GpuPolicyService policy, CancellationToken ct) => Results.Ok(await policy.GetAsync(ct)));
+
 app.MapGet("/r/{code}", (string code, OtiumStore store, IOptions<ReferralOptions> options) =>
 {
     var normalized = ReferralCodes.Normalize(code);
@@ -167,6 +179,8 @@ admin.MapGet("/summary", async (OtiumStore store, IMoneroPoolApi pool, TimeProvi
         // Compare with the bandwidth partner's publisher statements.
         bandwidthCreditedGb = Math.Round(bandwidthTotals.Bytes / BandwidthService.BytesPerGb, 3),
         bandwidthCreditedToUsersUsd = AccountService.ToUsd(bandwidthTotals.Micros),
+        // GPU coins mined on Kryptex (compare with Kryptex's paid + unpaid totals for the operator account).
+        kryptexCreditedToUsersUsd = AccountService.ToUsd(store.CreditedWithReferencePrefix("kx:")),
     });
 });
 
