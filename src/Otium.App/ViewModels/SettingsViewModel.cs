@@ -233,7 +233,8 @@ public partial class SettingsViewModel : ViewModelBase
                     option.ExtraWatts is { } w ? Format.Watts(w) : "est.",
                     Format.Usd(option.GrossUsdPerDay),
                     Format.Usd(option.NetUsdPerDay),
-                    option.Algorithm == best ? "best" : option.Algorithm == gpu.CurrentAlgorithm ? "mining" : ""));
+                    gpu.SetAsideReason(option.Algorithm) is { } why ? $"paused for now: {Shorten(why)}"
+                    : option.Algorithm == best ? "best" : option.Algorithm == gpu.CurrentAlgorithm ? "mining" : ""));
             }
             foreach (var failed in results.Where(r => !r.Succeeded))
                 Benchmarks.Add(new BenchmarkRow(failed.Algorithm, "—", "—", "—", "—", $"didn't work: {Shorten(failed.Failure)}"));

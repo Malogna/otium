@@ -98,6 +98,20 @@ public sealed class Nvml : IDisposable
         }
     }
 
+    /// <summary>
+    /// Graphics memory free right now on one GPU (by NVML index), in GB, or null if it can't be read. Other apps
+    /// (games, 3D editors, browsers) can hold several GB, which decides whether a coin's dataset still fits.
+    /// </summary>
+    public double? ReadFreeMemoryGb(int index)
+    {
+        lock (_lock)
+        {
+            if (_disposed || index < 0 || _getHandle((uint)index, out var device) != Success)
+                return null;
+            return _getMemory(device, out var memory) == Success ? memory.Free / 1024.0 / 1024 / 1024 : null;
+        }
+    }
+
     /// <summary>Total board power of all NVIDIA GPUs in watts, or null if it can't be read.</summary>
     public double? ReadTotalWatts()
     {

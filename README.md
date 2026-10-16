@@ -376,8 +376,10 @@ build/                       dev.ps1 (dev mode), package.ps1 (installers), icon 
   into it weekly. The admin dashboard shows its balance and warns when it's below the open cash-outs.
 - **Code signing** for Windows and macOS: see [docs/code-signing.md](docs/code-signing.md) (Azure Artifact Signing or
   a cloud-HSM certificate for Windows, Developer ID and notarization for macOS).
-- **Real-machine run:** do a real mining run on your RTX 3080 to confirm SRBMiner's stats format and the GPU speed units
-  (including `pearlhash` and `quantus`, and that Kryptex's per-worker chart reports H/s).
+- **Real-machine run:** mostly done; see [docs/real-mining-run.md](docs/real-mining-run.md). SRBMiner's stats format,
+  H/s units (including `pearlhash`/`quantus` on Kryptex), NVML power, stall failover and miners dying with the app are
+  confirmed. On an RTX 3080 the Kryptex coins earn through Otium; MoneroOcean's GPU algorithms fail in SRBMiner's OpenCL
+  path there. Still open: other NVIDIA machines, and the Kryptex account setting on the deployed server.
 - **Kryptex:** confirm in writing that one operator account may aggregate an app's whole install base, and ask how Pearl's
   August 2026 "rank-penalty" softfork treats a large pooled account. Kryptex runs a competing consumer app, so keep
   MoneroOcean as the fallback route.
