@@ -63,8 +63,27 @@ public static class BandwidthReportStatuses
 /// <param name="Note">Plain-language explanation when less than everything was credited.</param>
 public sealed record BandwidthReportResult(string Status, long CreditedBytes, decimal CreditedUsd, string? Note);
 
-/// <summary>Asks the server to email a 6-digit sign-in code.</summary>
-public sealed record EmailCodeRequest(string Email);
+/// <summary>Asks the server to email a 6-digit code.</summary>
+/// <param name="Purpose">One of <see cref="EmailCodePurposes"/>; null means signing in.</param>
+public sealed record EmailCodeRequest(string Email, string? Purpose = null);
+
+public static class EmailCodePurposes
+{
+    public const string SignIn = "sign-in";
+
+    /// <summary>Confirms deleting the account; only sent to the email the account is signed in with.</summary>
+    public const string DeleteAccount = "delete-account";
+}
+
+/// <summary>
+/// Deletes the account. Money records are kept, anonymized, for bookkeeping; everything that identifies the user is removed.
+/// </summary>
+/// <param name="Code">The code emailed for <see cref="EmailCodePurposes.DeleteAccount"/>; required when the account has an email.</param>
+/// <param name="GiveUpBalance">The user accepts losing a remaining balance (deletion is refused without it while there is one).</param>
+public sealed record DeleteAccountRequest(string? Code, bool GiveUpBalance = false);
+
+/// <param name="GivenUpUsd">Balance (available and pending) the user gave up by deleting.</param>
+public sealed record DeleteAccountResult(DateTimeOffset DeletedAt, decimal GivenUpUsd);
 
 /// <summary>
 /// Confirms the code. If the email is new it secures this computer's account; if it already belongs to an account,

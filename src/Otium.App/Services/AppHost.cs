@@ -44,9 +44,7 @@ public sealed class AppHost : IAsyncDisposable
         Settings = _settingsStore.Load();
         EnsureDeviceSecrets();
 
-        DeviceId = Environment.GetEnvironmentVariable("OTIUM_DEVICE_SEED") is { Length: > 0 } devSeed
-            ? DeviceIdentity.FromSeed(devSeed)
-            : DeviceIdentity.Compute(Settings.DeviceSeed);
+        DeviceId = ComputeDeviceId();
         IsSimulated = SimulatedProvider.IsEnabled;
         FeeWallet = ValidWalletOrNull(AppIdentity.ResolveFeeWallet());
 
@@ -140,7 +138,7 @@ public sealed class AppHost : IAsyncDisposable
 
     public AppSettings Settings { get; }
 
-    public string DeviceId { get; }
+    public string DeviceId { get; private set; }
 
     public string? FeeWallet { get; }
 
@@ -515,6 +513,72 @@ public sealed class AppHost : IAsyncDisposable
         ApplyDeviceSwitches();
         AccountChanged?.Invoke();
     }
+
+    /// <summary>A copy of everything the Otium server stores about this account, as a JSON document.</summary>
+    public async Task<byte[]> ExportAccountDataAsync()
+    {
+        if (Settings.Account.WorkerId is null)
+            await SyncAccountAsync(CancellationToken.None);
+        return await CreateClient().ExportAccountDataAsync(DeviceId, Settings.DeviceSecret, CancellationToken.None);
+    }
+
+    /// <summary>Emails the code that confirms deleting the account (only for accounts with an email).</summary>
+    public Task SendDeleteAccountCodeAsync() =>
+        CreateClient().SendEmailCodeAsync(DeviceId, Settings.DeviceSecret,
+            new EmailCodeRequest(Settings.Account.Email ?? "", EmailCodePurposes.DeleteAccount), CancellationToken.None);
+
+    /// <summary>
+    /// Deletes the account on the server, then resets this computer to a fresh install: earning and internet sharing
+    /// stop, the account, invite and device secret are forgotten, and the welcome screen shows again. Machine
+    /// settings (CPU use, electricity) and local earnings stats stay. Throws <see cref="AccountRequestException"/>
+    /// with a user-facing reason when the server refuses.
+    /// </summary>
+    public async Task<DeleteAccountResult> DeleteAccountAsync(string? code, bool giveUpBalance)
+    {
+        var result = await CreateClient().DeleteAccountAsync(DeviceId, Settings.DeviceSecret,
+            new DeleteAccountRequest(string.IsNullOrWhiteSpace(code) ? null : code.Trim(), giveUpBalance), CancellationToken.None);
+
+        try
+        {
+            if (Settings.BandwidthEnabled)
+                await SetBandwidthSharingAsync(false);
+        }
+        catch (InvalidOperationException)
+        {
+            // The account is already gone; finish resetting even if the partner component couldn't be told.
+            Settings.BandwidthEnabled = false;
+        }
+        Settings.EarningEnabled = false;
+        Settings.OnboardingComplete = false; // also stops the background account sync
+        Settings.AcceptedTerms = false;
+        Settings.BandwidthConsentAt = null;
+        Settings.BandwidthPromptDismissed = false;
+        Settings.Account = new AccountState();
+        Settings.Referral = new ReferralState();
+        Settings.DeviceSecret = "";
+        Settings.DeviceSeed = "";
+        EnsureDeviceSecrets();
+        DeviceId = ComputeDeviceId();
+        Account = null;
+        LastServerError = null;
+        try
+        {
+            AutoStart.Set(false);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+        }
+
+        SaveSettings();
+        ApplyDeviceSwitches();
+        AccountChanged?.Invoke();
+        return result;
+    }
+
+    private string ComputeDeviceId() =>
+        Environment.GetEnvironmentVariable("OTIUM_DEVICE_SEED") is { Length: > 0 } devSeed
+            ? DeviceIdentity.FromSeed(devSeed)
+            : DeviceIdentity.Compute(Settings.DeviceSeed);
 
     private AccountClient CreateClient() =>
         new(new HttpClient

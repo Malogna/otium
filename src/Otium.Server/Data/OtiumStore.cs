@@ -6,7 +6,8 @@ namespace Otium.Server.Data;
 /// <summary>
 /// A person's account: the balance, referral code and pool worker belong here, so they survive reinstalls and
 /// can be shared by several computers. <paramref name="MergedInto"/> is set when this account was folded into
-/// another one (someone signed in with an email that already had an account).
+/// another one (someone signed in with an email that already had an account). <paramref name="DeletedAt"/> is set
+/// when the user deleted the account: the row stays, anonymized, so its money records still add up.
 /// </summary>
 public sealed record AccountRecord(
     string AccountId,
@@ -21,7 +22,8 @@ public sealed record AccountRecord(
     bool Verified,
     DateTimeOffset? LastCheckedAt,
     string? MergedInto,
-    DateTimeOffset CreatedAt)
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? DeletedAt = null)
 {
     public bool IsBalanceAccount => OwnWallet is null;
 }
@@ -82,7 +84,7 @@ public sealed record EmailCodeRecord(long Id, string Email, string DeviceId, str
 public sealed class OtiumStore
 {
     public const long MicrosPerDollar = 1_000_000;
-    private const int SchemaVersion = 3;
+    private const int SchemaVersion = 4;
 
     private readonly string _connectionString;
 
@@ -224,7 +226,13 @@ public sealed class OtiumStore
                 PRIMARY KEY (device_id, seq)
             );
             CREATE INDEX IF NOT EXISTS ix_bandwidth_ip ON bandwidth_reports(ip, period_end);
+            CREATE INDEX IF NOT EXISTS ix_bandwidth_account ON bandwidth_reports(account_id);
             """);
+
+        // Version 4: account deletion. A deleted account keeps its (anonymized) row and money records.
+        if (Scalar<long>("SELECT COUNT(*) FROM pragma_table_info('accounts') WHERE name = 'deleted_at'") == 0)
+            Execute("ALTER TABLE accounts ADD COLUMN deleted_at TEXT NULL;");
+
         Execute($"PRAGMA user_version = {SchemaVersion};");
     }
 
@@ -300,23 +308,126 @@ public sealed class OtiumStore
         tx.Commit();
     }
 
+    /// <summary>Accounts folded into this one (directly or through other merged accounts).</summary>
+    public IReadOnlyList<AccountRecord> MergedAccounts(string accountId)
+    {
+        var result = new List<AccountRecord>();
+        var pending = new Queue<string>([accountId]);
+        while (pending.Count > 0 && result.Count < 1000)
+        {
+            foreach (var merged in QueryAccounts("SELECT * FROM accounts WHERE merged_into = $p", ("$p", pending.Dequeue())))
+            {
+                result.Add(merged);
+                pending.Enqueue(merged.AccountId);
+            }
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Deletes an account at the user's request, keeping what bookkeeping needs. Ledger and cash-out rows stay so
+    /// totals and the operator's records still add up, but nothing in them points to the person any more: the email,
+    /// pool worker id, referral code and wallets are dropped, computers (and their secrets) and sign-in codes are
+    /// removed, cash-out destinations are masked and bandwidth reports lose their IP address and computer id. Accounts
+    /// folded into this one earlier are anonymized too, since their worker ids and codes lead here. Friends this
+    /// account invited keep their history and fee-free time but no longer point to it, and its own link to whoever
+    /// invited it is dropped (the referrer's past rewards stay in their ledger).
+    /// </summary>
+    /// <returns>False (and nothing changed) when a cash-out is still open.</returns>
+    public bool AnonymizeAccount(string accountId, Func<string, string, string> maskDestination, DateTimeOffset now)
+    {
+        var ids = new List<string> { accountId };
+        ids.AddRange(MergedAccounts(accountId).Select(a => a.AccountId));
+
+        using var connection = Open();
+        using var tx = connection.BeginTransaction(deferred: false);
+
+        long Run(string sql, params (string Name, object? Value)[] parameters)
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.Transaction = tx;
+            cmd.CommandText = sql;
+            Bind(cmd, parameters);
+            return cmd.ExecuteNonQuery();
+        }
+
+        List<string[]> Rows(string sql, params (string Name, object? Value)[] parameters)
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.Transaction = tx;
+            cmd.CommandText = sql;
+            Bind(cmd, parameters);
+            using var r = cmd.ExecuteReader();
+            var rows = new List<string[]>();
+            while (r.Read())
+                rows.Add(Enumerable.Range(0, r.FieldCount).Select(i => r.IsDBNull(i) ? "" : r.GetString(i)).ToArray());
+            return rows;
+        }
+
+        // Checked again inside the transaction, so a cash-out requested a moment ago can't be orphaned.
+        var open = Rows("SELECT id FROM cashouts WHERE account_id = $a AND status IN ('queued','review','sending')", ("$a", accountId));
+        if (open.Count > 0)
+        {
+            tx.Rollback();
+            return false;
+        }
+
+        foreach (var id in ids)
+        {
+            var account = Rows("SELECT worker_id, code, COALESCE(email, '') FROM accounts WHERE account_id = $a", ("$a", id)).Single();
+            var (worker, code, email) = (account[0], account[1], account[2]);
+            var tombstone = $"deleted-{id}";
+
+            Run("UPDATE accounts SET referred_by = NULL WHERE referred_by = $code", ("$code", code));
+            // Crediting progress is keyed by worker id ("kx:<coin>:" + worker for Kryptex).
+            Run("DELETE FROM worker_progress WHERE worker_id = $w OR worker_id LIKE '%:' || $w", ("$w", worker));
+            Run("DELETE FROM email_codes WHERE email = $e OR device_id IN (SELECT device_id FROM devices WHERE account_id = $a)",
+                ("$e", email), ("$a", id));
+            Run("DELETE FROM devices WHERE account_id = $a", ("$a", id));
+            Run("""
+                UPDATE accounts SET worker_id = $t, code = $t, email = NULL, pool_wallet = NULL, own_wallet = NULL,
+                    referred_by = NULL, referred_at = NULL, deleted_at = $now
+                WHERE account_id = $a
+                """, ("$t", tombstone), ("$now", Format(now)), ("$a", id));
+
+            foreach (var cashout in Rows("SELECT id, method, destination FROM cashouts WHERE account_id = $a", ("$a", id)))
+                Run("UPDATE cashouts SET destination = $d WHERE id = $id", ("$d", maskDestination(cashout[1], cashout[2])), ("$id", cashout[0]));
+
+            // A new random id per computer keeps (device, sequence) unique if this computer starts sharing again.
+            foreach (var device in Rows("SELECT DISTINCT device_id FROM bandwidth_reports WHERE account_id = $a", ("$a", id)))
+                Run("UPDATE bandwidth_reports SET device_id = $t, ip = '' WHERE account_id = $a AND device_id = $d",
+                    ("$t", $"deleted-{Guid.NewGuid():N}"), ("$a", id), ("$d", device[0]));
+        }
+
+        tx.Commit();
+        return true;
+    }
+
     // ---------- devices ----------
 
-    public DeviceRecord? FindDevice(string deviceId)
+    public DeviceRecord? FindDevice(string deviceId) => QueryDevices("SELECT * FROM devices WHERE device_id = $p", ("$p", deviceId)).FirstOrDefault();
+
+    public IReadOnlyList<DeviceRecord> DevicesFor(string accountId) =>
+        QueryDevices("SELECT * FROM devices WHERE account_id = $p ORDER BY created_at", ("$p", accountId));
+
+    private IReadOnlyList<DeviceRecord> QueryDevices(string sql, params (string, object?)[] parameters)
     {
         using var connection = Open();
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT * FROM devices WHERE device_id = $p";
-        cmd.Parameters.AddWithValue("$p", deviceId);
+        cmd.CommandText = sql;
+        Bind(cmd, parameters);
         using var r = cmd.ExecuteReader();
-        return r.Read()
-            ? new DeviceRecord(
+        var list = new List<DeviceRecord>();
+        while (r.Read())
+        {
+            list.Add(new DeviceRecord(
                 r.GetString(r.GetOrdinal("device_id")),
                 r.GetString(r.GetOrdinal("secret_hash")),
                 r.GetString(r.GetOrdinal("account_id")),
                 Parse(r.GetString(r.GetOrdinal("created_at"))),
-                Parse(r.GetString(r.GetOrdinal("last_seen_at"))))
-            : null;
+                Parse(r.GetString(r.GetOrdinal("last_seen_at")))));
+        }
+        return list;
     }
 
     public void Upsert(DeviceRecord d) =>
@@ -402,6 +513,9 @@ public sealed class OtiumStore
             ORDER BY period_end DESC LIMIT 1
             """, ("$ip", ip), ("$d", deviceId), ("$s", Format(since))).FirstOrDefault()?.DeviceId;
 
+    public IReadOnlyList<BandwidthReportRecord> BandwidthReportsFor(string accountId) =>
+        QueryBandwidth("SELECT * FROM bandwidth_reports WHERE account_id = $a ORDER BY period_start", ("$a", accountId));
+
     public (long Bytes, long Micros) BandwidthTotals() =>
         QueryBandwidth("SELECT * FROM bandwidth_reports").Aggregate((0L, 0L), (t, r) => (t.Item1 + r.CreditedBytes, t.Item2 + r.CreditedMicros));
 
@@ -437,6 +551,9 @@ public sealed class OtiumStore
     public void AddLedger(string accountId, string kind, long micros, DateTimeOffset now, DateTimeOffset availableAt, string? reference) =>
         Execute("INSERT INTO ledger (account_id, kind, micros, created_at, available_at, reference) VALUES ($d, $k, $m, $c, $a, $r)",
             ("$d", accountId), ("$k", kind), ("$m", micros), ("$c", Format(now)), ("$a", Format(availableAt)), ("$r", reference));
+
+    public IReadOnlyList<LedgerEntry> LedgerFor(string accountId) =>
+        QueryLedger("SELECT * FROM ledger WHERE account_id = $p ORDER BY id", ("$p", accountId));
 
     public BalanceTotals Balance(string accountId, DateTimeOffset now)
     {
@@ -680,7 +797,8 @@ public sealed class OtiumStore
                 r.GetInt64(r.GetOrdinal("verified")) != 0,
                 ParseNullable(NullableString(r, "last_checked_at")),
                 NullableString(r, "merged_into"),
-                Parse(r.GetString(r.GetOrdinal("created_at")))));
+                Parse(r.GetString(r.GetOrdinal("created_at"))),
+                ParseNullable(NullableString(r, "deleted_at"))));
         }
         return list;
     }

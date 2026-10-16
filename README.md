@@ -172,6 +172,57 @@ active device, and the server credits each user's balance from their computer's 
 - **AV and code signing.** Proxyware is a common antivirus "potentially unwanted" category. Keep the sharing state
   visible in the app, and sign the Windows build with an EV certificate.
 
+## Your data: what Otium stores, export and deletion
+
+Many users are in the EU and the Nordics, so the server supports the GDPR rights of access, portability and erasure.
+The draft privacy policy is in [docs/privacy.md](docs/privacy.md) and **still needs legal review**.
+
+**What the server stores** (SQLite, `src/Otium.Server/Data/OtiumStore.cs`)
+
+| Data | Why |
+|---|---|
+| Account: random id, pool worker id, invite code, email (if added), own XMR wallet (own-wallet mode), who invited it and when, fee-free period | Crediting mining to the right person, sign-in, referrals |
+| Computers: random device id (a hash of the machine id), a SHA-256 hash of its secret, first and last seen | Authenticating each computer |
+| Ledger: every earning, referral reward, cash-out, refund and adjustment, in micro-dollars, with dates and a reference to the pool record | The balance, and bookkeeping |
+| Cash-outs: method, destination (PayPal email or XMR address), amount, status, provider reference, review notes | Paying out, fraud checks, bookkeeping |
+| Bandwidth reports: computer, public IP address, period, bytes, credited amount | Paying for internet sharing; one paid computer per connection |
+| Email codes: salted hash, expiry, attempts | Sign-in; useless after 15 minutes |
+
+The desktop app keeps its settings, a cached copy of the account summary and local earnings stats in its data folder
+(Advanced → About → Open data folder). Mining pools (MoneroOcean, Kryptex), PayPal, the email provider and the
+bandwidth partner see what they need to do their part; [docs/privacy.md](docs/privacy.md) lists them.
+
+**Export** (Advanced → Settings → Your data → Download my data)
+- `GET /api/v1/devices/{deviceId}/account/export` (device-secret header like every device endpoint) returns a JSON file:
+  the account, its computers, the whole ledger, every cash-out with its full destination, invites (without anything
+  identifying the people on the other side: referral rewards say only "invited friend's earnings"), bandwidth reports
+  with IP addresses, and any anonymous accounts that were merged in.
+
+**Deletion** (Advanced → Settings → Your data → Delete my account)
+- `POST /api/v1/devices/{deviceId}/account/delete` with `{"code": "123456", "giveUpBalance": true}`.
+- Accounts with an email need a fresh code: the app requests one with `POST .../email/code` and
+  `{"email": ..., "purpose": "delete-account"}` (sent only to the account's own email; same expiry, tries and rate
+  limits as sign-in).
+- Refused while a cash-out is open (409). A remaining available or pending balance must be given up explicitly (409
+  until `giveUpBalance` is true); the app shows the amount and suggests cashing out first.
+- **Deletion anonymizes rather than erases.** Ledger and cash-out rows stay, because the operator must keep bookkeeping
+  records (typically 5 to 10 years depending on the country) and needs them to show what was paid. Totals in
+  `/admin/summary` don't change; a given-up balance stays in `owedToUsersUsd` until the operator writes it off.
+  What goes:
+  - the email, pool address and own wallet; the invite code and pool worker id become `deleted-<account id>`;
+  - every computer and its secret hash, and the account's sign-in codes;
+  - the IP address and computer id of each bandwidth report;
+  - full cash-out destinations (kept as e.g. `•••@•••.com`; the provider's reference stays so a payout can still be
+    traced at PayPal or on the Monero wallet if the law requires it).
+- `accounts.deleted_at` records when. Anonymous accounts merged into the deleted one are anonymized too.
+- **Referrals are detached:** the deleted account's link to whoever invited it is dropped, and friends it invited no
+  longer point to it but keep their fee-free time and history. Referral rewards already credited stay in the
+  referrer's ledger, so their balance doesn't change.
+- Ledger references for mining credits still contain the old worker id, which matches the pool's own records for
+  reconciliation but no longer leads to any account.
+- The app then stops earning and internet sharing, forgets the account, invite and device secret, turns off
+  start-at-sign-in and shows the welcome screen. Starting again creates a new, empty account.
+
 ## Building the desktop app
 
 You need the .NET 10 SDK. On this machine it's installed per-user, so add it to `PATH` for the session first:
@@ -255,6 +306,9 @@ build/                       dev.ps1 (dev mode), package.ps1 (installers), icon 
   - EU: MiCA may apply to holding or transferring crypto for users.
   - The design keeps balances in USD for compute bought from users and never offers a withdrawable crypto balance, but this needs counsel to confirm.
   - Collect tax details (W-9/W-8) before anyone passes the yearly reporting threshold.
+  - Privacy: have [docs/privacy.md](docs/privacy.md) reviewed (controller details, legal bases, retention periods,
+    processor agreements with the hosting, email, payout and bandwidth providers, transfers outside the EU), then
+    publish it and link it from the welcome screen and the landing page.
 - **PayPal approval.** Payouts must be enabled on a business account, and PayPal pre-approves crypto-related businesses. Describe the mining revenue source honestly. Until approved, PayPal cash-outs land in the review queue for manual payment.
 - **Deploy the server** behind HTTPS with backups of the SQLite database. Set `AppIdentity.DefaultServerUrl`.
 - **Fund the hot wallet** in `monero-wallet-rpc` and keep only what payouts need in it.
