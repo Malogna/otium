@@ -184,6 +184,24 @@ public sealed class GpuPolicyTests
     }
 
     [Fact]
+    public void Kryptex_workers_parse_the_live_shape_and_the_documented_one()
+    {
+        // Trimmed from a real /prl/api/v3/miner/workers/{address} response (October 2026).
+        using var live = JsonDocument.Parse("""
+            {"results":[{"miner":"prl1p0e","worker":"5082","scheme":"pps","status":"online","valid":3209,"stale":6,"invalid":88,
+              "avg_hashrate_24h":"332140472518574.08","avg_hashrate_3h":"290231975986098.63","avg_hashrate_30m":"250199979298360.8888888888889"},
+              {"miner":"prl1p0e","worker":"5083","scheme":"pps","status":"offline"}]}
+            """);
+        var workers = KryptexClient.ParseWorkers(live.RootElement);
+        Assert.Equal(["5082", "5083"], workers.Select(w => w.Name));
+        Assert.Equal(250199979298360.89, workers[0].Hashrate, 0);
+        Assert.Equal(0, workers[1].Hashrate);
+
+        using var documented = JsonDocument.Parse("""{"count":1,"results":[{"worker":"a","hashrate":1234.5}]}""");
+        Assert.Equal(1234.5, Assert.Single(KryptexClient.ParseWorkers(documented.RootElement)).Hashrate);
+    }
+
+    [Fact]
     public void Kryptex_history_integrates_only_new_points_and_caps_gaps()
     {
         var t0 = new DateTimeOffset(2026, 10, 16, 12, 0, 0, TimeSpan.Zero);
