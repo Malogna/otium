@@ -1,0 +1,25 @@
+# The server image needs only Directory.Build.props, src/Otium.Core and src/Otium.Server.
+**/bin/
+**/obj/
+**/*.user
+**/*.db
+**/*.db-shm
+**/*.db-wal
+**/appsettings.Development.json
+.git/
+.vs/
+.vscode/
+.idea/
+.claude/
+artifacts/
+TestResults/
+Releases/
+build/
+deploy/
+docs/
+reports/
+research_notes/
+tests/
+src/Otium.App/
+src/Otium.DevPool/
+src/Otium.Providers.*/

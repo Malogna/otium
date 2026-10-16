@@ -108,6 +108,9 @@ Everything technical lives under **Advanced**:
 
 ## Running the server
 
+To run it in production (Docker Compose, HTTPS through Caddy, backups and restore), see
+[docs/deploying.md](docs/deploying.md).
+
 Configure `src/Otium.Server/appsettings.json` (or environment variables such as `Earnings__PoolWallets__0=...`):
 
 | Setting | Purpose |
@@ -119,6 +122,7 @@ Configure `src/Otium.Server/appsettings.json` (or environment variables such as 
 | `PayPal:ClientId`, `ClientSecret`, `UseSandbox` | PayPal Payouts. Use the sandbox until PayPal approves the live account. |
 | `MoneroWallet:RpcUrl`, `Username`, `Password` | `monero-wallet-rpc` with `--rpc-login`, on localhost or a private network |
 | `Admin:Token` | Enables `/admin/*`; send it as `X-Admin-Token` |
+| `ReverseProxy:Enabled`, `KnownProxies`, `KnownNetworks` | Behind an HTTPS proxy: take client IPs from `X-Forwarded-For`, trusted only from these proxy addresses or CIDR networks (localhost if neither is set) |
 | `Email:SmtpHost`, `Port`, `Username`, `Password`, `From` | SMTP service for sign-in codes (Postmark, SES, Mailgun, ...) |
 | `Referral:PublicBaseUrl`, `DownloadUrl` | Invite links and the landing page |
 | `Kryptex:Enabled`, `Account` | GPU coins on Kryptex Pool (off by default). Set up auto-exchange on that Kryptex account. |
@@ -156,8 +160,8 @@ active device, and the server credits each user's balance from their computer's 
   (on the overview or in Advanced). Consent is recorded, passed to the SDK (`hgsdk_opt_in`) and withdrawn when they
   switch it off (`hgsdk_opt_out`). Users can share only while away and set a daily GB limit.
 - **Honest limits.** The server credits each report once, caps period length and speed, applies a daily limit, and pays
-  only one computer per public IP at a time, as partners require. If the server runs behind a reverse proxy, enable
-  forwarded headers so it sees client IPs.
+  only one computer per public IP at a time, as partners require. If the server runs behind a reverse proxy, set
+  `ReverseProxy:Enabled` so it sees client IPs.
 - **To ship it:**
   1. Sign the Honeygain publisher agreement and get an API key.
   2. Put the SDK libraries next to the app: `hgsdk.dll` (Windows), `libhgsdk.so` (Linux), `libhgsdk.dylib` (macOS).
