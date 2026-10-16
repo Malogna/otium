@@ -147,6 +147,22 @@ public sealed record CashoutInfo(
     DateTimeOffset? UpdatedAt = null,
     string? TransactionId = null);
 
+/// <summary>
+/// The month's top inviters, ranked by invited friends who actually started earning (so fake sign-ups don't count).
+/// Other people appear only as a masked code; the caller's own row has <see cref="InviteLeaderboardEntry.IsYou"/> set.
+/// </summary>
+/// <param name="PeriodStart">Start of the period (the first of the month, UTC).</param>
+/// <param name="YourRank">The caller's rank, or null when they have no counted friends this period yet.</param>
+public sealed record InviteLeaderboard(
+    DateTimeOffset PeriodStart,
+    IReadOnlyList<InviteLeaderboardEntry> Top,
+    int? YourRank,
+    int YourFriends);
+
+/// <param name="Rank">1-based; equal counts share a rank (1, 2, 2, 4).</param>
+/// <param name="Name">A masked invite code such as <c>K7M••••</c>, or "You".</param>
+public sealed record InviteLeaderboardEntry(int Rank, string Name, int Friends, bool IsYou);
+
 public static class ReferralCodes
 {
     // No 0/O, 1/I/L, so codes survive being read aloud or typed from a screenshot.
@@ -161,4 +177,7 @@ public static class ReferralCodes
         var normalized = Normalize(code);
         return normalized.Length == Length && normalized.All(c => Alphabet.Contains(c));
     }
+
+    /// <summary>Enough to recognise yourself, not enough to use: <c>K7M••••</c>.</summary>
+    public static string Mask(string code) => code.Length <= 3 ? code : code[..3] + new string('•', code.Length - 3);
 }

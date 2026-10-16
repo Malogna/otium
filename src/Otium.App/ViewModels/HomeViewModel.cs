@@ -4,6 +4,7 @@ using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Otium.App.Services;
+using Otium.Core.Accounts;
 using Otium.Core.Bandwidth;
 using Otium.Core.Engine;
 using Otium.Core.Projections;
@@ -449,7 +450,7 @@ public partial class HomeViewModel : ViewModelBase
         var link = _host.Settings.Referral.ShareUrl;
         if (string.IsNullOrEmpty(link))
             return;
-        await ClipboardService.CopyAsync($"I earn money with my computer's spare power using Otium. Join with my code {InviteCode} and mine fee-free for 30 days: {link}");
+        await ClipboardService.CopyAsync(InviteMessages.Fill(InviteMessages.Styles[1].Template, InviteCode, link, Core.Fees.FeePolicy.Default.RefereeFeeHoliday));
         CopiedText = "Invite copied. Paste it to a friend!";
     }
 

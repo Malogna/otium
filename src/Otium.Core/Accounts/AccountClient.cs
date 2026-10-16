@@ -17,6 +17,8 @@ public interface IAccountClient
     Task<BandwidthReportResult> ReportBandwidthAsync(string deviceId, string deviceSecret, BandwidthReport report, CancellationToken ct);
 
     Task<Switching.GpuPolicy> GetGpuPolicyAsync(CancellationToken ct);
+
+    Task<InviteLeaderboard> GetInviteLeaderboardAsync(string deviceId, string deviceSecret, CancellationToken ct);
 }
 
 /// <summary>Thrown when the server rejects a request with a message meant for the user.</summary>
@@ -41,6 +43,14 @@ public sealed class AccountClient(HttpClient http) : IAccountClient
         message.Headers.Add(SecretHeader, deviceSecret);
         using var response = await http.SendAsync(message, ct);
         return await ReadAsync<AccountSummary>(response, ct);
+    }
+
+    public async Task<InviteLeaderboard> GetInviteLeaderboardAsync(string deviceId, string deviceSecret, CancellationToken ct)
+    {
+        using var message = new HttpRequestMessage(HttpMethod.Get, $"api/v1/devices/{Uri.EscapeDataString(deviceId)}/invites/leaderboard");
+        message.Headers.Add(SecretHeader, deviceSecret);
+        using var response = await http.SendAsync(message, ct);
+        return await ReadAsync<InviteLeaderboard>(response, ct);
     }
 
     public async Task<CashoutInfo> RequestCashoutAsync(string deviceId, string deviceSecret, CashoutRequest request, CancellationToken ct)

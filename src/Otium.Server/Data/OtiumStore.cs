@@ -258,6 +258,24 @@ public sealed class OtiumStore
     public IReadOnlyList<AccountRecord> FindReferees(string code) =>
         QueryAccounts("SELECT * FROM accounts WHERE referred_by = $p AND merged_into IS NULL", ("$p", code));
 
+    /// <summary>Verified friends per referral code who joined since <paramref name="since"/>.</summary>
+    public IReadOnlyList<(string Code, long Friends)> VerifiedReferralsSince(DateTimeOffset since)
+    {
+        using var connection = Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT referred_by, COUNT(*) FROM accounts
+            WHERE referred_by IS NOT NULL AND merged_into IS NULL AND verified = 1 AND referred_at >= $s
+            GROUP BY referred_by
+            """;
+        cmd.Parameters.AddWithValue("$s", Format(since));
+        using var reader = cmd.ExecuteReader();
+        var result = new List<(string, long)>();
+        while (reader.Read())
+            result.Add((reader.GetString(0), reader.GetInt64(1)));
+        return result;
+    }
+
     public void Upsert(AccountRecord r) =>
         Execute("""
             INSERT INTO accounts (account_id, worker_id, pool_wallet, own_wallet, code, email, referred_by, referred_at,

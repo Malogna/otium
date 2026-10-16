@@ -495,6 +495,10 @@ public sealed class AppHost : IAsyncDisposable
         return cashout;
     }
 
+    /// <summary>This month's top inviters. Throws on network errors; the invites page shows it as unavailable.</summary>
+    public Task<InviteLeaderboard> GetInviteLeaderboardAsync(CancellationToken ct) =>
+        CreateClient().GetInviteLeaderboardAsync(DeviceId, Settings.DeviceSecret, ct);
+
     /// <summary>Emails a 6-digit code. Registers this computer first if it never connected.</summary>
     public async Task SendEmailCodeAsync(string email)
     {

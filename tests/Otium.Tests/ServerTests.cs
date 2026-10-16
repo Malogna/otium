@@ -381,6 +381,70 @@ public sealed class ServerTests : IDisposable
         Assert.Equal(429, limited.StatusCode);
     }
 
+    // ---------- invite leaderboard ----------
+
+    /// <summary>Registers a friend through <paramref name="code"/>; verified friends have really started earning.</summary>
+    private async Task Invite(string code, bool verified = true, DateTimeOffset? referredAt = null)
+    {
+        var friend = await RegisterBalance(NewDevice(), code);
+        var account = Store.FindAccountByCode(friend.Code)!;
+        Store.Upsert(account with { Verified = verified, ReferredAt = referredAt ?? account.ReferredAt });
+    }
+
+    private Task<InviteLeaderboard> Leaderboard(Device d) =>
+        new AccountClient(_http).GetInviteLeaderboardAsync(d.Id, d.Secret, CancellationToken.None);
+
+    [Fact]
+    public async Task The_leaderboard_ranks_inviters_by_friends_who_started_earning()
+    {
+        var alice = NewDevice();
+        var bob = NewDevice();
+        var carol = NewDevice();
+        var aliceCode = (await RegisterBalance(alice)).Code;
+        var bobCode = (await RegisterBalance(bob)).Code;
+        var carolCode = (await RegisterBalance(carol)).Code;
+        await Invite(aliceCode);
+        await Invite(aliceCode);
+        await Invite(aliceCode, verified: false); // signed up but never earned: doesn't count
+        await Invite(bobCode);
+        await Invite(carolCode);
+
+        var board = await Leaderboard(bob);
+
+        Assert.Equal(new DateTimeOffset(_time.GetUtcNow().Year, _time.GetUtcNow().Month, 1, 0, 0, 0, TimeSpan.Zero), board.PeriodStart);
+        Assert.Equal(3, board.Top.Count);
+        Assert.Equal(new InviteLeaderboardEntry(1, ReferralCodes.Mask(aliceCode), 2, false), board.Top[0]);
+        Assert.All(board.Top.Skip(1), e => Assert.Equal(2, e.Rank)); // bob and carol tie
+        Assert.Contains(board.Top, e => e is { IsYou: true, Name: "You", Friends: 1 });
+        Assert.Equal(2, board.YourRank);
+        Assert.Equal(1, board.YourFriends);
+        Assert.DoesNotContain(board.Top, e => e.Name.Contains(aliceCode, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Last_months_friends_and_newcomers_without_friends_are_not_ranked()
+    {
+        var alice = NewDevice();
+        var aliceCode = (await RegisterBalance(alice)).Code;
+        await Invite(aliceCode, referredAt: _time.GetUtcNow().AddMonths(-1).AddDays(-1));
+        var newcomer = NewDevice();
+        await RegisterBalance(newcomer);
+
+        Assert.DoesNotContain((await Leaderboard(alice)).Top, e => e.IsYou);
+        var board = await Leaderboard(newcomer);
+        Assert.Null(board.YourRank);
+        Assert.Equal(0, board.YourFriends);
+    }
+
+    [Fact]
+    public async Task The_leaderboard_needs_the_device_secret()
+    {
+        var alice = NewDevice();
+        await RegisterBalance(alice);
+        var error = await Assert.ThrowsAsync<AccountRequestException>(() => Leaderboard(alice with { Secret = "wrong" }));
+        Assert.Equal(401, error.StatusCode);
+    }
+
     [Fact]
     public async Task Admin_endpoints_need_the_token()
     {
