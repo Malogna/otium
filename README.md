@@ -108,9 +108,11 @@ Everything technical lives under **Advanced**:
     which is why the minimums are $5 for BTC and BNB and $8 for ETH and SOL. If a swap fails, THORChain returns the BTC
     to the treasury and the cash-out goes back to the user's balance. A coin THORChain has paused (SOL as of October
     2026) shows as paused in the app until it resumes.
-  - The treasury is fed automatically by Kryptex (GPU coins auto-exchanged to BTC; point its payouts at the bitcoind
-    wallet). MoneroOcean still pays XMR, which has to be swapped to BTC to top the treasury up until THORChain's
-    announced native Monero support goes live.
+  - Kryptex credits the GPU coins to the operator's Kryptex account in BTC (auto-exchange), but account withdrawals
+    are started by hand and confirmed by email (no withdrawal API as of October 2026), so sweep that BTC into the
+    treasury about once a week. MoneroOcean still pays XMR, which has to be swapped to BTC by hand until THORChain's
+    announced native Monero support goes live. See reports/Pools and bandwidth that pay crypto.md for moving all
+    mining to Kryptex.
   - PayPal and Monero payouts still exist in the code but are off; add `paypal` or `xmr` to `Cashouts:Methods` to
     offer them again.
 - **Screened:** cash-outs to addresses on OFAC's sanctions list are refused (lists from
@@ -303,8 +305,8 @@ build/                       dev.ps1 (dev mode), package.ps1 (installers), icon 
   without a redesign.
 - **Deploy the server** behind HTTPS with backups of the SQLite database. Set the `OTIUM_SERVER_URL` repository
   variable so release builds use it.
-- **Fund the Bitcoin treasury** (bitcoind) and keep only a few weeks of payouts in it; point Kryptex's BTC payouts at
-  it. The admin dashboard shows its balance and warns when it's below the open cash-outs.
+- **Fund the Bitcoin treasury** (bitcoind) and keep only a few weeks of payouts in it; sweep the Kryptex account's BTC
+  into it weekly. The admin dashboard shows its balance and warns when it's below the open cash-outs.
 - **Code signing** for Windows and macOS: see [docs/code-signing.md](docs/code-signing.md) (Azure Artifact Signing or
   a cloud-HSM certificate for Windows, Developer ID and notarization for macOS).
 - **Real-machine run:** do a real mining run on your RTX 3080 to confirm SRBMiner's stats format and the GPU speed units
