@@ -108,3 +108,55 @@ automatically" (one UAC prompt adds a Defender exclusion for the engines folder)
   DevPool now serves the live shape.
 - Tests pin the real SRBMiner 3.7.6 API document, its `"algorithms": null` startup state, its console `Total:` line,
   and the live Kryptex worker list.
+
+## Retest with VRAM free (16 October 2026, 15:36–15:52)
+
+A retest of the engine fixes above (commit 6d0a462), with Unreal Editor closed: `pwsh build/dev.ps1 -RealMiners`, mining
+into the developer's own address (not recorded here). The miners ran from 15:37:20 until Otium was force-killed at 15:51:39,
+about 14 minutes. Electricity was set to "free", so all four MoneroOcean GPU algorithms were tested.
+
+- **Before the run:** 10,952 MiB of 12,288 MiB VRAM free (1,142 MiB used by the desktop), GPU idle at ~47 W. Ports 5080/5090
+  were free and no other Otium or miner process was running.
+- **Antivirus:** Windows Defender didn't block either engine this time, so no "Allow automatically" was needed.
+
+| Check | Result |
+|---|---|
+| XMRig on MoneroOcean | ✅ **33 accepted, 0 rejected** in 14 min. The first shares came ~6 min in. API `hashrate.total` read 1.0–2.0 kH/s (the PC was in use). Otium showed 1.66 / 1.64 / 1.23 kH/s at moments when the API read 1.70 / 1.66 / 1.36 kH/s. |
+| SRBMiner accepted shares | ❌ **0 on every algorithm, with VRAM free.** So the first run's failures weren't caused by Unreal holding memory (details below). |
+| Benchmarks fail plainly | ✅ Each failed algorithm was recorded with SRBMiner's reason and shown in Settings ("didn't work: …"). Once all four failed, the GPU row and Advanced showed *"Graphics card isn't mining: none of the coins it can mine worked in testing. Use "Test GPU again" in Settings to retry."*, not "Starting…". |
+| Stall failover while mining | ⚪ **Not exercised.** No algorithm passed testing, so the provider never reached mining mode. Unit tests cover it. |
+| Switching between tests | ✅ Each new test started a fresh SRBMiner. The previous process was gone each time (one `SRBMiner-MULTI` at a time, parent Otium). |
+| Killing Otium stops the miners | ✅ `Stop-Process -Force` on Otium (like Task Manager's End task; no shutdown code runs) during a kawpow test, with SRBMiner at 349 W and 3.3 GB VRAM. **3 s later neither XMRig nor SRBMiner was running**, and VRAM was back to 990 MiB. Both miners were in a job object before the kill. No separate SRBMiner watchdog process appeared in this run, so killing a watchdog wasn't observed directly; the job covers any child either way. |
+| Free-VRAM check | ✅ No false positive: 10.9 GB free is above every algorithm's `MinMemoryGb`, so nothing was skipped. The "too little free memory" path wasn't exercised on hardware. |
+| Firewall prompt | No Windows Firewall prompt was seen during the run. |
+
+### GPU tests (SRBMiner 3.7.6, driver 616.92)
+
+| Algorithm | Window | API `gpu.total` | Power | Failure Otium recorded |
+|---|---|---|---|---|
+| kawpow | 15:37:20–15:39:40 | 0 throughout (t = 15, 49, 89, 114 s) | 345–350 W for ~50 s (the dev-fee round), then ~100–140 W | `Couldn't set epoch …` (VRAM used peaked at 3.3 GB) |
+| autolykos2 | 15:39:40–15:42:15 | 0 | ~97 W | `GPU0[t0] OCL Error code -52 [clEnqueueNDRangeKernel [2]]` |
+| etchash | 15:42:15–15:44:50 | 0 (pool jobs arriving, difficulty 23.4) | ~99 W | `Couldn't set epoch …` |
+| cn/gpu | 15:44:50–15:47:20 | 0 | ~98 W | A "GPU0 couldn't setup …" error (cut off in the UI) |
+
+The API's hashrate stayed 0 even while the card drew ~345 W in kawpow's first minute. That fits the dev-fee round mining
+for the developer, which 3.7.6 apparently doesn't count under the user's algorithm. Error -52 is OpenCL's
+`CL_INVALID_KERNEL_ARGS`, so SRBMiner ran its OpenCL path on this NVIDIA card. Together with "Couldn't set epoch" on 10.9 GB
+free, this points at SRBMiner 3.7.6 with this driver, not at Otium or VRAM.
+
+### Fixed after the retest
+
+- Otium said kawpow's and etchash's "dataset doesn't fit in the graphics card's free memory", which was wrong here.
+  "Couldn't set epoch" is now reported as *"the miner couldn't load this coin's dataset onto the graphics card ("Couldn't set
+  epoch 611 on GPU0")"*. Only explicit out-of-memory lines mention memory. Low free memory is reported separately, from
+  NVML, before launch.
+
+### Still open
+
+- **GPU mining doesn't work on this RTX 3080 with SRBMiner 3.7.6.** Next steps:
+  - Run SRBMiner directly with `--log-file` to get its full output.
+  - Try another SRBMiner release or NVIDIA driver.
+  - Consider a CUDA-based miner for NVIDIA cards.
+- **Leftover from the first run:** an `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\Otium` entry that starts the other
+  worktree's dev build (`optimistic-vaughan-de3538`) at sign-in. This retest pre-seeded its settings instead of clicking through
+  onboarding, so it didn't add another. The entry was left in place for the developer to remove.
