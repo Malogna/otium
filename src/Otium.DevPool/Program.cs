@@ -67,7 +67,14 @@ public static class DevPoolHost
         app.MapGet("/kryptex/{coin}/api/v3/miner/workers/{account}", (string coin, string account, SimulatedPool pool) =>
         {
             var workers = pool.WorkerCharts(KryptexWallet(coin, account))
-                .Select(w => new { worker = w.Key, hashrate = w.Value.LastOrDefault()?.Hs ?? 0, scheme = "pps" })
+                // Shaped like the live API: averages as strings, no "hashrate" field.
+                .Select(w => new
+                {
+                    worker = w.Key,
+                    avg_hashrate_30m = (w.Value.LastOrDefault()?.Hs ?? 0).ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    scheme = "pps",
+                    status = "online",
+                })
                 .ToList();
             return Results.Ok(new { count = workers.Count, results = workers });
         });

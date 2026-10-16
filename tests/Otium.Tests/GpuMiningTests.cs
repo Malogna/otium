@@ -165,6 +165,41 @@ public class SrbMinerTests
     }
 
     [Fact]
+    public void Real_srbminer_376_api_is_read_in_hps()
+    {
+        // Trimmed from SRBMiner-Multi 3.7.6 mining kawpow on an RTX 3080 (October 2026); the UI showed 33.54 MH/s.
+        const string json = """
+            {"rig_name":"otium","miner_version":"3.7.6","mining_time":68,"total_gpu_workers":1,
+             "gpu_devices":[{"id":0,"device":"gpu0","vendor":"nvidia","model":"nvidia_geforce_rtx_3080","asic_power":266}],
+             "algorithms":[{"id":0,"name":"kawpow",
+               "pool":{"pool":"gulf.moneroocean.stream:10128","difficulty":0.987,"last_job_received":2},
+               "shares":{"total":0,"accepted":0,"rejected":0,"avg_find_time":0},
+               "hashrate":{"1min":33728089.38,"15min":33728089.38,"1hr":33728089.38,"6hr":33728089.38,
+                           "cpu":{"total":0.0},"gpu":{"gpu0":33040828.85,"total":33040828.85}}}]}
+            """;
+        Assert.Equal(33040828.85, SrbMinerStats.ParseApiHashrate(json));
+    }
+
+    [Fact]
+    public void Srbminer_api_before_the_first_job_has_no_hashrate()
+    {
+        // While SRBMiner can't reach the pool, 3.7.6 serves "algorithms": null.
+        Assert.Null(SrbMinerStats.ParseApiHashrate("""{"rig_name":"otium","miner_version":"3.7.6","mining_time":5,"algorithms":null}"""));
+    }
+
+    [Fact]
+    public void Real_srbminer_376_console_total_line_is_read()
+    {
+        string[] lines =
+        [
+            "[2026-10-16 14:58:41] GPU0 RTX 3080: 0.00 H/s [T:63C FAN:40% P:91.1W EFF:- CC:1230 MC:5001 A:0 R:0 HW:0]",
+            "[2026-10-16 14:58:41] Total: 0.00 H/s [P:91.1W EFF: A:0 R:0 HW:0]",
+            "[2026-10-16 14:58:41] Average hashrate: 1m 0.00 H/s | 15m 0.00 H/s | 1h 0.00 H/s | 6h 0.00 H/s",
+        ];
+        Assert.Equal(0, SrbMinerStats.ParseConsoleHashrate(lines));
+    }
+
+    [Fact]
     public void Console_hashrate_fallback_normalises_units()
     {
         string[] lines = ["[2026-10-15 22:00:01] GPU0 : 24.88 MH/s", "[2026-10-15 22:00:31] Total: 25.12 MH/s", "noise"];
