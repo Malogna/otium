@@ -34,7 +34,26 @@ public abstract class MoneyTestBase : IDisposable
 
     protected EarningsOptions Earnings { get; } = new() { FeePercent = 10, ReferralPercent = 5, HoldPeriod = TimeSpan.FromHours(48) };
 
-    protected CashoutOptions Cashouts { get; } = new();
+    /// <summary>Every method enabled, so the generic cash-out rules can be tested with any provider.</summary>
+    protected CashoutOptions Cashouts { get; } = new() { Methods = ["btc", "eth", "bnb", "sol", "paypal", "xmr"] };
+
+    /// <summary>Sanctions lists loaded (empty), as after the first refresh.</summary>
+    protected SanctionsList Sanctions { get; } = LoadedSanctions();
+
+    protected CashoutService NewCashoutService(IEnumerable<IPayoutProvider> providers)
+    {
+        var list = providers.ToList();
+        var catalog = new CashoutMethodCatalog(Options.Create(Cashouts), list, NullLogger<CashoutMethodCatalog>.Instance);
+        return new CashoutService(Store, list, Options.Create(Cashouts), catalog, Sanctions, Time, NullLogger<CashoutService>.Instance);
+    }
+
+    private static SanctionsList LoadedSanctions()
+    {
+        var list = new SanctionsList();
+        foreach (var name in new[] { "btc", "evm", "bsc", "sol" })
+            list.Load(name, []);
+        return list;
+    }
 
     protected OutboxEmailSender Outbox { get; } = new(NullLogger<OutboxEmailSender>.Instance);
 
@@ -260,7 +279,7 @@ public sealed class CashoutTests : MoneyTestBase
     private readonly FakeProvider _paypal = new(CashoutMethods.PayPal);
     private readonly FakeProvider _monero = new(CashoutMethods.Monero);
 
-    private CashoutService Service => new(Store, [_paypal, _monero], Options.Create(Cashouts), Time, NullLogger<CashoutService>.Instance);
+    private CashoutService Service => NewCashoutService([_paypal, _monero]);
 
     private CashoutProcessor Processor => new(Store, [_paypal, _monero], Receipts, Time, NullLogger<CashoutProcessor>.Instance);
 
@@ -377,7 +396,7 @@ public sealed class CashoutTests : MoneyTestBase
     {
         var provider = new MoneroPayoutProvider(Wallet, Pool, NullLogger<MoneroPayoutProvider>.Instance);
         var processor = new CashoutProcessor(Store, [provider], Receipts, Time, NullLogger<CashoutProcessor>.Instance);
-        var service = new CashoutService(Store, [provider], Options.Create(Cashouts), Time, NullLogger<CashoutService>.Instance);
+        var service = NewCashoutService([provider]);
 
         var a = NewAccount();
         var b = NewAccount();
@@ -400,7 +419,7 @@ public sealed class CashoutTests : MoneyTestBase
     {
         var provider = new MoneroPayoutProvider(Wallet, Pool, NullLogger<MoneroPayoutProvider>.Instance);
         var processor = new CashoutProcessor(Store, [provider], Receipts, Time, NullLogger<CashoutProcessor>.Instance);
-        var service = new CashoutService(Store, [provider], Options.Create(Cashouts), Time, NullLogger<CashoutService>.Instance);
+        var service = NewCashoutService([provider]);
         var device = NewAccount();
         Fund(device, 5m);
         var info = service.Request(device, new CashoutRequest(CashoutMethods.Monero, TestAddresses.Generate()));

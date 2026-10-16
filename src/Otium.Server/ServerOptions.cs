@@ -53,9 +53,33 @@ public sealed class CashoutOptions
 {
     public const string Section = "Cashouts";
 
+    public static readonly string[] DefaultMethods = ["btc", "eth", "bnb", "sol"];
+
+    /// <summary>
+    /// The payout methods offered, in display order: "btc", "eth", "bnb", "sol" (paid from the Bitcoin treasury, the
+    /// others swapped through THORChain), plus the older "paypal" and "xmr" if re-enabled. Empty means the default.
+    /// (No default value here: the configuration binder appends to arrays instead of replacing them.)
+    /// </summary>
+    public string[] Methods { get; set; } = [];
+
+    /// <summary><see cref="Methods"/>, or the default when none are configured, without duplicates.</summary>
+    public IReadOnlyList<string> OfferedMethods => (Methods.Length > 0 ? Methods : DefaultMethods).Distinct().ToList();
+
+    /// <summary>Minimum cash-out per method (USD). Methods not listed use <see cref="MinCryptoUsd"/>.</summary>
+    public Dictionary<string, decimal> MinUsd { get; set; } = new()
+    {
+        ["btc"] = 5m,
+        ["bnb"] = 5m,
+        ["eth"] = 8m,
+        ["sol"] = 8m,
+    };
+
     public decimal MinPayPalUsd { get; set; } = 5m;
 
-    public decimal MinCryptoUsd { get; set; } = 2m;
+    public decimal MinCryptoUsd { get; set; } = 5m;
+
+    public decimal MinimumFor(string method) =>
+        method == "paypal" ? MinPayPalUsd : MinUsd.TryGetValue(method, out var min) ? min : MinCryptoUsd;
 
     /// <summary>Cash-outs up to this amount are sent automatically when the other checks pass; larger ones are reviewed.</summary>
     public decimal AutoApproveMaxUsd { get; set; } = 50m;
@@ -95,6 +119,56 @@ public sealed class MoneroWalletOptions
     public string Password { get; set; } = "";
 
     public bool IsConfigured => RpcUrl.Length > 0;
+}
+
+/// <summary>The operator's Bitcoin treasury: a bitcoind wallet that pays BTC cash-outs and funds THORChain swaps.</summary>
+public sealed class BitcoinWalletOptions
+{
+    public const string Section = "BitcoinWallet";
+
+    /// <summary>bitcoind JSON-RPC, e.g. http://127.0.0.1:8332. Keep it on localhost or a private network.</summary>
+    public string RpcUrl { get; set; } = "";
+
+    public string Username { get; set; } = "";
+
+    public string Password { get; set; } = "";
+
+    /// <summary>The wallet to use (bitcoind's -rpcwallet), e.g. "otium-payouts".</summary>
+    public string Wallet { get; set; } = "";
+
+    /// <summary>Fee target in blocks for payouts; 6 is about an hour and cheap.</summary>
+    public int ConfTarget { get; set; } = 6;
+
+    public bool IsConfigured => RpcUrl.Length > 0;
+}
+
+/// <summary>THORChain, the swap network that turns treasury BTC into ETH, BNB or SOL at the user's address.</summary>
+public sealed class ThorchainOptions
+{
+    public const string Section = "Thorchain";
+
+    /// <summary>A public THORNode API (no key or account needed). Any node or gateway with the same API works.</summary>
+    public string ApiBase { get; set; } = "https://gateway.liquify.com/chain/thorchain_api/";
+}
+
+/// <summary>Screening payout addresses against OFAC's sanctioned crypto addresses.</summary>
+public sealed class SanctionsOptions
+{
+    public const string Section = "Sanctions";
+
+    /// <summary>
+    /// Plain-text lists (one address per line) per chain, from github.com/0xB10C/ofac-sanctioned-digital-currency-addresses,
+    /// which rebuilds them from the OFAC SDN list every night.
+    /// </summary>
+    public Dictionary<string, string> ListUrls { get; set; } = new()
+    {
+        ["btc"] = "https://raw.githubusercontent.com/0xB10C/ofac-sanctioned-digital-currency-addresses/lists/sanctioned_addresses_XBT.txt",
+        ["evm"] = "https://raw.githubusercontent.com/0xB10C/ofac-sanctioned-digital-currency-addresses/lists/sanctioned_addresses_ETH.txt",
+        ["bsc"] = "https://raw.githubusercontent.com/0xB10C/ofac-sanctioned-digital-currency-addresses/lists/sanctioned_addresses_BSC.txt",
+        ["sol"] = "https://raw.githubusercontent.com/0xB10C/ofac-sanctioned-digital-currency-addresses/lists/sanctioned_addresses_SOL.txt",
+    };
+
+    public TimeSpan RefreshInterval { get; set; } = TimeSpan.FromHours(12);
 }
 
 public sealed class AdminOptions

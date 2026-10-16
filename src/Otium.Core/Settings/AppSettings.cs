@@ -7,7 +7,7 @@ public enum PayoutMode
 {
     /// <summary>
     /// Default. Mining goes to the operator's pool account under the user's worker id; the Otium server credits
-    /// a USD balance the user cashes out by PayPal or crypto. No wallet needed.
+    /// a USD balance the user cashes out in BTC, ETH, BNB or SOL to their own wallet.
     /// </summary>
     Balance,
 
@@ -119,7 +119,7 @@ public sealed class AccountState
 
     public decimal MinPayPalUsd { get; set; } = 5m;
 
-    public decimal MinCryptoUsd { get; set; } = 2m;
+    public decimal MinCryptoUsd { get; set; } = 5m;
 
     public double FeePercent { get; set; }
 
@@ -139,6 +139,12 @@ public sealed class AccountState
 
     /// <summary>Last crypto address used, to prefill the cash-out form.</summary>
     public string? LastCryptoAddress { get; set; }
+
+    /// <summary>Last address used per payout coin ("btc", "eth", ...), to prefill the cash-out form.</summary>
+    public Dictionary<string, string> LastAddresses { get; set; } = [];
+
+    /// <summary>The coin last used to cash out.</summary>
+    public string? LastCashoutMethod { get; set; }
 }
 
 public sealed class ReferralState

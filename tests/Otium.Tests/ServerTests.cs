@@ -34,6 +34,10 @@ public sealed class ServerTests : IDisposable
             builder.UseSetting("Earnings:PoolWallets:0", _poolWallet);
             builder.UseSetting("Referral:PublicBaseUrl", "https://otium.example");
             builder.UseSetting("Admin:Token", AdminToken);
+            // PayPal stays enabled here because these tests exercise the generic cash-out flow through it.
+            string[] methods = ["btc", "eth", "bnb", "sol", "paypal", "xmr"];
+            for (var i = 0; i < methods.Length; i++)
+                builder.UseSetting($"Cashouts:Methods:{i}", methods[i]);
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll<IMoneroPoolApi>();
@@ -454,6 +458,22 @@ public sealed class ServerTests : IDisposable
     {
         var response = await _http.GetAsync("/admin/summary");
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task The_app_is_told_each_payout_method_once_with_its_minimum()
+    {
+        var device = NewDevice();
+        await RegisterBalance(device);
+
+        var methods = (await Summary(device)).Balance.Methods!;
+
+        Assert.Equal(["btc", "eth", "bnb", "sol", "paypal", "xmr"], methods.Select(m => m.Method));
+        Assert.Equal(5m, methods.Single(m => m.Method == "btc").MinUsd);
+        Assert.Equal(8m, methods.Single(m => m.Method == "eth").MinUsd);
+        Assert.Null(methods.Single(m => m.Method == "btc").FeeNote);
+        Assert.Contains("THORChain", methods.Single(m => m.Method == "bnb").FeeNote);
+        Assert.Equal(5m, (await Summary(device)).Balance.MinCryptoUsd);
     }
 
     // ---------- operator dashboard ----------

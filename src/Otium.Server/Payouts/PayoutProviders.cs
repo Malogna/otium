@@ -28,6 +28,12 @@ public interface IPayoutProvider
 
     /// <summary>Follows up on a cash-out already handed to the provider.</summary>
     Task<PayoutOutcome> CheckAsync(CashoutRecord sending, CancellationToken ct);
+
+    /// <summary>
+    /// Why this method can't take new cash-outs right now (shown to users), or null when it can. A provider that isn't
+    /// set up still takes cash-outs: they wait in the review queue for the operator to pay by hand.
+    /// </summary>
+    Task<string?> GetUnavailableReasonAsync(CancellationToken ct) => Task.FromResult<string?>(null);
 }
 
 /// <summary>

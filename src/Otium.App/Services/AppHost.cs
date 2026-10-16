@@ -488,9 +488,14 @@ public sealed class AppHost : IAsyncDisposable
     {
         var cashout = await CreateClient().RequestCashoutAsync(DeviceId, Settings.DeviceSecret, new CashoutRequest(method, destination.Trim()), CancellationToken.None);
         if (method == CashoutMethods.PayPal)
+        {
             Settings.Account.LastPayPalEmail = destination.Trim();
+        }
         else
-            Settings.Account.LastCryptoAddress = destination.Trim();
+        {
+            Settings.Account.LastAddresses[method] = destination.Trim();
+            Settings.Account.LastCashoutMethod = method;
+        }
         await SyncAccountAsync(CancellationToken.None);
         return cashout;
     }

@@ -13,7 +13,7 @@ public sealed class CashoutReceiptTests : MoneyTestBase
 
     private readonly FakeProvider _paypal = new(CashoutMethods.PayPal);
 
-    private CashoutService Service => new(Store, [_paypal], Options.Create(Cashouts), Time, NullLogger<CashoutService>.Instance);
+    private CashoutService Service => NewCashoutService([_paypal]);
 
     private CashoutProcessor Processor => new(Store, [_paypal], Receipts, Time, NullLogger<CashoutProcessor>.Instance);
 
