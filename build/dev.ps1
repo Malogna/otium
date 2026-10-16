@@ -76,6 +76,13 @@ function Wait-Healthy([string] $url, [string] $name) {
     throw "$name didn't start; see artifacts/dev/$name.log"
 }
 
+# The app's Otium.exe launcher finds .NET through DOTNET_ROOT, not PATH, so point it at the SDK in use
+# (needed when .NET is installed per-user, e.g. under %LOCALAPPDATA%\Microsoft\dotnet).
+if (-not $env:DOTNET_ROOT) {
+    $dotnet = Get-Command dotnet -ErrorAction SilentlyContinue
+    if ($dotnet) { Set-DevEnv @{ DOTNET_ROOT = Split-Path (Resolve-Path $dotnet.Source) } }
+}
+
 $processes = @()
 try {
     # Simulated pool (not used with real miners, which talk to the real MoneroOcean)
@@ -161,8 +168,12 @@ try {
                 $key = "$($mail.to)|$($mail.sentAt)"
                 if ($seen.ContainsKey($key)) { continue }
                 $seen[$key] = $true
-                $code = [regex]::Match($mail.body, '\b\d{6}\b').Value
-                Write-Host ("  ✉  Sign-in code for {0}: {1}" -f $mail.to, $code) -ForegroundColor Yellow
+                if ($mail.subject -like 'Your Otium code*') {
+                    $code = [regex]::Match($mail.body, '\b\d{6}\b').Value
+                    Write-Host ("  ✉  Sign-in code for {0}: {1}" -f $mail.to, $code) -ForegroundColor Yellow
+                } else {
+                    Write-Host ("  ✉  To {0}: {1}" -f $mail.to, $mail.subject) -ForegroundColor Yellow
+                }
             }
         } catch { }
         Start-Sleep -Seconds 2
