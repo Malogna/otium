@@ -128,13 +128,20 @@ public sealed class KryptexClient(HttpClient http, IOptions<KryptexOptions> opti
     public async Task<IReadOnlyList<KryptexPoint>> GetWorkerChartAsync(string coin, string account, string worker, CancellationToken ct)
     {
         using var doc = await GetAsync($"{Esc(coin)}/api/v1/miner/chart/{Esc(account)}/{Esc(worker)}?days=1", ct);
+        return ParseChart(doc.RootElement);
+    }
+
+    internal static IReadOnlyList<KryptexPoint> ParseChart(JsonElement root)
+    {
         var points = new List<KryptexPoint>();
-        if (doc.RootElement.ValueKind == JsonValueKind.Array)
+        if (root.ValueKind == JsonValueKind.Array)
         {
-            foreach (var p in doc.RootElement.EnumerateArray())
+            foreach (var p in root.EnumerateArray())
             {
-                if (ParseTime(p) is { } time && p.TryGetProperty("hashrate", out var h) && h.ValueKind == JsonValueKind.Number)
-                    points.Add(new KryptexPoint(time, h.GetDouble()));
+                // Numbers or numeric strings: the workers endpoint already sends strings, so don't let a format change
+                // here silently credit nothing.
+                if (ParseTime(p) is { } time && Number(p, "hashrate") is { } hashrate)
+                    points.Add(new KryptexPoint(time, hashrate));
             }
         }
         return points.OrderBy(p => p.Time).ToList();
