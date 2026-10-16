@@ -200,6 +200,8 @@ Run the tests (227, covering accounts and sign-in, crediting, cash-outs and rece
 dotnet test
 ```
 
+`.github/workflows/ci.yml` runs them on Windows and Linux for every push to `main` and every pull request.
+
 ### Dev mode: the whole loop on one PC
 
 ```bash
