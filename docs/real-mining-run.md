@@ -160,3 +160,74 @@ free, this points at SRBMiner 3.7.6 with this driver, not at Otium or VRAM.
 - **Leftover from the first run:** an `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\Otium` entry that starts the other
   worktree's dev build (`optimistic-vaughan-de3538`) at sign-in. This retest pre-seeded its settings instead of clicking through
   onboarding, so it didn't add another. The entry was left in place for the developer to remove.
+
+## Making the GPU earn (16 October 2026, 15:58–16:43)
+
+### Diagnosis: SRBMiner's OpenCL path fails on this card, its CUDA path works
+
+All runs were short direct SRBMiner runs (`--log-file`, API on loopback), each killed afterwards.
+
+- **Backends:** `--list-devices` finds the RTX 3080 as a CUDA device (`[CUDA][0] … [CC: 8.6] [12287 MB]`). For mining, SRBMiner
+  starts kawpow, etchash and autolykos2 on its **OpenCL** backend (`GPU0 init... [OPENCL]`) and quantus on **CUDA**
+  (`GPU0 init... [CUDA]`). It reports 10.5 GB free and an 11.6 GB maximum buffer.
+- **kawpow (MoneroOcean):** the dev-fee round ran at ~350 W with a small dataset (+2.1 GB). The switch to the user's job then
+  failed with `Couldn't set epoch 611 on GPU0` (a ~5.9 GB dataset). `--gpu-table-slow-build` didn't help.
+- **etchash:** `Epoch : 850 [etchash]`, then `Couldn't set epoch on GPU0` 3 s later, before any memory was allocated.
+  This happened on MoneroOcean and on unMineable's standard-stratum pool (`etchash.unmineable.com:3333`).
+- **autolykos2:** `OCL Error code -52 [clEnqueueNDRangeKernel [2]]` (OpenCL's CL_INVALID_KERNEL_ARGS), before the pool
+  connected, on both MoneroOcean and unMineable.
+- **SRBMiner 3.5.8** (official release, MD5 `dd4b411b40af51346e42a248400abd86` as published, SHA-256
+  `1407087e595c5fe393478f258d76fde6ff1d39ec41eba46f1645efdea88df143`) fails identically on kawpow and etchash. So it's not
+  a 3.7.6 regression.
+- **Otium's arguments aren't the cause.** SRBMiner's own example scripts use `--algorithm-gpu`, but `--help` says
+  `--algorithm` with `--disable-cpu` is equivalent, and the failures occur in OpenCL setup, before any pool-specific step.
+  Changing the pool didn't change them either.
+
+**Conclusion:** on this RTX 3080 with driver 616.92, SRBMiner (3.5.8 and 3.7.6) can't run its OpenCL algorithms at
+today's dataset sizes. Its CUDA algorithms work. This is one machine, so whether every NVIDIA card is affected is still open.
+
+### Kryptex coins (CUDA) on the real Kryptex Pool (the developer's account, not recorded here)
+
+| Run | Coin | SRBMiner `gpu.total` | Power | Shares | Kryptex worker list |
+|---|---|---|---|---|---|
+| Direct, 130 s | pearlhash | ~1.14e14 | ~334 W | 2 accepted, 0 rejected | worker `diag`: 2 valid, 30-min avg 1.0e13 |
+| Direct, 130 s | quantus | ~5.15e8 | ~349 W | 7 accepted, 0 rejected | worker `diag`: 7 valid, 30-min avg 7.1e7 |
+| Otium, 14 min | pearlhash + quantus | 8.57e13 / 3.61e8 (Otium's benchmarks) | +247.5 W / +250.3 W measured | | worker `ot9kbke9riaubr`: Pearl 4 valid, Quantus 10 valid + 2 stale, 0 invalid |
+
+- **Units (open item 6):** Kryptex's 30-minute averages are on the same scale as SRBMiner's `gpu.total`, given about
+  2 minutes of mining in a 30-minute window and few shares. So `gpu.total` is H/s for both coins, with no ×1000 factor.
+  `/api/v3/miner/workers` again returned the live shape (string `avg_hashrate_*`). The per-worker chart endpoint returned
+  **403 Forbidden** to a plain request, which the server's crediting may need to handle.
+- **Payout:** the server priced Pearl at 3.51e-14 and Quantus at 7.17e-9 USD per H/s per day. That's ~$3.0 and ~$2.6 a day
+  gross at Otium's measured speeds (the app showed "Mining Pearl · $2.90/day · 86.78 TH/s"), against about $0.9 a day of
+  electricity at $0.15/kWh.
+- **Speed:** inside Otium, both coins ran about 25–30% slower than in the direct runs (85.7 vs 114 T, 361 vs 515 M). In the
+  direct runs XMRig wasn't running and SRBMiner had normal priority (Otium uses below-normal). The cause isn't isolated yet.
+
+### Otium's engine with real mining
+
+- **Benchmarks:** pearlhash and quantus both passed (2.5 min each; MoneroOcean's algorithms were excluded because
+  electricity was set as paid).
+- 🐛 **Fixed: the switcher kept the last algorithm tested.** Right after testing, "current" was quantus (tested last), and the
+  15-minute minimum hold kept it, although Pearl paid about $0.40 a day more. Otium now picks the best one outright after
+  testing.
+- ✅ **Stall failover:** I froze the running quantus miner (NtSuspendProcess) at 16:36:44. Its API stopped answering. About
+  3 minutes later Otium killed it and started pearlhash (16:39:50), which hashed at 85–88 T. The frozen process didn't
+  survive.
+- ✅ **Killing Otium:** a second `Stop-Process -Force` during Pearl mining removed XMRig and SRBMiner within 3 s.
+- **Fixed: a plain message before the GPU policy arrives.** The first start attempt came before the app had fetched the
+  server's GPU policy. That showed "Hit a problem, retrying…" for a minute, then the retry started Pearl. That case now
+  reads "Graphics card isn't mining: no coin it can mine pays more than its electricity right now."
+- **Hardened:** if SRBMiner's API stops answering, its console's last "Total" line now counts only if it's under 90 s old,
+  so a frozen miner can't look busy (the console is the fallback source).
+
+### Still open
+
+- **MoneroOcean's GPU algorithms on NVIDIA.** They aren't excluded for NVIDIA in `GpuAlgorithm.Vendors` yet: SRBMiner
+  documents NVIDIA support for them, and this is one machine. They're "free power only" anyway. If more NVIDIA machines fail
+  the same way, the server's kill switch (`GpuPolicy:Disabled`) can turn them off without an app release, or they can be
+  made AMD-only.
+- **Production setting:** set `Kryptex:Enabled=true` and `Kryptex:Account` to the operator account on the deployed server.
+- **Speed gap:** find the cause of the 25–30% lower speed inside Otium (CPU contention with XMRig, or priority).
+- **Startup leftover:** `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\Otium` still starts the other worktree's dev
+  build at sign-in, for the developer to remove.

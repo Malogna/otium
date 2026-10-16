@@ -259,9 +259,10 @@ build/                       dev.ps1 (dev mode), package.ps1 (installers), icon 
 - **Deploy the server** behind HTTPS with backups of the SQLite database. Set `AppIdentity.DefaultServerUrl`.
 - **Fund the hot wallet** in `monero-wallet-rpc` and keep only what payouts need in it.
 - **Code signing** for Windows and macOS: add the certificates as the CI secrets listed in the workflow.
-- **Real-machine run:** partly done; see [docs/real-mining-run.md](docs/real-mining-run.md). SRBMiner's stats format,
-  H/s units, NVML power and the Kryptex chart are confirmed. Still open: `pearlhash`/`quantus` units on a Kryptex test
-  account, and a GPU run with free VRAM that gets accepted shares on MoneroOcean.
+- **Real-machine run:** mostly done; see [docs/real-mining-run.md](docs/real-mining-run.md). SRBMiner's stats format,
+  H/s units (including `pearlhash`/`quantus` on Kryptex), NVML power, stall failover and miners dying with the app are
+  confirmed. On an RTX 3080 the Kryptex coins earn through Otium; MoneroOcean's GPU algorithms fail in SRBMiner's OpenCL
+  path there. Still open: other NVIDIA machines, and the Kryptex account setting on the deployed server.
 - **Kryptex:** confirm in writing that one operator account may aggregate an app's whole install base, and ask how Pearl's
   August 2026 "rank-penalty" softfork treats a large pooled account. Kryptex runs a competing consumer app, so keep
   MoneroOcean as the fallback route.

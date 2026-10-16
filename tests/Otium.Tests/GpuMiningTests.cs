@@ -208,6 +208,16 @@ public class SrbMinerTests
     }
 
     [Fact]
+    public void A_stale_console_total_line_does_not_count_as_hashing()
+    {
+        // A frozen miner (seen on the Kryptex run) stops answering its API and stops printing; its last line is old.
+        string[] lines = ["[2026-10-16 16:36:28] Total: 360.53 MH/s [P:349.2W EFF: A:2 R:1 HW:0]"];
+        Assert.Equal(360.53e6, SrbMinerStats.ParseConsoleHashrate(lines, new DateTime(2026, 10, 16, 16, 36, 0))!.Value, precision: 0);
+        Assert.Null(SrbMinerStats.ParseConsoleHashrate(lines, new DateTime(2026, 10, 16, 16, 38, 0)));
+        Assert.Equal(25.12e6, SrbMinerStats.ParseConsoleHashrate(["Total: 25.12 MH/s"], DateTime.MaxValue)!.Value, precision: 0); // no timestamp
+    }
+
+    [Fact]
     public void Real_srbminer_dev_fee_and_failure_lines_are_recognised()
     {
         Assert.True(SrbMinerStats.StartedFirstDevFeeRound(["[2026-10-16 15:01:37] Hold on, doing the first devfee mining round[0]"]));
@@ -427,7 +437,7 @@ public sealed class SrbMinerProviderTests : IDisposable
         var paid = CreateProvider(policy: null, pricePerKwh: 0.15);
         var offer = await paid.GetExpectedOfferAsync(CancellationToken.None);
         Assert.Equal(0, offer!.GrossUsdPerDay);
-        await Assert.ThrowsAsync<InvalidOperationException>(() => paid.StartAsync(Options, CancellationToken.None));
+        await Assert.ThrowsAsync<ProviderProblemException>(() => paid.StartAsync(Options, CancellationToken.None)); // shown as is
 
         var free = CreateProvider(policy: null, pricePerKwh: 0);
         await free.StartAsync(Options, CancellationToken.None);
@@ -509,6 +519,20 @@ public sealed class SrbMinerProviderTests : IDisposable
         // After the cool-down it gets another chance at the next re-check.
         await RunFor(SrbMinerGpuProvider.StallCooldown);
         Assert.Equal(autolykosLaunches + 1, _factory.Launches.Count(l => l.Algorithm == "autolykos2"));
+    }
+
+    [Fact]
+    public async Task After_testing_it_mines_the_best_algorithm_not_the_last_one_tested()
+    {
+        // As on the Kryptex run: pearlhash (tested first) paid more than quantus (tested last), yet the 15-minute hold
+        // for "the current algorithm" kept quantus. Here kawpow (first) beats autolykos2 (last).
+        _factory.Speeds["kawpow"] = 100e6;
+        await _provider.StartAsync(Options, CancellationToken.None);
+        await RunFor(SrbMinerGpuProvider.BenchmarkDuration * 2 + TimeSpan.FromSeconds(10));
+
+        Assert.Equal("kawpow", _provider.CurrentAlgorithm);
+        Assert.Equal("kawpow", _factory.Launches[^1].Algorithm);
+        Assert.Equal(3, _factory.Launches.Count); // two tests, then straight to the best
     }
 
     [Fact]
