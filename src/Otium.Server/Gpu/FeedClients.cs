@@ -63,9 +63,9 @@ public sealed class WhatToMineClient(HttpClient http, IOptions<KryptexOptions> o
 
 public sealed record KryptexPoolInfo(double FeePercent);
 
-public sealed record KryptexWorker(string Name, double Hashrate);
-
-public sealed record KryptexPoint(DateTimeOffset Time, double Hashrate);
+/// <param name="Hashrate">The worker's average over the last 30 minutes, in H/s.</param>
+/// <param name="Average3h">The average over the last 3 hours, used to cover longer gaps between crediting runs.</param>
+public sealed record KryptexWorker(string Name, double Hashrate, double? Average3h = null);
 
 public interface IKryptexApi
 {
@@ -74,7 +74,6 @@ public interface IKryptexApi
     Task<IReadOnlyList<KryptexWorker>> GetWorkersAsync(string coin, string account, CancellationToken ct);
 
     /// <summary>Hashrate history for one worker (H/s), oldest first.</summary>
-    Task<IReadOnlyList<KryptexPoint>> GetWorkerChartAsync(string coin, string account, string worker, CancellationToken ct);
 }
 
 /// <summary>Kryptex Pool's public API (https://pool.kryptex.com/openapi.yaml).</summary>
@@ -107,7 +106,8 @@ public sealed class KryptexClient(HttpClient http, IOptions<KryptexOptions> opti
             foreach (var w in results.EnumerateArray())
             {
                 if (w.TryGetProperty("worker", out var name) && name.ValueKind == JsonValueKind.String)
-                    list.Add(new KryptexWorker(name.GetString()!, Number(w, "hashrate") ?? Number(w, "avg_hashrate_30m") ?? 0));
+                    list.Add(new KryptexWorker(name.GetString()!, Number(w, "avg_hashrate_30m") ?? Number(w, "hashrate") ?? 0,
+                        Number(w, "avg_hashrate_3h")));
             }
         }
         return list;
@@ -121,44 +121,6 @@ public sealed class KryptexClient(HttpClient http, IOptions<KryptexOptions> opti
             return value.GetDouble();
         return value.ValueKind == JsonValueKind.String
                && double.TryParse(value.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
-            ? parsed
-            : null;
-    }
-
-    public async Task<IReadOnlyList<KryptexPoint>> GetWorkerChartAsync(string coin, string account, string worker, CancellationToken ct)
-    {
-        using var doc = await GetAsync($"{Esc(coin)}/api/v1/miner/chart/{Esc(account)}/{Esc(worker)}?days=1", ct);
-        return ParseChart(doc.RootElement);
-    }
-
-    internal static IReadOnlyList<KryptexPoint> ParseChart(JsonElement root)
-    {
-        var points = new List<KryptexPoint>();
-        if (root.ValueKind == JsonValueKind.Array)
-        {
-            foreach (var p in root.EnumerateArray())
-            {
-                // Numbers or numeric strings: the workers endpoint already sends strings, so don't let a format change
-                // here silently credit nothing.
-                if (ParseTime(p) is { } time && Number(p, "hashrate") is { } hashrate)
-                    points.Add(new KryptexPoint(time, hashrate));
-            }
-        }
-        return points.OrderBy(p => p.Time).ToList();
-    }
-
-    /// <summary>Unix seconds, Unix milliseconds or an ISO date, whichever the API sends.</summary>
-    internal static DateTimeOffset? ParseTime(JsonElement point)
-    {
-        if (!point.TryGetProperty("timestamp", out var t))
-            return null;
-        if (t.ValueKind == JsonValueKind.Number)
-        {
-            var value = t.GetDouble();
-            return value > 1e12 ? DateTimeOffset.FromUnixTimeMilliseconds((long)value) : DateTimeOffset.FromUnixTimeSeconds((long)value);
-        }
-        return t.ValueKind == JsonValueKind.String
-               && DateTimeOffset.TryParse(t.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsed)
             ? parsed
             : null;
     }

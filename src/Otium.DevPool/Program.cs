@@ -64,14 +64,20 @@ public static class DevPoolHost
         // Simulated miners report Kryptex work with the wallet "kryptex:{coin}:{account}" and no XMR value.
         app.MapGet("/kryptex/{coin}/api/v1/pool/info", (string coin) => Results.Ok(new { fee = coin == "xmr" ? 0.01 : 0.03, fee_type = "PPS+", ticker = coin }));
 
-        app.MapGet("/kryptex/{coin}/api/v3/miner/workers/{account}", (string coin, string account, SimulatedPool pool) =>
+        app.MapGet("/kryptex/{coin}/api/v3/miner/workers/{account}", (string coin, string account, SimulatedPool pool, TimeProvider time) =>
         {
+            var nowMs = time.GetUtcNow().ToUnixTimeMilliseconds();
+            // Shaped like the live API: 30-minute, 3-hour and 24-hour averages as strings, no "hashrate" field.
+            string Average(IReadOnlyList<ChartPoint> points, TimeSpan window) =>
+                (points.Where(p => p.Ts > nowMs - (long)window.TotalMilliseconds).Sum(p => p.Hs) * SimulatedPool.PointSpacing.TotalSeconds
+                 / window.TotalSeconds).ToString(System.Globalization.CultureInfo.InvariantCulture);
             var workers = pool.WorkerCharts(KryptexWallet(coin, account))
-                // Shaped like the live API: averages as strings, no "hashrate" field.
                 .Select(w => new
                 {
                     worker = w.Key,
-                    avg_hashrate_30m = (w.Value.LastOrDefault()?.Hs ?? 0).ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    avg_hashrate_30m = Average(w.Value, TimeSpan.FromMinutes(30)),
+                    avg_hashrate_3h = Average(w.Value, TimeSpan.FromHours(3)),
+                    avg_hashrate_24h = Average(w.Value, TimeSpan.FromHours(24)),
                     scheme = "pps",
                     status = "online",
                 })
@@ -79,9 +85,9 @@ public static class DevPoolHost
             return Results.Ok(new { count = workers.Count, results = workers });
         });
 
-        app.MapGet("/kryptex/{coin}/api/v1/miner/chart/{account}/{worker}", (string coin, string account, string worker, SimulatedPool pool) =>
-            Results.Ok(pool.WorkerCharts(KryptexWallet(coin, account)).GetValueOrDefault(worker, [])
-                .Select(p => new { timestamp = p.Ts / 1000, hashrate = p.Hs, shares = 0 })));
+        // Like the real pool, per-worker history is private for "krx" accounts (October 2026).
+        app.MapGet("/kryptex/{coin}/api/v1/miner/chart/{account}/{worker}", () =>
+            Results.Json(new { detail = "You do not have permission to perform this action." }, statusCode: 403));
 
         // WhatToMine coin JSON shaped so that revenue per H/s per day comes out at roughly October 2026's real rate,
         // sped up like everything else: revenue = block_reward × 86400 / block_time / nethash × price.
