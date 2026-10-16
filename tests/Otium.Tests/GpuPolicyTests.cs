@@ -36,16 +36,14 @@ public sealed class GpuPolicyTests
 
     internal sealed class FakeKryptex : IKryptexApi
     {
-        public Dictionary<string, List<KryptexPoint>> Charts { get; } = [];
+        /// <summary>"coin:worker" → the worker's 30-minute average (and optional 3-hour average), in H/s.</summary>
+        public Dictionary<string, (double Avg30m, double? Avg3h)> Workers { get; } = [];
 
         public Task<KryptexPoolInfo> GetPoolInfoAsync(string coin, CancellationToken ct) => Task.FromResult(new KryptexPoolInfo(3));
 
         public Task<IReadOnlyList<KryptexWorker>> GetWorkersAsync(string coin, string account, CancellationToken ct) =>
-            Task.FromResult<IReadOnlyList<KryptexWorker>>(Charts.Keys.Where(k => k.StartsWith(coin + ":", StringComparison.Ordinal))
-                .Select(k => new KryptexWorker(k[(coin.Length + 1)..], 1)).ToList());
-
-        public Task<IReadOnlyList<KryptexPoint>> GetWorkerChartAsync(string coin, string account, string worker, CancellationToken ct) =>
-            Task.FromResult<IReadOnlyList<KryptexPoint>>(Charts.GetValueOrDefault($"{coin}:{worker}") ?? []);
+            Task.FromResult<IReadOnlyList<KryptexWorker>>(Workers.Where(w => w.Key.StartsWith(coin + ":", StringComparison.Ordinal))
+                .Select(w => new KryptexWorker(w.Key[(coin.Length + 1)..], w.Value.Avg30m, w.Value.Avg3h)).ToList());
     }
 
     internal sealed class FakePool : IMoneroPoolApi
@@ -173,16 +171,6 @@ public sealed class GpuPolicyTests
         Assert.Null(WhatToMineClient.Parse(doc.RootElement));
     }
 
-    [Theory]
-    [InlineData("""{"timestamp":1792112561}""", 1792112561L)]
-    [InlineData("""{"timestamp":1792112561000}""", 1792112561L)]
-    [InlineData("""{"timestamp":"2026-10-16T00:22:41Z"}""", 1792110161L)]
-    public void Kryptex_timestamps_parse_in_any_form(string json, long seconds)
-    {
-        using var doc = JsonDocument.Parse(json);
-        Assert.Equal(seconds, KryptexClient.ParseTime(doc.RootElement)!.Value.ToUnixTimeSeconds());
-    }
-
     [Fact]
     public void Kryptex_workers_parse_the_live_shape_and_the_documented_one()
     {
@@ -195,44 +183,36 @@ public sealed class GpuPolicyTests
         var workers = KryptexClient.ParseWorkers(live.RootElement);
         Assert.Equal(["5082", "5083"], workers.Select(w => w.Name));
         Assert.Equal(250199979298360.89, workers[0].Hashrate, 0);
+        Assert.Equal(290231975986098.63, workers[0].Average3h!.Value, 0);
         Assert.Equal(0, workers[1].Hashrate);
+        Assert.Null(workers[1].Average3h);
 
         using var documented = JsonDocument.Parse("""{"count":1,"results":[{"worker":"a","hashrate":1234.5}]}""");
         Assert.Equal(1234.5, Assert.Single(KryptexClient.ParseWorkers(documented.RootElement)).Hashrate);
     }
 
     [Fact]
-    public void Kryptex_chart_points_count_whether_hashrates_are_numbers_or_strings()
-    {
-        // Wallet-address charts send numbers (October 2026); account charts aren't verified yet, so accept strings too.
-        using var chart = JsonDocument.Parse("""
-            [{"timestamp":1792166400,"hashrate":4506.4,"shares":3},
-             {"timestamp":1792167000,"hashrate":"4600.5","shares":2},
-             {"timestamp":1792167600,"hashrate":null}]
-            """);
-
-        var points = KryptexClient.ParseChart(chart.RootElement);
-
-        Assert.Equal([4506.4, 4600.5], points.Select(p => p.Hashrate));
-        Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(1792166400), points[0].Time);
-    }
-
-    [Fact]
-    public void Kryptex_history_integrates_only_new_points_and_caps_gaps()
+    public void Sampling_the_30_minute_average_adds_up_to_the_real_hashes()
     {
         var t0 = new DateTimeOffset(2026, 10, 16, 12, 0, 0, TimeSpan.Zero);
-        var points = new List<KryptexPoint>
-        {
-            new(t0, 100), new(t0.AddMinutes(10), 100), new(t0.AddMinutes(20), 100),
-            new(t0.AddHours(3), 100), // the worker was offline for 2h40m: counts as at most 20 minutes
-        };
+        var interval = TimeSpan.FromMinutes(10);
+        var worker = new KryptexWorker("w", 1000, 900);
 
-        var (all, newest) = KryptexCreditor.Integrate(points, null);
-        Assert.Equal(100 * (600 + 600 + 600 + 1200), all, 6);
-        Assert.Equal(t0.AddHours(3).ToUnixTimeMilliseconds(), newest);
+        // First sighting: one interval's worth.
+        Assert.Equal(1000 * 600, KryptexCreditor.HashesSince(worker, null, t0, interval));
+        // A normal run: average × time since the last sample.
+        Assert.Equal(1000 * 420, KryptexCreditor.HashesSince(worker, t0.AddMinutes(-7), t0, interval));
+        // A long gap (server down for 2 hours) uses the 3-hour average for the gap...
+        Assert.Equal(900 * 7200, KryptexCreditor.HashesSince(worker, t0.AddHours(-2), t0, interval));
+        // ...but never more than 3 hours of it.
+        Assert.Equal(900 * 10_800, KryptexCreditor.HashesSince(worker, t0.AddHours(-9), t0, interval));
+        Assert.Equal(0, KryptexCreditor.HashesSince(worker, t0, t0, interval));
 
-        var (rest, _) = KryptexCreditor.Integrate(points, t0.AddMinutes(10).ToUnixTimeMilliseconds());
-        Assert.Equal(100 * (600 + 1200), rest, 6);
+        // A constant 1 kH/s worker mining for an hour, sampled every 10 minutes while its 30-minute window fills and then
+        // drains, is credited its 3.6 million hashes.
+        double[] averages = [333.33, 666.67, 1000, 1000, 1000, 1000, 666.67, 333.33, 0];
+        var total = averages.Sum(a => KryptexCreditor.HashesSince(new KryptexWorker("w", a), t0, t0.AddMinutes(10), interval));
+        Assert.InRange(total, 3_599_000, 3_601_000);
     }
 }
 
@@ -319,11 +299,14 @@ public sealed class KryptexCreditingTests : IDisposable
     public async Task Cpu_work_on_kryptex_monero_is_credited_at_the_network_value()
     {
         var (device, secret, summary) = await RegisterBalance(_http);
-        var t0 = _time.GetUtcNow().AddMinutes(-20);
-        // The fake network values one hash at $1 (reward 1 / difficulty 1 × $1), so 0.001 H/s for 20 minutes is $1.20.
-        _kryptex.Charts[$"xmr:{summary.WorkerId}"] = [new(t0, 0.001), new(t0.AddMinutes(10), 0.001)];
+        // The fake network values one hash at $1 (reward 1 / difficulty 1 × $1). At a 30-minute average of 0.001 H/s,
+        // the first run credits one 10-minute interval (0.6 hashes) and a run 10 minutes later another.
+        _kryptex.Workers[$"xmr:{summary.WorkerId}"] = (0.001, null);
+        var creditor = _factory.Services.GetRequiredService<KryptexCreditor>();
 
-        var result = await _factory.Services.GetRequiredService<KryptexCreditor>().CreditOnceAsync(CancellationToken.None);
+        var result = await creditor.CreditOnceAsync(CancellationToken.None);
+        _time.Advance(TimeSpan.FromMinutes(10));
+        await creditor.CreditOnceAsync(CancellationToken.None);
 
         Assert.Equal(1, result.WorkersCredited);
         var balance = (await new AccountClient(_http).GetSummaryAsync(device, secret, CancellationToken.None)).Balance;
@@ -339,10 +322,9 @@ public sealed class KryptexCreditingTests : IDisposable
         var register = await _http.PostAsJsonAsync("/api/v1/devices", new RegisterDeviceRequest(device, secret, null, null));
         var worker = (await register.Content.ReadFromJsonAsync<AccountSummary>())!.WorkerId;
 
-        // Two 10-minute points at 100 TH/s on Pearl, plus a worker that isn't ours.
-        var t0 = _time.GetUtcNow().AddMinutes(-20);
-        _kryptex.Charts[$"prl:{worker}"] = [new(t0, 100e12), new(t0.AddMinutes(10), 100e12)];
-        _kryptex.Charts["prl:stranger"] = [new(t0, 1e15)];
+        // 100 TH/s on Pearl over the last 30 minutes, plus a worker that isn't ours.
+        _kryptex.Workers[$"prl:{worker}"] = (100e12, null);
+        _kryptex.Workers["prl:stranger"] = (1e15, null);
 
         var creditor = _factory.Services.GetRequiredService<KryptexCreditor>();
         var first = await creditor.CreditOnceAsync(CancellationToken.None);
@@ -350,8 +332,9 @@ public sealed class KryptexCreditingTests : IDisposable
 
         Assert.Equal(1, first.WorkersCredited);
         Assert.Equal(0, again.WorkersCredited);
-        // 100 TH/s for 20 minutes, at $3.4e-14 per H/s-day, minus Kryptex's 3% and Otium's 10%.
-        var expected = 100e12 * 1200 * 3.4e-14 / 86_400 * 0.97 * 0.9;
+        // First sighting: one 10-minute interval at 100 TH/s, at $3.4e-14 per H/s-day, minus Kryptex's 3% and Otium's
+        // 10%. The second run at the same moment adds nothing.
+        var expected = 100e12 * 600 * 3.4e-14 / 86_400 * 0.97 * 0.9;
         var summary = await new AccountClient(_http).GetSummaryAsync(device, secret, CancellationToken.None);
         Assert.Equal(decimal.Round((decimal)expected, 2, MidpointRounding.ToZero), summary.Balance.PendingUsd);
     }

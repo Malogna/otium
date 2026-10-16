@@ -83,8 +83,12 @@ Everything technical lives under **Advanced**:
 - Credits are reduced by the fee (10% by default; 0% during a referral fee-free period).
 - Credits are held 48 hours before they can be cashed out.
 - Referrers get 5% of a friend's gross earnings, paid out of the fee.
-- Kryptex coins are credited the same way from Kryptex's per-worker hashrate history (`/{coin}/api/v1/miner/chart/{account}/{worker}`):
-  hashes × the policy's USD rate, minus Kryptex's fee, then Otium's fee and referral split.
+- Kryptex work (GPU coins, and CPU Monero when routed there) is credited from Kryptex's public worker list
+  (`/{coin}/api/v3/miner/workers/{account}`), because per-worker history (`/miner/chart`) returns 403 for "krx"
+  accounts. Each 10-minute run takes every worker's 30-minute average × the time since the last run (sampled every
+  10 minutes, that adds up to the real total: each hash sits in three overlapping windows at a third each; longer gaps
+  use the 3-hour average, for at most 3 hours). Hashes are valued at the policy's USD rate (Monero: the network rate),
+  minus Kryptex's fee, then Otium's fee and referral split.
 - The operator carries the pool's luck and the price until Kryptex's auto-exchange. `GET /admin/summary` compares what was
   credited (including `kryptexCreditedToUsersUsd`) against what the pools actually paid.
 
