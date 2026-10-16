@@ -1,4 +1,3 @@
-using System.Collections.ObjectModel;
 using System.Net.Mail;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -11,8 +10,6 @@ namespace Otium.App.ViewModels;
 /// <summary>Cash out the available balance by PayPal (email) or Monero (address).</summary>
 public partial class CashOutViewModel(AppHost host, Action close) : ViewModelBase
 {
-    public ObservableCollection<CashoutRow> Recent { get; } = [];
-
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsCrypto), nameof(DestinationLabel), nameof(DestinationPlaceholder), nameof(MinimumText))]
     [NotifyCanExecuteChangedFor(nameof(ConfirmCommand))]
@@ -61,9 +58,6 @@ public partial class CashOutViewModel(AppHost host, Action close) : ViewModelBas
         Result = null;
         OnPropertyChanged(nameof(Amount));
         OnPropertyChanged(nameof(MinimumText));
-        Recent.Clear();
-        foreach (var c in host.Account?.Balance.RecentCashouts ?? [])
-            Recent.Add(CashoutRow.From(c));
     }
 
     private bool CanConfirm() => !IsSending && Result is null && !string.IsNullOrWhiteSpace(Destination);
@@ -81,11 +75,10 @@ public partial class CashOutViewModel(AppHost host, Action close) : ViewModelBas
             var cashout = await host.RequestCashoutAsync(IsPayPal ? CashoutMethods.PayPal : CashoutMethods.Monero, Destination);
             Result = cashout.Status switch
             {
-                CashoutStatuses.Review => $"Got it. Your {Format.Money(cashout.AmountUsd)} cash-out gets a quick check first and is usually sent within a day.",
-                CashoutStatuses.Paid => $"Sent! {Format.Money(cashout.AmountUsd)} is on its way.",
-                _ => $"Done. {Format.Money(cashout.AmountUsd)} is being sent automatically, usually within a few minutes.",
+                CashoutStatuses.Review => $"Got it. Your {Format.Money(cashout.AmountUsd)} cash-out gets a quick check first and is usually sent within a day. We'll email you a receipt when it's sent.",
+                CashoutStatuses.Paid => $"Sent! {Format.Money(cashout.AmountUsd)} is on its way. A receipt is in your email.",
+                _ => $"Done. {Format.Money(cashout.AmountUsd)} is being sent automatically, usually within a few minutes. We'll email you a receipt when it's sent.",
             };
-            Recent.Insert(0, CashoutRow.From(cashout));
             OnPropertyChanged(nameof(Amount));
         }
         catch (AccountRequestException e)
@@ -118,16 +111,42 @@ public partial class CashOutViewModel(AppHost host, Action close) : ViewModelBas
     }
 }
 
-public sealed record CashoutRow(string When, string What, string Status)
+/// <summary>One cash-out in the history, in plain words: what, where to, and what happens next.</summary>
+public sealed record CashoutRow(string Amount, string Where, string When, string Status, string Detail, string Tone, string? TransactionId)
 {
-    public static CashoutRow From(CashoutInfo c) => new(
-        Format.Date(c.CreatedAt),
-        $"{Format.Money(c.AmountUsd)} via {(c.Method == CashoutMethods.PayPal ? "PayPal" : "Monero")}",
-        c.Status switch
+    public bool IsPaid => Tone == "paid";
+    public bool IsPending => Tone == "pending";
+    public bool IsFailed => Tone == "failed";
+    public bool HasTransaction => TransactionId is not null;
+
+    public static CashoutRow From(CashoutInfo c)
+    {
+        var isPayPal = c.Method == CashoutMethods.PayPal;
+        var (status, detail, tone) = c.Status switch
         {
-            CashoutStatuses.Paid => "Paid",
-            CashoutStatuses.Review => "Being checked",
-            CashoutStatuses.Failed => "Returned to balance" + (c.Note is null ? "" : $" ({c.Note})"),
-            _ => "Sending",
-        });
+            CashoutStatuses.Paid => ("Paid", PaidDetail(c), "paid"),
+            CashoutStatuses.Failed => ("Returned to balance",
+                c.Note is null ? "It didn't go through, so the money is back in your balance." : $"It didn't go through ({c.Note}), so the money is back in your balance.",
+                "failed"),
+            CashoutStatuses.Review => ("Being checked", "A quick check by a person comes first. Usually sent within a day.", "pending"),
+            CashoutStatuses.Sending when c.Note == CashoutStatuses.AwaitingClaimNote =>
+                ("Claim it in PayPal", $"PayPal emailed {c.Destination}. Open that email to claim your money.", "pending"),
+            CashoutStatuses.Sending => ("On its way", isPayPal ? "PayPal is processing it." : "Waiting for the Monero network.", "pending"),
+            _ => ("Sending", "Sent automatically, usually within a few minutes.", "pending"),
+        };
+        return new CashoutRow(
+            Format.Money(c.AmountUsd),
+            $"{(isPayPal ? "PayPal" : "Monero")} · {c.Destination}",
+            Format.Date(c.CreatedAt),
+            status,
+            detail,
+            tone,
+            c.TransactionId);
+    }
+
+    private static string PaidDetail(CashoutInfo c)
+    {
+        var when = c.UpdatedAt is { } paid ? $"Sent {Format.Date(paid)}" : "Sent";
+        return c.TransactionId is { Length: > 16 } tx ? $"{when} · transaction {tx[..8]}…{tx[^6..]}" : when;
+    }
 }

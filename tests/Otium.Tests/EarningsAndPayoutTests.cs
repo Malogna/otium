@@ -36,6 +36,10 @@ public abstract class MoneyTestBase : IDisposable
 
     protected CashoutOptions Cashouts { get; } = new();
 
+    protected OutboxEmailSender Outbox { get; } = new(NullLogger<OutboxEmailSender>.Instance);
+
+    protected CashoutReceipts Receipts => new(Store, Outbox, NullLogger<CashoutReceipts>.Instance);
+
     protected AccountRecord NewAccount(string? referredBy = null, DateTimeOffset? feeFreeUntil = null, TimeSpan? age = null, string? email = "default")
     {
         var id = Guid.NewGuid().ToString("N");
@@ -117,7 +121,10 @@ public abstract class MoneyTestBase : IDisposable
             return Task.FromResult<IReadOnlyList<PayoutOutcome>>(batch.Select(c => new PayoutOutcome(c.Id, NextStatus, "ref-" + c.Id, NextStatus == CashoutStatuses.Failed ? "bounced" : null)).ToList());
         }
 
-        public Task<PayoutOutcome> CheckAsync(CashoutRecord sending, CancellationToken ct) => Task.FromResult(new PayoutOutcome(sending.Id, CashoutStatuses.Paid));
+        /// <summary>What a follow-up check reports for a cash-out in flight; null means "still on its way".</summary>
+        public string? CheckStatus { get; set; } = CashoutStatuses.Paid;
+
+        public Task<PayoutOutcome> CheckAsync(CashoutRecord sending, CancellationToken ct) => Task.FromResult(new PayoutOutcome(sending.Id, CheckStatus));
     }
 }
 
@@ -255,7 +262,7 @@ public sealed class CashoutTests : MoneyTestBase
 
     private CashoutService Service => new(Store, [_paypal, _monero], Options.Create(Cashouts), Time, NullLogger<CashoutService>.Instance);
 
-    private CashoutProcessor Processor => new(Store, [_paypal, _monero], Time, NullLogger<CashoutProcessor>.Instance);
+    private CashoutProcessor Processor => new(Store, [_paypal, _monero], Receipts, Time, NullLogger<CashoutProcessor>.Instance);
 
     [Fact]
     public void Below_the_minimum_is_refused_and_nothing_is_debited()
@@ -369,7 +376,7 @@ public sealed class CashoutTests : MoneyTestBase
     public async Task Monero_provider_batches_cashouts_into_one_transaction_at_the_current_price()
     {
         var provider = new MoneroPayoutProvider(Wallet, Pool, NullLogger<MoneroPayoutProvider>.Instance);
-        var processor = new CashoutProcessor(Store, [provider], Time, NullLogger<CashoutProcessor>.Instance);
+        var processor = new CashoutProcessor(Store, [provider], Receipts, Time, NullLogger<CashoutProcessor>.Instance);
         var service = new CashoutService(Store, [provider], Options.Create(Cashouts), Time, NullLogger<CashoutService>.Instance);
 
         var a = NewAccount();
@@ -392,7 +399,7 @@ public sealed class CashoutTests : MoneyTestBase
     public async Task Monero_wallet_errors_leave_cashouts_queued_for_a_retry()
     {
         var provider = new MoneroPayoutProvider(Wallet, Pool, NullLogger<MoneroPayoutProvider>.Instance);
-        var processor = new CashoutProcessor(Store, [provider], Time, NullLogger<CashoutProcessor>.Instance);
+        var processor = new CashoutProcessor(Store, [provider], Receipts, Time, NullLogger<CashoutProcessor>.Instance);
         var service = new CashoutService(Store, [provider], Options.Create(Cashouts), Time, NullLogger<CashoutService>.Instance);
         var device = NewAccount();
         Fund(device, 5m);

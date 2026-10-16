@@ -134,14 +134,43 @@
                         <TextBlock Classes="good" TextWrapping="Wrap" Text="{Binding Result}" IsVisible="{Binding Result, Converter={x:Static ObjectConverters.IsNotNull}}" />
                         <Button Classes="accent big" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
                                 Content="Send my money" Command="{Binding ConfirmCommand}" />
-                        <ItemsControl ItemsSource="{Binding Recent}">
+                    </StackPanel>
+                </Border>
+
+                <!-- Cash-out history -->
+                <Border Classes="card" IsVisible="{Binding HasCashouts}">
+                    <StackPanel Spacing="12">
+                        <StackPanel Spacing="2">
+                            <TextBlock Classes="h2" Text="Your cash-outs" />
+                            <TextBlock Classes="muted" FontSize="13" Text="{Binding CashoutsSummary}"
+                                       IsVisible="{Binding CashoutsSummary, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                        </StackPanel>
+                        <ItemsControl ItemsSource="{Binding Cashouts}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate x:DataType="vm:CashoutRow">
-                                    <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,2">
-                                        <TextBlock Classes="muted" FontSize="12" Text="{Binding When}" Width="100" />
-                                        <TextBlock Grid.Column="1" FontSize="12" Text="{Binding What}" />
-                                        <TextBlock Grid.Column="2" Classes="muted" FontSize="12" Text="{Binding Status}" />
-                                    </Grid>
+                                    <Border Classes="tile">
+                                        <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <TextBlock FontWeight="SemiBold" FontSize="15" Text="{Binding Amount}" VerticalAlignment="Center" />
+                                                <TextBlock Classes="muted" FontSize="12" Text="{Binding When}" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                            <Border Grid.Column="1" Classes="pill" Classes.earning="{Binding IsPaid}" Classes.paused="{Binding IsPending}"
+                                                    Classes.problem="{Binding IsFailed}" Padding="9,3">
+                                                <TextBlock Text="{Binding Status}" FontSize="12" FontWeight="SemiBold" />
+                                            </Border>
+                                            <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Classes="muted" FontSize="12" Margin="0,4,0,0" Text="{Binding Where}" />
+                                            <Grid Grid.Row="2" Grid.ColumnSpan="2" ColumnDefinitions="*,Auto" Margin="0,2,0,0">
+                                                <TextBlock FontSize="12" TextWrapping="Wrap" Text="{Binding Detail}" VerticalAlignment="Center" />
+                                                <Button Grid.Column="1" Classes="link" FontSize="12" Content="Copy transaction"
+                                                        IsVisible="{Binding HasTransaction}"
+                                                        Command="{Binding $parent[UserControl].((vm:HomeViewModel)DataContext).CopyTransactionCommand}"
+                                                        CommandParameter="{Binding TransactionId}" />
+                                            </Grid>
+                                        </Grid>
+                                    </Border>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>

@@ -46,6 +46,9 @@ public sealed class PayPalPayoutProvider(HttpClient http, IOptions<PayPalOptions
 
     public int BatchSize => 1;
 
+    /// <summary>Shown to the user while PayPal holds money for an email that has no PayPal account yet.</summary>
+    public const string UnclaimedNote = CashoutStatuses.AwaitingClaimNote;
+
     private Uri BaseUri => new(_options.UseSandbox ? "https://api-m.sandbox.paypal.com/" : "https://api-m.paypal.com/");
 
     public async Task<IReadOnlyList<PayoutOutcome>> SendAsync(IReadOnlyList<CashoutRecord> batch, CancellationToken ct)
@@ -119,7 +122,7 @@ public sealed class PayPalPayoutProvider(HttpClient http, IOptions<PayPalOptions
     {
         "SUCCESS" => new PayoutOutcome(cashoutId, CashoutStatuses.Paid),
         // The recipient has 30 days to claim (e.g. by creating a PayPal account); after that PayPal returns the money.
-        "UNCLAIMED" => new PayoutOutcome(cashoutId, CashoutStatuses.Sending, Note: "waiting for you to claim it in PayPal"),
+        "UNCLAIMED" => new PayoutOutcome(cashoutId, CashoutStatuses.Sending, Note: UnclaimedNote),
         "FAILED" or "RETURNED" or "BLOCKED" or "REFUNDED" or "REVERSED" or "DENIED" =>
             new PayoutOutcome(cashoutId, CashoutStatuses.Failed, Note: $"PayPal: {status!.ToLowerInvariant()}"),
         _ => new PayoutOutcome(cashoutId, null), // PENDING, ONHOLD, unknown: check again later

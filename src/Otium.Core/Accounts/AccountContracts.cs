@@ -88,6 +88,8 @@ public static class EmailAddresses
 
 /// <param name="FeePercent">Otium's share of mining earnings for balance accounts, shown to the user.</param>
 /// <param name="ReferralPercent">What a referrer earns, as a percent of each invited friend's earnings.</param>
+/// <param name="RecentCashouts">The latest cash-outs, newest first.</param>
+/// <param name="PaidOutUsd">Everything ever paid out to this account.</param>
 public sealed record BalanceInfo(
     decimal AvailableUsd,
     decimal PendingUsd,
@@ -97,7 +99,8 @@ public sealed record BalanceInfo(
     decimal MinCryptoUsd,
     double FeePercent,
     double ReferralPercent,
-    IReadOnlyList<CashoutInfo> RecentCashouts);
+    IReadOnlyList<CashoutInfo> RecentCashouts,
+    decimal PaidOutUsd = 0);
 
 public static class CashoutMethods
 {
@@ -124,8 +127,15 @@ public static class CashoutStatuses
 
     /// <summary>Failed or rejected; the amount was returned to the balance.</summary>
     public const string Failed = "failed";
+
+    /// <summary>The note on a "sending" PayPal cash-out to an email that has no PayPal account yet.</summary>
+    public const string AwaitingClaimNote = "waiting for you to claim it in PayPal";
 }
 
+/// <param name="Destination">Masked, e.g. <c>al••@example.com</c>.</param>
+/// <param name="Note">Why it failed, or what the user still needs to do (claim it in PayPal); otherwise null.</param>
+/// <param name="UpdatedAt">When the status last changed; for a paid cash-out, when it was paid.</param>
+/// <param name="TransactionId">Monero transaction hash once paid, so the user can look it up.</param>
 public sealed record CashoutInfo(
     string Id,
     string Method,
@@ -133,7 +143,9 @@ public sealed record CashoutInfo(
     decimal AmountUsd,
     string Status,
     DateTimeOffset CreatedAt,
-    string? Note);
+    string? Note,
+    DateTimeOffset? UpdatedAt = null,
+    string? TransactionId = null);
 
 public static class ReferralCodes
 {

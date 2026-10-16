@@ -7,6 +7,7 @@ using Otium.Core.Pools;
 using Otium.Core.Wallets;
 using Otium.Server.Bandwidth;
 using Otium.Server.Data;
+using Otium.Server.Payouts;
 
 namespace Otium.Server.Accounts;
 
@@ -290,7 +291,8 @@ public sealed class AccountService(
                 _cashouts.MinCryptoUsd,
                 _earnings.FeePercent,
                 _earnings.ReferralPercent,
-                cashouts),
+                cashouts,
+                ToUsd(store.PaidOutMicros(account.AccountId))),
             account.Email,
             (int)store.DeviceCount(account.AccountId),
             bandwidth.Terms(account));
@@ -298,13 +300,33 @@ public sealed class AccountService(
 
     public static CashoutInfo ToInfo(CashoutRecord c) => new(
         c.Id, c.Method, MaskDestination(c.Method, c.Destination), ToUsd(c.Micros), c.Status, c.CreatedAt,
-        c.Status == CashoutStatuses.Failed ? c.Note : null);
+        UserNote(c), c.UpdatedAt, TransactionId(c));
+
+    /// <summary>
+    /// The part of a cash-out's note the user should see: why it failed, or that PayPal is waiting for them to claim
+    /// it. Review reasons are internal (they describe fraud checks) and stay hidden.
+    /// </summary>
+    private static string? UserNote(CashoutRecord c) => c.Status switch
+    {
+        CashoutStatuses.Failed => c.Note,
+        CashoutStatuses.Sending when c.Note == PayPalPayoutProvider.UnclaimedNote => c.Note,
+        _ => null,
+    };
+
+    /// <summary>The Monero transaction hash of a paid crypto cash-out (never the tx key, which the batch shares).</summary>
+    public static string? TransactionId(CashoutRecord c)
+    {
+        if (c.Method != CashoutMethods.Monero || c.Status != CashoutStatuses.Paid || c.ProviderReference is null)
+            return null;
+        var hash = c.ProviderReference.Split(' ', 2)[0];
+        return hash.Length == 64 && hash.All(char.IsAsciiHexDigit) ? hash : null;
+    }
 
     public static decimal ToUsd(long micros) => decimal.Round(micros / (decimal)OtiumStore.MicrosPerDollar, 2, MidpointRounding.ToZero);
 
     public static long ToMicros(decimal usd) => (long)decimal.Round(usd * OtiumStore.MicrosPerDollar);
 
-    private static string MaskDestination(string method, string destination)
+    public static string MaskDestination(string method, string destination)
     {
         if (method == CashoutMethods.PayPal)
         {

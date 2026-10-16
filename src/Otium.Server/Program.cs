@@ -54,6 +54,7 @@ else
     builder.Services.AddSingleton<IPayoutProvider, MoneroPayoutProvider>();
 }
 builder.Services.AddSingleton<CashoutService>();
+builder.Services.AddSingleton<CashoutReceipts>();
 builder.Services.AddSingleton<CashoutProcessor>();
 if (!builder.Configuration.GetValue<bool>("DisableBackgroundJobs"))
 {
@@ -205,12 +206,14 @@ admin.MapPost("/cashouts/{id}/reject", (string id, AdminNote body, OtiumStore st
     return Results.Ok();
 });
 
-admin.MapPost("/cashouts/{id}/mark-paid", (string id, AdminNote body, OtiumStore store, TimeProvider time) =>
+admin.MapPost("/cashouts/{id}/mark-paid", async (string id, AdminNote body, OtiumStore store, CashoutReceipts receipts, TimeProvider time, CancellationToken ct) =>
 {
     var cashout = store.FindCashout(id);
     if (cashout is null || cashout.Status is CashoutStatuses.Paid or CashoutStatuses.Failed)
         return Results.NotFound();
-    store.UpdateCashout(id, CashoutStatuses.Paid, time.GetUtcNow(), providerReference: body.Note ?? "manual");
+    var now = time.GetUtcNow();
+    store.UpdateCashout(id, CashoutStatuses.Paid, now, providerReference: body.Note ?? "manual");
+    await receipts.SendPaidAsync(store.FindCashout(id)!, now, ct);
     return Results.Ok();
 });
 
