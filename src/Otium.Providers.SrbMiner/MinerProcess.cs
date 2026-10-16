@@ -46,6 +46,7 @@ internal sealed class SrbMinerProcessFactory(HttpClient http) : IMinerProcessFac
         try
         {
             var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Could not start the GPU miner.");
+            MinerLifetime.Adopt(process); // it and its watchdog child die with Otium, even if Otium crashes
             try
             {
                 process.PriorityClass = ProcessPriorityClass.BelowNormal;

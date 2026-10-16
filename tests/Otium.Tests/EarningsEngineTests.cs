@@ -50,7 +50,12 @@ public class EarningsEngineTests
         }
 
         public Task<ProviderStatus> GetStatusAsync(CancellationToken ct) =>
-            Task.FromResult(new ProviderStatus(Running ? ProviderState.Running : ProviderState.Ready, Running ? Hashrate : 0, Detail: Detail, IsCalibrating: Calibrating));
+            Task.FromResult(Problem is not null
+                ? new ProviderStatus(ProviderState.Error, 0, Problem, Problem: Problem)
+                : new ProviderStatus(Running ? ProviderState.Running : ProviderState.Ready, Running ? Hashrate : 0, Detail: Detail, IsCalibrating: Calibrating));
+
+        /// <summary>When set, the provider reports this plain-words problem as an error.</summary>
+        public string? Problem { get; set; }
 
         public Task<RevenueEstimate> EstimateRevenueAsync(double hashrateHps, CancellationToken ct) =>
             Task.FromResult(new RevenueEstimate(0, hashrateHps * UsdPerHashPerDay, "XMR"));
@@ -106,6 +111,33 @@ public class EarningsEngineTests
                 await Engine.TickAsync(CancellationToken.None);
             }
         }
+    }
+
+    [Fact]
+    public async Task A_problem_the_provider_explains_is_shown_as_is_and_retried_later()
+    {
+        var h = new Harness();
+        h.Engine.Enable();
+        await h.TickFor(TimeSpan.FromMinutes(1));
+
+        const string problem = "Graphics card isn't mining: its dataset doesn't fit in the graphics card's free memory.";
+        h.Provider.Problem = problem;
+        await h.TickFor(EarningsEngine.TickInterval);
+        var s = h.Engine.Snapshot;
+        Assert.Equal(EngineState.Error, s.State);
+        Assert.Equal(problem, s.StatusText); // no "Something went wrong:" in front
+        Assert.Equal(problem, s.Problem);
+        Assert.False(h.Provider.Running);
+
+        var starts = h.Provider.Starts.Count;
+        await h.TickFor(TimeSpan.FromSeconds(30));
+        Assert.Equal(starts, h.Provider.Starts.Count); // waits before retrying, still explaining why
+        Assert.Equal(problem, h.Engine.Snapshot.Problem);
+
+        h.Provider.Problem = null;
+        await h.TickFor(EarningsEngine.ErrorRetry);
+        Assert.Equal(starts + 1, h.Provider.Starts.Count);
+        Assert.Null(h.Engine.Snapshot.Problem);
     }
 
     [Fact]
