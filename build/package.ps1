@@ -13,9 +13,17 @@
     Windows and Linux packages can be built on any OS; macOS packages need a Mac (Apple's codesign/pkgbuild).
     Output lands in artifacts/releases/<runtime>/, which is also the Velopack update feed for that channel.
 
-    Optional signing (set as environment variables, e.g. CI secrets):
+    Release settings baked into the app (parameters, or environment variables in CI):
+      -ServerUrl     / OTIUM_RELEASE_SERVER_URL    the production Otium server, e.g. https://api.example.com
+      -FeeWallet     / OTIUM_RELEASE_FEE_WALLET    XMR address for the disclosed app fee (own-wallet mode)
+      -HoneygainKey  / OTIUM_RELEASE_HONEYGAIN_KEY Honeygain SDK publisher key (internet sharing)
+    Without a server URL the build talks to http://localhost:5080, which is only right for local testing.
+    Release notes come from docs/release-notes/<version>.md when that file exists.
+
+    Optional signing (set as environment variables, e.g. CI secrets). See docs/code-signing.md.
       SC_WIN_SIGN_PARAMS          signtool.exe arguments, e.g. '/a /fd sha256 /tr http://timestamp.digicert.com /td sha256'
-      SC_WIN_AZURE_SIGN_METADATA  path to an Azure Trusted Signing metadata.json
+      SC_WIN_SIGN_TEMPLATE        a custom signing command with {{file}}, e.g. for a cloud-HSM vendor's tool
+      SC_WIN_AZURE_SIGN_METADATA  path to an Azure Artifact (Trusted) Signing metadata.json
       SC_APPLE_APP_IDENTITY       "Developer ID Application: Name (TEAMID)"
       SC_APPLE_INSTALL_IDENTITY   "Developer ID Installer: Name (TEAMID)"
       SC_APPLE_NOTARY_PROFILE     keychain profile created with `xcrun notarytool store-credentials`
@@ -24,11 +32,15 @@
     pwsh build/package.ps1                          # default runtimes for this OS
     pwsh build/package.ps1 -Runtimes win-x64 -Version 0.2.0
     pwsh build/package.ps1 -Runtimes linux-x64 -Clean      # rebuild the current version
+    pwsh build/package.ps1 -Runtimes win-x64 -ServerUrl https://api.example.com
 #>
 param(
     [string[]] $Runtimes,
     [string] $Version,
     [string] $Configuration = 'Release',
+    [string] $ServerUrl = $env:OTIUM_RELEASE_SERVER_URL,
+    [string] $FeeWallet = $env:OTIUM_RELEASE_FEE_WALLET,
+    [string] $HoneygainKey = $env:OTIUM_RELEASE_HONEYGAIN_KEY,
     # Delete existing packages for these runtimes first. Needed to rebuild the same version locally;
     # leave it off for real releases so Velopack can build delta updates from the previous version.
     [switch] $Clean
@@ -55,6 +67,14 @@ if (-not $Runtimes) {
 
 function Get-HostOs { if ($IsMacOS) { 'osx' } elseif ($IsLinux) { 'linux' } else { 'win' } }
 
+# Settings baked into the app (read by AppIdentity). Empty ones are left out, so the code defaults apply.
+$releaseProps = @()
+if ($ServerUrl) { $releaseProps += "-p:OtiumServerUrl=$($ServerUrl.Trim())" }
+else { Write-Warning 'No -ServerUrl / OTIUM_RELEASE_SERVER_URL: this build talks to http://localhost:5080 (fine for testing, not for users).' }
+if ($FeeWallet) { $releaseProps += "-p:OtiumFeeWallet=$($FeeWallet.Trim())" }
+if ($HoneygainKey) { $releaseProps += "-p:OtiumHoneygainKey=$($HoneygainKey.Trim())" }
+$releaseNotes = Join-Path $root "docs/release-notes/$Version.md"
+
 Push-Location $root
 try {
     dotnet tool restore | Out-Null
@@ -73,7 +93,7 @@ try {
         if (Test-Path $publishDir) { Remove-Item $publishDir -Recurse -Force }
         if ($Clean -and (Test-Path $releaseDir)) { Remove-Item $releaseDir -Recurse -Force }
         dotnet publish $app -c $Configuration -r $rid --self-contained true `
-            -p:Version=$Version -p:DebugType=None -p:DebugSymbols=false -o $publishDir
+            -p:Version=$Version -p:DebugType=None -p:DebugSymbols=false @releaseProps -o $publishDir
         if ($LASTEXITCODE) { throw "dotnet publish failed for $rid" }
 
         $mainExe = if ($os -eq 'win') { 'Otium.exe' } else { 'Otium' }
@@ -91,12 +111,14 @@ try {
             '--channel', $rid,
             '--outputDir', $releaseDir
         )
+        if (Test-Path $releaseNotes) { $packArgs += '--releaseNotes', $releaseNotes }
 
         switch ($os) {
             'win' {
                 $packArgs += '--icon', (Join-Path $root 'src/Otium.App/Assets/otium.ico')
                 $packArgs += '--shortcuts', 'Desktop,StartMenuRoot'
                 if ($env:SC_WIN_SIGN_PARAMS) { $packArgs += '--signParams', $env:SC_WIN_SIGN_PARAMS }
+                if ($env:SC_WIN_SIGN_TEMPLATE) { $packArgs += '--signTemplate', $env:SC_WIN_SIGN_TEMPLATE }
                 if ($env:SC_WIN_AZURE_SIGN_METADATA) { $packArgs += '--azureTrustedSignFile', $env:SC_WIN_AZURE_SIGN_METADATA }
             }
             'linux' {

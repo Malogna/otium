@@ -174,7 +174,8 @@ active device, and the server credits each user's balance from their computer's 
 - **To ship it:**
   1. Sign the Honeygain publisher agreement and get an API key.
   2. Put the SDK libraries next to the app: `hgsdk.dll` (Windows), `libhgsdk.so` (Linux), `libhgsdk.dylib` (macOS).
-  3. Set the key in `AppIdentity.HoneygainApiKey` or `OTIUM_HONEYGAIN_KEY`.
+  3. Set the key: the `OTIUM_HONEYGAIN_KEY` secret for release builds (baked in at build time), or the
+     `OTIUM_HONEYGAIN_KEY` environment variable at runtime.
   4. On the server, set `Bandwidth:Enabled=true`, `PartnerName` and the rates.
   
   Without the library or key, the option stays hidden.
@@ -244,7 +245,11 @@ pwsh build/package.ps1
 | Linux x64 | `Otium.Desktop-linux-x64.AppImage` | Needs the standard X11 session libraries (`libice6 libsm6`) |
 | macOS arm64 / x64 | `.pkg` + zip | Built on macOS only (CI) |
 
-**Releasing:** push a tag such as `v0.2.0`. `.github/workflows/release.yml` tests, builds every platform and publishes one GitHub release. To turn on auto-updates for installed copies, set `AppIdentity.UpdateUrl` to the repository URL.
+**Releasing:** push a tag such as `v0.1.0`. `.github/workflows/release.yml` checks the release settings, tests, builds
+every platform and publishes one GitHub release, which is also the auto-update feed (`AppIdentity.UpdateUrl`). The
+production server URL is baked in at build time from the `OTIUM_SERVER_URL` repository variable (locally:
+`pwsh build/package.ps1 -ServerUrl https://...`); the workflow won't release without it. Step by step, including the
+first release: [docs/releasing.md](docs/releasing.md). Signing: [docs/code-signing.md](docs/code-signing.md).
 
 ## Project layout
 
@@ -270,9 +275,11 @@ build/                       dev.ps1 (dev mode), package.ps1 (installers), icon 
   - The design keeps balances in USD for compute bought from users and never offers a withdrawable crypto balance, but this needs counsel to confirm.
   - Collect tax details (W-9/W-8) before anyone passes the yearly reporting threshold.
 - **PayPal approval.** Payouts must be enabled on a business account, and PayPal pre-approves crypto-related businesses. Describe the mining revenue source honestly. Until approved, PayPal cash-outs land in the review queue for manual payment.
-- **Deploy the server** behind HTTPS with backups of the SQLite database. Set `AppIdentity.DefaultServerUrl`.
+- **Deploy the server** behind HTTPS with backups of the SQLite database. Set the `OTIUM_SERVER_URL` repository
+  variable so release builds use it.
 - **Fund the hot wallet** in `monero-wallet-rpc` and keep only what payouts need in it.
-- **Code signing** for Windows and macOS: add the certificates as the CI secrets listed in the workflow.
+- **Code signing** for Windows and macOS: see [docs/code-signing.md](docs/code-signing.md) (Azure Artifact Signing or
+  a cloud-HSM certificate for Windows, Developer ID and notarization for macOS).
 - **Real-machine run:** do a real mining run on your RTX 3080 to confirm SRBMiner's stats format and the GPU speed units
   (including `pearlhash` and `quantus`, and that Kryptex's per-worker chart reports H/s).
 - **Kryptex:** confirm in writing that one operator account may aggregate an app's whole install base, and ask how Pearl's
