@@ -140,12 +140,19 @@ Run it locally:
 dotnet run --project src/Otium.Server
 ```
 
+**Operator dashboard:** open `/admin` on the server (e.g. `https://your-server/admin`) and enter the `Admin:Token`. It shows
+what was credited against what was paid out and what is still owed, a MoneroOcean check (pool earned vs. credited), and
+the cash-out review queue with Approve, Reject (the note is shown to the user) and Mark paid buttons, plus the other
+cash-out statuses. The page holds no data itself: the token stays in that browser tab's session storage and is sent only
+as a header to the API below, under a strict content security policy. It's served only when `Admin:Token` is set, and
+the admin API is rate-limited per IP. Serve it over HTTPS only.
+
 Operator endpoints:
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /admin/summary` | Credited vs. pool-earned totals, money owed to users, pool address load, bandwidth credited (GB and USD) to check against the partner's statements |
-| `GET /admin/cashouts?status=review` | The review queue |
+| `GET /admin/summary` | Credited vs. pool-earned totals, money owed to users (balances and unpaid cash-outs), pool address load, bandwidth credited (GB and USD) to check against the partner's statements. Ledger totals still load when the pool API is down (`poolError`). |
+| `GET /admin/cashouts?status=review` | The review queue (or `queued`, `sending`, `paid`, `failed`), with the account's email, age, lifetime earnings, payouts and how many other accounts used the destination |
 | `POST /admin/cashouts/{id}/approve` | Release a reviewed cash-out for automatic sending |
 | `POST /admin/cashouts/{id}/reject` | Reject it; the amount goes back to the balance (`{"note": "..."}`) |
 | `POST /admin/cashouts/{id}/mark-paid` | Record a payout you made by hand (`{"note": "PayPal txn ..."}`) |
@@ -186,7 +193,7 @@ You need the .NET 10 SDK. On this machine it's installed per-user, so add it to 
 $env:PATH = "$env:LOCALAPPDATA\Microsoft\dotnet;$env:PATH"
 ```
 
-Run the tests (222, covering accounts and sign-in, crediting, cash-outs and receipts, invites and the leaderboard, fraud rules, GPU profit switching and policy, Kryptex crediting, internet sharing, live electricity prices, the simulated pool, wallet checksums and the engine):
+Run the tests (227, covering accounts and sign-in, crediting, cash-outs and receipts, the operator dashboard, invites and the leaderboard, fraud rules, GPU profit switching and policy, Kryptex crediting, internet sharing, live electricity prices, the simulated pool, wallet checksums and the engine):
 
 ```bash
 dotnet test
@@ -213,7 +220,8 @@ Sign-in codes are printed in the console. Closing the app window stops everythin
 | `-Reset` | Wipe dev data (`artifacts/dev`) first |
 | `-Speedup N` | Change the earnings speed-up |
 
-Server admin summary while it runs: `curl -H "X-Admin-Token: dev" http://localhost:5080/admin/summary`. It compares what
+Operator dashboard while it runs: http://localhost:5080/admin (token `dev`). Or the raw summary:
+`curl -H "X-Admin-Token: dev" http://localhost:5080/admin/summary`. It compares what
 users were credited against what the simulated pool paid, which is a quick check that crediting is right.
 
 ### Running the app on its own

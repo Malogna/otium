@@ -148,9 +148,23 @@ app.MapGet("/healthz", () => Results.Ok("ok"));
 if (app.Environment.IsDevelopment() || app.Configuration.GetValue<bool>("DevMode:Enabled"))
     app.MapGet("/dev/outbox", (OutboxEmailSender outbox) => Results.Ok(outbox.Sent.Reverse()));
 
-// ---------- operator API ----------
+// ---------- operator dashboard and API ----------
 
-var admin = app.MapGroup("/admin").AddEndpointFilter(async (context, next) =>
+// The dashboard page and its assets hold no data (it asks for the token, then calls the API below), so they're served
+// without the token, but only when an admin token is configured at all.
+IResult AdminAsset(HttpContext context, string content, string contentType)
+{
+    if (context.RequestServices.GetRequiredService<IOptions<AdminOptions>>().Value.Token.Length == 0)
+        return Results.NotFound();
+    AdminDashboard.AddSecurityHeaders(context.Response);
+    return Results.Text(content, contentType);
+}
+
+app.MapGet("/admin", (HttpContext context) => AdminAsset(context, AdminDashboard.Html, "text/html; charset=utf-8")).RequireRateLimiting("per-ip");
+app.MapGet("/admin/dashboard.js", (HttpContext context) => AdminAsset(context, AdminDashboard.Script, "text/javascript; charset=utf-8")).RequireRateLimiting("per-ip");
+app.MapGet("/admin/dashboard.css", (HttpContext context) => AdminAsset(context, AdminDashboard.Css, "text/css; charset=utf-8")).RequireRateLimiting("per-ip");
+
+var admin = app.MapGroup("/admin").RequireRateLimiting("per-ip").AddEndpointFilter(async (context, next) =>
 {
     var configured = context.HttpContext.RequestServices.GetRequiredService<IOptions<AdminOptions>>().Value.Token;
     var presented = context.HttpContext.Request.Headers["X-Admin-Token"].ToString();
@@ -159,37 +173,68 @@ var admin = app.MapGroup("/admin").AddEndpointFilter(async (context, next) =>
     return await next(context);
 });
 
-admin.MapGet("/summary", async (OtiumStore store, IMoneroPoolApi pool, TimeProvider time, CancellationToken ct) =>
+admin.MapGet("/summary", async (OtiumStore store, IMoneroPoolApi pool, TimeProvider time, ILogger<Program> logger, CancellationToken ct) =>
 {
     var totals = store.Totals(time.GetUtcNow());
-    double poolEarnedXmr = 0;
-    foreach (var (address, _) in store.PoolWalletLoads())
+    double poolEarnedXmr = 0, price = 0;
+    string? poolError = null;
+    try
     {
-        if (await pool.GetMinerStatsAsync(address, ct) is { } stats)
-            poolEarnedXmr += stats.PaidXmr + stats.PendingXmr;
+        foreach (var (address, _) in store.PoolWalletLoads())
+        {
+            if (await pool.GetMinerStatsAsync(address, ct) is { } stats)
+                poolEarnedXmr += stats.PaidXmr + stats.PendingXmr;
+        }
+        price = (await pool.GetNetworkStatsAsync(ct)).PriceUsd;
     }
-    var price = (await pool.GetNetworkStatsAsync(ct)).PriceUsd;
+    catch (Exception e) when (e is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException && !ct.IsCancellationRequested)
+    {
+        // The ledger totals are still worth showing while the pool API is down.
+        logger.LogWarning(e, "Pool lookup for the admin summary failed");
+        poolError = "the pool API didn't answer";
+    }
     var bandwidthTotals = store.BandwidthTotals();
+    var kryptexMicros = store.CreditedWithReferencePrefix("kx:");
+    var bandwidthMicros = store.CreditedWithReferencePrefix("bw:");
     return Results.Ok(new
     {
         creditedToUsersUsd = AccountService.ToUsd(totals.Credited),
+        // Earnings credited from MoneroOcean mining only, to compare with poolEarnedUsdAtTodaysPrice.
+        moneroOceanCreditedToUsersUsd = AccountService.ToUsd(totals.Credited - kryptexMicros - bandwidthMicros),
         referralRewardsUsd = AccountService.ToUsd(totals.Referral),
         paidOutUsd = AccountService.ToUsd(totals.Paid),
         owedToUsersUsd = AccountService.ToUsd(totals.Liability),
+        // Already debited from balances but not paid yet (queued, in review or being sent): still owed.
+        inOpenCashoutsUsd = AccountService.ToUsd(store.OpenCashoutMicros()),
         poolEarnedXmr,
         poolEarnedUsdAtTodaysPrice = Math.Round(poolEarnedXmr * price, 2),
+        poolError,
         reviewQueue = store.CashoutsWithStatus(CashoutStatuses.Review).Count,
         poolAddresses = store.PoolWalletLoads().Select(w => new { w.Address, w.Accounts }),
         // Compare with the bandwidth partner's publisher statements.
         bandwidthCreditedGb = Math.Round(bandwidthTotals.Bytes / BandwidthService.BytesPerGb, 3),
         bandwidthCreditedToUsersUsd = AccountService.ToUsd(bandwidthTotals.Micros),
         // GPU coins mined on Kryptex (compare with Kryptex's paid + unpaid totals for the operator account).
-        kryptexCreditedToUsersUsd = AccountService.ToUsd(store.CreditedWithReferencePrefix("kx:")),
+        kryptexCreditedToUsersUsd = AccountService.ToUsd(kryptexMicros),
     });
 });
 
+// Each cash-out with what a reviewer needs to decide: who the account is and whether the destination is shared.
 admin.MapGet("/cashouts", (string? status, OtiumStore store) =>
-    Results.Ok(store.CashoutsWithStatus(string.IsNullOrEmpty(status) ? CashoutStatuses.Review : status)));
+    Results.Ok(store.CashoutsWithStatus(string.IsNullOrEmpty(status) ? CashoutStatuses.Review : status).Select(c =>
+    {
+        var account = store.FindAccount(c.AccountId);
+        return new
+        {
+            c.Id, c.AccountId, c.Method, c.Destination, c.Micros, c.Status, c.CreatedAt, c.UpdatedAt, c.ProviderReference, c.Note, c.Attempts,
+            amountUsd = AccountService.ToUsd(c.Micros),
+            accountEmail = account?.Email,
+            accountCreatedAt = account?.CreatedAt,
+            lifetimeEarnedUsd = AccountService.ToUsd(store.LifetimeEarningMicros(c.AccountId)),
+            paidOutUsd = AccountService.ToUsd(store.PaidOutMicros(c.AccountId)),
+            otherAccountsUsingDestination = store.OtherAccountsUsingDestination(c.Destination, c.AccountId),
+        };
+    })));
 
 admin.MapPost("/cashouts/{id}/approve", (string id, OtiumStore store, TimeProvider time) =>
 {
