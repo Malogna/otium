@@ -280,7 +280,7 @@ You need the .NET 10 SDK. On this machine it's installed per-user, so add it to 
 $env:PATH = "$env:LOCALAPPDATA\Microsoft\dotnet;$env:PATH"
 ```
 
-Run the tests (227, covering accounts and sign-in, crediting, cash-outs and receipts, the operator dashboard, invites and the leaderboard, fraud rules, GPU profit switching and policy, Kryptex crediting, internet sharing, live electricity prices, the simulated pool, wallet checksums and the engine):
+Run the tests (314, covering accounts and sign-in, data export and deletion, crediting on MoneroOcean and Kryptex, CPU pool routing, crypto payouts (addresses, the Bitcoin treasury, THORChain swaps, sanctions screening) and receipts, the operator dashboard, the reverse proxy, invites and the leaderboard, fraud rules, GPU profit switching, policy and stall failover, internet sharing, live electricity prices, the simulated pool, wallet checksums and the engine):
 
 ```bash
 dotnet test
