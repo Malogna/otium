@@ -351,7 +351,7 @@ public partial class SettingsViewModel : ViewModelBase
         PayoutError = _host.Provider.ValidatePayoutAddress(PayoutAddress);
         if (PayoutError is not null)
             return;
-        _host.Settings.PayoutAddress = PayoutAddress.Trim();
+        _host.Settings.PayoutAddress = Core.Wallets.PayoutTarget.Normalize(PayoutAddress);
         _host.SaveSettings();
         _ = _host.SyncAccountAsync(CancellationToken.None);
         PayoutSaved = "Saved. New earnings go to this address.";

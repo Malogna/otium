@@ -1,8 +1,9 @@
 using Otium.Core.Gpu;
+using Otium.Core.Pools;
 
 namespace Otium.Providers.SrbMiner;
 
-public sealed record GpuPoolEndpoint(string Host, int Port)
+public sealed record GpuPoolEndpoint(string Host, int Port, bool Tls = false)
 {
     /// <summary>
     /// MoneroOcean's plain stratum port. GPU algorithms must be pinned with "worker~algo" in the password;
@@ -23,6 +24,10 @@ public sealed record PoolLogin(GpuPoolEndpoint Pool, string Wallet, string Passw
     /// <summary>Kryptex: "account.worker", so the pool reports this worker's hashrate separately for crediting.</summary>
     public static PoolLogin Kryptex(GpuPoolEndpoint pool, string account, string worker) =>
         new(pool, $"{account}.{SrbMinerArgs.SanitizeWorker(worker)}", "x");
+
+    /// <summary>unMineable: "COIN:address.worker#referral", paid to the slice's own target in its coin.</summary>
+    public static PoolLogin Unmineable(GpuPoolEndpoint pool, string target, string worker, string? referralCode) =>
+        new(pool, PayoutRouting.UnmineableLogin(target, worker, referralCode), "x");
 }
 
 internal static class SrbMinerArgs
@@ -44,6 +49,8 @@ internal static class SrbMinerArgs
             "--api-port", apiPort.ToString(System.Globalization.CultureInfo.InvariantCulture),
             "--api-rig-name", "otium",
         };
+        if (login.Pool.Tls)
+            args.AddRange(["--tls", "true"]);
 
         if (gpus.All(g => g.Vendor != GpuVendor.Nvidia))
             args.Add("--disable-gpu-nvidia");
@@ -53,9 +60,5 @@ internal static class SrbMinerArgs
         return args;
     }
 
-    internal static string SanitizeWorker(string worker)
-    {
-        var cleaned = new string(worker.Where(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_').ToArray());
-        return cleaned.Length == 0 ? "otium" : cleaned[..Math.Min(cleaned.Length, 32)];
-    }
+    internal static string SanitizeWorker(string worker) => PayoutRouting.SanitizeWorker(worker);
 }

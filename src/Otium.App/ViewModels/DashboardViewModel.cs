@@ -208,8 +208,10 @@ public partial class DashboardViewModel : ViewModelBase
     {
         if (_poolDashboard is not null)
             Launch.Open(_poolDashboard.ToString());
-        else if (!string.IsNullOrWhiteSpace(_host.Settings.PayoutAddress))
-            Launch.Open(Core.Pools.MoneroOceanClient.DashboardUrl(_host.Settings.PayoutAddress).ToString());
+        else if (Core.Wallets.PayoutTarget.ParseOrNull(_host.Settings.PayoutAddress) is { } target)
+            Launch.Open((target.Coin == Core.Wallets.PayoutCoins.Monero
+                ? Core.Pools.MoneroOceanClient.DashboardUrl(target.Address)
+                : Core.Pools.UnmineableClient.DashboardUrl(target)).ToString());
     }
 
     [RelayCommand]

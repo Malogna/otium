@@ -65,7 +65,7 @@ public sealed class FeeSchedule(FeePolicy policy, string userWallet, string? app
 
     public bool HasActiveReferrer(DateTimeOffset now) =>
         !string.IsNullOrWhiteSpace(standing.ReferrerWallet)
-        && !string.Equals(standing.ReferrerWallet, userWallet, StringComparison.Ordinal)
+        && !Wallets.PayoutTarget.SameAs(standing.ReferrerWallet, userWallet)
         && standing.ReferredAt is { } referredAt
         && now < referredAt + Policy.ReferrerRewardPeriod;
 

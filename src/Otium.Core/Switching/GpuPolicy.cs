@@ -14,12 +14,15 @@ public sealed record GpuPolicy(DateTimeOffset GeneratedAt, IReadOnlyList<GpuAlgo
         Routes.FirstOrDefault(r => string.Equals(r.Name, name, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
-    /// The policy without operator pools. Own-wallet users are paid by MoneroOcean directly, so Kryptex coins (mined
-    /// to Otium's Kryptex account) don't apply to them.
+    /// The policy without operator pools: Kryptex coins are mined to Otium's own Kryptex account, so they don't apply
+    /// to users the pool pays directly.
     /// </summary>
-    public GpuPolicy WithoutOperatorPools()
+    public GpuPolicy WithoutOperatorPools() => OnlyRoutes(GpuRoutes.MoneroOcean, GpuRoutes.Unmineable);
+
+    /// <summary>The policy limited to routes of the given kinds, e.g. only MoneroOcean for a Monero payout.</summary>
+    public GpuPolicy OnlyRoutes(params string[] kinds)
     {
-        var routes = Routes.Where(r => r.Kind == GpuRoutes.MoneroOcean).ToList();
+        var routes = Routes.Where(r => kinds.Contains(r.Kind, StringComparer.OrdinalIgnoreCase)).ToList();
         return this with
         {
             Routes = routes,
@@ -61,12 +64,17 @@ public static class GpuTiers
 /// <param name="Kind">One of <see cref="GpuRoutes"/>: decides how the miner logs in.</param>
 /// <param name="User">
 /// Pool account the work is credited to (the operator's Kryptex account); the miner logs in as "User.worker".
-/// Null for MoneroOcean, which uses the account's pool wallet and pins the algorithm in the password.
+/// Null for MoneroOcean, which uses the account's pool wallet and pins the algorithm in the password, and for
+/// unMineable, which logs in with the payout target ("COIN:address.worker#referral").
 /// </param>
-public sealed record GpuPoolRoute(string Name, string Kind, string Host, int Port, string? User);
+/// <param name="Tls">Connect with TLS (unMineable's 443 and 4444 ports).</param>
+public sealed record GpuPoolRoute(string Name, string Kind, string Host, int Port, string? User, bool Tls = false);
 
 public static class GpuRoutes
 {
     public const string MoneroOcean = "moneroocean";
     public const string Kryptex = "kryptex";
+
+    /// <summary>unMineable: mines the algorithm's coin and pays the user's own address in the coin they chose.</summary>
+    public const string Unmineable = "unmineable";
 }

@@ -13,6 +13,7 @@
   <ItemGroup>
     <AssemblyMetadata Include="Otium.ServerUrl" Value="$(OtiumServerUrl)" Condition="'$(OtiumServerUrl)' != ''" />
     <AssemblyMetadata Include="Otium.FeeWallet" Value="$(OtiumFeeWallet)" Condition="'$(OtiumFeeWallet)' != ''" />
+    <AssemblyMetadata Include="Otium.UnmineableReferral" Value="$(OtiumUnmineableReferral)" Condition="'$(OtiumUnmineableReferral)' != ''" />
     <AssemblyMetadata Include="Otium.HoneygainKey" Value="$(OtiumHoneygainKey)" Condition="'$(OtiumHoneygainKey)' != ''" />
   </ItemGroup>
 

@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using Otium.Core.Providers;
 using Otium.Core.Wallets;
 
 namespace Otium.Core.Pools;
@@ -202,6 +203,18 @@ public sealed class UnmineableClient(HttpClient http) : IUnmineableApi
             }
         }
         return result;
+    }
+
+    /// <summary>
+    /// What unMineable holds for a target, as the app shows it. An address nobody has mined to yet reads as an empty
+    /// balance with the coin's threshold.
+    /// </summary>
+    public static async Task<PayoutBalance> GetPayoutBalanceAsync(IUnmineableApi api, PayoutTarget target, CancellationToken ct)
+    {
+        var address = await api.GetAddressAsync(target, ct);
+        var paid = address.Uuid is { } uuid ? (await api.GetStatsAsync(uuid, ct)).Paid : 0;
+        var threshold = address.Threshold > 0 ? address.Threshold : target.Coin.Threshold;
+        return new PayoutBalance((double)address.Balance, (double)paid, target.Coin.Ticker, (double)threshold, DashboardUrl(target));
     }
 
     private static string? Text(JsonElement e, string name) =>
