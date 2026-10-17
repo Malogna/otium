@@ -313,6 +313,15 @@ public partial class HomeViewModel : ViewModelBase
         if (!pool.AutoPay)
             warnings.Add($"Auto pay is off for your address at {pool.PoolName}, so it won't pay you by itself. Turn on \"Auto pay\" on your address page.");
         warnings.AddRange(pool.Problems ?? []);
+
+        // Monero users' graphics cards earn on unMineable, which pays the same address separately.
+        if (_host.GpuPoolBalance is { } gpu)
+        {
+            GoalText += $" · plus {Format.Coin(gpu.Pending, gpu.Coin)} at {gpu.PoolName} from the graphics card, paid out at {Format.Coin(gpu.MinimumPayout, gpu.Coin)}";
+            if (!gpu.AutoPay)
+                warnings.Add($"Auto pay is off for your address at {gpu.PoolName}, so your graphics card's earnings won't be paid by themselves. Turn on \"Auto pay\" on unMineable's address page.");
+            warnings.AddRange(gpu.Problems ?? []);
+        }
         PoolWarning = string.Join(" ", warnings);
     }
 

@@ -132,12 +132,24 @@ public class UnmineableMiningTests
     }
 
     [Fact]
-    public void Unmineable_can_not_pay_a_monero_target()
+    public void Monero_users_graphics_cards_mine_pearl_on_unmineable_paid_in_xmr()
     {
         var pearl = GpuAlgorithms.Find("pearlhash")!;
-        var options = new ProviderRunOptions(new MiningTarget(TestAddresses.Generate(), PayoutRole.User), "w", 100);
-        Assert.Throws<InvalidOperationException>(() => Gpu(Policy).LoginFor(pearl, options));
-        // Without the server's policy there's no unMineable route or price to mine Pearl with.
+        var xmr = TestAddresses.Generate();
+        var options = new ProviderRunOptions(new MiningTarget($"XMR:{xmr}", PayoutRole.User), "w", 100);
+
+        var login = Gpu(Policy).LoginFor(pearl, options);
+        Assert.Equal(new GpuPoolEndpoint("pearlpow.unmineable.com", 443, Tls: true), login.Pool);
+        Assert.Equal($"XMR:{xmr}.w#ztjq-jr7s", login.Wallet);
+
+        // Outside the US only: US users' graphics cards stay on MoneroOcean.
+        Assert.Equal(PayoutPool.Unmineable, PayoutRouting.GpuPoolFor($"XMR:{xmr}", unitedStates: false));
+        Assert.Equal(PayoutPool.MoneroOcean, PayoutRouting.GpuPoolFor($"XMR:{xmr}", unitedStates: true));
+        Assert.Equal(PayoutPool.Unmineable, PayoutRouting.GpuPoolFor(Usdt, unitedStates: false));
+        Assert.Null(PayoutRouting.GpuPoolFor("nonsense", unitedStates: false));
+
+        // A bad target can't be logged in with, and without the server's policy there's no unMineable route or price.
+        Assert.Throws<InvalidOperationException>(() => Gpu(Policy).LoginFor(pearl, options with { Target = new MiningTarget("nonsense", PayoutRole.User) }));
         Assert.Throws<InvalidOperationException>(() => Gpu(null).LoginFor(pearl, options with { Target = new MiningTarget(Usdt, PayoutRole.User) }));
     }
 
@@ -158,6 +170,9 @@ public class UnmineableMiningTests
     [Fact]
     public void The_new_unmineable_algorithms_use_srbminers_names()
     {
+        // Xelis loses money at normal power prices (October 2026), so it only runs on free power, like FishHash.
+        Assert.Equal(GpuTiers.FreePowerOnly, GpuAlgorithms.Find("xelishash")!.DefaultTier);
+        Assert.Equal(GpuTiers.Primary, GpuAlgorithms.Find("pearlhash")!.DefaultTier);
         Assert.Equal("xelishashv3", GpuAlgorithms.Find("xelishash")!.MinerName);
         Assert.Equal(GpuRoutes.Unmineable, GpuAlgorithms.Find("fishhash")!.DefaultRoute);
         Assert.Equal(GpuRoutes.Unmineable, GpuAlgorithms.Find("pearlhash")!.DefaultRoute);

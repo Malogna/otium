@@ -30,6 +30,17 @@ public static class PayoutRouting
         _ => PayoutPool.Unmineable,
     };
 
+    /// <summary>
+    /// The pool a payout target's graphics card mines on. Monero users outside the US also use unMineable there: its
+    /// GPU coins (Pearl) pay far more than MoneroOcean's GPU algorithms, and it pays them in XMR to the same address.
+    /// US users stay on MoneroOcean, since unMineable's terms exclude US persons. Null for an invalid target.
+    /// </summary>
+    public static PayoutPool? GpuPoolFor(string? target, bool unitedStates) => PoolFor(target) switch
+    {
+        PayoutPool.MoneroOcean when !unitedStates => PayoutPool.Unmineable,
+        var pool => pool,
+    };
+
     /// <summary>Whether <paramref name="other"/> can be mined on the same pool as <paramref name="user"/>.</summary>
     public static bool SamePool(string? user, string? other) => PoolFor(user) is { } pool && PoolFor(other) == pool;
 
