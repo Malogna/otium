@@ -55,7 +55,6 @@ Otium's own payout target is `USDT:TB2xNFAjGarYPykmt1dZQz8hJb2Rhry4wJ` (TRC-20) 
 | Balance | ✅ 0.000402 USDT on Otium's address after the run, shown as `balance_mining`. `rewarded.past_24h` stays 0 until the daily cut-off. |
 | `/v5/account/{uuid}/workers` | ✅ Per algorithm: `workers[{uuid, online, name, last (ms), rhr, chr (strings, H/s), referral}]` and 5-minute `chart` points. `chr` is the last hour's accepted share difficulty ÷ 3600 s (7 × 100,001 ÷ 3600 = 194.4 H/s; Pearl: 1 × 4,194,304 × 2³² ÷ 3600 = 5.0 TH/s), so it lags real hashrate for the first hour. Fixtures are in `PayoutTargetTests.cs`. |
 | Auto-pay | ⚠️ A new USDT (TRC-20) address starts with `auto:false`; the new BNB (BSC) address started with `auto:true`. With auto-pay off, unMineable never pays by itself: the owner must tick "Auto pay" (or press "Pay out") on the address page, which posts to `/v1/address/{uuid}/setting/auto_pay`. Otium must not change that for users, so Phase 4 shows a warning with a link to the address page whenever `auto` is false. |
-| Mysterium node | ⏳ Not run yet: it needs downloading `myst` and a one-time admin install of `myst_supervisor`, which the operator has to approve. |
 
 Plan changes from these results:
 - Phase 2: the `#code` suffix works as documented; build it into every unMineable login. Use TLS on 443 for both
@@ -63,6 +62,32 @@ Plan changes from these results:
 - Phase 4: the "At the pool" panel must say plainly when auto-pay is off and link to the address page.
 - Hashrate shown from unMineable is an hourly average; the app should keep showing the miner's own hashrate and use
   unMineable's only to confirm the worker is seen.
+
+#### Phase 0 results: Mysterium node (17 October 2026, 16:05–16:15 UTC)
+
+`myst` 1.39.7 for Windows (`myst_windows_amd64.zip`, 24.5 MB, SHA-256 matches GitHub's `1c1cced4…ef1c`), run with
+its own data folder, the web UI off and the local API (Tequila) on 127.0.0.1:4050 with a generated password.
+
+| Check | Result |
+|---|---|
+| Binaries | ⚠️ `myst.exe` and `myst_supervisor.exe` are **not Authenticode-signed**. Expect SmartScreen and antivirus friction; Otium should verify the SHA-256 (as it does for XMRig/SRBMiner) and say so in the consent screen. |
+| `myst daemon` without admin | ✅ The API is up in about 5 seconds. On start it runs PowerShell to switch off Windows Internet Connection Sharing; without admin that fails with a warning and nothing else breaks. |
+| Identity | ✅ `PUT /identities/current {"passphrase":""}` creates and unlocks one (`0x8371…712d`, channel `0x4061…24E6`). The keystore lives in the node's data folder, so Otium must keep that folder (losing it loses unsettled earnings). |
+| Registration | ❌ **Not free here.** `GET /transactor/fees`: registration 0.1297 MYST, settlement 0.0593 MYST, Hermes fee 20%. `GET /identities/{id}/eligibility` and `/identities/provider/eligibility` both say `false`. `POST /identities/{id}/register {beneficiary, fee, referral_token}` is free only with a referral token or when eligible; otherwise the fee comes out of MYST sent to the channel address. Not registered: no settlement ("Provider … not registered, skipping"). |
+| Supervisor | ✅ `myst_supervisor -install -uid <user>` with one UAC prompt installs the auto-start SYSTEM service "MysteriumVPN Supervisor" (pipe `\\.\pipe\mystpipe`, open to the Users group). `-uid` is required but unused on Windows. |
+| Services | ⚠️ `POST /services {"provider_id","type":"scraping"}` started `scraping` **and** `quic_scraping` at once, with **no terms accepted and no registration**, and announced this PC's residential IP (Oslo, Telia) with the `mysterium` (B2B) access policy at 0.000628 MYST/hour plus 1.13 MYST/GiB (`quic_scraping` 0.19 MYST/GiB). Stopped after about 10 seconds with no sessions. Otium must not start services before the user has agreed to Mysterium's provider terms (`POST /terms`) in its consent screen. |
+
+What this means for Phase 5:
+- **Registration is the blocker.** Each user's node needs 0.13 MYST (or a referral token) before it can settle a
+  single payout. Options, best first: (1) ask MystNodes for a partner arrangement where Otium's referral token
+  sponsors registration; (2) Otium pays the fee by sending MYST to each new node's channel address (a small treasury
+  of MYST on Polygon, about 0.13 MYST per user, with fraud limits); (3) the user claims the node on mystnodes.com
+  (`GET /mmn/onboarding`), which needs their own MystNodes account. Option 3 is the only one that needs no money
+  from Otium but breaks "one click".
+- Keep the beneficiary: registration takes the user's Polygon address (`beneficiary`), so earnings still settle to
+  the user's own wallet; Otium never holds them.
+- Start services only after the terms step, with `--active-services` limited to the B2B types, and clean up the
+  supervisor service on uninstall (`myst_supervisor -uninstall`, another UAC prompt).
 
 ### Phase 1 — payout address model (Core)
 - New `PayoutAddress` value type in `src/Otium.Core/Wallets/` (e.g. `PayoutTarget(Coin, Address)`), parsed from and
