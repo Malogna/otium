@@ -16,12 +16,16 @@
     pwsh build/dev.ps1 -Computers 2    # two computers, to try signing in on a second PC
     pwsh build/dev.ps1 -Reset          # wipe dev data first
     pwsh build/dev.ps1 -RealMiners     # real XMRig/SRBMiner on this PC, real MoneroOcean (see below)
+    pwsh build/dev.ps1 -RealMiners -Wallet <xmr> -KryptexAccount krxABC123   # also Pearl/Quantus on real Kryptex
 
 .NOTES
     -RealMiners tests the real engines on this hardware: the app downloads XMRig and SRBMiner and mines on the real
     MoneroOcean pool, crediting the dev pool wallet (the Monero general fund, so nobody is paid). The GPU mines
     MoneroOcean's algorithms even though they usually lose money, so they can be tested without a Kryptex account.
     Data lives in artifacts/dev-real; internet sharing is off. Stop it after a few minutes: this uses real electricity.
+
+    -KryptexAccount (with -RealMiners) routes Pearl and Quantus to that real Kryptex Pool account, priced by the live
+    WhatToMine feed, as the production server does. MoneroOcean's GPU algorithms then keep their normal tiers.
 #>
 param(
     [ValidateRange(1, 4)] [int] $Computers = 1,
@@ -29,8 +33,12 @@ param(
     [switch] $Reset,
     [switch] $NoBuild,
     [switch] $RealMiners,
+    # Route every balance account's CPU to the simulated Kryptex Monero pool instead of MoneroOcean.
+    [switch] $KryptexCpu,
     # With -RealMiners: the Monero address the real pool credits (MoneroOcean refuses the dev default).
-    [string] $Wallet
+    [string] $Wallet,
+    # With -RealMiners: a Kryptex Pool account (e.g. krxABC123) to mine Pearl/Quantus into, instead of skipping them.
+    [string] $KryptexAccount
 )
 
 $ErrorActionPreference = 'Stop'
@@ -76,6 +84,13 @@ function Wait-Healthy([string] $url, [string] $name) {
     throw "$name didn't start; see artifacts/dev/$name.log"
 }
 
+# The app's Otium.exe launcher finds .NET through DOTNET_ROOT, not PATH, so point it at the SDK in use
+# (needed when .NET is installed per-user, e.g. under %LOCALAPPDATA%\Microsoft\dotnet).
+if (-not $env:DOTNET_ROOT) {
+    $dotnet = Get-Command dotnet -ErrorAction SilentlyContinue
+    if ($dotnet) { Set-DevEnv @{ DOTNET_ROOT = Split-Path (Resolve-Path $dotnet.Source) } }
+}
+
 $processes = @()
 try {
     # Simulated pool (not used with real miners, which talk to the real MoneroOcean)
@@ -111,15 +126,30 @@ try {
         Kryptex__CreditInterval               = '00:00:20'
         GpuPolicy__RefreshInterval            = '00:01:00'
     }
+    if ($KryptexCpu) { Set-DevEnv @{ CpuMining__KryptexPercent = '100' } }
     if ($RealMiners) {
         Set-DevEnv @{
             OTIUM_POOL_API                    = ''        # the real MoneroOcean
             Bandwidth__Enabled                = 'false'
-            Kryptex__Enabled                  = 'false'
-            # Let the GPU mine MoneroOcean's algorithms despite electricity, to exercise SRBMiner.
-            GpuPolicy__Tiers__kawpow          = 'primary'
-            GpuPolicy__Tiers__autolykos2      = 'primary'
-            GpuPolicy__Tiers__etchash         = 'primary'
+        }
+        if ($KryptexAccount) {
+            # Pearl/Quantus on the real Kryptex Pool and WhatToMine, as in production.
+            Set-DevEnv @{
+                Kryptex__Enabled              = 'true'
+                Kryptex__Account              = $KryptexAccount.Trim()
+                Kryptex__ApiBase              = 'https://pool.kryptex.com/'
+                Kryptex__WhatToMineBase       = 'https://whattomine.com/'
+                Kryptex__CreditInterval       = '00:10:00'
+            }
+        }
+        else {
+            Set-DevEnv @{
+                Kryptex__Enabled              = 'false'
+                # Let the GPU mine MoneroOcean's algorithms despite electricity, to exercise SRBMiner.
+                GpuPolicy__Tiers__kawpow      = 'primary'
+                GpuPolicy__Tiers__autolykos2  = 'primary'
+                GpuPolicy__Tiers__etchash     = 'primary'
+            }
         }
     }
     $processes += Start-Background 'server' 'Otium.Server' @()
@@ -161,8 +191,12 @@ try {
                 $key = "$($mail.to)|$($mail.sentAt)"
                 if ($seen.ContainsKey($key)) { continue }
                 $seen[$key] = $true
-                $code = [regex]::Match($mail.body, '\b\d{6}\b').Value
-                Write-Host ("  ✉  Sign-in code for {0}: {1}" -f $mail.to, $code) -ForegroundColor Yellow
+                if ($mail.subject -like 'Your Otium code*') {
+                    $code = [regex]::Match($mail.body, '\b\d{6}\b').Value
+                    Write-Host ("  ✉  Sign-in code for {0}: {1}" -f $mail.to, $code) -ForegroundColor Yellow
+                } else {
+                    Write-Host ("  ✉  To {0}: {1}" -f $mail.to, $mail.subject) -ForegroundColor Yellow
+                }
             }
         } catch { }
         Start-Sleep -Seconds 2

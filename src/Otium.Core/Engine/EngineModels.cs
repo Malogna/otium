@@ -23,7 +23,8 @@ public sealed record EngineConfig(
     bool NeverRunAtLoss,
     double PricePerKwh,
     FeeSchedule FeeSchedule,
-    string WorkerName);
+    string WorkerName,
+    Accounts.CpuPoolRoute? CpuPool = null);
 
 public sealed record EngineSnapshot
 {
@@ -63,6 +64,9 @@ public sealed record EngineSnapshot
 
     /// <summary>Provider-specific detail, e.g. "kawpow" or "Testing algorithm 2 of 4".</summary>
     public string? Detail { get; init; }
+
+    /// <summary>A problem the provider explained in plain words (e.g. "Graphics card isn't mining: …"), shown as is.</summary>
+    public string? Problem { get; init; }
 
     public bool IdleDetectionAvailable { get; init; } = true;
 

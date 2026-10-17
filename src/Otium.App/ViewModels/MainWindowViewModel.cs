@@ -23,5 +23,12 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private HomeViewModel Home => _home ??= new HomeViewModel(_host, () => CurrentPage = Advanced);
 
-    private ShellViewModel Advanced => _advanced ??= new ShellViewModel(_host, () => CurrentPage = Home);
+    private ShellViewModel Advanced => _advanced ??= new ShellViewModel(_host, () => CurrentPage = Home, StartOver);
+
+    /// <summary>After the account was deleted: back to the first-run welcome, with a fresh Advanced page next time.</summary>
+    private void StartOver()
+    {
+        _advanced = null;
+        CurrentPage = new WelcomeViewModel(_host, () => CurrentPage = Home);
+    }
 }

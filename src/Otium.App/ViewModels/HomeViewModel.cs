@@ -4,6 +4,7 @@ using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Otium.App.Services;
+using Otium.Core.Accounts;
 using Otium.Core.Bandwidth;
 using Otium.Core.Engine;
 using Otium.Core.Projections;
@@ -122,6 +123,12 @@ public partial class HomeViewModel : ViewModelBase
     [ObservableProperty] public partial string GoalEta { get; set; } = "";
     [ObservableProperty] public partial bool IsCashingOut { get; set; }
 
+    // ---------- cash-out history ----------
+
+    public ObservableCollection<CashoutRow> Cashouts { get; } = [];
+    [ObservableProperty] public partial bool HasCashouts { get; set; }
+    [ObservableProperty] public partial string CashoutsSummary { get; set; } = "";
+
     // ---------- account, invite, update ----------
 
     [ObservableProperty] public partial bool NeedsEmail { get; set; }
@@ -168,7 +175,7 @@ public partial class HomeViewModel : ViewModelBase
         _balance.AnimateTo((double)balanceValue);
 
         // Projection
-        var minimum = Math.Min(account.MinPayPalUsd, account.MinCryptoUsd);
+        var minimum = account.MinCryptoUsd;
         var mining = Projection.Create(rate, electricity, _host.History.AverageEarningHoursPerDay(DateTimeOffset.Now),
             settings.OnlyWhenIdle, account.AvailableUsd + account.PendingUsd, minimum);
         var projection = WithSharing(mining, SharingPerDay(), account.AvailableUsd + account.PendingUsd, minimum);
@@ -208,15 +215,18 @@ public partial class HomeViewModel : ViewModelBase
         {
             GoalText = "You can cash out now";
             GoalPercent = 100;
-            GoalEta = $"PayPal from {Format.Money(account.MinPayPalUsd)}, crypto from {Format.Money(account.MinCryptoUsd)}";
+            GoalEta = $"In BTC, ETH, BNB or SOL, from {Format.Money(account.MinCryptoUsd)}";
         }
         else
         {
             var towards = account.AvailableUsd + account.PendingUsd;
-            GoalText = $"{Format.Money(towards)} of {Format.Money(minimum)} to your first cash-out";
+            var which = _host.Account?.Balance.RecentCashouts.Count > 0 ? "next" : "first";
+            GoalText = $"{Format.Money(towards)} of {Format.Money(minimum)} to your {which} cash-out";
             GoalPercent = minimum > 0 ? (double)Math.Clamp(towards / minimum * 100, 0, 100) : 0;
             GoalEta = projection.TimeToCashout is { } eta && eta > TimeSpan.Zero ? $"about {Friendly(eta)} at this pace" : "";
         }
+
+        RefreshCashouts();
 
         // Status and activity
         RefreshActivity(engines);
@@ -255,6 +265,24 @@ public partial class HomeViewModel : ViewModelBase
         UpdateText = UpdateReady ? $"Otium {_host.Updates.ReadyVersion} is ready." : "";
     }
 
+    private void RefreshCashouts()
+    {
+        var balance = _host.Account?.Balance;
+        var rows = (balance?.RecentCashouts ?? []).Select(CashoutRow.From).ToList();
+        if (!rows.SequenceEqual(Cashouts))
+        {
+            Cashouts.Clear();
+            foreach (var row in rows)
+                Cashouts.Add(row);
+        }
+        HasCashouts = IsBalanceMode && rows.Count > 0;
+        var open = rows.FirstOrDefault(r => r.IsPending);
+        var paidOut = balance?.PaidOutUsd ?? 0;
+        CashoutsSummary = open is not null
+            ? $"Your {open.Amount} cash-out: {open.Status.ToLowerInvariant()}"
+            : paidOut > 0 ? $"{Format.Money(paidOut)} paid out so far" : "";
+    }
+
     private void RefreshActivity(IReadOnlyList<EarningsEngine> engines)
     {
         var settings = _host.Settings;
@@ -269,6 +297,7 @@ public partial class HomeViewModel : ViewModelBase
             row.What = s.State switch
             {
                 _ when !enabled => "Switched off in settings",
+                EngineState.Starting or EngineState.Error when s.Problem is { } problem => problem,
                 EngineState.Earning => $"Mining {Coins.ForAlgorithm(s.Detail ?? (i == 0 ? "rx/0" : null)).Name}" +
                                        (s.CurrentRole != PayoutRole.User ? " (short fee slice)" : ""),
                 EngineState.Starting when s.Detail?.Contains("Testing", StringComparison.Ordinal) == true => s.Detail,
@@ -360,6 +389,8 @@ public partial class HomeViewModel : ViewModelBase
             return ("Ready", "Otium starts earning when you step away from your computer.");
         if (states.Contains(EngineState.PausedUnprofitable))
             return ("Paused", "Electricity would cost more than you'd earn right now. Otium checks again every 30 minutes.");
+        if (snapshots.FirstOrDefault(s => s.State == EngineState.Error && s.Problem is not null) is { } explained)
+            return ("Needs attention", explained.Problem!);
         if (states.Contains(EngineState.Error))
             return ("Needs attention", "Something went wrong. Otium retries automatically; see Advanced for details.");
         return ("Starting", "Getting ready…");
@@ -411,12 +442,26 @@ public partial class HomeViewModel : ViewModelBase
     }
 
     [RelayCommand]
+    private void OpenTransaction(string? url)
+    {
+        if (!string.IsNullOrEmpty(url))
+            Launch.Open(url);
+    }
+
+    [RelayCommand]
+    private async Task CopyTransaction(string? transactionId)
+    {
+        if (!string.IsNullOrEmpty(transactionId))
+            await ClipboardService.CopyAsync(transactionId);
+    }
+
+    [RelayCommand]
     private async Task CopyInvite()
     {
         var link = _host.Settings.Referral.ShareUrl;
         if (string.IsNullOrEmpty(link))
             return;
-        await ClipboardService.CopyAsync($"I earn money with my computer's spare power using Otium. Join with my code {InviteCode} and mine fee-free for 30 days: {link}");
+        await ClipboardService.CopyAsync(InviteMessages.Fill(InviteMessages.Styles[1].Template, InviteCode, link, Core.Fees.FeePolicy.Default.RefereeFeeHoliday));
         CopiedText = "Invite copied. Paste it to a friend!";
     }
 

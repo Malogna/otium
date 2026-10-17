@@ -79,9 +79,14 @@ public sealed class SimulatedProvider(
         var kryptex = device == DeviceKind.Gpu ? BestKryptexAlgorithm() : null;
         var mined = kryptex?.Policy.Algorithm ?? algo;
         var hashrate = (kryptex is null ? fullSpeedHps * usage : KryptexSpeeds[kryptex.Policy.Algorithm]) * jitter;
-        object report = kryptex is { } k
-            ? new { wallet = $"kryptex:{k.Coin}:{k.Route.User}", worker = options.WorkerName, algo = mined, hashrate, normalizedHashrate = 0.0, rig = _rig }
-            : new { wallet = options.Target.WalletAddress, worker = options.WorkerName, algo, hashrate, normalizedHashrate = hashrate * normalizedPerHash, rig = _rig };
+        // Like XMRig, a CPU the server routes to Kryptex mines Monero there under "account.worker".
+        var kryptexCpu = device == DeviceKind.Cpu && options.Pool is { Kind: Accounts.CpuPoolRoute.Kryptex } route ? route : null;
+        object report = (kryptex, kryptexCpu) switch
+        {
+            ({ } k, _) => new { wallet = $"kryptex:{k.Coin}:{k.Route.User}", worker = options.WorkerName, algo = mined, hashrate, normalizedHashrate = 0.0, rig = _rig },
+            (null, { } r) => new { wallet = $"kryptex:xmr:{r.User.Split('.')[0]}", worker = options.WorkerName, algo, hashrate, normalizedHashrate = 0.0, rig = _rig },
+            _ => new { wallet = options.Target.WalletAddress, worker = options.WorkerName, algo, hashrate, normalizedHashrate = hashrate * normalizedPerHash, rig = _rig },
+        };
         try
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);

@@ -72,7 +72,7 @@
                         <Button Content="Test GPU again" Command="{Binding RetestGpuCommand}" />
                     </StackPanel>
                     <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
-                               Text="If Windows Firewall asks about XMRig or SRBMiner, click Allow." />
+                               Text="If Windows Firewall asks whether SRBMiner or XMRig may accept connections, choose Cancel. Mining only needs outgoing connections, and Otium reads the miners' stats from inside this computer, which the firewall never blocks." />
                 </StackPanel>
             </StackPanel>
         </Border>
@@ -149,7 +149,7 @@
                     <StackPanel Spacing="2">
                         <TextBlock Text="Otium balance (recommended)" FontWeight="SemiBold" />
                         <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap"
-                                   Text="Earnings collect in your Otium balance. Cash out by PayPal or crypto whenever you like." />
+                                   Text="Earnings collect in your Otium balance, counted in dollars. Cash out to your own wallet in BTC, ETH, BNB or SOL whenever you like." />
                     </StackPanel>
                 </RadioButton>
                 <RadioButton GroupName="payout" IsChecked="{Binding UseOwnWallet}">
@@ -164,6 +164,49 @@
                     <TextBlock Classes="error" Text="{Binding PayoutError}" IsVisible="{Binding PayoutError, Converter={x:Static ObjectConverters.IsNotNull}}" />
                     <TextBlock Classes="good" FontSize="13" Text="{Binding PayoutSaved}" IsVisible="{Binding PayoutSaved, Converter={x:Static ObjectConverters.IsNotNull}}" />
                     <Button Content="Save wallet" Command="{Binding SavePayoutCommand}" />
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <Border Classes="card">
+            <StackPanel Spacing="10" DataContext="{Binding YourData}" x:DataType="vm:YourDataViewModel">
+                <TextBlock Classes="h2" Text="Your data" />
+                <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap"
+                           Text="Download a copy of everything the Otium server stores about your account: your email, computers, every earning and cash-out, invites and internet sharing reports." />
+                <Button Content="Download my data" Command="{Binding DownloadCommand}" />
+                <TextBlock Classes="good" FontSize="13" TextWrapping="Wrap" Text="{Binding DownloadInfo}"
+                           IsVisible="{Binding DownloadInfo, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                <TextBlock Classes="error" TextWrapping="Wrap" Text="{Binding DownloadError}"
+                           IsVisible="{Binding DownloadError, Converter={x:Static ObjectConverters.IsNotNull}}" />
+
+                <Button Margin="0,8,0,0" Content="Delete my account…" Command="{Binding StartDeleteCommand}" IsVisible="{Binding !IsConfirmingDelete}" />
+
+                <!-- Deleting: what happens, the balance warning, then the emailed code. -->
+                <StackPanel Spacing="10" Margin="0,8,0,0" IsVisible="{Binding IsConfirmingDelete}" MaxWidth="560" HorizontalAlignment="Left">
+                    <TextBlock Classes="h2" Text="Delete your Otium account" />
+                    <TextBlock TextWrapping="Wrap" FontSize="13" Text="{Binding WhatIsKept}" />
+                    <TextBlock Classes="error" TextWrapping="Wrap" IsVisible="{Binding HasOpenCashout}"
+                               Text="A cash-out is still on its way. You can delete your account once it has arrived." />
+                    <StackPanel Spacing="6" IsVisible="{Binding HasBalance}">
+                        <TextBlock Classes="bad" FontSize="13" TextWrapping="Wrap" Text="{Binding BalanceWarning}" />
+                        <CheckBox IsChecked="{Binding GiveUpBalance}" Content="I understand I'm giving up this balance" />
+                    </StackPanel>
+
+                    <Button Content="{Binding Email, StringFormat='Email a confirmation code to {0}'}"
+                            Command="{Binding SendCodeCommand}" IsVisible="{Binding NeedsCode}" />
+                    <TextBox Text="{Binding Code}" PlaceholderText="6-digit code" MaxLength="6" HorizontalContentAlignment="Center" Width="220"
+                             HorizontalAlignment="Left" FontSize="20" LetterSpacing="6" FontFamily="Consolas, Menlo, monospace"
+                             IsVisible="{Binding CanEnterCode}" />
+                    <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap" Text="{Binding DeleteInfo}"
+                               IsVisible="{Binding DeleteInfo, Converter={x:Static ObjectConverters.IsNotNull}}" />
+
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button Classes="danger" Content="Delete my account permanently" Command="{Binding DeleteCommand}"
+                                IsVisible="{Binding !NeedsCode}" />
+                        <Button Content="Cancel" Command="{Binding CancelDeleteCommand}" />
+                    </StackPanel>
+                    <TextBlock Classes="error" TextWrapping="Wrap" Text="{Binding DeleteError}"
+                               IsVisible="{Binding DeleteError, Converter={x:Static ObjectConverters.IsNotNull}}" />
                 </StackPanel>
             </StackPanel>
         </Border>

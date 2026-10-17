@@ -32,6 +32,22 @@ public class XmrigTests
     }
 
     [Fact]
+    public void The_servers_pool_route_replaces_the_default_pool_and_login()
+    {
+        var route = new Otium.Core.Accounts.CpuPoolRoute("kryptex", "xmr.kryptex.network", 8029, true, "otium.ot1234abcd5678", "x");
+        var json = XmrigConfig.Build(
+            new ProviderRunOptions(new MiningTarget(TestAddresses.Generate(), PayoutRole.User), "ot1234abcd5678", 50, route),
+            PoolEndpoint.MoneroOcean, httpPort: 45678, accessToken: "secret");
+
+        using var doc = JsonDocument.Parse(json);
+        var pool = doc.RootElement.GetProperty("pools")[0];
+        Assert.Equal("xmr.kryptex.network:8029", pool.GetProperty("url").GetString());
+        Assert.Equal("otium.ot1234abcd5678", pool.GetProperty("user").GetString());
+        Assert.Equal("x", pool.GetProperty("pass").GetString());
+        Assert.True(pool.GetProperty("tls").GetBoolean());
+    }
+
+    [Fact]
     public void Summary_prefers_the_sixty_second_average()
     {
         const string json = """

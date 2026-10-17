@@ -1,10 +1,21 @@
 # Builds installers for every platform and publishes them as one GitHub release.
 # The release doubles as the auto-update feed: set AppIdentity.UpdateUrl to this repository's URL.
 #
-# Trigger: push a tag like v0.2.0, or run manually with a version.
+# Trigger: push a tag like v0.2.0, or run manually with a version. Step by step: docs/releasing.md.
 #
-# Optional signing secrets (packages build unsigned without them):
-#   WIN_SIGN_PARAMS            signtool.exe parameters (needs the certificate available on the runner)
+# Repository variables (Settings → Secrets and variables → Actions → Variables):
+#   OTIUM_SERVER_URL           required: the production server, e.g. https://api.example.com (baked into the app)
+#   OTIUM_FEE_WALLET           XMR address for the own-wallet mode fee (empty: that fee is mined for the user)
+#   AZURE_SIGNING_ENDPOINT, AZURE_SIGNING_ACCOUNT, AZURE_SIGNING_PROFILE   Azure Artifact Signing, if used
+#
+# Secrets:
+#   OTIUM_HONEYGAIN_KEY        Honeygain SDK publisher key (empty: internet sharing stays hidden)
+#
+# Optional signing secrets (packages build unsigned without them; see docs/code-signing.md):
+#   AZURE_TENANT_ID / AZURE_CLIENT_ID / AZURE_CLIENT_SECRET   app registration with the Artifact Signing
+#                              Certificate Profile Signer role (used with the AZURE_SIGNING_* variables)
+#   WIN_SIGN_TEMPLATE          or: a signing command with {{file}}, e.g. a cloud-HSM vendor's tool
+#   WIN_SIGN_PARAMS            or: signtool.exe parameters (the certificate must be reachable from the runner)
 #   APPLE_CERTIFICATES_P12     base64 .p12 containing "Developer ID Application" and "Developer ID Installer"
 #   APPLE_CERTIFICATES_PASSWORD
 #   APPLE_APP_IDENTITY         e.g. "Developer ID Application: Your Name (TEAMID)"
@@ -21,6 +32,10 @@ on:
       version:
         description: 'Version to release, e.g. 0.2.0'
         required: true
+      allow_local_server:
+        description: 'Test build only: allow building without OTIUM_SERVER_URL (the app then talks to localhost)'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -30,7 +45,41 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: true
 
 jobs:
+  check:
+    # Refuse to publish a release that can't work for users: wrong version or no production server.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check release settings
+        shell: pwsh
+        env:
+          SERVER_URL: ${{ vars.OTIUM_SERVER_URL }}
+          FEE_WALLET: ${{ vars.OTIUM_FEE_WALLET }}
+          HAS_HONEYGAIN: ${{ secrets.OTIUM_HONEYGAIN_KEY != '' }}
+          HAS_WIN_SIGNING: ${{ secrets.AZURE_CLIENT_ID != '' || secrets.WIN_SIGN_TEMPLATE != '' || secrets.WIN_SIGN_PARAMS != '' }}
+          HAS_APPLE_SIGNING: ${{ secrets.APPLE_CERTIFICATES_P12 != '' }}
+          ALLOW_LOCAL: ${{ github.event.inputs.allow_local_server }}
+        run: |
+          $v = '${{ github.event.inputs.version }}'
+          if (-not $v) { $v = '${{ github.ref_name }}'.TrimStart('v') }
+          $props = [xml](Get-Content Directory.Build.props)
+          $projectVersion = ($props.Project.PropertyGroup | Where-Object { $_.Version } | Select-Object -First 1).Version
+          if ($v -ne $projectVersion) { throw "Releasing $v, but Directory.Build.props says $projectVersion. Update <Version> first." }
+
+          if (-not $env:SERVER_URL) {
+            if ($env:ALLOW_LOCAL -eq 'true') { Write-Warning 'No OTIUM_SERVER_URL: this test build talks to http://localhost:5080.' }
+            else { throw 'Set the OTIUM_SERVER_URL repository variable to the production server (https://...).' }
+          } elseif (-not $env:SERVER_URL.StartsWith('https://') -or $env:SERVER_URL -match 'localhost|127\.0\.0\.1') {
+            throw "OTIUM_SERVER_URL must be a public https:// URL (got $env:SERVER_URL)."
+          }
+          if (-not $env:FEE_WALLET) { Write-Warning 'No OTIUM_FEE_WALLET: the own-wallet mode fee is mined for the user (no revenue from that mode).' }
+          if ($env:HAS_HONEYGAIN -ne 'true') { Write-Warning 'No OTIUM_HONEYGAIN_KEY: internet sharing stays hidden in this build.' }
+          if ($env:HAS_WIN_SIGNING -ne 'true') { Write-Warning 'Windows packages will be unsigned: SmartScreen warns on first run. See docs/code-signing.md.' }
+          if ($env:HAS_APPLE_SIGNING -ne 'true') { Write-Warning 'macOS packages will be unsigned and not notarized: Gatekeeper blocks them. See docs/code-signing.md.' }
+          "Releasing Otium $v against $env:SERVER_URL"
+
   test:
+    needs: check
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
@@ -87,9 +136,30 @@ jobs:
           xcrun notarytool store-credentials otium --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD"
           echo "SC_APPLE_NOTARY_PROFILE=otium" >> "$GITHUB_ENV"
 
+      - name: Set up Azure Artifact Signing
+        if: runner.os == 'Windows' && vars.AZURE_SIGNING_ENDPOINT != ''
+        shell: pwsh
+        env:
+          ENDPOINT: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          PROFILE: ${{ vars.AZURE_SIGNING_PROFILE }}
+        run: |
+          $file = Join-Path $env:RUNNER_TEMP 'azure-signing.json'
+          @{ Endpoint = $env:ENDPOINT; CodeSigningAccountName = $env:ACCOUNT; CertificateProfileName = $env:PROFILE } |
+            ConvertTo-Json | Set-Content $file
+          "SC_WIN_AZURE_SIGN_METADATA=$file" >> $env:GITHUB_ENV
+
       - name: Build installer
         shell: pwsh
         env:
+          OTIUM_RELEASE_SERVER_URL: ${{ vars.OTIUM_SERVER_URL }}
+          OTIUM_RELEASE_FEE_WALLET: ${{ vars.OTIUM_FEE_WALLET }}
+          OTIUM_RELEASE_HONEYGAIN_KEY: ${{ secrets.OTIUM_HONEYGAIN_KEY }}
+          # Azure Artifact Signing authenticates with these (DefaultAzureCredential).
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          SC_WIN_SIGN_TEMPLATE: ${{ secrets.WIN_SIGN_TEMPLATE }}
           SC_WIN_SIGN_PARAMS: ${{ secrets.WIN_SIGN_PARAMS }}
           SC_APPLE_APP_IDENTITY: ${{ secrets.APPLE_APP_IDENTITY }}
           SC_APPLE_INSTALL_IDENTITY: ${{ secrets.APPLE_INSTALL_IDENTITY }}

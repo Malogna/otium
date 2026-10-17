@@ -1,0 +1,101 @@
+# The Otium server on one Linux VPS: Caddy terminates HTTPS (automatic Let's Encrypt) and proxies to the server,
+# and a small sidecar backs up the SQLite database. See docs/deploying.md.
+#
+#   cp .env.example .env   # then fill it in
+#   docker compose up -d --build
+
+name: otium
+
+services:
+  otium:
+    build:
+      context: ..
+      dockerfile: src/Otium.Server/Dockerfile
+    image: otium-server:local
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Tied to this file's network layout: trust X-Forwarded-For only from Caddy's fixed address below.
+      ReverseProxy__Enabled: "true"
+      ReverseProxy__KnownProxies__0: 172.30.0.10
+    volumes:
+      - otium-data:/data
+    networks:
+      - edge
+      - wallet
+    # No published ports: only Caddy reaches the server.
+
+  caddy:
+    image: caddy:2.10
+    restart: unless-stopped
+    depends_on:
+      - otium
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      OTIUM_DOMAIN: ${OTIUM_DOMAIN:?set OTIUM_DOMAIN in .env}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      edge:
+        ipv4_address: 172.30.0.10
+
+  backup:
+    build: ./backup
+    image: otium-backup:local
+    restart: unless-stopped
+    # Same user as the server, so SQLite's -wal/-shm files keep the server's ownership.
+    user: "1654:1654"
+    environment:
+      BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-6}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+      BACKUP_RCLONE_REMOTE: ${BACKUP_RCLONE_REMOTE:-}
+      BACKUP_RCLONE_KEEP_DAYS: ${BACKUP_RCLONE_KEEP_DAYS:-}
+    # Off-site storage credentials (RCLONE_CONFIG_*), kept apart from the server's secrets.
+    env_file:
+      - path: backup.env
+        required: false
+    volumes:
+      - otium-data:/data
+      - otium-backups:/backups
+
+  # monero-wallet-rpc for Monero cash-outs, reachable only on the private "wallet" network (never publish its port).
+  # Uncomment, point it at a monerod you trust, and set MoneroWallet__RpcUrl=http://monero-wallet-rpc:18083/json_rpc.
+  # See "Monero wallet" in docs/deploying.md.
+  #
+  # monero-wallet-rpc:
+  #   image: <a monero-wallet-rpc image you build or trust>
+  #   restart: unless-stopped
+  #   command:
+  #     - --daemon-address=<node-host>:18089
+  #     - --wallet-file=/wallet/otium
+  #     - --password-file=/wallet/password
+  #     - --rpc-bind-ip=0.0.0.0
+  #     - --rpc-bind-port=18083
+  #     - --confirm-external-bind
+  #     - --rpc-login=otium:<rpc-password>
+  #   volumes:
+  #     - monero-wallet:/wallet
+  #   networks:
+  #     - wallet     # the server reaches it here
+  #     - default    # it reaches the Monero node here
+
+networks:
+  edge:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+  wallet:
+    internal: true
+
+volumes:
+  otium-data:
+  otium-backups:
+  caddy-data:
+  caddy-config:
+  # monero-wallet:

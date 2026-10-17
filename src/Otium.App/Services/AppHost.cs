@@ -40,13 +40,13 @@ public sealed class AppHost : IAsyncDisposable
     {
         Paths = AppPaths.Default;
         Paths.EnsureCreated();
+        // Miners an earlier Otium left running (crash, killed process) would mine on unseen; stop them first.
+        MinerLifetime.StopOrphans(Paths.EnginesDir, Path.Combine(Paths.Root, "otium.lock"));
         _settingsStore = new JsonFileStore<AppSettings>(Paths.SettingsFile);
         Settings = _settingsStore.Load();
         EnsureDeviceSecrets();
 
-        DeviceId = Environment.GetEnvironmentVariable("OTIUM_DEVICE_SEED") is { Length: > 0 } devSeed
-            ? DeviceIdentity.FromSeed(devSeed)
-            : DeviceIdentity.Compute(Settings.DeviceSeed);
+        DeviceId = ComputeDeviceId();
         IsSimulated = SimulatedProvider.IsEnabled;
         FeeWallet = ValidWalletOrNull(AppIdentity.ResolveFeeWallet());
 
@@ -64,7 +64,7 @@ public sealed class AppHost : IAsyncDisposable
         PowerModel = CpuPowerModel.ForThisMachine(Settings.CpuFullLoadWatts);
         PowerMeter = RaplPowerMeter.IsAvailable() ? new RaplPowerMeter(() => PowerModel) : new EstimatedCpuPowerMeter(() => PowerModel);
         var cpuLedger = new JsonFileStore<EarningsLedger>(Paths.LedgerFile);
-        _cpuConfig = BuildConfig(Settings.CpuUsagePercent, "");
+        _cpuConfig = BuildConfig(Settings.CpuUsagePercent, "", cpu: true);
         // Dev mode swaps the real miners for simulated ones that report to the local simulated pool.
         IComputeProvider cpuProvider = IsSimulated ? new SimulatedProvider(_http, Pool, DeviceKind.Cpu, "rx/0", 9_000, 1.0) : Provider;
         Engine = new EarningsEngine(cpuProvider, PowerMeter, idle, () => _cpuConfig, cpuLedger.Load(), cpuLedger.Save);
@@ -76,7 +76,8 @@ public sealed class AppHost : IAsyncDisposable
         _gpuConfig = BuildConfig(100, "g");
         var gpuProvider = new SrbMinerGpuProvider(
             _http, Pool, Paths.EnginesDir, Paths.GpuBenchmarksFile, Gpus, GpuPowerMeter, EffectivePricePerKwh,
-            policy: () => EffectiveGpuPolicy);
+            policy: () => EffectiveGpuPolicy,
+            freeMemoryGb: gpu => gpu.Vendor == GpuVendor.Nvidia ? _nvml?.ReadFreeMemoryGb(gpu.Index) : null);
         if (IsSimulated)
         {
             var gpuLedger = new JsonFileStore<EarningsLedger>(Paths.GpuLedgerFile);
@@ -140,7 +141,7 @@ public sealed class AppHost : IAsyncDisposable
 
     public AppSettings Settings { get; }
 
-    public string DeviceId { get; }
+    public string DeviceId { get; private set; }
 
     public string? FeeWallet { get; }
 
@@ -354,7 +355,7 @@ public sealed class AppHost : IAsyncDisposable
     /// <summary>Rebuilds each engine's config (including the current electricity price) and wakes them to re-apply it.</summary>
     private void RebuildEngineConfigs()
     {
-        _cpuConfig = BuildConfig(Settings.CpuUsagePercent, "");
+        _cpuConfig = BuildConfig(Settings.CpuUsagePercent, "", cpu: true);
         _gpuConfig = BuildConfig(100, "g");
         _bandwidthConfig = BuildBandwidthConfig();
         foreach (var engine in Engines)
@@ -385,7 +386,7 @@ public sealed class AppHost : IAsyncDisposable
     /// fee and referral rewards when crediting, so no fee slices are mined client-side.
     /// Own-wallet mode: mine to the user's wallet with the time-sliced fee and referral schedule.
     /// </summary>
-    private EngineConfig BuildConfig(int usagePercent, string workerSuffix)
+    private EngineConfig BuildConfig(int usagePercent, string workerSuffix, bool cpu = false)
     {
         if (Settings.PayoutMode == PayoutMode.Balance)
         {
@@ -399,7 +400,9 @@ public sealed class AppHost : IAsyncDisposable
                 EffectivePricePerKwh(),
                 new FeeSchedule(FeePolicy.Default with { FeePercent = 0 }, poolWallet, null, new ReferralStanding(null, null, null)),
                 // CPU and GPU share one worker id so the pool reports their combined work for this account.
-                Settings.Account.WorkerId ?? "");
+                Settings.Account.WorkerId ?? "",
+                // The CPU mines wherever the server routes this account (MoneroOcean or Kryptex XMR).
+                cpu ? Settings.Account.CpuPool : null);
         }
 
         var referral = Settings.Referral;
@@ -488,12 +491,21 @@ public sealed class AppHost : IAsyncDisposable
     {
         var cashout = await CreateClient().RequestCashoutAsync(DeviceId, Settings.DeviceSecret, new CashoutRequest(method, destination.Trim()), CancellationToken.None);
         if (method == CashoutMethods.PayPal)
+        {
             Settings.Account.LastPayPalEmail = destination.Trim();
+        }
         else
-            Settings.Account.LastCryptoAddress = destination.Trim();
+        {
+            Settings.Account.LastAddresses[method] = destination.Trim();
+            Settings.Account.LastCashoutMethod = method;
+        }
         await SyncAccountAsync(CancellationToken.None);
         return cashout;
     }
+
+    /// <summary>This month's top inviters. Throws on network errors; the invites page shows it as unavailable.</summary>
+    public Task<InviteLeaderboard> GetInviteLeaderboardAsync(CancellationToken ct) =>
+        CreateClient().GetInviteLeaderboardAsync(DeviceId, Settings.DeviceSecret, ct);
 
     /// <summary>Emails a 6-digit code. Registers this computer first if it never connected.</summary>
     public async Task SendEmailCodeAsync(string email)
@@ -515,6 +527,72 @@ public sealed class AppHost : IAsyncDisposable
         ApplyDeviceSwitches();
         AccountChanged?.Invoke();
     }
+
+    /// <summary>A copy of everything the Otium server stores about this account, as a JSON document.</summary>
+    public async Task<byte[]> ExportAccountDataAsync()
+    {
+        if (Settings.Account.WorkerId is null)
+            await SyncAccountAsync(CancellationToken.None);
+        return await CreateClient().ExportAccountDataAsync(DeviceId, Settings.DeviceSecret, CancellationToken.None);
+    }
+
+    /// <summary>Emails the code that confirms deleting the account (only for accounts with an email).</summary>
+    public Task SendDeleteAccountCodeAsync() =>
+        CreateClient().SendEmailCodeAsync(DeviceId, Settings.DeviceSecret,
+            new EmailCodeRequest(Settings.Account.Email ?? "", EmailCodePurposes.DeleteAccount), CancellationToken.None);
+
+    /// <summary>
+    /// Deletes the account on the server, then resets this computer to a fresh install: earning and internet sharing
+    /// stop, the account, invite and device secret are forgotten, and the welcome screen shows again. Machine
+    /// settings (CPU use, electricity) and local earnings stats stay. Throws <see cref="AccountRequestException"/>
+    /// with a user-facing reason when the server refuses.
+    /// </summary>
+    public async Task<DeleteAccountResult> DeleteAccountAsync(string? code, bool giveUpBalance)
+    {
+        var result = await CreateClient().DeleteAccountAsync(DeviceId, Settings.DeviceSecret,
+            new DeleteAccountRequest(string.IsNullOrWhiteSpace(code) ? null : code.Trim(), giveUpBalance), CancellationToken.None);
+
+        try
+        {
+            if (Settings.BandwidthEnabled)
+                await SetBandwidthSharingAsync(false);
+        }
+        catch (InvalidOperationException)
+        {
+            // The account is already gone; finish resetting even if the partner component couldn't be told.
+            Settings.BandwidthEnabled = false;
+        }
+        Settings.EarningEnabled = false;
+        Settings.OnboardingComplete = false; // also stops the background account sync
+        Settings.AcceptedTerms = false;
+        Settings.BandwidthConsentAt = null;
+        Settings.BandwidthPromptDismissed = false;
+        Settings.Account = new AccountState();
+        Settings.Referral = new ReferralState();
+        Settings.DeviceSecret = "";
+        Settings.DeviceSeed = "";
+        EnsureDeviceSecrets();
+        DeviceId = ComputeDeviceId();
+        Account = null;
+        LastServerError = null;
+        try
+        {
+            AutoStart.Set(false);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+        }
+
+        SaveSettings();
+        ApplyDeviceSwitches();
+        AccountChanged?.Invoke();
+        return result;
+    }
+
+    private string ComputeDeviceId() =>
+        Environment.GetEnvironmentVariable("OTIUM_DEVICE_SEED") is { Length: > 0 } devSeed
+            ? DeviceIdentity.FromSeed(devSeed)
+            : DeviceIdentity.Compute(Settings.DeviceSeed);
 
     private AccountClient CreateClient() =>
         new(new HttpClient
@@ -558,6 +636,7 @@ public sealed class AppHost : IAsyncDisposable
         account.BandwidthUserUsdPerSharingHour = summary.Bandwidth?.UserUsdPerSharingHour ?? 0;
         account.BandwidthServerDailyLimitBytes = summary.Bandwidth?.DailyLimitBytes ?? 0;
         account.BandwidthPartnerName = summary.Bandwidth?.PartnerName;
+        account.CpuPool = summary.CpuPool;
         account.LastSyncedAt = DateTimeOffset.UtcNow;
     }
 

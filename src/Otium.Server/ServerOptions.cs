@@ -53,9 +53,33 @@ public sealed class CashoutOptions
 {
     public const string Section = "Cashouts";
 
+    public static readonly string[] DefaultMethods = ["btc", "eth", "bnb", "sol"];
+
+    /// <summary>
+    /// The payout methods offered, in display order: "btc", "eth", "bnb", "sol" (paid from the Bitcoin treasury, the
+    /// others swapped through THORChain), plus the older "paypal" and "xmr" if re-enabled. Empty means the default.
+    /// (No default value here: the configuration binder appends to arrays instead of replacing them.)
+    /// </summary>
+    public string[] Methods { get; set; } = [];
+
+    /// <summary><see cref="Methods"/>, or the default when none are configured, without duplicates.</summary>
+    public IReadOnlyList<string> OfferedMethods => (Methods.Length > 0 ? Methods : DefaultMethods).Distinct().ToList();
+
+    /// <summary>Minimum cash-out per method (USD). Methods not listed use <see cref="MinCryptoUsd"/>.</summary>
+    public Dictionary<string, decimal> MinUsd { get; set; } = new()
+    {
+        ["btc"] = 5m,
+        ["bnb"] = 5m,
+        ["eth"] = 8m,
+        ["sol"] = 8m,
+    };
+
     public decimal MinPayPalUsd { get; set; } = 5m;
 
-    public decimal MinCryptoUsd { get; set; } = 2m;
+    public decimal MinCryptoUsd { get; set; } = 5m;
+
+    public decimal MinimumFor(string method) =>
+        method == "paypal" ? MinPayPalUsd : MinUsd.TryGetValue(method, out var min) ? min : MinCryptoUsd;
 
     /// <summary>Cash-outs up to this amount are sent automatically when the other checks pass; larger ones are reviewed.</summary>
     public decimal AutoApproveMaxUsd { get; set; } = 50m;
@@ -97,12 +121,80 @@ public sealed class MoneroWalletOptions
     public bool IsConfigured => RpcUrl.Length > 0;
 }
 
+/// <summary>The operator's Bitcoin treasury: a bitcoind wallet that pays BTC cash-outs and funds THORChain swaps.</summary>
+public sealed class BitcoinWalletOptions
+{
+    public const string Section = "BitcoinWallet";
+
+    /// <summary>bitcoind JSON-RPC, e.g. http://127.0.0.1:8332. Keep it on localhost or a private network.</summary>
+    public string RpcUrl { get; set; } = "";
+
+    public string Username { get; set; } = "";
+
+    public string Password { get; set; } = "";
+
+    /// <summary>The wallet to use (bitcoind's -rpcwallet), e.g. "otium-payouts".</summary>
+    public string Wallet { get; set; } = "";
+
+    /// <summary>Fee target in blocks for payouts; 6 is about an hour and cheap.</summary>
+    public int ConfTarget { get; set; } = 6;
+
+    public bool IsConfigured => RpcUrl.Length > 0;
+}
+
+/// <summary>THORChain, the swap network that turns treasury BTC into ETH, BNB or SOL at the user's address.</summary>
+public sealed class ThorchainOptions
+{
+    public const string Section = "Thorchain";
+
+    /// <summary>A public THORNode API (no key or account needed). Any node or gateway with the same API works.</summary>
+    public string ApiBase { get; set; } = "https://gateway.liquify.com/chain/thorchain_api/";
+}
+
+/// <summary>Screening payout addresses against OFAC's sanctioned crypto addresses.</summary>
+public sealed class SanctionsOptions
+{
+    public const string Section = "Sanctions";
+
+    /// <summary>
+    /// Plain-text lists (one address per line) per chain, from github.com/0xB10C/ofac-sanctioned-digital-currency-addresses,
+    /// which rebuilds them from the OFAC SDN list every night.
+    /// </summary>
+    public Dictionary<string, string> ListUrls { get; set; } = new()
+    {
+        ["btc"] = "https://raw.githubusercontent.com/0xB10C/ofac-sanctioned-digital-currency-addresses/lists/sanctioned_addresses_XBT.txt",
+        ["evm"] = "https://raw.githubusercontent.com/0xB10C/ofac-sanctioned-digital-currency-addresses/lists/sanctioned_addresses_ETH.txt",
+        ["bsc"] = "https://raw.githubusercontent.com/0xB10C/ofac-sanctioned-digital-currency-addresses/lists/sanctioned_addresses_BSC.txt",
+        ["sol"] = "https://raw.githubusercontent.com/0xB10C/ofac-sanctioned-digital-currency-addresses/lists/sanctioned_addresses_SOL.txt",
+    };
+
+    public TimeSpan RefreshInterval { get; set; } = TimeSpan.FromHours(12);
+}
+
 public sealed class AdminOptions
 {
     public const string Section = "Admin";
 
     /// <summary>Shared secret for the /admin endpoints (send as X-Admin-Token). Admin endpoints are disabled while empty.</summary>
     public string Token { get; set; } = "";
+}
+
+/// <summary>
+/// Running behind a reverse proxy that terminates HTTPS (see docs/deploying.md). When enabled, the client's address and
+/// scheme are taken from X-Forwarded-For and X-Forwarded-Proto, but only on connections from the proxy; anyone else's
+/// headers are ignored. Per-IP rate limits and "one paid sharer per connection" depend on getting this right.
+/// </summary>
+public sealed class ReverseProxyOptions
+{
+    public const string Section = "ReverseProxy";
+
+    public bool Enabled { get; set; }
+
+    /// <summary>The proxy's addresses, e.g. 172.30.0.10. With neither list set, only a proxy on localhost is trusted.</summary>
+    public string[] KnownProxies { get; set; } = [];
+
+    /// <summary>Networks the proxy connects from, in CIDR notation, e.g. 10.0.0.0/24.</summary>
+    public string[] KnownNetworks { get; set; } = [];
 }
 
 /// <summary>
@@ -186,6 +278,25 @@ public sealed class KryptexOptions
         ["pearlhash"] = new() { Coin = "prl", WhatToMineId = 469, Host = "prl.kryptex.network", Port = 7048 },
         ["quantus"] = new() { Coin = "qtc", WhatToMineId = 473, Host = "qtc.kryptex.network", Port = 7049 },
     };
+
+    /// <summary>
+    /// Kryptex's Monero (RandomX) pool, for balance accounts' CPUs routed there by <see cref="CpuMiningOptions"/>.
+    /// Port 8029 is its TLS port (7029 plain); regional hosts are xmr-eu and xmr-us.
+    /// </summary>
+    public KryptexCoin Cpu { get; set; } = new() { Coin = "xmr", Host = "xmr.kryptex.network", Port = 8029, Tls = true };
+}
+
+/// <summary>Where balance accounts' CPUs mine. Own-wallet accounts always mine to their own address on MoneroOcean.</summary>
+public sealed class CpuMiningOptions
+{
+    public const string Section = "CpuMining";
+
+    /// <summary>
+    /// Share of balance accounts (0–100) whose CPU mines Monero on Kryptex instead of MoneroOcean, chosen by a stable
+    /// hash of the worker id. 0 keeps everyone on MoneroOcean; raise it gradually (canary), 100 moves everyone.
+    /// Needs Kryptex:Enabled and Kryptex:Account.
+    /// </summary>
+    public int KryptexPercent { get; set; }
 }
 
 public sealed class KryptexCoin
@@ -198,4 +309,7 @@ public sealed class KryptexCoin
     public string Host { get; set; } = "";
 
     public int Port { get; set; }
+
+    /// <summary>Whether <see cref="Port"/> is a TLS port.</summary>
+    public bool Tls { get; set; }
 }

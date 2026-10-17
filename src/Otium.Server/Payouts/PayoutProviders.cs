@@ -28,6 +28,12 @@ public interface IPayoutProvider
 
     /// <summary>Follows up on a cash-out already handed to the provider.</summary>
     Task<PayoutOutcome> CheckAsync(CashoutRecord sending, CancellationToken ct);
+
+    /// <summary>
+    /// Why this method can't take new cash-outs right now (shown to users), or null when it can. A provider that isn't
+    /// set up still takes cash-outs: they wait in the review queue for the operator to pay by hand.
+    /// </summary>
+    Task<string?> GetUnavailableReasonAsync(CancellationToken ct) => Task.FromResult<string?>(null);
 }
 
 /// <summary>
@@ -45,6 +51,9 @@ public sealed class PayPalPayoutProvider(HttpClient http, IOptions<PayPalOptions
     public bool IsConfigured => _options.IsConfigured;
 
     public int BatchSize => 1;
+
+    /// <summary>Shown to the user while PayPal holds money for an email that has no PayPal account yet.</summary>
+    public const string UnclaimedNote = CashoutStatuses.AwaitingClaimNote;
 
     private Uri BaseUri => new(_options.UseSandbox ? "https://api-m.sandbox.paypal.com/" : "https://api-m.paypal.com/");
 
@@ -119,7 +128,7 @@ public sealed class PayPalPayoutProvider(HttpClient http, IOptions<PayPalOptions
     {
         "SUCCESS" => new PayoutOutcome(cashoutId, CashoutStatuses.Paid),
         // The recipient has 30 days to claim (e.g. by creating a PayPal account); after that PayPal returns the money.
-        "UNCLAIMED" => new PayoutOutcome(cashoutId, CashoutStatuses.Sending, Note: "waiting for you to claim it in PayPal"),
+        "UNCLAIMED" => new PayoutOutcome(cashoutId, CashoutStatuses.Sending, Note: UnclaimedNote),
         "FAILED" or "RETURNED" or "BLOCKED" or "REFUNDED" or "REVERSED" or "DENIED" =>
             new PayoutOutcome(cashoutId, CashoutStatuses.Failed, Note: $"PayPal: {status!.ToLowerInvariant()}"),
         _ => new PayoutOutcome(cashoutId, null), // PENDING, ONHOLD, unknown: check again later

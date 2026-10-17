@@ -19,6 +19,14 @@ internal static class XmrigConfig
 
     public static string Build(ProviderRunOptions options, PoolEndpoint pool, int httpPort, string accessToken)
     {
+        // The server's route (balance accounts) decides pool and login; otherwise mine to the target wallet on the
+        // default pool with the worker name as the password, as MoneroOcean expects.
+        var route = options.Pool;
+        var url = route is null ? pool.ToString() : $"{route.Host}:{route.Port}";
+        var user = route?.User ?? options.Target.WalletAddress;
+        var pass = route?.Password ?? SanitizeWorker(options.WorkerName);
+        var tls = route?.Tls ?? pool.Tls;
+
         var config = new JsonObject
         {
             ["autosave"] = false,
@@ -50,11 +58,11 @@ internal static class XmrigConfig
             {
                 new JsonObject
                 {
-                    ["url"] = pool.ToString(),
-                    ["user"] = options.Target.WalletAddress,
-                    ["pass"] = SanitizeWorker(options.WorkerName),
+                    ["url"] = url,
+                    ["user"] = user,
+                    ["pass"] = pass,
                     ["keepalive"] = true,
-                    ["tls"] = pool.Tls,
+                    ["tls"] = tls,
                 },
             },
         };

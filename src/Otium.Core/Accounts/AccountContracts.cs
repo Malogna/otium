@@ -20,7 +20,21 @@ public sealed record AccountSummary(
     BalanceInfo Balance,
     string? Email = null,
     int DeviceCount = 1,
-    BandwidthInfo? Bandwidth = null);
+    BandwidthInfo? Bandwidth = null,
+    CpuPoolRoute? CpuPool = null);
+
+/// <summary>
+/// Where a balance account's CPU mines, decided by the server so the pool can change (or fail over) without an app
+/// release. Null for own-wallet accounts, which mine to their own address on MoneroOcean.
+/// </summary>
+/// <param name="Kind">"moneroocean" or "kryptex", for display and diagnostics.</param>
+/// <param name="User">The stratum login: the pool wallet (MoneroOcean) or "account.worker" (Kryptex).</param>
+/// <param name="Password">The stratum password: the worker id (MoneroOcean) or "x" (Kryptex).</param>
+public sealed record CpuPoolRoute(string Kind, string Host, int Port, bool Tls, string User, string Password)
+{
+    public const string MoneroOcean = "moneroocean";
+    public const string Kryptex = "kryptex";
+}
 
 /// <summary>Terms for sharing unused internet bandwidth, as the server currently pays them.</summary>
 /// <param name="Available">False while the operator has no bandwidth partner set up; the app then hides the option.</param>
@@ -63,8 +77,27 @@ public static class BandwidthReportStatuses
 /// <param name="Note">Plain-language explanation when less than everything was credited.</param>
 public sealed record BandwidthReportResult(string Status, long CreditedBytes, decimal CreditedUsd, string? Note);
 
-/// <summary>Asks the server to email a 6-digit sign-in code.</summary>
-public sealed record EmailCodeRequest(string Email);
+/// <summary>Asks the server to email a 6-digit code.</summary>
+/// <param name="Purpose">One of <see cref="EmailCodePurposes"/>; null means signing in.</param>
+public sealed record EmailCodeRequest(string Email, string? Purpose = null);
+
+public static class EmailCodePurposes
+{
+    public const string SignIn = "sign-in";
+
+    /// <summary>Confirms deleting the account; only sent to the email the account is signed in with.</summary>
+    public const string DeleteAccount = "delete-account";
+}
+
+/// <summary>
+/// Deletes the account. Money records are kept, anonymized, for bookkeeping; everything that identifies the user is removed.
+/// </summary>
+/// <param name="Code">The code emailed for <see cref="EmailCodePurposes.DeleteAccount"/>; required when the account has an email.</param>
+/// <param name="GiveUpBalance">The user accepts losing a remaining balance (deletion is refused without it while there is one).</param>
+public sealed record DeleteAccountRequest(string? Code, bool GiveUpBalance = false);
+
+/// <param name="GivenUpUsd">Balance (available and pending) the user gave up by deleting.</param>
+public sealed record DeleteAccountResult(DateTimeOffset DeletedAt, decimal GivenUpUsd);
 
 /// <summary>
 /// Confirms the code. If the email is new it secures this computer's account; if it already belongs to an account,
@@ -88,6 +121,9 @@ public static class EmailAddresses
 
 /// <param name="FeePercent">Otium's share of mining earnings for balance accounts, shown to the user.</param>
 /// <param name="ReferralPercent">What a referrer earns, as a percent of each invited friend's earnings.</param>
+/// <param name="RecentCashouts">The latest cash-outs, newest first.</param>
+/// <param name="PaidOutUsd">Everything ever paid out to this account.</param>
+/// <param name="Methods">The ways the server pays out right now, in display order; null from older servers.</param>
 public sealed record BalanceInfo(
     decimal AvailableUsd,
     decimal PendingUsd,
@@ -97,18 +133,98 @@ public sealed record BalanceInfo(
     decimal MinCryptoUsd,
     double FeePercent,
     double ReferralPercent,
-    IReadOnlyList<CashoutInfo> RecentCashouts);
+    IReadOnlyList<CashoutInfo> RecentCashouts,
+    decimal PaidOutUsd = 0,
+    IReadOnlyList<CashoutMethodInfo>? Methods = null);
+
+/// <summary>One way to cash out, as the server offers it right now.</summary>
+/// <param name="Method">A <see cref="CashoutMethods"/> id, e.g. "btc".</param>
+/// <param name="Name">Coin name for the UI, e.g. "Bitcoin".</param>
+/// <param name="Network">Where it arrives, e.g. "BNB Smart Chain"; the user's address must be on this network.</param>
+/// <param name="MinUsd">Smallest cash-out this way.</param>
+/// <param name="FeeNote">What fees come out of the amount, in plain words, or null when Otium pays them.</param>
+/// <param name="UnavailableReason">Why it's paused right now (e.g. the swap network halted the coin), or null.</param>
+public sealed record CashoutMethodInfo(
+    string Method,
+    string Name,
+    string Network,
+    decimal MinUsd,
+    string? FeeNote,
+    string? UnavailableReason)
+{
+    public bool Available => UnavailableReason is null;
+}
 
 public static class CashoutMethods
 {
+    public const string Bitcoin = "btc";
+    public const string Ethereum = "eth";
+    public const string Bnb = "bnb";
+    public const string Solana = "sol";
+
+    // Older methods, kept so existing cash-outs still read correctly; servers can still enable them.
     public const string PayPal = "paypal";
     public const string Monero = "xmr";
 
-    public static bool IsKnown(string method) => method is PayPal or Monero;
+    /// <summary>Crypto the user can choose, in display order.</summary>
+    public static readonly IReadOnlyList<string> Crypto = [Bitcoin, Ethereum, Bnb, Solana];
+
+    public static bool IsKnown(string method) => method is PayPal or Monero || Crypto.Contains(method);
+
+    public static string Name(string method) => method switch
+    {
+        Bitcoin => "Bitcoin",
+        Ethereum => "Ether",
+        Bnb => "BNB",
+        Solana => "Solana",
+        Monero => "Monero",
+        PayPal => "PayPal",
+        _ => method.ToUpperInvariant(),
+    };
+
+    /// <summary>"Bitcoin (BTC)", or just "BNB" when the name is the ticker.</summary>
+    public static string Label(string method) => Name(method) == Ticker(method) || method == PayPal ? Name(method) : $"{Name(method)} ({Ticker(method)})";
+
+    /// <summary>Ticker shown next to amounts, e.g. "BTC".</summary>
+    public static string Ticker(string method) => method switch
+    {
+        Bitcoin => "BTC",
+        Ethereum => "ETH",
+        Bnb => "BNB",
+        Solana => "SOL",
+        Monero => "XMR",
+        _ => method.ToUpperInvariant(),
+    };
+
+    public static string Network(string method) => method switch
+    {
+        Bitcoin => "Bitcoin",
+        Ethereum => "Ethereum",
+        Bnb => "BNB Smart Chain (BEP-20)",
+        Solana => "Solana",
+        Monero => "Monero",
+        _ => "",
+    };
+
+    /// <summary>A block explorer page for a payout transaction, or null when there's none to show.</summary>
+    public static string? ExplorerUrl(string method, string? transactionId)
+    {
+        if (string.IsNullOrEmpty(transactionId))
+            return null;
+        var evm = transactionId.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? transactionId : "0x" + transactionId;
+        return method switch
+        {
+            Bitcoin => $"https://mempool.space/tx/{transactionId.ToLowerInvariant()}",
+            Ethereum => $"https://etherscan.io/tx/{evm.ToLowerInvariant()}",
+            Bnb => $"https://bscscan.com/tx/{evm.ToLowerInvariant()}",
+            Solana => $"https://solscan.io/tx/{transactionId}",
+            _ => null,
+        };
+    }
 }
 
-/// <param name="Method"><see cref="CashoutMethods.PayPal"/> or <see cref="CashoutMethods.Monero"/>.</param>
-/// <param name="Destination">PayPal email address or XMR address.</param>
+/// <param name="Method">A <see cref="CashoutMethods"/> id the server offers, e.g. "btc".</param>
+/// <param name="Destination">The user's address for that coin (or a PayPal email, where PayPal is enabled).</param>
 public sealed record CashoutRequest(string Method, string Destination);
 
 public static class CashoutStatuses
@@ -124,8 +240,15 @@ public static class CashoutStatuses
 
     /// <summary>Failed or rejected; the amount was returned to the balance.</summary>
     public const string Failed = "failed";
+
+    /// <summary>The note on a "sending" PayPal cash-out to an email that has no PayPal account yet.</summary>
+    public const string AwaitingClaimNote = "waiting for you to claim it in PayPal";
 }
 
+/// <param name="Destination">Masked, e.g. <c>al••@example.com</c>.</param>
+/// <param name="Note">Why it failed, or what the user still needs to do (claim it in PayPal); otherwise null.</param>
+/// <param name="UpdatedAt">When the status last changed; for a paid cash-out, when it was paid.</param>
+/// <param name="TransactionId">The transaction that delivered the coins once paid, so the user can look it up.</param>
 public sealed record CashoutInfo(
     string Id,
     string Method,
@@ -133,7 +256,25 @@ public sealed record CashoutInfo(
     decimal AmountUsd,
     string Status,
     DateTimeOffset CreatedAt,
-    string? Note);
+    string? Note,
+    DateTimeOffset? UpdatedAt = null,
+    string? TransactionId = null);
+
+/// <summary>
+/// The month's top inviters, ranked by invited friends who actually started earning (so fake sign-ups don't count).
+/// Other people appear only as a masked code; the caller's own row has <see cref="InviteLeaderboardEntry.IsYou"/> set.
+/// </summary>
+/// <param name="PeriodStart">Start of the period (the first of the month, UTC).</param>
+/// <param name="YourRank">The caller's rank, or null when they have no counted friends this period yet.</param>
+public sealed record InviteLeaderboard(
+    DateTimeOffset PeriodStart,
+    IReadOnlyList<InviteLeaderboardEntry> Top,
+    int? YourRank,
+    int YourFriends);
+
+/// <param name="Rank">1-based; equal counts share a rank (1, 2, 2, 4).</param>
+/// <param name="Name">A masked invite code such as <c>K7M••••</c>, or "You".</param>
+public sealed record InviteLeaderboardEntry(int Rank, string Name, int Friends, bool IsYou);
 
 public static class ReferralCodes
 {
@@ -149,4 +290,7 @@ public static class ReferralCodes
         var normalized = Normalize(code);
         return normalized.Length == Length && normalized.All(c => Alphabet.Contains(c));
     }
+
+    /// <summary>Enough to recognise yourself, not enough to use: <c>K7M••••</c>.</summary>
+    public static string Mask(string code) => code.Length <= 3 ? code : code[..3] + new string('•', code.Length - 3);
 }
