@@ -1,4 +1,5 @@
 using Otium.Core.Platform;
+using Otium.Core.Providers;
 
 namespace Otium.App.Services;
 
@@ -22,6 +23,7 @@ public static class UninstallCleanup
         try
         {
             var engines = AppPaths.Default.EnginesDir;
+            MinerLifetime.StopOrphans(engines, Path.Combine(AppPaths.Default.Root, "otium.lock")); // or their files can't be deleted
             if (Directory.Exists(engines))
                 Directory.Delete(engines, recursive: true);
         }

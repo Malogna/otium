@@ -37,6 +37,7 @@ public sealed class EarningsEngine : IAsyncDisposable
     private DateTimeOffset? _retryAt;
     private DateTimeOffset _lastLedgerSave;
     private string? _lastError;
+    private string? _lastProblem;
     private EngineBlockedException? _blocked;
     private Task? _loop;
 
@@ -103,6 +104,7 @@ public sealed class EarningsEngine : IAsyncDisposable
             catch (Exception e)
             {
                 _lastError = e.Message;
+                _lastProblem = null;
                 _retryAt = _time.GetUtcNow() + ErrorRetry;
                 await StopRunningAsync(CancellationToken.None);
                 Publish(EngineState.Error, $"Something went wrong: {e.Message}");
@@ -125,6 +127,15 @@ public sealed class EarningsEngine : IAsyncDisposable
         try
         {
             await TickCoreAsync(ct);
+        }
+        catch (ProviderProblemException e)
+        {
+            // Already in plain words (e.g. "Graphics card isn't mining: …"): show it as is and retry shortly.
+            _lastError = e.Message;
+            _lastProblem = e.Message;
+            _retryAt = _time.GetUtcNow() + ErrorRetry;
+            await StopRunningAsync(CancellationToken.None);
+            Publish(EngineState.Error, e.Message, problem: e.Message);
         }
         finally
         {
@@ -152,7 +163,7 @@ public sealed class EarningsEngine : IAsyncDisposable
 
         if (_retryAt is { } retry && now < retry)
         {
-            Publish(EngineState.Error, _lastError ?? "Retrying shortly…");
+            Publish(EngineState.Error, _lastError ?? "Retrying shortly…", problem: _lastProblem);
             return;
         }
 
@@ -187,10 +198,12 @@ public sealed class EarningsEngine : IAsyncDisposable
         if (_running is null && !await PassesProfitGateAsync(config, now, ct))
             return;
 
+        // A new pool route from the server changes the options, which restarts the miner on the new pool.
         var desired = new ProviderRunOptions(
             config.FeeSchedule.TargetAt(_ledger.MiningTime, now),
             config.WorkerName,
-            config.UsagePercent);
+            config.UsagePercent,
+            config.CpuPool);
 
         if (_running is null || _running != desired)
         {
@@ -207,7 +220,11 @@ public sealed class EarningsEngine : IAsyncDisposable
 
         var status = await _provider.GetStatusAsync(ct);
         if (status.State == ProviderState.Error)
+        {
+            if (status.Problem is { } problem)
+                throw new ProviderProblemException(problem);
             throw new InvalidOperationException(status.Message ?? "The mining engine stopped unexpectedly.");
+        }
 
         var elapsed = now - _lastTick;
         _lastTick = now;
@@ -269,7 +286,8 @@ public sealed class EarningsEngine : IAsyncDisposable
             power: power,
             costPerDay: costPerDay,
             role: _running.Target.Role,
-            detail: status.Detail);
+            detail: status.Detail,
+            problem: status.Problem);
     }
 
     /// <summary>Before starting, use what the provider (or the last run) says to avoid mining at a loss.</summary>
@@ -342,7 +360,8 @@ public sealed class EarningsEngine : IAsyncDisposable
         InstallProgress? install = null,
         EngineBlockedException? blocked = null,
         TimeSpan? idleTime = null,
-        string? detail = null)
+        string? detail = null,
+        string? problem = null)
     {
         var config = _config();
         var now = _time.GetUtcNow();
@@ -364,6 +383,7 @@ public sealed class EarningsEngine : IAsyncDisposable
             EngineBlockedPath = blocked?.EnginePath,
             IdleTime = idleTime,
             Detail = detail,
+            Problem = problem,
             IdleDetectionAvailable = !config.OnlyWhenIdle || _idle.GetIdleTime() is not null,
             TotalUserUsd = _ledger.EstimatedUserUsd,
             TotalElectricityUsd = _ledger.ElectricityCostUsd,

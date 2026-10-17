@@ -63,9 +63,9 @@ public sealed class WhatToMineClient(HttpClient http, IOptions<KryptexOptions> o
 
 public sealed record KryptexPoolInfo(double FeePercent);
 
-public sealed record KryptexWorker(string Name, double Hashrate);
-
-public sealed record KryptexPoint(DateTimeOffset Time, double Hashrate);
+/// <param name="Hashrate">The worker's average over the last 30 minutes, in H/s.</param>
+/// <param name="Average3h">The average over the last 3 hours, used to cover longer gaps between crediting runs.</param>
+public sealed record KryptexWorker(string Name, double Hashrate, double? Average3h = null);
 
 public interface IKryptexApi
 {
@@ -74,7 +74,6 @@ public interface IKryptexApi
     Task<IReadOnlyList<KryptexWorker>> GetWorkersAsync(string coin, string account, CancellationToken ct);
 
     /// <summary>Hashrate history for one worker (H/s), oldest first.</summary>
-    Task<IReadOnlyList<KryptexPoint>> GetWorkerChartAsync(string coin, string account, string worker, CancellationToken ct);
 }
 
 /// <summary>Kryptex Pool's public API (https://pool.kryptex.com/openapi.yaml).</summary>
@@ -92,45 +91,36 @@ public sealed class KryptexClient(HttpClient http, IOptions<KryptexOptions> opti
     public async Task<IReadOnlyList<KryptexWorker>> GetWorkersAsync(string coin, string account, CancellationToken ct)
     {
         using var doc = await GetAsync($"{Esc(coin)}/api/v3/miner/workers/{Esc(account)}", ct);
+        return ParseWorkers(doc.RootElement);
+    }
+
+    /// <summary>
+    /// The live API (October 2026) sends no "hashrate" per worker, despite its OpenAPI file, but 30-minute, 3-hour and
+    /// 24-hour averages as strings ("avg_hashrate_30m": "250199979298360.89"). Accept both.
+    /// </summary>
+    internal static IReadOnlyList<KryptexWorker> ParseWorkers(JsonElement root)
+    {
         var list = new List<KryptexWorker>();
-        if (doc.RootElement.TryGetProperty("results", out var results) && results.ValueKind == JsonValueKind.Array)
+        if (root.TryGetProperty("results", out var results) && results.ValueKind == JsonValueKind.Array)
         {
             foreach (var w in results.EnumerateArray())
             {
                 if (w.TryGetProperty("worker", out var name) && name.ValueKind == JsonValueKind.String)
-                    list.Add(new KryptexWorker(name.GetString()!, w.TryGetProperty("hashrate", out var h) && h.ValueKind == JsonValueKind.Number ? h.GetDouble() : 0));
+                    list.Add(new KryptexWorker(name.GetString()!, Number(w, "avg_hashrate_30m") ?? Number(w, "hashrate") ?? 0,
+                        Number(w, "avg_hashrate_3h")));
             }
         }
         return list;
     }
 
-    public async Task<IReadOnlyList<KryptexPoint>> GetWorkerChartAsync(string coin, string account, string worker, CancellationToken ct)
+    private static double? Number(JsonElement element, string property)
     {
-        using var doc = await GetAsync($"{Esc(coin)}/api/v1/miner/chart/{Esc(account)}/{Esc(worker)}?days=1", ct);
-        var points = new List<KryptexPoint>();
-        if (doc.RootElement.ValueKind == JsonValueKind.Array)
-        {
-            foreach (var p in doc.RootElement.EnumerateArray())
-            {
-                if (ParseTime(p) is { } time && p.TryGetProperty("hashrate", out var h) && h.ValueKind == JsonValueKind.Number)
-                    points.Add(new KryptexPoint(time, h.GetDouble()));
-            }
-        }
-        return points.OrderBy(p => p.Time).ToList();
-    }
-
-    /// <summary>Unix seconds, Unix milliseconds or an ISO date, whichever the API sends.</summary>
-    internal static DateTimeOffset? ParseTime(JsonElement point)
-    {
-        if (!point.TryGetProperty("timestamp", out var t))
+        if (!element.TryGetProperty(property, out var value))
             return null;
-        if (t.ValueKind == JsonValueKind.Number)
-        {
-            var value = t.GetDouble();
-            return value > 1e12 ? DateTimeOffset.FromUnixTimeMilliseconds((long)value) : DateTimeOffset.FromUnixTimeSeconds((long)value);
-        }
-        return t.ValueKind == JsonValueKind.String
-               && DateTimeOffset.TryParse(t.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsed)
+        if (value.ValueKind == JsonValueKind.Number)
+            return value.GetDouble();
+        return value.ValueKind == JsonValueKind.String
+               && double.TryParse(value.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
             ? parsed
             : null;
     }

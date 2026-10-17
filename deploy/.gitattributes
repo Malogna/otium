@@ -1,0 +1,2 @@
+# These files run on Linux; keep LF even in Windows checkouts (a CRLF shell script fails inside the container).
+* text=auto eol=lf

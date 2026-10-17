@@ -42,10 +42,12 @@ public static class TestAddresses
     }
 }
 
-public sealed class ManualTime(DateTimeOffset start) : TimeProvider
+public sealed class ManualTime(DateTimeOffset start, TimeZoneInfo? localTimeZone = null) : TimeProvider
 {
     private DateTimeOffset _now = start;
     private long _ticks;
+
+    public override TimeZoneInfo LocalTimeZone => localTimeZone ?? base.LocalTimeZone;
 
     public override DateTimeOffset GetUtcNow() => _now;
 

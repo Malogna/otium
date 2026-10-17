@@ -1,0 +1,3 @@
+# Real settings and secrets stay on the server.
+.env
+backup.env

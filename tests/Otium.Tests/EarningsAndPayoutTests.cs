@@ -34,7 +34,30 @@ public abstract class MoneyTestBase : IDisposable
 
     protected EarningsOptions Earnings { get; } = new() { FeePercent = 10, ReferralPercent = 5, HoldPeriod = TimeSpan.FromHours(48) };
 
-    protected CashoutOptions Cashouts { get; } = new();
+    /// <summary>Every method enabled, so the generic cash-out rules can be tested with any provider.</summary>
+    protected CashoutOptions Cashouts { get; } = new() { Methods = ["btc", "eth", "bnb", "sol", "paypal", "xmr"] };
+
+    /// <summary>Sanctions lists loaded (empty), as after the first refresh.</summary>
+    protected SanctionsList Sanctions { get; } = LoadedSanctions();
+
+    protected CashoutService NewCashoutService(IEnumerable<IPayoutProvider> providers)
+    {
+        var list = providers.ToList();
+        var catalog = new CashoutMethodCatalog(Options.Create(Cashouts), list, NullLogger<CashoutMethodCatalog>.Instance);
+        return new CashoutService(Store, list, Options.Create(Cashouts), catalog, Sanctions, Time, NullLogger<CashoutService>.Instance);
+    }
+
+    private static SanctionsList LoadedSanctions()
+    {
+        var list = new SanctionsList();
+        foreach (var name in new[] { "btc", "evm", "bsc", "sol" })
+            list.Load(name, []);
+        return list;
+    }
+
+    protected OutboxEmailSender Outbox { get; } = new(NullLogger<OutboxEmailSender>.Instance);
+
+    protected CashoutReceipts Receipts => new(Store, Outbox, NullLogger<CashoutReceipts>.Instance);
 
     protected AccountRecord NewAccount(string? referredBy = null, DateTimeOffset? feeFreeUntil = null, TimeSpan? age = null, string? email = "default")
     {
@@ -117,7 +140,10 @@ public abstract class MoneyTestBase : IDisposable
             return Task.FromResult<IReadOnlyList<PayoutOutcome>>(batch.Select(c => new PayoutOutcome(c.Id, NextStatus, "ref-" + c.Id, NextStatus == CashoutStatuses.Failed ? "bounced" : null)).ToList());
         }
 
-        public Task<PayoutOutcome> CheckAsync(CashoutRecord sending, CancellationToken ct) => Task.FromResult(new PayoutOutcome(sending.Id, CashoutStatuses.Paid));
+        /// <summary>What a follow-up check reports for a cash-out in flight; null means "still on its way".</summary>
+        public string? CheckStatus { get; set; } = CashoutStatuses.Paid;
+
+        public Task<PayoutOutcome> CheckAsync(CashoutRecord sending, CancellationToken ct) => Task.FromResult(new PayoutOutcome(sending.Id, CheckStatus));
     }
 }
 
@@ -253,9 +279,9 @@ public sealed class CashoutTests : MoneyTestBase
     private readonly FakeProvider _paypal = new(CashoutMethods.PayPal);
     private readonly FakeProvider _monero = new(CashoutMethods.Monero);
 
-    private CashoutService Service => new(Store, [_paypal, _monero], Options.Create(Cashouts), Time, NullLogger<CashoutService>.Instance);
+    private CashoutService Service => NewCashoutService([_paypal, _monero]);
 
-    private CashoutProcessor Processor => new(Store, [_paypal, _monero], Time, NullLogger<CashoutProcessor>.Instance);
+    private CashoutProcessor Processor => new(Store, [_paypal, _monero], Receipts, Time, NullLogger<CashoutProcessor>.Instance);
 
     [Fact]
     public void Below_the_minimum_is_refused_and_nothing_is_debited()
@@ -369,8 +395,8 @@ public sealed class CashoutTests : MoneyTestBase
     public async Task Monero_provider_batches_cashouts_into_one_transaction_at_the_current_price()
     {
         var provider = new MoneroPayoutProvider(Wallet, Pool, NullLogger<MoneroPayoutProvider>.Instance);
-        var processor = new CashoutProcessor(Store, [provider], Time, NullLogger<CashoutProcessor>.Instance);
-        var service = new CashoutService(Store, [provider], Options.Create(Cashouts), Time, NullLogger<CashoutService>.Instance);
+        var processor = new CashoutProcessor(Store, [provider], Receipts, Time, NullLogger<CashoutProcessor>.Instance);
+        var service = NewCashoutService([provider]);
 
         var a = NewAccount();
         var b = NewAccount();
@@ -392,8 +418,8 @@ public sealed class CashoutTests : MoneyTestBase
     public async Task Monero_wallet_errors_leave_cashouts_queued_for_a_retry()
     {
         var provider = new MoneroPayoutProvider(Wallet, Pool, NullLogger<MoneroPayoutProvider>.Instance);
-        var processor = new CashoutProcessor(Store, [provider], Time, NullLogger<CashoutProcessor>.Instance);
-        var service = new CashoutService(Store, [provider], Options.Create(Cashouts), Time, NullLogger<CashoutService>.Instance);
+        var processor = new CashoutProcessor(Store, [provider], Receipts, Time, NullLogger<CashoutProcessor>.Instance);
+        var service = NewCashoutService([provider]);
         var device = NewAccount();
         Fund(device, 5m);
         var info = service.Request(device, new CashoutRequest(CashoutMethods.Monero, TestAddresses.Generate()));

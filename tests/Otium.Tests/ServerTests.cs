@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
+using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -22,6 +23,8 @@ public sealed class ServerTests : IDisposable
     private readonly WebApplicationFactory<Program> _factory;
     private readonly HttpClient _http;
 
+    private const string AdminToken = "test-admin-token";
+
     public ServerTests()
     {
         _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -30,6 +33,11 @@ public sealed class ServerTests : IDisposable
             builder.UseSetting("DisableBackgroundJobs", "true");
             builder.UseSetting("Earnings:PoolWallets:0", _poolWallet);
             builder.UseSetting("Referral:PublicBaseUrl", "https://otium.example");
+            builder.UseSetting("Admin:Token", AdminToken);
+            // PayPal stays enabled here because these tests exercise the generic cash-out flow through it.
+            string[] methods = ["btc", "eth", "bnb", "sol", "paypal", "xmr"];
+            for (var i = 0; i < methods.Length; i++)
+                builder.UseSetting($"Cashouts:Methods:{i}", methods[i]);
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll<IMoneroPoolApi>();
@@ -45,11 +53,14 @@ public sealed class ServerTests : IDisposable
     {
         public Dictionary<string, double> Hashes { get; } = [];
 
+        /// <summary>Simulates the pool API being unreachable.</summary>
+        public bool Down { get; set; }
+
         public Task<MoneroNetworkStats> GetNetworkStatsAsync(CancellationToken ct) =>
-            Task.FromResult(new MoneroNetworkStats(1, 1, 1, DateTimeOffset.UtcNow));
+            Down ? throw new HttpRequestException("pool down") : Task.FromResult(new MoneroNetworkStats(1, 1, 1, DateTimeOffset.UtcNow));
 
         public Task<PoolMinerStats?> GetMinerStatsAsync(string walletAddress, CancellationToken ct) =>
-            Task.FromResult<PoolMinerStats?>(new PoolMinerStats(Hashes.GetValueOrDefault(walletAddress), 0, 0, 0));
+            Down ? throw new HttpRequestException("pool down") : Task.FromResult<PoolMinerStats?>(new PoolMinerStats(Hashes.GetValueOrDefault(walletAddress), 0, 0, 0));
 
         public Task<AlgoProfits> GetAlgoProfitsAsync(CancellationToken ct) =>
             Task.FromResult(new AlgoProfits(new Dictionary<string, double>(), 1, DateTimeOffset.UtcNow));
@@ -378,11 +389,229 @@ public sealed class ServerTests : IDisposable
         Assert.Equal(429, limited.StatusCode);
     }
 
+    // ---------- invite leaderboard ----------
+
+    /// <summary>Registers a friend through <paramref name="code"/>; verified friends have really started earning.</summary>
+    private async Task Invite(string code, bool verified = true, DateTimeOffset? referredAt = null)
+    {
+        var friend = await RegisterBalance(NewDevice(), code);
+        var account = Store.FindAccountByCode(friend.Code)!;
+        Store.Upsert(account with { Verified = verified, ReferredAt = referredAt ?? account.ReferredAt });
+    }
+
+    private Task<InviteLeaderboard> Leaderboard(Device d) =>
+        new AccountClient(_http).GetInviteLeaderboardAsync(d.Id, d.Secret, CancellationToken.None);
+
+    [Fact]
+    public async Task The_leaderboard_ranks_inviters_by_friends_who_started_earning()
+    {
+        var alice = NewDevice();
+        var bob = NewDevice();
+        var carol = NewDevice();
+        var aliceCode = (await RegisterBalance(alice)).Code;
+        var bobCode = (await RegisterBalance(bob)).Code;
+        var carolCode = (await RegisterBalance(carol)).Code;
+        await Invite(aliceCode);
+        await Invite(aliceCode);
+        await Invite(aliceCode, verified: false); // signed up but never earned: doesn't count
+        await Invite(bobCode);
+        await Invite(carolCode);
+
+        var board = await Leaderboard(bob);
+
+        Assert.Equal(new DateTimeOffset(_time.GetUtcNow().Year, _time.GetUtcNow().Month, 1, 0, 0, 0, TimeSpan.Zero), board.PeriodStart);
+        Assert.Equal(3, board.Top.Count);
+        Assert.Equal(new InviteLeaderboardEntry(1, ReferralCodes.Mask(aliceCode), 2, false), board.Top[0]);
+        Assert.All(board.Top.Skip(1), e => Assert.Equal(2, e.Rank)); // bob and carol tie
+        Assert.Contains(board.Top, e => e is { IsYou: true, Name: "You", Friends: 1 });
+        Assert.Equal(2, board.YourRank);
+        Assert.Equal(1, board.YourFriends);
+        Assert.DoesNotContain(board.Top, e => e.Name.Contains(aliceCode, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Last_months_friends_and_newcomers_without_friends_are_not_ranked()
+    {
+        var alice = NewDevice();
+        var aliceCode = (await RegisterBalance(alice)).Code;
+        await Invite(aliceCode, referredAt: _time.GetUtcNow().AddMonths(-1).AddDays(-1));
+        var newcomer = NewDevice();
+        await RegisterBalance(newcomer);
+
+        Assert.DoesNotContain((await Leaderboard(alice)).Top, e => e.IsYou);
+        var board = await Leaderboard(newcomer);
+        Assert.Null(board.YourRank);
+        Assert.Equal(0, board.YourFriends);
+    }
+
+    [Fact]
+    public async Task The_leaderboard_needs_the_device_secret()
+    {
+        var alice = NewDevice();
+        await RegisterBalance(alice);
+        var error = await Assert.ThrowsAsync<AccountRequestException>(() => Leaderboard(alice with { Secret = "wrong" }));
+        Assert.Equal(401, error.StatusCode);
+    }
+
     [Fact]
     public async Task Admin_endpoints_need_the_token()
     {
         var response = await _http.GetAsync("/admin/summary");
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task The_app_is_told_each_payout_method_once_with_its_minimum()
+    {
+        var device = NewDevice();
+        await RegisterBalance(device);
+
+        var methods = (await Summary(device)).Balance.Methods!;
+
+        Assert.Equal(["btc", "eth", "bnb", "sol", "paypal", "xmr"], methods.Select(m => m.Method));
+        Assert.Equal(5m, methods.Single(m => m.Method == "btc").MinUsd);
+        Assert.Equal(8m, methods.Single(m => m.Method == "eth").MinUsd);
+        Assert.Null(methods.Single(m => m.Method == "btc").FeeNote);
+        Assert.Contains("THORChain", methods.Single(m => m.Method == "bnb").FeeNote);
+        Assert.Equal(5m, (await Summary(device)).Balance.MinCryptoUsd);
+    }
+
+    // ---------- operator dashboard ----------
+
+    private async Task<HttpResponseMessage> Admin(HttpMethod method, string path, object? body = null)
+    {
+        using var request = new HttpRequestMessage(method, path) { Content = body is null ? null : JsonContent.Create(body) };
+        request.Headers.Add("X-Admin-Token", AdminToken);
+        return await _http.SendAsync(request);
+    }
+
+    /// <summary>A signed-in account with a cash-out waiting for review (new accounts always wait).</summary>
+    private async Task<(Device Device, CashoutInfo Cashout)> CashoutInReview(string email, long micros = 20_000_000)
+    {
+        var device = NewDevice();
+        await RegisterBalance(device);
+        var account = await SignIn(device, email);
+        Store.AddLedger(Store.FindAccountByCode(account.Code)!.AccountId, LedgerKinds.Earning, micros, _time.GetUtcNow(), _time.GetUtcNow(), "test");
+        var cashout = await new AccountClient(_http).RequestCashoutAsync(device.Id, device.Secret,
+            new CashoutRequest(CashoutMethods.PayPal, email), CancellationToken.None);
+        return (device, cashout);
+    }
+
+    [Fact]
+    public async Task The_dashboard_page_holds_no_data_and_locks_itself_down()
+    {
+        var page = await _http.GetAsync("/admin");
+
+        Assert.Equal(HttpStatusCode.OK, page.StatusCode);
+        Assert.Equal("text/html", page.Content.Headers.ContentType!.MediaType);
+        var csp = page.Headers.GetValues("Content-Security-Policy").Single();
+        Assert.Contains("script-src 'self'", csp);
+        Assert.Contains("frame-ancestors 'none'", csp);
+        Assert.DoesNotContain("unsafe-inline", csp);
+        Assert.Equal("no-store", page.Headers.CacheControl!.ToString());
+        var html = await page.Content.ReadAsStringAsync();
+        Assert.Contains("Otium operator", html);
+        Assert.DoesNotContain("<script>", html); // only the external script, which the policy allows
+        Assert.DoesNotContain(AdminToken, html);
+
+        Assert.Equal(HttpStatusCode.OK, (await _http.GetAsync("/admin/dashboard.js")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await _http.GetAsync("/admin/dashboard.css")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await _http.GetAsync("/admin/cashouts")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Without_an_admin_token_there_is_no_dashboard()
+    {
+        using var factory = _factory.WithWebHostBuilder(b => b.UseSetting("Admin:Token", ""));
+        using var http = factory.CreateClient();
+
+        Assert.Equal(HttpStatusCode.NotFound, (await http.GetAsync("/admin")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await http.GetAsync("/admin/dashboard.js")).StatusCode);
+    }
+
+    [Fact]
+    public async Task The_review_queue_shows_what_a_reviewer_needs_and_approving_queues_it()
+    {
+        var (_, cashout) = await CashoutInReview("rev@example.com");
+
+        var queue = await (await Admin(HttpMethod.Get, "/admin/cashouts?status=review")).Content.ReadFromJsonAsync<JsonElement>();
+        var entry = queue.EnumerateArray().Single(e => e.GetProperty("id").GetString() == cashout.Id);
+        Assert.Equal("rev@example.com", entry.GetProperty("destination").GetString()); // full destination for the operator
+        Assert.Equal("rev@example.com", entry.GetProperty("accountEmail").GetString());
+        Assert.Equal(20m, entry.GetProperty("amountUsd").GetDecimal());
+        Assert.Equal(20_000_000, entry.GetProperty("micros").GetInt64());
+        Assert.Equal(20m, entry.GetProperty("lifetimeEarnedUsd").GetDecimal());
+        Assert.Equal(0, entry.GetProperty("otherAccountsUsingDestination").GetInt64());
+        Assert.False(string.IsNullOrEmpty(entry.GetProperty("note").GetString()));
+
+        Assert.Equal(HttpStatusCode.OK, (await Admin(HttpMethod.Post, $"/admin/cashouts/{cashout.Id}/approve")).StatusCode);
+        Assert.Equal(CashoutStatuses.Queued, Store.FindCashout(cashout.Id)!.Status);
+        // Approving twice does nothing: it's no longer in review.
+        Assert.Equal(HttpStatusCode.NotFound, (await Admin(HttpMethod.Post, $"/admin/cashouts/{cashout.Id}/approve")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Rejecting_returns_the_money_and_tells_the_user_why()
+    {
+        var (device, cashout) = await CashoutInReview("rej@example.com");
+
+        var response = await Admin(HttpMethod.Post, $"/admin/cashouts/{cashout.Id}/reject", new { note = "please use your own PayPal" });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var balance = (await Summary(device)).Balance;
+        Assert.Equal(20m, balance.AvailableUsd);
+        var rejected = Assert.Single(balance.RecentCashouts);
+        Assert.Equal(CashoutStatuses.Failed, rejected.Status);
+        Assert.Equal("please use your own PayPal", rejected.Note);
+    }
+
+    [Fact]
+    public async Task The_summary_still_shows_the_ledger_when_the_pool_is_down()
+    {
+        await CashoutInReview("sum@example.com", micros: 7_500_000);
+        _pool.Down = true;
+
+        var response = await Admin(HttpMethod.Get, "/admin/summary");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var summary = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(7.5m, summary.GetProperty("creditedToUsersUsd").GetDecimal());
+        Assert.Equal(7.5m, summary.GetProperty("moneroOceanCreditedToUsersUsd").GetDecimal());
+        Assert.Equal(1, summary.GetProperty("reviewQueue").GetInt32());
+        Assert.Equal(0m, summary.GetProperty("owedToUsersUsd").GetDecimal());
+        Assert.Equal(7.5m, summary.GetProperty("inOpenCashoutsUsd").GetDecimal());
+        Assert.False(string.IsNullOrEmpty(summary.GetProperty("poolError").GetString()));
+    }
+
+    [Fact]
+    public async Task Marking_a_cashout_paid_by_hand_emails_a_receipt_and_shows_in_the_app()
+    {
+        var device = NewDevice();
+        await RegisterBalance(device);
+        var account = await SignIn(device, "sam@example.com");
+        var accountId = Store.FindAccountByCode(account.Code)!.AccountId;
+        Store.AddLedger(accountId, LedgerKinds.Earning, 20_000_000, _time.GetUtcNow(), _time.GetUtcNow(), "test");
+        var client = new AccountClient(_http);
+        // A brand-new account, so it waits for review rather than being sent automatically.
+        var cashout = await client.RequestCashoutAsync(device.Id, device.Secret, new CashoutRequest(CashoutMethods.PayPal, "sam@example.com"), CancellationToken.None);
+        Assert.Equal(CashoutStatuses.Review, cashout.Status);
+        Assert.Null(cashout.Note); // the review reason is for the operator only
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"/admin/cashouts/{cashout.Id}/mark-paid")
+        {
+            Content = JsonContent.Create(new { note = "PayPal txn 9XY" }),
+        };
+        request.Headers.Add("X-Admin-Token", AdminToken);
+        Assert.Equal(HttpStatusCode.OK, (await _http.SendAsync(request)).StatusCode);
+
+        var receipt = Outbox.Sent.Last();
+        Assert.Equal("sam@example.com", receipt.To);
+        Assert.Equal("Your Otium cash-out of $20.00 was sent", receipt.Subject);
+        var balance = (await Summary(device)).Balance;
+        Assert.Equal(20m, balance.PaidOutUsd);
+        var paid = Assert.Single(balance.RecentCashouts);
+        Assert.Equal(CashoutStatuses.Paid, paid.Status);
+        Assert.NotNull(paid.UpdatedAt);
     }
 
     public void Dispose()

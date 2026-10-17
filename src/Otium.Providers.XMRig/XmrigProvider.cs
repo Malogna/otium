@@ -97,6 +97,7 @@ public sealed class XmrigProvider : IComputeProvider
         try
         {
             _process = Process.Start(startInfo) ?? throw new InvalidOperationException("Could not start the mining engine.");
+            MinerLifetime.Adopt(_process); // dies with Otium, even if Otium crashes
         }
         catch (Win32Exception e) when (e.NativeErrorCode is ErrorVirusInfected or ErrorVirusDeleted)
         {

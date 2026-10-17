@@ -16,6 +16,10 @@ namespace Otium.Providers.SrbMiner;
 /// it mines whichever algorithm pays the most after miner and pool fees and measured electricity, and re-checks every
 /// <see cref="ReevaluateEvery"/>. Algorithms that usually lose money run only when electricity is free, and anything
 /// the server disables (the kill switch) is dropped at the next re-check.
+///
+/// A miner that runs but doesn't hash for <see cref="StallTimeout"/> (or exits) has failed: that algorithm is set
+/// aside for a while (longer each time it fails again) and the next best one is tried, so a card that can't mine a
+/// coin, for example because another app holds its memory, doesn't sit at "Starting…" or retry the same coin in a loop.
 /// </summary>
 public sealed class SrbMinerGpuProvider : IComputeProvider
 {
@@ -23,6 +27,26 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
     public static readonly TimeSpan BenchmarkDuration = TimeSpan.FromSeconds(150);
     public static readonly TimeSpan ReevaluateEvery = TimeSpan.FromMinutes(10);
     public const int MinimumSamples = 3;
+
+    /// <summary>A benchmark only counts if the card is still hashing this close to its end.</summary>
+    public static readonly TimeSpan StillHashingWithin = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// How long SRBMiner's first dev-fee round is treated as running after it's announced (about 45 s in 3.7.6). Its
+    /// hashes go to the developer's pool, so they're neither earnings nor proof the card works for the user's pool.
+    /// </summary>
+    public static readonly TimeSpan DevFeeRound = TimeSpan.FromSeconds(60);
+
+    /// <summary>A running miner with no hashrate for this long (after launch or since it last hashed) has failed.</summary>
+    public static readonly TimeSpan StallTimeout = TimeSpan.FromMinutes(3);
+
+    /// <summary>How long a failed algorithm is set aside; doubles with each failure in a row, up to <see cref="MaxStallCooldown"/>.</summary>
+    public static readonly TimeSpan StallCooldown = TimeSpan.FromHours(1);
+
+    public static readonly TimeSpan MaxStallCooldown = TimeSpan.FromHours(24);
+
+    /// <summary>Set aside for less time when another app holds graphics memory: that usually ends when the app closes.</summary>
+    public static readonly TimeSpan LowMemoryCooldown = TimeSpan.FromMinutes(10);
 
     private readonly IMoneroPoolApi _pool;
     private readonly IReadOnlyList<GpuInfo> _gpus;
@@ -36,19 +60,29 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
     private readonly EngineInstaller _installer;
     private readonly SrbMinerAsset? _asset;
     private readonly Func<GpuPolicy?> _policy;
+    private readonly Func<GpuInfo, double?> _freeMemoryGb;
     private readonly List<(double Hashrate, double? Watts)> _samples = [];
+    private readonly Dictionary<string, SetAside> _setAside = new(StringComparer.OrdinalIgnoreCase);
 
     private IMinerProcess? _process;
     private ProviderRunOptions? _options;
     private GpuAlgorithm? _current;
     private DateTimeOffset _currentSince;
     private DateTimeOffset _launchedAt;
+    private DateTimeOffset _lastHashingAt;
+    private DateTimeOffset? _devFeeSeenAt;
     private DateTimeOffset _lastEvaluation;
     private bool _benchmarking;
     private int _benchmarkIndex;
     private int _benchmarkTotal;
     private string? _switchNote;
+    private string? _notice;
+    private string? _lastProblem;
 
+    /// <summary>An algorithm that failed and isn't tried again until <paramref name="Until"/>.</summary>
+    private sealed record SetAside(string Reason, DateTimeOffset Until, int Failures);
+
+    /// <param name="freeMemoryGb">Free graphics memory of a GPU right now, or null if unknown (NVML reads it for NVIDIA cards).</param>
     public SrbMinerGpuProvider(
         HttpClient http,
         IMoneroPoolApi pool,
@@ -62,9 +96,11 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         GpuPoolEndpoint? endpoint = null,
         ProfitSwitcher? switcher = null,
         SrbMinerAsset? asset = null,
-        Func<GpuPolicy?>? policy = null)
+        Func<GpuPolicy?>? policy = null,
+        Func<GpuInfo, double?>? freeMemoryGb = null)
     {
         _policy = policy ?? (() => null);
+        _freeMemoryGb = freeMemoryGb ?? (_ => null);
         _pool = pool;
         _gpus = gpus.Where(g => g.Vendor is GpuVendor.Nvidia or GpuVendor.Amd).ToList();
         _meter = meter;
@@ -110,30 +146,37 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         return _installer.InstallAsync($"SRBMiner {SrbMinerRelease.Version}", _asset.DownloadUrl, _asset.FileName, _asset.Sha256, progress, ct);
     }
 
-    /// <summary>Forget all measurements so every algorithm is tested again on the next start.</summary>
-    public void ResetBenchmarks() => _store.Clear();
+    /// <summary>Forget all measurements and failures so every algorithm is tested again on the next start.</summary>
+    public void ResetBenchmarks()
+    {
+        _store.Clear();
+        _setAside.Clear();
+        _lastProblem = null;
+    }
 
     public async Task StartAsync(ProviderRunOptions options, CancellationToken ct)
     {
         _options = options;
+        // A restart (e.g. for a fee slice) resumes the coin being mined; after an interrupted test there's none to resume.
+        var resume = !_benchmarking;
         var eligible = await EligibleAsync(ct);
         if (eligible.Count == 0)
-            throw new InvalidOperationException("No coin your graphics card can mine pays more than its electricity right now.");
+            throw new ProviderProblemException("Graphics card isn't mining: no coin it can mine pays more than its electricity right now.");
 
         var pending = eligible.Where(a => !_store.Has(a.PoolName)).ToList();
         if (pending.Count > 0)
         {
             _benchmarking = true;
-            _benchmarkTotal = eligible.Count;
-            _benchmarkIndex = eligible.Count - pending.Count;
-            await LaunchAsync(pending[0], ct);
-            return;
+            if (await LaunchFirstAsync(pending, ct) is not null)
+            {
+                CountBenchmark(eligible);
+                return;
+            }
         }
 
         _benchmarking = false;
-        var choice = await ChooseAsync(ct)
-                     ?? throw new InvalidOperationException("None of the GPU algorithms worked on your graphics card. Use \"Test GPU again\" in Settings to retry.");
-        await LaunchAsync(choice, ct);
+        if (await LaunchFirstAsync(await MiningCandidatesAsync(resume, ct), ct) is null)
+            throw NotMining();
     }
 
     public async Task StopAsync(CancellationToken ct)
@@ -150,15 +193,25 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         var now = _time.GetUtcNow();
         if (_process.HasExited)
         {
-            var reason = $"exited with code {_process.ExitCode}: {string.Join(" ", _process.RecentLog.TakeLast(2))}".Trim();
+            var exit = $"exited with code {_process.ExitCode}: {string.Join(" ", _process.RecentLog.TakeLast(2))}".Trim();
             if (!_benchmarking)
-                return new ProviderStatus(ProviderState.Error, 0, $"The GPU miner {reason}");
+                return await FailOverAsync(SrbMinerStats.DescribeProblem(_process.RecentLog) ?? $"the miner {exit}", ct);
 
-            _store.Record(new BenchmarkResult(_current.PoolName, 0, null, now, Failure: reason));
+            _store.Record(new BenchmarkResult(_current.PoolName, 0, null, now, Failure: exit));
             return await AdvanceBenchmarkAsync(ct);
         }
 
-        var hashrate = await _process.ReadHashrateAsync(ct) ?? 0;
+        // During SRBMiner's first dev-fee round the hashes are the developer's, not the user's.
+        if (_devFeeSeenAt is null && SrbMinerStats.StartedFirstDevFeeRound(_process.RecentLog))
+            _devFeeSeenAt = now;
+        var inDevFeeRound = _devFeeSeenAt is { } feeStart && now - feeStart < DevFeeRound;
+        var hashrate = inDevFeeRound ? 0 : await _process.ReadHashrateAsync(ct) ?? 0;
+        if (hashrate > 0)
+        {
+            _lastHashingAt = now;
+            _notice = null;
+            _setAside.Remove(_current.PoolName); // it works again, so a later failure starts the back-off afresh
+        }
 
         if (_benchmarking)
         {
@@ -171,14 +224,25 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
 
             if (elapsed >= BenchmarkDuration)
             {
-                _store.Record(_samples.Count >= MinimumSamples
+                // A card that hashed early (e.g. only during the dev-fee round) and then stopped hasn't proven anything.
+                var stillHashing = _samples.Count > 0 && now - _lastHashingAt <= StillHashingWithin;
+                _store.Record(_samples.Count >= MinimumSamples && stillHashing
                     ? new BenchmarkResult(_current.PoolName, Median(_samples.Select(s => s.Hashrate)), AverageWatts(), now)
-                    : new BenchmarkResult(_current.PoolName, 0, null, now, Failure: "no stable hashrate"));
+                    : new BenchmarkResult(_current.PoolName, 0, null, now,
+                        Failure: SrbMinerStats.DescribeProblem(_process.RecentLog)
+                                 ?? (_samples.Count > 0 ? "stopped hashing during the test" : "no stable hashrate")));
                 return await AdvanceBenchmarkAsync(ct);
             }
 
             var testing = $"Testing {_current.PoolName} on your graphics card ({_benchmarkIndex + 1} of {_benchmarkTotal})";
-            return new ProviderStatus(hashrate > 0 ? ProviderState.Running : ProviderState.Starting, hashrate, testing + "…", testing, IsCalibrating: true);
+            return new ProviderStatus(hashrate > 0 ? ProviderState.Running : ProviderState.Starting, hashrate, testing + "…", testing, IsCalibrating: true, Problem: _notice);
+        }
+
+        if (now - _lastHashingAt >= StallTimeout)
+        {
+            var reason = SrbMinerStats.DescribeProblem(_process.RecentLog)
+                         ?? $"it showed no hashing for {StallTimeout.TotalMinutes:0} minutes";
+            return await FailOverAsync(reason, ct);
         }
 
         if (now - _lastEvaluation >= ReevaluateEvery)
@@ -186,20 +250,24 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
             _lastEvaluation = now;
             try
             {
-                var choice = await ChooseAsync(ct);
-                if (choice is null)
+                var candidates = await MiningCandidatesAsync(keepCurrent: true, ct);
+                if (candidates.Count == 0)
                 {
                     // Everything usable was switched off (e.g. the server disabled this coin): stop instead of mining on.
                     var stopped = _current.PoolName;
                     await KillAsync();
                     return new ProviderStatus(ProviderState.Error, 0, $"Stopped mining {stopped}: it isn't paying right now. Otium checks again shortly.");
                 }
-                if (choice != _current)
+                if (candidates[0] != _current)
                 {
-                    var from = _current.PoolName;
-                    await LaunchAsync(choice, ct);
-                    _switchNote = $"switched from {from}";
-                    return new ProviderStatus(ProviderState.Starting, 0, $"Switching to {choice.PoolName}, which pays more right now…", choice.PoolName);
+                    var from = _current;
+                    if (await LaunchFirstAsync(candidates, ct) is { } next && next != from)
+                    {
+                        _switchNote = $"switched from {from.PoolName}";
+                        return new ProviderStatus(ProviderState.Starting, 0, $"Switching to {next.PoolName}, which pays more right now…", next.PoolName);
+                    }
+                    if (_process is null)
+                        return NotMiningStatus();
                 }
             }
             catch (HttpRequestException)
@@ -209,11 +277,15 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         }
 
         var detail = _switchNote is null ? _current.PoolName : $"{_current.PoolName} ({_switchNote})";
+        var waiting = inDevFeeRound
+            ? $"Starting {_current.PoolName} (the miner's own short fee round runs first)…"
+            : $"Starting {_current.PoolName} (preparing the GPU can take a minute)…";
         return new ProviderStatus(
             hashrate > 0 ? ProviderState.Running : ProviderState.Starting,
             hashrate,
-            hashrate > 0 ? null : $"Starting {_current.PoolName} (preparing the GPU can take a minute)…",
-            detail);
+            hashrate > 0 ? null : _notice ?? waiting,
+            detail,
+            Problem: hashrate > 0 ? null : _notice);
     }
 
     /// <summary>USD per day for the current algorithm (rates are in USD, so "coin" here is USD).</summary>
@@ -249,6 +321,10 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         var fallbackWatts = _meter.Read(100) is { IsMeasured: false } estimate ? estimate.ExtraWatts : GpuPowerMeter.DefaultEstimatedWatts * _gpus.Count;
         return _switcher.Score(_store.Results, quotes, 1.0, _pricePerKwh(), fallbackWatts);
     }
+
+    /// <summary>Why an algorithm is set aside right now (it failed recently), or null if it can be mined.</summary>
+    public string? SetAsideReason(string algorithm) =>
+        _setAside.TryGetValue(algorithm, out var s) && s.Until > _time.GetUtcNow() ? s.Reason : null;
 
     /// <summary>
     /// What each usable algorithm pays now, in USD per H/s per day: from the server's policy, or straight from
@@ -293,36 +369,126 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
     private async Task<IReadOnlyList<GpuAlgorithm>> EligibleAsync(CancellationToken ct) =>
         (await QuotesAsync(ct)).Select(q => q.Algorithm).ToList();
 
-    private async Task<GpuAlgorithm?> ChooseAsync(CancellationToken ct)
+    /// <summary>
+    /// Measured algorithms that pay and aren't set aside: the switcher's pick first, then the rest best first, as
+    /// fallbacks if the pick can't run. With <paramref name="keepCurrent"/>, the pick keeps the algorithm being mined
+    /// unless another clearly pays more; without it (right after testing, when "current" is merely the last one
+    /// tested) the best one wins outright.
+    /// </summary>
+    private async Task<IReadOnlyList<GpuAlgorithm>> MiningCandidatesAsync(bool keepCurrent, CancellationToken ct)
     {
-        var scored = await ScoreAsync(ct);
-        var name = _switcher.Choose(scored, _current?.PoolName, _time.GetUtcNow() - _currentSince);
-        return name is null ? null : GpuAlgorithms.Find(name);
+        var scored = (await ScoreAsync(ct)).Where(s => SetAsideReason(s.Algorithm) is null).ToList();
+        var pick = _switcher.Choose(scored, keepCurrent ? _current?.PoolName : null, _time.GetUtcNow() - _currentSince);
+        return scored
+            .OrderByDescending(s => string.Equals(s.Algorithm, pick, StringComparison.OrdinalIgnoreCase))
+            .Select(s => GpuAlgorithms.Find(s.Algorithm))
+            .OfType<GpuAlgorithm>()
+            .ToList();
+    }
+
+    /// <summary>The current algorithm failed: set it aside and try the next best, or report plainly that the card isn't mining.</summary>
+    private async Task<ProviderStatus> FailOverAsync(string reason, CancellationToken ct)
+    {
+        var failed = _current!;
+        await KillAsync();
+        SetAsideFor(failed, reason, stalled: true);
+
+        var next = await LaunchFirstAsync(await MiningCandidatesAsync(keepCurrent: false, ct), ct);
+        if (next is null)
+            return NotMiningStatus();
+
+        _switchNote = $"{failed.PoolName} wasn't mining";
+        _notice = $"Graphics card isn't mining {failed.PoolName}: {reason}. Trying {next.PoolName} instead…";
+        return new ProviderStatus(ProviderState.Starting, 0, _notice, next.PoolName, Problem: _notice);
     }
 
     private async Task<ProviderStatus> AdvanceBenchmarkAsync(CancellationToken ct)
     {
         var eligible = await EligibleAsync(ct);
         var pending = eligible.Where(a => !_store.Has(a.PoolName)).ToList();
-        if (pending.Count > 0)
+        if (pending.Count > 0 && await LaunchFirstAsync(pending, ct) is { } testing)
         {
-            _benchmarkTotal = eligible.Count;
-            _benchmarkIndex = eligible.Count - pending.Count;
-            await LaunchAsync(pending[0], ct);
-            var next = $"Testing {pending[0].PoolName} on your graphics card ({_benchmarkIndex + 1} of {_benchmarkTotal})";
-            return new ProviderStatus(ProviderState.Starting, 0, next + "…", next, IsCalibrating: true);
+            CountBenchmark(eligible);
+            var next = $"Testing {testing.PoolName} on your graphics card ({_benchmarkIndex + 1} of {_benchmarkTotal})";
+            return new ProviderStatus(ProviderState.Starting, 0, next + "…", next, IsCalibrating: true, Problem: _notice);
         }
 
         _benchmarking = false;
-        var choice = await ChooseAsync(ct);
+        var choice = await LaunchFirstAsync(await MiningCandidatesAsync(keepCurrent: false, ct), ct);
         if (choice is null)
-        {
-            await KillAsync();
-            return new ProviderStatus(ProviderState.Error, 0, "None of the GPU algorithms worked on your graphics card. Use \"Test GPU again\" in Settings to retry.");
-        }
+            return NotMiningStatus();
+        return new ProviderStatus(ProviderState.Starting, 0, $"Testing done. Mining {choice.PoolName}, the best option for your card…", choice.PoolName, Problem: _notice);
+    }
 
-        await LaunchAsync(choice, ct);
-        return new ProviderStatus(ProviderState.Starting, 0, $"Testing done. Mining {choice.PoolName}, the best option for your card…", choice.PoolName);
+    private void CountBenchmark(IReadOnlyList<GpuAlgorithm> eligible)
+    {
+        _benchmarkTotal = eligible.Count;
+        _benchmarkIndex = eligible.Count(a => _store.Has(a.PoolName));
+    }
+
+    /// <summary>
+    /// Launches the first candidate that isn't set aside and fits in the graphics memory that's free right now
+    /// (other apps can hold a lot of it). Returns null, with no miner running, if none can start.
+    /// </summary>
+    private async Task<GpuAlgorithm?> LaunchFirstAsync(IReadOnlyList<GpuAlgorithm> candidates, CancellationToken ct)
+    {
+        await KillAsync(); // before reading free memory, so this miner's own use doesn't count against the next
+        foreach (var algorithm in candidates)
+        {
+            if (SetAsideReason(algorithm.PoolName) is not null)
+                continue;
+            if (MemoryShortfall(algorithm) is { } shortfall)
+            {
+                SetAsideFor(algorithm, shortfall, stalled: false);
+                continue;
+            }
+            await LaunchAsync(algorithm, ct);
+            return algorithm;
+        }
+        return null;
+    }
+
+    /// <summary>Why the free graphics memory is too small for this algorithm, or null if it fits (or is unknown).</summary>
+    private string? MemoryShortfall(GpuAlgorithm algorithm)
+    {
+        foreach (var gpu in _gpus)
+        {
+            if (_freeMemoryGb(gpu) is { } free && free + 0.25 < algorithm.MinMemoryGb)
+                return $"other apps are using most of the graphics card's memory ({free:0.0} GB of {gpu.MemoryGb:0} GB free, "
+                       + $"{algorithm.PoolName} needs about {algorithm.MinMemoryGb:0} GB). Closing games or 3D apps frees it";
+        }
+        return null;
+    }
+
+    private void SetAsideFor(GpuAlgorithm algorithm, string reason, bool stalled)
+    {
+        var now = _time.GetUtcNow();
+        var failures = (_setAside.TryGetValue(algorithm.PoolName, out var earlier) ? earlier.Failures : 0) + 1;
+        var cooldown = stalled
+            ? TimeSpan.FromTicks(Math.Min(MaxStallCooldown.Ticks, StallCooldown.Ticks * (1L << Math.Min(failures - 1, 10))))
+            : LowMemoryCooldown;
+        _setAside[algorithm.PoolName] = new SetAside(reason, now + cooldown, failures);
+        _lastProblem = reason;
+    }
+
+    private ProviderStatus NotMiningStatus()
+    {
+        var problem = NotMining().Message;
+        _notice = null;
+        return new ProviderStatus(ProviderState.Error, 0, problem, _current?.PoolName, Problem: problem);
+    }
+
+    /// <summary>Plain-words reason that no algorithm can run now, with when Otium tries again.</summary>
+    private ProviderProblemException NotMining()
+    {
+        var now = _time.GetUtcNow();
+        var waiting = _setAside.Values.Where(s => s.Until > now).ToList();
+        if (waiting.Count == 0 || _lastProblem is null)
+            return new ProviderProblemException("Graphics card isn't mining: none of the coins it can mine worked in testing. Use \"Test GPU again\" in Settings to retry.");
+
+        var retryIn = waiting.Min(s => s.Until) - now;
+        var when = retryIn.TotalMinutes < 90 ? $"{Math.Ceiling(retryIn.TotalMinutes):0} minutes" : $"{Math.Round(retryIn.TotalHours):0} hours";
+        return new ProviderProblemException($"Graphics card isn't mining: {_lastProblem}. Otium tries again in {when}.");
     }
 
     private async Task LaunchAsync(GpuAlgorithm algorithm, CancellationToken ct)
@@ -341,6 +507,8 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
             _currentSince = now;
         }
         _launchedAt = now;
+        _lastHashingAt = now;
+        _devFeeSeenAt = null;
         _lastEvaluation = now;
         _samples.Clear();
 

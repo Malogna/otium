@@ -7,6 +7,7 @@ using Otium.Core.Pools;
 using Otium.Core.Wallets;
 using Otium.Server.Bandwidth;
 using Otium.Server.Data;
+using Otium.Server.Payouts;
 
 namespace Otium.Server.Accounts;
 
@@ -32,6 +33,8 @@ public sealed class AccountService(
     IOptions<ReferralOptions> referralOptions,
     IOptions<EarningsOptions> earningsOptions,
     IOptions<CashoutOptions> cashoutOptions,
+    CashoutMethodCatalog cashoutMethods,
+    Gpu.CpuPoolRouter cpuRouter,
     BandwidthService bandwidth,
     TimeProvider time,
     ILogger<AccountService> logger)
@@ -85,7 +88,8 @@ public sealed class AccountService(
             account = account with { PoolWallet = await allocator.AssignAsync(ct) };
 
         string? codeError = null;
-        if (!string.IsNullOrWhiteSpace(request.ReferralCode) && account.ReferredByCode is null)
+        // ReferredAt stays set when the referrer deleted their account, so the invite can't be swapped for another one.
+        if (!string.IsNullOrWhiteSpace(request.ReferralCode) && account.ReferredByCode is null && account.ReferredAt is null)
         {
             codeError = TryBind(ref account, ReferralCodes.Normalize(request.ReferralCode), now);
             if (codeError is not null)
@@ -112,6 +116,46 @@ public sealed class AccountService(
         return Summarize(store.FindAccount(session.Account.AccountId)!, publicBaseUrl, null);
     }
 
+    // ---------- invite leaderboard ----------
+
+    public const int LeaderboardSize = 10;
+
+    /// <summary>This month's top inviters by friends who started earning, with the caller's own place.</summary>
+    public async Task<InviteLeaderboard> GetLeaderboardAsync(string deviceId, string secret, CancellationToken ct)
+    {
+        var session = Authenticate(deviceId, secret);
+        await RefreshVerificationsAsync(session.Account, ct); // so the caller's own count is current
+        var now = time.GetUtcNow();
+        var since = new DateTimeOffset(now.Year, now.Month, 1, 0, 0, 0, TimeSpan.Zero);
+
+        // Codes of merged accounts keep crediting the surviving account, so count them there.
+        var byAccount = new Dictionary<string, (string Code, int Friends)>(StringComparer.Ordinal);
+        foreach (var (code, friends) in store.VerifiedReferralsSince(since))
+        {
+            if (store.Resolve(store.FindAccountByCode(code)) is not { } referrer)
+                continue;
+            var current = byAccount.GetValueOrDefault(referrer.AccountId, (Code: referrer.Code, Friends: 0));
+            byAccount[referrer.AccountId] = (referrer.Code, current.Friends + (int)friends);
+        }
+
+        var ranked = byAccount
+            .OrderByDescending(e => e.Value.Friends)
+            .ThenBy(e => e.Value.Code, StringComparer.Ordinal)
+            .Select(e => (AccountId: e.Key, e.Value.Code, e.Value.Friends))
+            .ToList();
+        var ranks = new int[ranked.Count];
+        for (var i = 0; i < ranked.Count; i++)
+            ranks[i] = i > 0 && ranked[i].Friends == ranked[i - 1].Friends ? ranks[i - 1] : i + 1;
+
+        var me = ranked.FindIndex(e => e.AccountId == session.Account.AccountId);
+        var top = ranked.Take(LeaderboardSize).Select((e, i) => new InviteLeaderboardEntry(
+            ranks[i],
+            e.AccountId == session.Account.AccountId ? "You" : ReferralCodes.Mask(e.Code),
+            e.Friends,
+            e.AccountId == session.Account.AccountId)).ToList();
+        return new InviteLeaderboard(since, top, me >= 0 ? ranks[me] : null, me >= 0 ? ranked[me].Friends : 0);
+    }
+
     // ---------- email sign-in ----------
 
     public async Task SendSignInCodeAsync(string deviceId, string secret, EmailCodeRequest request, CancellationToken ct)
@@ -121,6 +165,10 @@ public sealed class AccountService(
             throw new OtiumException(400, "That doesn't look like an email address.");
 
         var address = EmailAddresses.Normalize(request.Email);
+        var deleting = request.Purpose == EmailCodePurposes.DeleteAccount;
+        if (deleting && session.Account.Email != address)
+            throw new OtiumException(400, "Use the email address this account is signed in with.");
+
         var now = time.GetUtcNow();
         if (store.EmailCodesSince(address, now - TimeSpan.FromHours(1)) >= MaxCodesPerEmailPerHour
             || store.DeviceEmailCodesSince(session.Device.DeviceId, now - TimeSpan.FromHours(1)) >= MaxCodesPerDevicePerHour)
@@ -129,6 +177,17 @@ public sealed class AccountService(
         var code = RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6", System.Globalization.CultureInfo.InvariantCulture);
         var salt = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(16));
         store.AddEmailCode(address, session.Device.DeviceId, HashCode(code, salt), salt, now + CodeLifetime, now);
+
+        if (deleting)
+        {
+            await email.SendAsync(
+                request.Email.Trim(),
+                $"Your code to delete your Otium account: {code}",
+                $"Your code to permanently delete your Otium account is:\n\n    {code}\n\nIt expires in {CodeLifetime.TotalMinutes:0} minutes. " +
+                "If you didn't ask for it, don't share it with anyone; your account stays as it is.",
+                ct);
+            return;
+        }
 
         var existing = store.FindAccountByEmail(address);
         var purpose = existing is null || existing.AccountId == session.Account.AccountId
@@ -146,19 +205,7 @@ public sealed class AccountService(
         var session = Authenticate(deviceId, secret);
         var address = EmailAddresses.Normalize(request.Email);
         var now = time.GetUtcNow();
-
-        var stored = store.LatestEmailCode(address, session.Device.DeviceId, now)
-                     ?? throw new OtiumException(400, "That code has expired. Request a new one.");
-        if (stored.Attempts >= MaxCodeAttempts)
-            throw new OtiumException(400, "Too many wrong tries. Request a new code.");
-
-        var presented = Encoding.ASCII.GetBytes(HashCode((request.Code ?? "").Trim(), stored.Salt));
-        if (!CryptographicOperations.FixedTimeEquals(presented, Encoding.ASCII.GetBytes(stored.CodeHash)))
-        {
-            store.CountEmailCodeAttempt(stored.Id);
-            throw new OtiumException(400, "That code isn't right. Check the email and try again.");
-        }
-        store.UseEmailCode(stored.Id);
+        ConsumeEmailCode(address, session.Device.DeviceId, request.Code);
 
         var current = session.Account;
         var owner = store.FindAccountByEmail(address);
@@ -187,6 +234,26 @@ public sealed class AccountService(
         }
 
         return Summarize(store.FindAccount(owner.AccountId)!, publicBaseUrl, null);
+    }
+
+    /// <summary>
+    /// Checks the newest code emailed to <paramref name="address"/> at this computer's request and marks it used, so
+    /// each code works once. Throws with a user-facing reason when it's missing, expired, locked or wrong.
+    /// </summary>
+    public void ConsumeEmailCode(string address, string deviceId, string? code)
+    {
+        var stored = store.LatestEmailCode(address, deviceId, time.GetUtcNow())
+                     ?? throw new OtiumException(400, "That code has expired. Request a new one.");
+        if (stored.Attempts >= MaxCodeAttempts)
+            throw new OtiumException(400, "Too many wrong tries. Request a new code.");
+
+        var presented = Encoding.ASCII.GetBytes(HashCode((code ?? "").Trim(), stored.Salt));
+        if (!CryptographicOperations.FixedTimeEquals(presented, Encoding.ASCII.GetBytes(stored.CodeHash)))
+        {
+            store.CountEmailCodeAttempt(stored.Id);
+            throw new OtiumException(400, "That code isn't right. Check the email and try again.");
+        }
+        store.UseEmailCode(stored.Id);
     }
 
     // ---------- referrals ----------
@@ -268,6 +335,7 @@ public sealed class AccountService(
         var referees = store.FindReferees(account.Code);
         var totals = store.Balance(account.AccountId, now);
         var cashouts = store.CashoutsFor(account.AccountId).Select(ToInfo).ToList();
+        var methods = cashoutMethods.Current;
 
         return new AccountSummary(
             account.WorkerId,
@@ -287,24 +355,55 @@ public sealed class AccountService(
                 ToUsd(totals.LifetimeMicros),
                 ToUsd(totals.ReferralMicros),
                 _cashouts.MinPayPalUsd,
-                _cashouts.MinCryptoUsd,
+                methods.Where(m => m.Method != CashoutMethods.PayPal).Select(m => m.MinUsd).DefaultIfEmpty(_cashouts.MinCryptoUsd).Min(),
                 _earnings.FeePercent,
                 _earnings.ReferralPercent,
-                cashouts),
+                cashouts,
+                ToUsd(store.PaidOutMicros(account.AccountId)),
+                methods),
             account.Email,
             (int)store.DeviceCount(account.AccountId),
-            bandwidth.Terms(account));
+            bandwidth.Terms(account),
+            cpuRouter.For(account));
     }
 
     public static CashoutInfo ToInfo(CashoutRecord c) => new(
         c.Id, c.Method, MaskDestination(c.Method, c.Destination), ToUsd(c.Micros), c.Status, c.CreatedAt,
-        c.Status == CashoutStatuses.Failed ? c.Note : null);
+        UserNote(c), c.UpdatedAt, TransactionId(c));
+
+    /// <summary>
+    /// The part of a cash-out's note the user should see: why it failed, or that PayPal is waiting for them to claim
+    /// it. Review reasons are internal (they describe fraud checks) and stay hidden.
+    /// </summary>
+    private static string? UserNote(CashoutRecord c) => c.Status switch
+    {
+        CashoutStatuses.Failed => c.Note,
+        CashoutStatuses.Sending when c.Note == PayPalPayoutProvider.UnclaimedNote => c.Note,
+        _ => null,
+    };
+
+    /// <summary>
+    /// The transaction that delivered a paid crypto cash-out: the payout itself, or THORChain's outbound for a swap
+    /// (never a Monero tx key, which the batch shares). Null for PayPal and for manual notes.
+    /// </summary>
+    public static string? TransactionId(CashoutRecord c)
+    {
+        if (c.Status != CashoutStatuses.Paid || c.ProviderReference is null || c.Method == CashoutMethods.PayPal)
+            return null;
+        var id = c.ProviderReference.Split(' ', 2)[0];
+        var hex = id.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? id[2..] : id;
+        return c.Method switch
+        {
+            CashoutMethods.Solana => id.Length is >= 80 and <= 90 && id.All(char.IsAsciiLetterOrDigit) ? id : null,
+            _ => hex.Length == 64 && hex.All(char.IsAsciiHexDigit) ? id : null,
+        };
+    }
 
     public static decimal ToUsd(long micros) => decimal.Round(micros / (decimal)OtiumStore.MicrosPerDollar, 2, MidpointRounding.ToZero);
 
     public static long ToMicros(decimal usd) => (long)decimal.Round(usd * OtiumStore.MicrosPerDollar);
 
-    private static string MaskDestination(string method, string destination)
+    public static string MaskDestination(string method, string destination)
     {
         if (method == CashoutMethods.PayPal)
         {
