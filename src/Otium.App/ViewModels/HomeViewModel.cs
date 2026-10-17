@@ -269,7 +269,7 @@ public partial class HomeViewModel : ViewModelBase
         // to their address, which is that share of their friends' mining time.
         var referralPercent = IsBalanceMode
             ? (double)(_host.Account?.Balance.ReferralPercent ?? 0)
-            : Core.Fees.FeePolicy.Default.FeePercent * Core.Fees.FeePolicy.Default.ReferrerShareOfFee;
+            : _host.Fees.ReferrerPercent;
         InviteTitle = referralPercent <= 0 ? "Invite friends"
             : IsBalanceMode ? $"Get {referralPercent:0.#}% of everything your friends earn"
             : $"Get {referralPercent:0.#}% of your friends' mining time, paid to your wallet";
@@ -519,7 +519,7 @@ public partial class HomeViewModel : ViewModelBase
         var link = _host.Settings.Referral.ShareUrl;
         if (string.IsNullOrEmpty(link))
             return;
-        await ClipboardService.CopyAsync(InviteMessages.Fill(InviteMessages.Styles[1].Template, InviteCode, link, Core.Fees.FeePolicy.Default.RefereeFeeHoliday));
+        await ClipboardService.CopyAsync(InviteMessages.Fill(InviteMessages.Styles[1].Template, InviteCode, link, _host.Fees.RefereeFeeHoliday));
         CopiedText = "Invite copied. Paste it to a friend!";
     }
 

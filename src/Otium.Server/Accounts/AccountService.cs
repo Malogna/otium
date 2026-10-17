@@ -40,14 +40,16 @@ public sealed class AccountService(
     TimeProvider time,
     ILogger<AccountService> logger,
     IOptions<CustodyOptions> custodyOptions,
-    MystSponsorService mystSponsor)
+    MystSponsorService mystSponsor,
+    IOptions<FeeOptions> feeOptions)
 {
     public static readonly TimeSpan CodeLifetime = TimeSpan.FromMinutes(15);
     public const int MaxCodeAttempts = 5;
     public const int MaxCodesPerEmailPerHour = 5;
     public const int MaxCodesPerDevicePerHour = 10;
 
-    private static readonly FeePolicy Policy = FeePolicy.Default;
+    /// <summary>The fee and invite terms apps are told about; fee-free periods are granted by the same terms.</summary>
+    private FeePolicy Policy => FeePolicy.FromTerms(feeOptions.Value.ToTerms());
     private readonly ReferralOptions _referral = referralOptions.Value;
     private readonly EarningsOptions _earnings = earningsOptions.Value;
     private readonly CashoutOptions _cashouts = cashoutOptions.Value;
@@ -397,7 +399,8 @@ public sealed class AccountService(
             _custodial ? bandwidth.Terms(account) : null,
             _custodial ? cpuRouter.For(account) : null,
             _custodial,
-            mystSponsor.IsAvailable);
+            mystSponsor.IsAvailable,
+            Policy.ToTerms());
     }
 
     public static CashoutInfo ToInfo(CashoutRecord c) => new(
@@ -447,7 +450,7 @@ public sealed class AccountService(
     }
 
     /// <summary>Adds fee-free time, never beyond the policy cap from now.</summary>
-    private static DateTimeOffset ExtendHoliday(DateTimeOffset? current, TimeSpan add, DateTimeOffset now)
+    private DateTimeOffset ExtendHoliday(DateTimeOffset? current, TimeSpan add, DateTimeOffset now)
     {
         var start = current is { } c && c > now ? c : now;
         var extended = start + add;
