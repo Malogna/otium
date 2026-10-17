@@ -24,7 +24,10 @@ public static class CostBreakdown
     public static double PoolPercent(PayoutPool pool, bool referralCode) =>
         pool == PayoutPool.Unmineable ? referralCode ? 0.75 : 1.0 : 0;
 
-    public static IReadOnlyList<CostLine> For(FeePolicy fees, PayoutPool pool, bool hasGpu, bool referralCode)
+    /// <param name="cpuPool">The pool that pays the processor's mining.</param>
+    /// <param name="gpuPool">The pool that pays the graphics card's mining, or null without one (Monero users outside the
+    /// US mine their graphics card on unMineable, paid in XMR).</param>
+    public static IReadOnlyList<CostLine> For(FeePolicy fees, PayoutPool cpuPool, PayoutPool? gpuPool, bool referralCode)
     {
         var minutes = fees.CycleLength.TotalMinutes * fees.FeePercent / 100;
         var lines = new List<CostLine>
@@ -33,27 +36,47 @@ public static class CostBreakdown
                          "Nothing while Otium is paused, and nothing during fee-free days."),
         };
 
-        var (gpuMin, gpuMax) = GpuMinerPercent(pool);
-        lines.Add(new("Mining software", hasGpu
-            ? $"XMRig keeps {P(CpuMinerPercent)} (processor); SRBMiner keeps {P(gpuMin)}–{P(gpuMax)} (graphics card, depending on the coin)."
-            : $"XMRig keeps {P(CpuMinerPercent)}."));
+        if (gpuPool is { } gpu)
+        {
+            var (gpuMin, gpuMax) = GpuMinerPercent(gpu);
+            lines.Add(new("Mining software",
+                $"XMRig keeps {P(CpuMinerPercent)} (processor); SRBMiner keeps {P(gpuMin)}–{P(gpuMax)} (graphics card, depending on the coin)."));
+        }
+        else
+        {
+            lines.Add(new("Mining software", $"XMRig keeps {P(CpuMinerPercent)}."));
+        }
 
-        var poolFee = PoolPercent(pool, referralCode);
-        lines.Add(new("Pool", pool == PayoutPool.Unmineable
-            ? referralCode
-                ? $"unMineable keeps {P(poolFee)} (1% without Otium's referral code)."
-                : $"unMineable keeps {P(poolFee)}."
-            : "MoneroOcean keeps nothing; each payout pays a tiny Monero network fee."));
+        lines.Add(new("Pool", gpuPool is { } g && g != cpuPool
+            ? $"{PoolText(cpuPool, referralCode, "processor")} {PoolText(g, referralCode, "graphics card")}"
+            : PoolText(cpuPool, referralCode, null)));
 
-        var cpuTotal = fees.FeePercent + CpuMinerPercent + poolFee;
-        lines.Add(new("In total", hasGpu
-            ? $"about {P(cpuTotal)} on the processor and {P(fees.FeePercent + gpuMin + poolFee)}–{P(fees.FeePercent + gpuMax + poolFee)} on the graphics card."
-            : $"about {P(cpuTotal)}."));
+        var cpuTotal = fees.FeePercent + CpuMinerPercent + PoolPercent(cpuPool, referralCode);
+        if (gpuPool is { } pool)
+        {
+            var (gpuMin, gpuMax) = GpuMinerPercent(pool);
+            var gpuFee = fees.FeePercent + PoolPercent(pool, referralCode);
+            lines.Add(new("In total", $"about {P(cpuTotal)} on the processor and {P(gpuFee + gpuMin)}–{P(gpuFee + gpuMax)} on the graphics card."));
+        }
+        else
+        {
+            lines.Add(new("In total", $"about {P(cpuTotal)}."));
+        }
 
-        if (pool == PayoutPool.Unmineable && referralCode)
-            lines.Add(new("Also", "unMineable pays Otium 0.25–0.5% of what you mine, out of its own fee. It doesn't come out of your " +
-                                  "earnings: Otium's referral code is what lowers your pool fee from 1% to 0.75%."));
+        if (referralCode && (cpuPool == PayoutPool.Unmineable || gpuPool == PayoutPool.Unmineable))
+            lines.Add(new("Also", "unMineable pays Otium 0.25–0.5% of what you mine there, out of its own fee. It doesn't come out of " +
+                                  "your earnings: Otium's referral code is what lowers your pool fee from 1% to 0.75%."));
         return lines;
+    }
+
+    private static string PoolText(PayoutPool pool, bool referralCode, string? device)
+    {
+        var on = device is null ? "" : $" on the {device}";
+        return pool == PayoutPool.Unmineable
+            ? referralCode
+                ? $"unMineable keeps {P(PoolPercent(pool, true))}{on} (1% without Otium's referral code)."
+                : $"unMineable keeps {P(PoolPercent(pool, false))}{on}."
+            : $"MoneroOcean keeps nothing{on}; each payout pays a tiny Monero network fee.";
     }
 
     /// <summary>The lines as text, one per line ("Otium: …").</summary>

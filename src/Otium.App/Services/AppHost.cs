@@ -200,6 +200,10 @@ public sealed class AppHost : IAsyncDisposable
             IComputeProvider provider = IsSimulated ? Engine.Provider : Provider;
             PoolBalance = await provider.GetPayoutBalanceAsync(target, ct);
             PoolBalanceError = null;
+            // A Monero user's graphics card earns on unMineable, which pays the same address separately.
+            GpuPoolBalance = PayoutRouting.PoolFor(target) == PayoutPool.MoneroOcean && GpuPayoutPool == PayoutPool.Unmineable && GpuEngine is not null
+                ? await UnmineableClient.GetPayoutBalanceAsync(new UnmineableClient(_http), PayoutTarget.ParseOrNull(target)!, ct)
+                : null;
         }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException or InvalidOperationException or System.Text.Json.JsonException && !ct.IsCancellationRequested)
         {
@@ -247,7 +251,19 @@ public sealed class AppHost : IAsyncDisposable
         ? _gpuPolicy
         : PayoutRouting.PoolFor(Settings.PayoutAddress) == PayoutPool.Unmineable
             ? (_gpuPolicy ?? new GpuPolicy(DateTimeOffset.MinValue, [], [])).OnlyRoutes(GpuRoutes.Unmineable)
-            : _gpuPolicy?.OnlyRoutes(GpuRoutes.MoneroOcean);
+            : InUnitedStates
+                ? _gpuPolicy?.OnlyRoutes(GpuRoutes.MoneroOcean)
+                // Monero outside the US: the graphics card can also mine unMineable's coins, paid in XMR there.
+                : _gpuPolicy?.OnlyRoutes(GpuRoutes.MoneroOcean, GpuRoutes.Unmineable);
+
+    /// <summary>The pool the graphics card mines on for the user's payout coin (see <see cref="PayoutRouting.GpuPoolFor"/>).</summary>
+    public PayoutPool? GpuPayoutPool => PayoutRouting.GpuPoolFor(OwnPayoutTarget, InUnitedStates);
+
+    /// <summary>
+    /// For Monero users whose graphics card mines on unMineable: what unMineable holds for their address (paid out
+    /// separately from MoneroOcean, at its own minimum). Null otherwise or until read.
+    /// </summary>
+    public PayoutBalance? GpuPoolBalance { get; private set; }
 
     /// <summary>Shares unused internet bandwidth when the user has opted in.</summary>
     public BandwidthSharer Bandwidth { get; }

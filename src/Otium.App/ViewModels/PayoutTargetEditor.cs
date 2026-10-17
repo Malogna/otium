@@ -43,7 +43,10 @@ public partial class PayoutTargetEditor : ObservableObject
         $"can receive {SelectedCoin.Ticker} on {SelectedCoin.Network} works.";
 
     public string PoolNote => SelectedCoin == PayoutCoins.Monero
-        ? "MoneroOcean pays this address automatically once you've earned 0.003 XMR."
+        ? IsUnitedStates
+            ? "MoneroOcean pays this address automatically once you've earned 0.003 XMR."
+            : "MoneroOcean pays this address for your processor's mining once you've earned 0.003 XMR. Your graphics card mines " +
+              "better-paying coins on unMineable, which pays the same address in XMR once a day from 0.03 XMR."
         : $"unMineable pays this address once a day when you've earned {SelectedCoin.ThresholdText}. " +
           "Check its Auto pay switch for your address on unMineable's site; Otium warns you if it's off.";
 

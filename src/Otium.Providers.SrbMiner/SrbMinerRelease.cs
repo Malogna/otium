@@ -75,7 +75,7 @@ public static class GpuAlgorithms
     [
         new("pearlhash", "pearlhash", 2.0, 8, NvidiaAmd, GpuTiers.Primary, GpuRoutes.Unmineable),
         new("quantus", "quantus", 2.0, 2, NvidiaAmd, GpuTiers.Primary, GpuRoutes.Kryptex),
-        new("xelishash", "xelishashv3", 1.5, 2, NvidiaAmd, GpuTiers.Primary, GpuRoutes.Unmineable),
+        new("xelishash", "xelishashv3", 1.5, 2, NvidiaAmd, GpuTiers.FreePowerOnly, GpuRoutes.Unmineable),
         new("fishhash", "fishhash", 0.85, 4, NvidiaAmd, GpuTiers.FreePowerOnly, GpuRoutes.Unmineable),
         new("kawpow", "kawpow", 0.85, 6, NvidiaAmd),
         new("autolykos2", "autolykos2", 1.0, 4, NvidiaAmd),

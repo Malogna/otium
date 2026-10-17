@@ -293,7 +293,8 @@ public partial class SettingsViewModel : ViewModelBase
         get
         {
             var pool = Core.Pools.PayoutRouting.PoolFor(_host.OwnPayoutTarget) ?? Core.Pools.PayoutPool.Unmineable;
-            var lines = Core.Fees.CostBreakdown.For(_host.Fees, pool, _host.GpuEngine is not null && UseGpu, _host.ReferralCode is not null);
+            var gpuPool = _host.GpuEngine is not null && UseGpu ? _host.GpuPayoutPool ?? pool : (Core.Pools.PayoutPool?)null;
+            var lines = Core.Fees.CostBreakdown.For(_host.Fees, pool, gpuPool, _host.ReferralCode is not null);
             return Core.Fees.CostBreakdown.Text(lines);
         }
     }

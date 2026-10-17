@@ -70,10 +70,13 @@ policy.
   from the address (a TRON address gets USDT on TRC-20). `ztjq-jr7s` is Otium's unMineable referral code: users pay
   unMineable 0.75% instead of 1%, and unMineable pays Otium 0.25–0.50% of their rewards.
 - CPU: XMRig on `rx.unmineable.com:443` with TLS (unMineable's only RandomX port that works). GPU: SRBMiner on the
-  routes in the server's GPU policy: unMineable for **Pearl, Xelis (`xelishashv3`) and FishHash**, with `--tls true`,
-  priced from WhatToMine minus unMineable's 0.75%; MoneroOcean's algorithms for Monero users, still "free power only".
-  Without the server's policy, unMineable users' GPUs wait (unMineable's prices come from the server) and Monero
-  users fall back to MoneroOcean's own rates.
+  routes in the server's GPU policy: unMineable for **Pearl** (the best-paying coin for NVIDIA cards in October 2026),
+  plus Xelis (`xelishashv3`) and FishHash, which only run on free power since they lose money at normal prices; all
+  with `--tls true`, priced from WhatToMine minus unMineable's 0.75%. **Monero users outside the US** get the same
+  unMineable routes for their graphics card, paid in XMR to their address (unMineable pays daily from 0.03 XMR, and the
+  overview shows that balance next to MoneroOcean's), alongside MoneroOcean's GPU algorithms, which are "free power
+  only". US users' graphics cards stay on MoneroOcean. Without the server's policy, unMineable users' GPUs wait
+  (unMineable's prices come from the server) and Monero users fall back to MoneroOcean's own rates.
 - **Fee and referrals are mining time.** 2% of mining time is mined to Otium's own address on the user's pool (one
   slice of about 29 minutes per 24 hours of mining), and for 6 months a quarter of it goes to whoever invited the user,
   mined to the referrer's own address when the same pool pays it. New users with an invite code get 30 fee-free days;
