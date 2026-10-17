@@ -43,6 +43,7 @@ public partial class DashboardViewModel : ViewModelBase
         Recalculate();
 
         host.Updates.Changed += () => Dispatcher.UIThread.Post(RefreshUpdate);
+        host.AntivirusChanged += () => Dispatcher.UIThread.Post(Recalculate);
         RefreshUpdate();
 
         _balanceTimer = new DispatcherTimer { Interval = BalanceRefresh };
@@ -54,6 +55,12 @@ public partial class DashboardViewModel : ViewModelBase
     public ObservableCollection<DeviceViewModel> Devices { get; } = [];
 
     public bool IsWindows => OperatingSystem.IsWindows();
+
+    /// <summary>The one-click fix only changes Microsoft Defender, so it's offered only while Defender is the antivirus.</summary>
+    public bool CanAllowAutomatically => IsWindows && (_host.AntivirusReport?.DefenderIsActive ?? true);
+
+    /// <summary>What the antivirus removed and when, and how to fix it when it isn't Defender.</summary>
+    [ObservableProperty] public partial string AntivirusDetail { get; set; } = "";
 
     [ObservableProperty] public partial string StateLabel { get; set; } = "Off";
     [ObservableProperty] public partial string StatusText { get; set; } = "";
@@ -114,6 +121,10 @@ public partial class DashboardViewModel : ViewModelBase
         IsBlocked = blocked is not null;
         // One exclusion covers every engine (CPU and GPU), so name their shared folder rather than the blocked one.
         BlockedPath = blocked is null ? "" : _host.Paths.EnginesDir;
+        if (IsBlocked)
+            _ = _host.RefreshAntivirusAsync();
+        AntivirusDetail = IsBlocked ? _host.AntivirusReport?.Describe(_host.Paths.EnginesDir) ?? "" : "";
+        OnPropertyChanged(nameof(CanAllowAutomatically));
 
         var withNumbers = Devices.Where(d => d.HasNumbers).Select(d => d.Snapshot).ToList();
         var any = withNumbers.Count > 0;

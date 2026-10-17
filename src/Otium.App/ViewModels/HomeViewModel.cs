@@ -67,6 +67,7 @@ public partial class HomeViewModel : ViewModelBase
         host.AccountChanged += () => Dispatcher.UIThread.Post(Refresh);
         host.Updates.Changed += () => Dispatcher.UIThread.Post(Refresh);
         host.HistoryChanged += () => Dispatcher.UIThread.Post(Refresh);
+        host.AntivirusChanged += () => Dispatcher.UIThread.Post(Refresh);
 
         Refresh();
         _ = LoadEstimateAsync();
@@ -103,7 +104,11 @@ public partial class HomeViewModel : ViewModelBase
     [ObservableProperty] public partial string? AllowResult { get; set; }
     [ObservableProperty] public partial bool IsAllowing { get; set; }
 
-    public bool CanAllowAutomatically => WindowsSecurity.IsSupported;
+    /// <summary>The one-click fix only changes Microsoft Defender, so it's offered only while Defender is the antivirus.</summary>
+    public bool CanAllowAutomatically => WindowsSecurity.IsSupported && (_host.AntivirusReport?.DefenderIsActive ?? true);
+
+    /// <summary>What the antivirus removed and when, and how to fix it when it isn't Defender.</summary>
+    [ObservableProperty] public partial string AntivirusDetail { get; set; } = "";
     [ObservableProperty] public partial string ActivityHeadline { get; set; } = "";
 
     // ---------- projections & chart ----------
@@ -234,6 +239,10 @@ public partial class HomeViewModel : ViewModelBase
         ToggleText = settings.EarningEnabled ? "Pause" : "Start";
         var states = snapshots.Select(s => s.State).ToList();
         NeedsAntivirusFix = snapshots.Any(s => s.EngineBlocked);
+        if (NeedsAntivirusFix)
+            _ = _host.RefreshAntivirusAsync();
+        AntivirusDetail = NeedsAntivirusFix ? _host.AntivirusReport?.Describe(_host.Paths.EnginesDir) ?? "" : "";
+        OnPropertyChanged(nameof(CanAllowAutomatically));
         IsEarning = states.Contains(EngineState.Earning);
         IsWaiting = !IsEarning && settings.EarningEnabled && states.Contains(EngineState.WaitingForIdle);
         IsProblem = NeedsAntivirusFix || (!IsEarning && states.Contains(EngineState.Error));

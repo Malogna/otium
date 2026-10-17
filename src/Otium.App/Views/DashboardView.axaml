@@ -48,17 +48,19 @@
                 <TextBlock Classes="h2" Text="Your antivirus removed the mining engines" />
                 <TextBlock TextWrapping="Wrap"
                            Text="Antivirus tools treat crypto miners as threats, often with a 'Trojan' label, because criminals hide the same miners on other people's computers. Otium only downloads the official releases and checks every file against its published fingerprint. If you want to continue, allow only the Otium engines folder below, then press Try again. Don't turn off your antivirus." />
+                <TextBlock TextWrapping="Wrap" Text="{Binding AntivirusDetail}"
+                           IsVisible="{Binding AntivirusDetail, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                 <SelectableTextBlock Text="{Binding BlockedPath}" FontFamily="Consolas, Menlo, monospace" TextWrapping="Wrap" />
-                <TextBlock Classes="muted" FontSize="13" IsVisible="{Binding IsWindows}" TextWrapping="Wrap"
+                <TextBlock Classes="muted" FontSize="13" IsVisible="{Binding CanAllowAutomatically}" TextWrapping="Wrap"
                            Text="Windows Security → Virus &amp; threat protection → Manage settings → Exclusions → Add an exclusion → Folder. Try again then downloads fresh copies, so there's nothing to restore. If Windows Firewall then asks about SRBMiner or XMRig, choose Cancel: the miners only need outgoing connections." />
                 <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Text="{Binding AllowResult}"
                            IsVisible="{Binding AllowResult, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                 <StackPanel Orientation="Horizontal" Spacing="8">
                     <Button Classes="accent" Content="Allow automatically" Command="{Binding AllowAutomaticallyCommand}"
-                            IsVisible="{Binding IsWindows}" IsEnabled="{Binding !IsAllowing}"
+                            IsVisible="{Binding CanAllowAutomatically}" IsEnabled="{Binding !IsAllowing}"
                             ToolTip.Tip="Windows asks for your permission, then allows only this folder" />
                     <Button Content="Copy folder path" Command="{Binding CopyBlockedPathCommand}" />
-                    <Button Content="Open Windows Security" Command="{Binding OpenWindowsSecurityCommand}" IsVisible="{Binding IsWindows}" />
+                    <Button Content="Open Windows Security" Command="{Binding OpenWindowsSecurityCommand}" IsVisible="{Binding CanAllowAutomatically}" />
                     <Button Content="Try again" Command="{Binding RetryEngineCommand}" />
                 </StackPanel>
             </StackPanel>

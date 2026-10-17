@@ -40,6 +40,77 @@ public sealed class WindowsMystSupervisor : IMystSupervisor
         }
     }
 
+    /// <summary>
+    /// For Otium's uninstaller: removes the supervisor service, but only if it runs from Otium's own engines folder (a
+    /// Mysterium node installed by another app keeps its service). Windows asks for administrator permission. Returns
+    /// null when there was nothing to do or it was removed, otherwise a reason (declined, timed out, failed).
+    /// </summary>
+    public static string? RemoveIfOurs(string enginesRoot, TimeSpan timeout)
+    {
+        if (OurServiceBinary(enginesRoot) is not { } binary)
+            return null;
+
+        // The supervisor removes its own service and event log source; without its file, Windows' sc does it.
+        var start = File.Exists(binary)
+            ? new ProcessStartInfo(binary, "-uninstall")
+            : new ProcessStartInfo("sc.exe", $"delete {ServiceName}");
+        start.UseShellExecute = true;
+        start.Verb = "runas";
+        start.WindowStyle = ProcessWindowStyle.Hidden;
+        try
+        {
+            using var remove = Process.Start(start);
+            if (remove is null)
+                return "Couldn't start removing Mysterium's network service.";
+            if (!remove.WaitForExit((int)timeout.TotalMilliseconds))
+                return "Removing Mysterium's network service took too long.";
+            return remove.ExitCode == 0 ? null : $"Removing Mysterium's network service failed (code {remove.ExitCode}).";
+        }
+        catch (Win32Exception e) when (e.NativeErrorCode == ErrorCancelled)
+        {
+            return "Mysterium's network service was left installed, because the Windows permission prompt was cancelled.";
+        }
+    }
+
+    /// <summary>The supervisor service's executable when it's installed from under <paramref name="enginesRoot"/>, else null.</summary>
+    public static string? OurServiceBinary(string enginesRoot)
+    {
+        using var sc = Process.Start(new ProcessStartInfo("sc.exe", $"qc {ServiceName}")
+        {
+            CreateNoWindow = true,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+        });
+        if (sc is null)
+            return null;
+        var output = sc.StandardOutput.ReadToEnd();
+        sc.WaitForExit(5000);
+        return sc.ExitCode == 0 && ServiceBinary(output) is { } binary && IsUnder(binary, enginesRoot) ? binary : null;
+    }
+
+    /// <summary>The executable in <c>sc qc</c>'s BINARY_PATH_NAME line, without quotes or arguments.</summary>
+    internal static string? ServiceBinary(string scQcOutput)
+    {
+        var line = scQcOutput.Split('\n').FirstOrDefault(l => l.TrimStart().StartsWith("BINARY_PATH_NAME", StringComparison.OrdinalIgnoreCase));
+        var colon = line?.IndexOf(':') ?? -1;
+        if (line is null || colon < 0)
+            return null;
+        var value = line[(colon + 1)..].Trim();
+        if (value.StartsWith('"'))
+        {
+            var end = value.IndexOf('"', 1);
+            return end > 1 ? value[1..end] : null;
+        }
+        var exe = value.IndexOf(".exe", StringComparison.OrdinalIgnoreCase);
+        return exe > 0 ? value[..(exe + 4)] : value.Split(' ')[0];
+    }
+
+    internal static bool IsUnder(string path, string folder)
+    {
+        var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(folder)) + Path.DirectorySeparatorChar;
+        return Path.GetFullPath(path).StartsWith(root, StringComparison.OrdinalIgnoreCase);
+    }
+
     public async Task InstallAsync(string supervisorPath, CancellationToken ct)
     {
         try
