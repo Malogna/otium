@@ -7,8 +7,10 @@ namespace Otium.Server.Gpu;
 /// <summary>
 /// Builds the GPU policy apps follow: every algorithm with its live USD rate, pool route and tier. MoneroOcean's
 /// legacy algorithms default to "free power only" because they lose money at normal electricity prices (Oct 2026);
-/// Kryptex coins are primary while their feed is fresh. An algorithm whose feed fails or goes stale is disabled
-/// automatically, and the operator can disable any algorithm with <see cref="GpuPolicyOptions.Disabled"/>.
+/// Kryptex coins (custodial servers only) and unMineable coins are primary while their feed is fresh. Each algorithm
+/// has one route: Kryptex wins over unMineable for the same algorithm, since apps of a custodial server mine Kryptex
+/// for balance accounts. An algorithm whose feed fails or goes stale is disabled automatically, and the operator can
+/// disable any algorithm with <see cref="GpuPolicyOptions.Disabled"/>.
 /// </summary>
 public sealed class GpuPolicyService(
     IMoneroPoolApi pool,
@@ -17,7 +19,9 @@ public sealed class GpuPolicyService(
     IOptions<GpuPolicyOptions> policyOptions,
     IOptions<KryptexOptions> kryptexOptions,
     TimeProvider time,
-    ILogger<GpuPolicyService> logger)
+    ILogger<GpuPolicyService> logger,
+    IOptions<UnmineableOptions>? unmineableOptions = null,
+    IOptions<CustodyOptions>? custodyOptions = null)
 {
     /// <summary>Feed data older than this can't be trusted to price a fast-moving coin.</summary>
     public static readonly TimeSpan MaxFeedAge = TimeSpan.FromHours(2);
@@ -77,14 +81,30 @@ public sealed class GpuPolicyService(
                 : new GpuAlgorithmPolicy(algo, GpuTiers.Disabled, GpuRoutes.MoneroOcean, 0, MoneroOceanFeePercent, "MoneroOcean isn't paying for it right now"));
         }
 
+        // Kryptex mines to Otium's own account and is credited as balances, so only a custodial server offers it.
+        // (Constructed without the custody option, as in older tests, the service keeps its custodial behaviour.)
         var kx = kryptexOptions.Value;
-        if (kx.Enabled && !string.IsNullOrWhiteSpace(kx.Account))
+        if ((custodyOptions?.Value.Enabled ?? true) && kx.Enabled && !string.IsNullOrWhiteSpace(kx.Account))
         {
             foreach (var (algo, coin) in kx.Coins)
             {
                 var route = $"{GpuRoutes.Kryptex}-{coin.Coin}";
                 routes.Add(new GpuPoolRoute(route, GpuRoutes.Kryptex, coin.Host, coin.Port, kx.Account.Trim()));
                 algorithms.Add(await KryptexAlgorithmAsync(algo, coin, route, now, ct));
+            }
+        }
+
+        // unMineable pays users' own addresses; apps log in with their payout target, so the route has no account.
+        if (unmineableOptions?.Value is { Enabled: true } um)
+        {
+            foreach (var (algo, coin) in um.Algorithms)
+            {
+                if (algorithms.Any(a => string.Equals(a.Algorithm, algo, StringComparison.OrdinalIgnoreCase)))
+                    continue;
+                var route = $"{GpuRoutes.Unmineable}-{algo}";
+                routes.Add(new GpuPoolRoute(route, GpuRoutes.Unmineable, coin.Host, coin.Port, null, Tls: true));
+                algorithms.Add(await FeedAlgorithmAsync(algo, coin.WhatToMineId, route, um.FeePercent,
+                    coin.Tier == GpuTiers.FreePowerOnly ? GpuTiers.FreePowerOnly : GpuTiers.Primary, now, ct));
             }
         }
 
@@ -102,6 +122,29 @@ public sealed class GpuPolicyService(
         }
 
         return new GpuPolicy(now, algorithms, routes);
+    }
+
+    /// <summary>An algorithm priced only from WhatToMine, with a fixed pool fee (unMineable).</summary>
+    private async Task<GpuAlgorithmPolicy> FeedAlgorithmAsync(
+        string algo, int whatToMineId, string route, double feePercent, string tier, DateTimeOffset now, CancellationToken ct)
+    {
+        CoinRevenue? revenue;
+        try
+        {
+            revenue = await feed.GetAsync(whatToMineId, ct);
+        }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            logger.LogWarning(e, "Profitability feed for {Algorithm} unavailable; disabling it until it recovers", algo);
+            return new GpuAlgorithmPolicy(algo, GpuTiers.Disabled, route, 0, feePercent, "Profitability data unavailable");
+        }
+
+        if (revenue is null || revenue.UsdPerHashPerSecondDay <= 0)
+            return new GpuAlgorithmPolicy(algo, GpuTiers.Disabled, route, 0, feePercent, "Profitability data unavailable");
+        if (revenue.Lagging || now - revenue.UpdatedAt > MaxFeedAge)
+            return new GpuAlgorithmPolicy(algo, GpuTiers.Disabled, route, revenue.UsdPerHashPerSecondDay, feePercent, "Profitability data is out of date");
+        return new GpuAlgorithmPolicy(algo, tier, route, revenue.UsdPerHashPerSecondDay, feePercent,
+            tier == GpuTiers.FreePowerOnly ? "Usually costs more in electricity than it earns" : null);
     }
 
     private async Task<GpuAlgorithmPolicy> KryptexAlgorithmAsync(string algo, KryptexCoin coin, string route, DateTimeOffset now, CancellationToken ct)

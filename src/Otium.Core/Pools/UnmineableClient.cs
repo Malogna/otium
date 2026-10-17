@@ -60,6 +60,9 @@ public sealed record UnmineableWorker(
     string? Referral = null,
     DateTimeOffset? LastSeen = null);
 
+/// <summary>An address's referral code and how many miners use it ("o***f"-style names only, so just the count).</summary>
+public sealed record UnmineableReferrals(string Code, int Miners);
+
 public interface IUnmineableApi
 {
     Task<UnmineableAddress> GetAddressAsync(PayoutTarget target, CancellationToken ct);
@@ -69,6 +72,8 @@ public interface IUnmineableApi
     Task<IReadOnlyList<UnmineableWorker>> GetWorkersAsync(string uuid, CancellationToken ct);
 
     Task<IReadOnlyList<UnmineablePayment>> GetPaymentsAsync(string uuid, CancellationToken ct);
+
+    Task<UnmineableReferrals> GetReferralsAsync(string uuid, CancellationToken ct);
 }
 
 /// <summary>
@@ -98,6 +103,9 @@ public sealed class UnmineableClient(HttpClient http) : IUnmineableApi
 
     public async Task<IReadOnlyList<UnmineablePayment>> GetPaymentsAsync(string uuid, CancellationToken ct) =>
         ParsePayments(await GetDataAsync($"v5/account/{Uri.EscapeDataString(uuid)}/payments?page=1", ct));
+
+    public async Task<UnmineableReferrals> GetReferralsAsync(string uuid, CancellationToken ct) =>
+        ParseReferrals(await GetDataAsync($"v5/account/{Uri.EscapeDataString(uuid)}/referrals", ct));
 
     private async Task<JsonElement> GetDataAsync(string path, CancellationToken ct)
     {
@@ -139,6 +147,14 @@ public sealed class UnmineableClient(HttpClient http) : IUnmineableApi
             Text(data, "network") ?? "",
             problems,
             Text(data, "maintenance_message") is { Length: > 0 } notice ? notice : null);
+    }
+
+    internal static UnmineableReferrals ParseReferrals(JsonElement data)
+    {
+        var count = Number(data, "count");
+        if (count <= 0 && data.TryGetProperty("list", out var list) && list.ValueKind == JsonValueKind.Array)
+            count = list.GetArrayLength();
+        return new UnmineableReferrals(Text(data, "custom_code") is { Length: > 0 } custom ? custom : Text(data, "code") ?? "", (int)count);
     }
 
     internal static UnmineableStats ParseStats(JsonElement data)

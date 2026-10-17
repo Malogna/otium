@@ -733,6 +733,37 @@ public sealed class OtiumStore
         Execute("INSERT OR IGNORE INTO pool_wallets (address, created_at) VALUES ($a, $c)", ("$a", address), ("$c", Format(now)));
 
     /// <summary>Pool addresses with how many balance accounts each one carries, least loaded first.</summary>
+    /// <summary>
+    /// Live accounts by payout coin: the part before ":" of the payout target, "XMR" for a bare Monero address, and
+    /// "none" for accounts without one yet. For the non-custodial admin dashboard.
+    /// </summary>
+    public IReadOnlyList<(string Coin, long Accounts)> PayoutCoinCounts()
+    {
+        using var connection = Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT CASE WHEN own_wallet IS NULL THEN 'none'
+                        WHEN instr(own_wallet, ':') > 0 THEN substr(own_wallet, 1, instr(own_wallet, ':') - 1)
+                        ELSE 'XMR' END AS coin,
+                   COUNT(*) AS n
+            FROM accounts WHERE merged_into IS NULL AND deleted_at IS NULL
+            GROUP BY coin ORDER BY n DESC, coin
+            """;
+        using var reader = cmd.ExecuteReader();
+        var result = new List<(string, long)>();
+        while (reader.Read())
+            result.Add((reader.GetString(0), reader.GetInt64(1)));
+        return result;
+    }
+
+    /// <summary>Accounts that joined through an invite, and how many of them have been verified by their pool.</summary>
+    public (long Referred, long Verified) ReferralCounts() => (
+        Scalar<long>("SELECT COUNT(*) FROM accounts WHERE referred_by IS NOT NULL AND merged_into IS NULL"),
+        Scalar<long>("SELECT COUNT(*) FROM accounts WHERE referred_by IS NOT NULL AND verified = 1 AND merged_into IS NULL"));
+
+    public long DevicesSeenSince(DateTimeOffset since) =>
+        Scalar<long>("SELECT COUNT(*) FROM devices WHERE last_seen_at >= $s", ("$s", Format(since)));
+
     public IReadOnlyList<(string Address, long Accounts)> PoolWalletLoads()
     {
         using var connection = Open();
