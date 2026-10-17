@@ -251,3 +251,24 @@ Still open:
   the time it takes.
 - **Credited vs. paid:** after a few days of real mining, compare what Otium credited from Kryptex workers with the BTC
   the account received, to measure the auto-exchange spread.
+
+## Non-custodial run through the app (17 October 2026, 19:21–20:00)
+
+The app itself (dev mode with `-RealMiners -FeeWallet 'USDT:TB2x…'`, a local non-custodial server, real unMineable and
+WhatToMine) on the i7-8700K and RTX 3080. The user's payout address was `BNB:0x166a…` (the operator's own, on BNB Smart
+Chain) and Otium's fee target `USDT:TB2x…`. Both engines' mining time was set to 23:28 so the 24-hour fee cycle reached
+its fee slice after about 3 minutes; electricity was set as free.
+
+| Check | Result |
+|---|---|
+| Registration | ✅ The app registered `BNB:0x166a…` with the non-custodial server (worker `ot35v9qwinyxrb`, no pool wallet); the GPU policy priced Pearl, Xelis and FishHash from live WhatToMine. |
+| GPU login | ✅ SRBMiner 3.7.6: `--algorithm pearlhash --pool pearlpow.unmineable.com:443 --tls true --wallet BNB:0x166a….ot6148da9bg#ztjq-jr7s --password x`, about 105 TH/s, 3 of 3 shares accepted after switching back. |
+| CPU login | ✅ XMRig 6.26.0 config: `rx.unmineable.com:443`, TLS, `user` = the slice's target + `.ot6148da9b#ztjq-jr7s`, 50% threads. |
+| Fee slice | ✅ At mining time 23:31:12 both miners restarted with `USDT:TB2x…` (same worker, same referral code); at 24:00:00 (19:54:20) the GPU went back to `BNB:0x166a…`. Otium's address collected **0.014903 USDT** in about 30 minutes of fee slice (CPU and GPU). |
+| Referral code | ✅ unMineable lists every worker on both addresses with `"referral":"ztjq-jr7s"`, and the user's address dropped from a 1% to a **0.75%** fee once a worker with the code was active. |
+| App | ✅ Home showed "0.00000001 BNB at unMineable · paid out at 0.01 BNB" (no auto-pay warning: this address has auto-pay on) and "Mining Pearl (short fee slice)" with 104.7 TH/s and $3.15/day. |
+| New GPU algorithms | ✅ On first run the miner benchmarked FishHash and Xelis (`xelishashv3`) before settling on Pearl; unMineable recorded the Xelis worker too. |
+| Antivirus | ⚠️ Windows Defender deleted the XMRig copied into the new data folder three times; mining resumed after "Allow automatically" in the app. |
+
+Still open: Otium's own USDT address still has unMineable's auto-pay off (`"auto":false`), so it won't be paid until the
+operator turns it on; and a funded Mysterium registration end to end.
