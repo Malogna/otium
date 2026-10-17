@@ -83,6 +83,12 @@ public sealed class AppSettings
     /// <summary>Most data to share per day, in GB.</summary>
     public double BandwidthDailyLimitGb { get; set; } = 2;
 
+    /// <summary>
+    /// The user's own Polygon (0x…) address that Mysterium settles internet sharing earnings to, when their payout
+    /// address isn't already an 0x address (which works on Polygon too).
+    /// </summary>
+    public string? BandwidthPayoutAddress { get; set; }
+
     /// <summary>The user answered "Not now" to the internet sharing suggestion on the overview.</summary>
     public bool BandwidthPromptDismissed { get; set; }
 
@@ -139,6 +145,9 @@ public sealed class AccountState
     public long BandwidthServerDailyLimitBytes { get; set; }
 
     public string? BandwidthPartnerName { get; set; }
+
+    /// <summary>The server pays new Mysterium nodes' registration fee, so internet sharing can be offered.</summary>
+    public bool MysteriumSponsored { get; set; }
 
     /// <summary>Last PayPal email used, to prefill the cash-out form.</summary>
     public string? LastPayPalEmail { get; set; }

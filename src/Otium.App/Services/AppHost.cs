@@ -15,6 +15,7 @@ using Otium.Core.Settings;
 using Otium.Core.Switching;
 using Otium.Core.Wallets;
 using Otium.Providers.Honeygain;
+using Otium.Providers.Mysterium;
 using Otium.Providers.SrbMiner;
 using Otium.Providers.XMRig;
 
@@ -94,14 +95,19 @@ public sealed class AppHost : IAsyncDisposable
             GpuEngine = new EarningsEngine(gpuProvider, GpuPowerMeter, idle, () => _gpuConfig, gpuLedger.Load(), gpuLedger.Save);
         }
 
-        // Internet sharing (opt-in): usage is reported to the Otium server, which credits the balance.
+        // Internet sharing (opt-in). A Mysterium node pays the user's own Polygon address directly; builds with a
+        // Honeygain publisher key (custodial operators) report usage to the Otium server, which credits the balance.
         var bandwidthLedger = new JsonFileStore<BandwidthLedger>(Paths.BandwidthLedgerFile);
-        _bandwidthConfig = BuildBandwidthConfig();
         IBandwidthProvider bandwidthProvider = IsSimulated
             ? new SimulatedBandwidthProvider()
-            : new HoneygainBandwidthProvider(AppContext.BaseDirectory, AppIdentity.ResolveHoneygainApiKey());
+            : AppIdentity.ResolveHoneygainApiKey() is { } honeygainKey
+                ? new HoneygainBandwidthProvider(AppContext.BaseDirectory, honeygainKey)
+                : new MysteriumBandwidthProvider(_http, Paths.EnginesDir, () => MysteriumBeneficiary,
+                    (request, ct) => CreateClient().SponsorMysteriumAsync(DeviceId, Settings.DeviceSecret, request, ct));
+        UsesMysterium = bandwidthProvider is MysteriumBandwidthProvider;
+        _bandwidthConfig = BuildBandwidthConfig();
         Bandwidth = new BandwidthSharer(bandwidthProvider, idle, () => _bandwidthConfig,
-            (report, ct) => CreateClient().ReportBandwidthAsync(DeviceId, Settings.DeviceSecret, report, ct),
+            UsesMysterium ? null : (report, ct) => CreateClient().ReportBandwidthAsync(DeviceId, Settings.DeviceSecret, report, ct),
             bandwidthLedger.Load(), bandwidthLedger.Save);
     }
 
@@ -244,9 +250,21 @@ public sealed class AppHost : IAsyncDisposable
     public BandwidthSharer Bandwidth { get; }
 
     /// <summary>The server pays for sharing and this computer can run the partner's component.</summary>
-    public bool BandwidthOffered => Settings.PayoutMode == PayoutMode.Balance
-                                    && Settings.Account.BandwidthAvailable
-                                    && Bandwidth.Provider.UnavailableReason is null;
+    public bool BandwidthOffered => UsesMysterium
+        ? Settings.Account.MysteriumSponsored && MystRelease.ForCurrentPlatform() is not null
+        : Settings.PayoutMode == PayoutMode.Balance && Settings.Account.BandwidthAvailable && Bandwidth.Provider.UnavailableReason is null;
+
+    /// <summary>Internet sharing runs a Mysterium node that pays the user directly (not a partner paying Otium).</summary>
+    public bool UsesMysterium { get; }
+
+    /// <summary>
+    /// The Polygon address Mysterium pays: the one the user gave for sharing, or their payout address when it's an 0x
+    /// address (the same wallet works on Polygon). Null until there is one.
+    /// </summary>
+    public string? MysteriumBeneficiary =>
+        CryptoAddresses.TryValidate(AddressFormat.Evm, Settings.BandwidthPayoutAddress, out _)
+            ? Settings.BandwidthPayoutAddress!.Trim().ToLowerInvariant()
+            : PayoutTarget.ParseOrNull(Settings.PayoutAddress) is { Coin.Format: AddressFormat.Evm } evm ? evm.Address : null;
 
     public FeeSchedule FeeSchedule => _cpuConfig.FeeSchedule;
 
@@ -499,7 +517,7 @@ public sealed class AppHost : IAsyncDisposable
         var userLimit = (long)(Math.Clamp(Settings.BandwidthDailyLimitGb, 0.1, 100) * 1024 * 1024 * 1024);
         var serverLimit = account.BandwidthServerDailyLimitBytes > 0 ? account.BandwidthServerDailyLimitBytes : long.MaxValue;
         return new BandwidthConfig(
-            Settings.BandwidthEnabled && Settings.BandwidthConsentAt is not null && BandwidthOfferedBySettings() && account.WorkerId is not null,
+            Settings.BandwidthEnabled && Settings.BandwidthConsentAt is not null && BandwidthOfferedBySettings(),
             Settings.BandwidthOnlyWhenIdle,
             TimeSpan.FromMinutes(Math.Max(1, Settings.IdleMinutes)),
             Math.Min(userLimit, serverLimit),
@@ -508,7 +526,9 @@ public sealed class AppHost : IAsyncDisposable
             account.WorkerId ?? "");
 
         // Bandwidth isn't constructed yet on the first call, so check the provider separately in BandwidthOffered.
-        bool BandwidthOfferedBySettings() => Settings.PayoutMode == PayoutMode.Balance && account.BandwidthAvailable;
+        bool BandwidthOfferedBySettings() => UsesMysterium
+            ? account.MysteriumSponsored
+            : Settings.PayoutMode == PayoutMode.Balance && account.BandwidthAvailable && account.WorkerId is not null;
     }
 
     /// <summary>
@@ -712,6 +732,7 @@ public sealed class AppHost : IAsyncDisposable
         account.MinCryptoUsd = summary.Balance.MinCryptoUsd;
         account.FeePercent = summary.Balance.FeePercent;
         account.BandwidthAvailable = summary.Bandwidth?.Available ?? false;
+        account.MysteriumSponsored = summary.MysteriumSponsored;
         account.BandwidthUserUsdPerGb = summary.Bandwidth?.UserUsdPerGb ?? 0;
         account.BandwidthUserUsdPerSharingHour = summary.Bandwidth?.UserUsdPerSharingHour ?? 0;
         account.BandwidthServerDailyLimitBytes = summary.Bandwidth?.DailyLimitBytes ?? 0;

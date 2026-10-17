@@ -58,6 +58,7 @@ Edit `.env`. Each setting has a comment; the essentials:
 | `Admin__Token` | A long random secret: `openssl rand -hex 32` |
 | `Custody__Enabled` | Leave unset (non-custodial: pools pay users directly). `true` turns on balances, cash-outs and the settings below marked "custodial" |
 | `Unmineable__OtiumTarget` | Otium's fee address on unMineable, e.g. `USDT:T…`, shown with its referral earnings on the admin dashboard |
+| `Mysterium__Enabled`, `Mysterium__SponsorPrivateKey` | Internet sharing: Otium pays each new Mysterium node's registration (about 0.13 MYST) from this Polygon wallet. Keep only a few days' MYST and a little POL in it |
 | `Earnings__PoolWallets__0` | Custodial: your XMR receiving (sub)address, unless the wallet RPC creates them |
 | `Email__*` | Your SMTP service, so email sign-in and receipts work |
 | `BitcoinWallet__*` | Custodial: the Bitcoin treasury that pays every crypto cash-out (see [Bitcoin treasury](#bitcoin-treasury)) |

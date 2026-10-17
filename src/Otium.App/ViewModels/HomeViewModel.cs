@@ -256,8 +256,14 @@ public partial class HomeViewModel : ViewModelBase
         AccountLine = account.Email is null
             ? ""
             : account.DeviceCount > 1 ? $"Signed in as {account.Email} · {account.DeviceCount} computers" : $"Signed in as {account.Email}";
-        var referralPercent = _host.Account?.Balance.ReferralPercent ?? 0;
-        InviteTitle = referralPercent > 0 ? $"Get {referralPercent:0.#}% of everything your friends earn" : "Invite friends";
+        // Balance accounts get a share of friends' credited earnings; own-address users get half of Otium's fee, mined
+        // to their address, which is that share of their friends' mining time.
+        var referralPercent = IsBalanceMode
+            ? (double)(_host.Account?.Balance.ReferralPercent ?? 0)
+            : Core.Fees.FeePolicy.Default.FeePercent * Core.Fees.FeePolicy.Default.ReferrerShareOfFee;
+        InviteTitle = referralPercent <= 0 ? "Invite friends"
+            : IsBalanceMode ? $"Get {referralPercent:0.#}% of everything your friends earn"
+            : $"Get {referralPercent:0.#}% of your friends' mining time, paid to your wallet";
         InviteCode = settings.Referral.MyCode ?? "";
         HasInviteCode = InviteCode.Length > 0;
         UpdateReady = _host.Updates.ReadyVersion is not null;

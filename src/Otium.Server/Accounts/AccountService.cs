@@ -39,7 +39,8 @@ public sealed class AccountService(
     BandwidthService bandwidth,
     TimeProvider time,
     ILogger<AccountService> logger,
-    IOptions<CustodyOptions> custodyOptions)
+    IOptions<CustodyOptions> custodyOptions,
+    MystSponsorService mystSponsor)
 {
     public static readonly TimeSpan CodeLifetime = TimeSpan.FromMinutes(15);
     public const int MaxCodeAttempts = 5;
@@ -395,7 +396,8 @@ public sealed class AccountService(
             (int)store.DeviceCount(account.AccountId),
             _custodial ? bandwidth.Terms(account) : null,
             _custodial ? cpuRouter.For(account) : null,
-            _custodial);
+            _custodial,
+            mystSponsor.IsAvailable);
     }
 
     public static CashoutInfo ToInfo(CashoutRecord c) => new(

@@ -20,6 +20,7 @@ var builder = WebApplication.CreateBuilder(args);
 var custodial = builder.Configuration.GetValue<bool>($"{CustodyOptions.Section}:Enabled");
 builder.Services.Configure<CustodyOptions>(builder.Configuration.GetSection(CustodyOptions.Section));
 builder.Services.Configure<UnmineableOptions>(builder.Configuration.GetSection(UnmineableOptions.Section));
+builder.Services.Configure<MysteriumOptions>(builder.Configuration.GetSection(MysteriumOptions.Section));
 
 builder.Services.Configure<ReferralOptions>(builder.Configuration.GetSection(ReferralOptions.Section));
 builder.Services.Configure<EarningsOptions>(builder.Configuration.GetSection(EarningsOptions.Section));
@@ -50,6 +51,8 @@ builder.Services.AddSingleton<IEmailSender>(sp => sp.GetRequiredService<IOptions
     : sp.GetRequiredService<OutboxEmailSender>());
 builder.Services.AddSingleton<PoolWalletAllocator>();
 builder.Services.AddSingleton<BandwidthService>();
+builder.Services.AddSingleton<IMystWallet, PolygonMystWallet>();
+builder.Services.AddSingleton<MystSponsorService>();
 builder.Services.AddSingleton<AccountService>();
 builder.Services.AddSingleton<AccountDataService>();
 builder.Services.AddSingleton<EarningsCreditor>();
@@ -189,6 +192,15 @@ if (custodial)
     });
 }
 
+// Mysterium internet sharing: Otium pays a new node's one-time registration fee (custodial or not; it's Otium's money).
+api.MapPost("/devices/{deviceId}/mysterium/sponsor", async (string deviceId, MystSponsorRequest body, HttpContext context, AccountService accounts,
+    MystSponsorService sponsor, CancellationToken ct) =>
+{
+    var session = accounts.Authenticate(deviceId, Secret(context.Request));
+    var ip = context.Connection.RemoteIpAddress?.MapToIPv4().ToString() ?? "unknown";
+    return Results.Ok(await sponsor.SponsorAsync(session, body, ip, ct));
+});
+
 api.MapPost("/devices/{deviceId}/email/code", async (string deviceId, EmailCodeRequest body, HttpRequest request, AccountService accounts, CancellationToken ct) =>
 {
     await accounts.SendSignInCodeAsync(deviceId, Secret(request), body, ct);
@@ -240,9 +252,9 @@ var admin = app.MapGroup("/admin").RequireRateLimiting("per-ip").AddEndpointFilt
 });
 
 if (!custodial)
-    admin.MapGet("/summary", (OtiumStore store, IUnmineableApi unmineable, IOptions<UnmineableOptions> options, TimeProvider time,
-            ILogger<Program> logger, CancellationToken ct) =>
-        NonCustodialAdmin.SummaryAsync(store, unmineable, options.Value, time, logger, ct));
+    admin.MapGet("/summary", (OtiumStore store, IUnmineableApi unmineable, IOptions<UnmineableOptions> options, IMystWallet myst,
+            MystSponsorService sponsor, TimeProvider time, ILogger<Program> logger, CancellationToken ct) =>
+        NonCustodialAdmin.SummaryAsync(store, unmineable, options.Value, myst, sponsor.IsAvailable, time, logger, ct));
 else
 {
     admin.MapGet("/summary", async (OtiumStore store, IMoneroPoolApi pool, IBitcoinWallet treasury, IThorchainApi thorchain,

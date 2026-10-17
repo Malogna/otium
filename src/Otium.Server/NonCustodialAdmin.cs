@@ -12,7 +12,8 @@ namespace Otium.Server;
 public static class NonCustodialAdmin
 {
     public static async Task<IResult> SummaryAsync(
-        OtiumStore store, IUnmineableApi unmineable, UnmineableOptions options, TimeProvider time, ILogger logger, CancellationToken ct)
+        OtiumStore store, IUnmineableApi unmineable, UnmineableOptions options, Bandwidth.IMystWallet myst, bool mystSponsoring,
+        TimeProvider time, ILogger logger, CancellationToken ct)
     {
         var now = time.GetUtcNow();
         var (referred, verified) = store.ReferralCounts();
@@ -62,9 +63,33 @@ public static class NonCustodialAdmin
             otiumError = "Set Unmineable:OtiumTarget to Otium's fee address (e.g. USDT:T…) to see its earnings here.";
         }
 
+        decimal? mystWalletBalance = null;
+        string? mystError = null;
+        if (myst.IsConfigured)
+        {
+            try
+            {
+                mystWalletBalance = await myst.GetBalanceAsync(ct);
+            }
+            catch (Exception e) when (!ct.IsCancellationRequested)
+            {
+                logger.LogWarning(e, "MYST sponsor wallet lookup failed");
+                mystError = "Polygon RPC didn't answer.";
+            }
+        }
+
         return Results.Ok(new
         {
             custodial = false,
+            mysterium = new
+            {
+                sponsoring = mystSponsoring,
+                nodesSponsored = store.MystSponsorshipCount(),
+                mystSpent = store.MystSponsoredSince(),
+                mystSpentPast24h = store.MystSponsoredSince(now.AddDays(-1)),
+                walletBalanceMyst = mystWalletBalance,
+                walletError = mystError,
+            },
             accountsByCoin = store.PayoutCoinCounts().Select(c => new { c.Coin, c.Accounts }),
             devicesSeenPast7Days = store.DevicesSeenSince(now.AddDays(-7)),
             referredAccounts = referred,

@@ -77,6 +77,12 @@ its own data folder, the web UI off and the local API (Tequila) on 127.0.0.1:405
 | Supervisor | ✅ `myst_supervisor -install -uid <user>` with one UAC prompt installs the auto-start SYSTEM service "MysteriumVPN Supervisor" (pipe `\\.\pipe\mystpipe`, open to the Users group). `-uid` is required but unused on Windows. |
 | Services | ⚠️ `POST /services {"provider_id","type":"scraping"}` started `scraping` **and** `quic_scraping` at once, with **no terms accepted and no registration**, and announced this PC's residential IP (Oslo, Telia) with the `mysterium` (B2B) access policy at 0.000628 MYST/hour plus 1.13 MYST/GiB (`quic_scraping` 0.19 MYST/GiB). Stopped after about 10 seconds with no sessions. Otium must not start services before the user has agreed to Mysterium's provider terms (`POST /terms`) in its consent screen. |
 
+Decision (17 October 2026): Otium pays each node's registration from a small Polygon wallet of its own (option 2
+below). Follow-up research found no other bandwidth network that pays users' own wallets in a liquid coin without a
+per-user sign-up, stake or special hardware (`research_notes/Non-custodial bandwidth/`), and found that Mysterium's
+registration can be funded by sending MYST to the identity's channel address before `POST /identities/{id}/register`
+(the registry contract takes the fee from the channel; Mysterium's transactor pays gas). Built in Phase 5.
+
 What this means for Phase 5:
 - **Registration is the blocker.** Each user's node needs 0.13 MYST (or a referral token) before it can settle a
   single payout. Options, best first: (1) ask MystNodes for a partner arrangement where Otium's referral token

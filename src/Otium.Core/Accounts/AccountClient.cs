@@ -16,6 +16,9 @@ public interface IAccountClient
 
     Task<BandwidthReportResult> ReportBandwidthAsync(string deviceId, string deviceSecret, BandwidthReport report, CancellationToken ct);
 
+    /// <summary>Asks Otium to pay a new Mysterium node's one-time registration fee.</summary>
+    Task<MystSponsorResult> SponsorMysteriumAsync(string deviceId, string deviceSecret, MystSponsorRequest request, CancellationToken ct);
+
     Task<byte[]> ExportAccountDataAsync(string deviceId, string deviceSecret, CancellationToken ct);
 
     Task<DeleteAccountResult> DeleteAccountAsync(string deviceId, string deviceSecret, DeleteAccountRequest request, CancellationToken ct);
@@ -92,6 +95,12 @@ public sealed class AccountClient(HttpClient http) : IAccountClient
     {
         using var response = await PostAsync(deviceId, deviceSecret, "bandwidth", report, ct);
         return await ReadAsync<BandwidthReportResult>(response, ct);
+    }
+
+    public async Task<MystSponsorResult> SponsorMysteriumAsync(string deviceId, string deviceSecret, MystSponsorRequest request, CancellationToken ct)
+    {
+        using var response = await PostAsync(deviceId, deviceSecret, "mysterium/sponsor", request, ct);
+        return await ReadAsync<MystSponsorResult>(response, ct);
     }
 
     /// <summary>A copy of everything the server stores about the account, as a JSON document to save as-is.</summary>
