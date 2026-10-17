@@ -343,6 +343,41 @@ public sealed class UnmineableAlgorithm
     public string Tier { get; set; } = "primary";
 }
 
+/// <summary>
+/// Mysterium internet sharing: Otium pays each new node's one-time registration fee (about 0.13 MYST in October 2026)
+/// from a small wallet of its own on Polygon, so users' nodes register automatically and settle to their own address.
+/// </summary>
+public sealed class MysteriumOptions
+{
+    public const string Section = "Mysterium";
+
+    public bool Enabled { get; set; }
+
+    /// <summary>A Polygon JSON-RPC endpoint.</summary>
+    public string PolygonRpcUrl { get; set; } = "https://polygon-rpc.com";
+
+    public long ChainId { get; set; } = 137;
+
+    /// <summary>
+    /// Private key (hex) of Otium's sponsor wallet. Keep only a few days' worth of MYST (and a little POL for gas) in it.
+    /// Set it as a secret (environment variable), never in a file in the repository.
+    /// </summary>
+    public string? SponsorPrivateKey { get; set; }
+
+    /// <summary>MYST on Polygon.</summary>
+    public string MystTokenAddress { get; set; } = "0x1379E8886A944d2D9d440b3d88DF536Aea08d9F3";
+
+    /// <summary>Sent per node: the fee (0.1297–0.1321 MYST when checked) plus a margin, since quotes move.</summary>
+    public decimal AmountMyst { get; set; } = 0.15m;
+
+    /// <summary>Most MYST spent on registrations in any 24 hours.</summary>
+    public decimal DailyBudgetMyst { get; set; } = 15m;
+
+    public int MaxPerAccount { get; set; } = 5;
+
+    public int MaxPerIpPerDay { get; set; } = 3;
+}
+
 /// <summary>Where balance accounts' CPUs mine. Own-wallet accounts always mine to their own address on MoneroOcean.</summary>
 public sealed class CpuMiningOptions
 {
