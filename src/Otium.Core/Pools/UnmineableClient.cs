@@ -45,9 +45,19 @@ public sealed record UnmineableStats(
 public sealed record UnmineablePayment(DateTimeOffset Time, decimal Amount, string Network, string TransactionId, string Status, string? ExplorerUrl);
 
 /// <summary>One worker on one algorithm.</summary>
-/// <param name="CalculatedHps">Hashrate unMineable computes from accepted shares (what it pays for).</param>
+/// <param name="CalculatedHps">Hashrate unMineable computes from accepted shares (what it pays for), averaged over the
+/// last hour: a worker that started 10 minutes ago shows a sixth of its real rate.</param>
 /// <param name="ReportedHps">Hashrate the miner reports, when it does.</param>
-public sealed record UnmineableWorker(string Algorithm, string Name, bool Online, double CalculatedHps, double ReportedHps);
+/// <param name="Referral">The referral code the worker logged in with ("…#code"), or null.</param>
+/// <param name="LastSeen">When the worker last sent a share, or null.</param>
+public sealed record UnmineableWorker(
+    string Algorithm,
+    string Name,
+    bool Online,
+    double CalculatedHps,
+    double ReportedHps,
+    string? Referral = null,
+    DateTimeOffset? LastSeen = null);
 
 public interface IUnmineableApi
 {
@@ -166,8 +176,8 @@ public sealed class UnmineableClient(HttpClient http) : IUnmineableApi
     }
 
     /// <summary>
-    /// Workers are grouped by algorithm ("randomx", "pearlpow"…). The field names inside a worker follow unMineable's
-    /// site (name, online, chr, rhr) and are read loosely, since an idle address returns empty lists.
+    /// Workers are grouped by algorithm ("randomx", "pearlpow"…), each with name, online, chr and rhr (hashrates as
+    /// strings), referral and last (Unix milliseconds), as captured from a live address in October 2026.
     /// </summary>
     internal static IReadOnlyList<UnmineableWorker> ParseWorkers(JsonElement data)
     {
@@ -186,7 +196,9 @@ public sealed class UnmineableClient(HttpClient http) : IUnmineableApi
                     Text(w, "name") ?? Text(w, "worker") ?? "",
                     Flag(w, "online"),
                     Number(w, "chr"),
-                    Number(w, "rhr")));
+                    Number(w, "rhr"),
+                    Text(w, "referral") is { Length: > 0 } code ? code : null,
+                    Number(w, "last") is > 0 and var last ? DateTimeOffset.FromUnixTimeMilliseconds((long)last) : null));
             }
         }
         return result;

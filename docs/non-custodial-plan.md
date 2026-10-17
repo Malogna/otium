@@ -41,6 +41,29 @@ Key facts from research (October 2026, details in the agents' notes):
 - Run a `myst` node locally (Windows), register an identity with a beneficiary via Tequila, and note what happens
   with the registration fee, admin prompts and antivirus. Decide go/no-go for Phase 5 from this.
 
+#### Phase 0 results (17 October 2026, 15:35–15:45 UTC)
+
+Otium's own payout target is `USDT:TB2xNFAjGarYPykmt1dZQz8hJb2Rhry4wJ` (TRC-20) and its unMineable referral code is
+**`ztjq-jr7s`**. The code comes from unMineable's public API without signing up anything:
+`/v5/account/{uuid}/referrals` returns `code` for any address unMineable has seen.
+
+| Check | Result |
+|---|---|
+| XMRig 6.26.0, `rx.unmineable.com:443` with TLS, login `USDT:T….otiumspikecpu`, password `x` | ✅ TLS 1.3, 7 of 7 shares accepted in 10 minutes at difficulty 100,001 (50% of an i7-8700K, about 1.75 kH/s). |
+| SRBMiner 3.7.6, `--algorithm pearlhash`, `pearlpow.unmineable.com:443 --tls true`, same login form | ✅ RTX 3080 at about 112 TH/s and 340 W; 1 of 1 share accepted at difficulty 4,194,304 (one share every ~2.7 minutes on average, so 10 minutes is a thin sample). |
+| Referral code on another address (`BNB:0x….otiumspikeref#ztjq-jr7s`, 8 minutes CPU) | ✅ The worker lists `"referral":"ztjq-jr7s"`, the referred address's `mining_fee` is `0.75` instead of `1`, and Otium's `/referrals` list shows one miner. |
+| Balance | ✅ 0.000402 USDT on Otium's address after the run, shown as `balance_mining`. `rewarded.past_24h` stays 0 until the daily cut-off. |
+| `/v5/account/{uuid}/workers` | ✅ Per algorithm: `workers[{uuid, online, name, last (ms), rhr, chr (strings, H/s), referral}]` and 5-minute `chart` points. `chr` is the last hour's accepted share difficulty ÷ 3600 s (7 × 100,001 ÷ 3600 = 194.4 H/s; Pearl: 1 × 4,194,304 × 2³² ÷ 3600 = 5.0 TH/s), so it lags real hashrate for the first hour. Fixtures are in `PayoutTargetTests.cs`. |
+| Auto-pay | ⚠️ A new USDT (TRC-20) address starts with `auto:false`; the new BNB (BSC) address started with `auto:true`. With auto-pay off, unMineable never pays by itself: the owner must tick "Auto pay" (or press "Pay out") on the address page, which posts to `/v1/address/{uuid}/setting/auto_pay`. Otium must not change that for users, so Phase 4 shows a warning with a link to the address page whenever `auto` is false. |
+| Mysterium node | ⏳ Not run yet: it needs downloading `myst` and a one-time admin install of `myst_supervisor`, which the operator has to approve. |
+
+Plan changes from these results:
+- Phase 2: the `#code` suffix works as documented; build it into every unMineable login. Use TLS on 443 for both
+  CPU and GPU (unMineable's guide shows plain 3333 for Pearl; 443 with TLS also works).
+- Phase 4: the "At the pool" panel must say plainly when auto-pay is off and link to the address page.
+- Hashrate shown from unMineable is an hourly average; the app should keep showing the miner's own hashrate and use
+  unMineable's only to confirm the worker is seen.
+
 ### Phase 1 — payout address model (Core)
 - New `PayoutAddress` value type in `src/Otium.Core/Wallets/` (e.g. `PayoutTarget(Coin, Address)`), parsed from and
   formatted as `COIN:address`, with a curated coin list (name, ticker, network, unMineable symbol, threshold text,

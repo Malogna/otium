@@ -149,16 +149,26 @@ public class UnmineableClientTests
     {
         var workers = UnmineableClient.ParseWorkers(Data("""
             {"success":true,"msg":"Ok","data":{
-            "randomx":{"workers":[{"name":"otium-pc","online":true,"chr":"2400.5","rhr":"2450"}],
-                       "chart":{"reported":{"data":[],"timestamps":[]},"calculated":{"data":[],"timestamps":[]}}},
-            "pearlpow":{"workers":[],"chart":{}}}}
+            "randomx":{"workers":[{"uuid":"76ac16b0-1d14-4279-b1d6-f68a6f8ce785","online":true,"name":"otiumspikecpu",
+                       "last":1792251900000,"rhr":"194","chr":"194.44","referral":"ztjq-jr7s"}],
+                       "chart":{"reported":{"data":["138.89","194.44"],"timestamps":[1792251600000,1792251900000]},
+                                "calculated":{"data":["138.89","194.44"],"timestamps":[1792251600000,1792251900000]}}},
+            "pearlpow":{"workers":[{"uuid":"1bc04a5f-89d0-4c46-8fd7-810cb5aa2770","online":false,"name":"otiumspikegpu",
+                       "last":1792251900000,"rhr":"5003999585967","chr":"5003999585967","referral":null}],"chart":{}},
+            "kawpow":{"workers":[],"chart":{}}}}
             """));
 
-        var worker = Assert.Single(workers);
-        Assert.Equal("randomx", worker.Algorithm);
-        Assert.Equal("otium-pc", worker.Name);
-        Assert.True(worker.Online);
-        Assert.Equal(2400.5, worker.CalculatedHps);
+        Assert.Equal(2, workers.Count);
+        var cpu = workers[0];
+        Assert.Equal("randomx", cpu.Algorithm);
+        Assert.Equal("otiumspikecpu", cpu.Name);
+        Assert.True(cpu.Online);
+        Assert.Equal(194.44, cpu.CalculatedHps);
+        Assert.Equal("ztjq-jr7s", cpu.Referral);
+        Assert.Equal(DateTimeOffset.FromUnixTimeMilliseconds(1792251900000), cpu.LastSeen);
+        Assert.False(workers[1].Online);
+        Assert.Null(workers[1].Referral);
+        Assert.Equal(5_003_999_585_967, workers[1].CalculatedHps);
     }
 
     [Fact]
