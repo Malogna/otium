@@ -56,7 +56,12 @@ public partial class SettingsViewModel : ViewModelBase
         _ = RefreshLivePriceAsync();
         UpdateStatus = host.Updates.Status;
         host.Updates.Changed += () => Dispatcher.UIThread.Post(() => UpdateStatus = _host.Updates.Status);
-        host.AccountChanged += () => Dispatcher.UIThread.Post(() => OnPropertyChanged(nameof(OffersBalance)));
+        host.AccountChanged += () => Dispatcher.UIThread.Post(() =>
+        {
+            OnPropertyChanged(nameof(OffersBalance));
+            OnPropertyChanged(nameof(CostText));
+            OnPropertyChanged(nameof(FeeInfo));
+        });
     }
 
     public InternetSharingViewModel InternetSharing => _internetSharing ??= new InternetSharingViewModel(_host);
@@ -199,7 +204,11 @@ public partial class SettingsViewModel : ViewModelBase
     }
 
     partial void OnUseCpuChanged(bool value) => ApplyDevices();
-    partial void OnUseGpuChanged(bool value) => ApplyDevices();
+    partial void OnUseGpuChanged(bool value)
+    {
+        OnPropertyChanged(nameof(CostText));
+        ApplyDevices();
+    }
     partial void OnGpuWattsChanged(decimal? value) => QueueSave();
 
     private void ApplyDevices()
@@ -274,10 +283,20 @@ public partial class SettingsViewModel : ViewModelBase
         $"for each coin. unMineable logins carry Otium's referral code ({_host.ReferralCode ?? "none"}), which lowers its fee to 0.75%.";
 
     public string FeeInfo =>
-        $"App fee {_host.Fees.FeePercent:0.##}% of mining time ({_host.Fees.ReferrerShareOfFee * 100:0}% of it goes to whoever invited you, " +
-        $"for {_host.Fees.ReferrerRewardPeriod.TotalDays / 30:0} months). " +
-        "XMRig keeps its own 1% developer donation; SRBMiner charges 0.65–2% depending on the GPU algorithm. " +
+        $"If someone invited you, {_host.Fees.ReferrerShareOfFee * 100:0}% of Otium's fee goes to them for " +
+        $"{_host.Fees.ReferrerRewardPeriod.TotalDays / 30:0} months. " +
         $"Fee address: {(_host.FeeWallet is null ? "none for your pool in this build, so the fee slice is mined for you" : _host.FeeWallet)}.";
+
+    /// <summary>Everything that comes off your mining, for the payout address you have now.</summary>
+    public string CostText
+    {
+        get
+        {
+            var pool = Core.Pools.PayoutRouting.PoolFor(_host.OwnPayoutTarget) ?? Core.Pools.PayoutPool.Unmineable;
+            var lines = Core.Fees.CostBreakdown.For(_host.Fees, pool, _host.GpuEngine is not null && UseGpu, _host.ReferralCode is not null);
+            return Core.Fees.CostBreakdown.Text(lines);
+        }
+    }
 
     public string WattsHint =>
         $"Leave empty to estimate (about {CpuPowerModel.ForThisMachine().FullLoadWatts:0} W for {Environment.ProcessorCount} threads). " +
@@ -371,6 +390,7 @@ public partial class SettingsViewModel : ViewModelBase
         _host.ApplyDeviceSwitches();
         UseBalance = false;
         PayoutSaved = $"Saved. New earnings go to this {target.Coin.Ticker} address.";
+        OnPropertyChanged(nameof(CostText));
         await _host.SyncAccountAsync(CancellationToken.None);
         await _host.RefreshPoolBalanceAsync(force: true, CancellationToken.None);
     }
