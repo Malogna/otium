@@ -274,7 +274,8 @@ public partial class SettingsViewModel : ViewModelBase
         $"for each coin. unMineable logins carry Otium's referral code ({_host.ReferralCode ?? "none"}), which lowers its fee to 0.75%.";
 
     public string FeeInfo =>
-        $"App fee {FeePolicy.Default.FeePercent:0.#}% of mining time (half of it goes to whoever invited you, if anyone). " +
+        $"App fee {_host.Fees.FeePercent:0.##}% of mining time ({_host.Fees.ReferrerShareOfFee * 100:0}% of it goes to whoever invited you, " +
+        $"for {_host.Fees.ReferrerRewardPeriod.TotalDays / 30:0} months). " +
         "XMRig keeps its own 1% developer donation; SRBMiner charges 0.65–2% depending on the GPU algorithm. " +
         $"Fee address: {(_host.FeeWallet is null ? "none for your pool in this build, so the fee slice is mined for you" : _host.FeeWallet)}.";
 

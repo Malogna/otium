@@ -13,6 +13,30 @@ public sealed class CustodyOptions
     public bool Enabled { get; set; }
 }
 
+/// <summary>
+/// The disclosed fee and invite terms sent to apps with every account summary (see FeeTerms). Changing them here takes
+/// effect at each app's next sync, without a release. Apps cap the fee at 10%.
+/// </summary>
+public sealed class FeeOptions
+{
+    public const string Section = "Fees";
+
+    public double FeePercent { get; set; } = Core.Fees.FeePolicy.Default.FeePercent;
+
+    public double ReferrerShareOfFee { get; set; } = Core.Fees.FeePolicy.Default.ReferrerShareOfFee;
+
+    public double ReferrerRewardDays { get; set; } = Core.Fees.FeePolicy.Default.ReferrerRewardPeriod.TotalDays;
+
+    public double RefereeFeeFreeDays { get; set; } = Core.Fees.FeePolicy.Default.RefereeFeeHoliday.TotalDays;
+
+    public double ReferrerFeeFreeDaysPerFriend { get; set; } = Core.Fees.FeePolicy.Default.ReferrerFeeHolidayPerVerifiedFriend.TotalDays;
+
+    public double MaxFeeFreeDays { get; set; } = Core.Fees.FeePolicy.Default.MaxFeeHoliday.TotalDays;
+
+    public Core.Accounts.FeeTerms ToTerms() =>
+        new(FeePercent, ReferrerShareOfFee, ReferrerRewardDays, RefereeFeeFreeDays, ReferrerFeeFreeDaysPerFriend, MaxFeeFreeDays);
+}
+
 public sealed class ReferralOptions
 {
     public const string Section = "Referral";

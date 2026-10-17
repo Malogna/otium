@@ -38,17 +38,19 @@ public partial class InviteViewModel : ViewModelBase
 
     public string RewardYou => _host.Settings.PayoutMode == Core.Settings.PayoutMode.Balance
         ? $"You get {(_host.Account?.Balance.ReferralPercent ?? 0):0.#}% of everything they earn for " +
-          $"{FeePolicy.Default.ReferrerRewardPeriod.TotalDays / 30:0} months, added to your Otium balance. It comes out of Otium's fee, never out of your friend's earnings."
+          $"{Fees.ReferrerRewardPeriod.TotalDays / 30:0} months, added to your Otium balance. It comes out of Otium's fee, never out of your friend's earnings."
         :
-        $"You get {FeePolicy.Default.ReferrerShareOfFee * 100:0}% of Otium's fee on everything they mine for " +
-        $"{FeePolicy.Default.ReferrerRewardPeriod.TotalDays / 30:0} months ({FeePolicy.Default.FeePercent * FeePolicy.Default.ReferrerShareOfFee:0.#}% of their mining time), " +
+        $"You get {Fees.ReferrerShareOfFee * 100:0}% of Otium's fee on everything they mine for " +
+        $"{Fees.ReferrerRewardPeriod.TotalDays / 30:0} months ({Fees.ReferrerPercent:0.##}% of their mining time), " +
         "mined straight to your own address when the same pool pays you both. It comes out of Otium's fee, never out of your friend's earnings.";
 
     public string RewardBonus =>
-        $"Each friend who actually starts mining adds {FeePolicy.Default.ReferrerFeeHolidayPerVerifiedFriend.TotalDays:0} fee-free days for you " +
-        $"(up to {FeePolicy.Default.MaxFeeHoliday.TotalDays:0} days at a time).";
+        $"Each friend who actually starts mining adds {Fees.ReferrerFeeHolidayPerVerifiedFriend.TotalDays:0} fee-free days for you " +
+        $"(up to {Fees.MaxFeeHoliday.TotalDays:0} days at a time).";
 
-    private static string FriendDays => FeePolicy.Default.RefereeFeeHoliday.TotalDays.ToString("0", CultureInfo.InvariantCulture);
+    private FeePolicy Fees => _host.Fees;
+
+    private string FriendDays => Fees.RefereeFeeHoliday.TotalDays.ToString("0", CultureInfo.InvariantCulture);
 
     [ObservableProperty] public partial bool HasCode { get; set; }
     [ObservableProperty] public partial string Code { get; set; } = "";
@@ -74,7 +76,7 @@ public partial class InviteViewModel : ViewModelBase
 
     partial void OnSelectedStyleChanged(ShareStyle? value) => Message = Fill(value?.Template);
 
-    private string Fill(string? template) => InviteMessages.Fill(template ?? "", Code, ShareUrl, FeePolicy.Default.RefereeFeeHoliday);
+    private string Fill(string? template) => InviteMessages.Fill(template ?? "", Code, ShareUrl, Fees.RefereeFeeHoliday);
 
     private string Subject => Fill(SelectedStyle?.Subject ?? ShareStyles[1].Subject);
 
