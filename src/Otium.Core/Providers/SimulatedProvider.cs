@@ -85,7 +85,14 @@ public sealed class SimulatedProvider(
         {
             ({ } k, _) => new { wallet = $"kryptex:{k.Coin}:{k.Route.User}", worker = options.WorkerName, algo = mined, hashrate, normalizedHashrate = 0.0, rig = _rig },
             (null, { } r) => new { wallet = $"kryptex:xmr:{r.User.Split('.')[0]}", worker = options.WorkerName, algo, hashrate, normalizedHashrate = 0.0, rig = _rig },
-            _ => new { wallet = options.Target.WalletAddress, worker = options.WorkerName, algo, hashrate, normalizedHashrate = hashrate * normalizedPerHash, rig = _rig },
+            // Monero is credited to the bare address, as MoneroOcean does; other coins under their "COIN:address".
+            _ => new
+            {
+                wallet = PayoutRouting.PoolFor(options.Target.WalletAddress) == PayoutPool.Unmineable
+                    ? options.Target.WalletAddress
+                    : PayoutRouting.MoneroOceanWallet(options.Target.WalletAddress),
+                worker = options.WorkerName, algo, hashrate, normalizedHashrate = hashrate * normalizedPerHash, rig = _rig,
+            },
         };
         try
         {
@@ -132,12 +139,17 @@ public sealed class SimulatedProvider(
 
     public async Task<PayoutBalance?> GetPayoutBalanceAsync(string walletAddress, CancellationToken ct)
     {
+        // The dev pool also answers unMineable's API (OTIUM_UNMINEABLE_API), for coins other than Monero.
+        if (PayoutRouting.PoolFor(walletAddress) == PayoutPool.Unmineable)
+            return await UnmineableClient.GetPayoutBalanceAsync(new UnmineableClient(http), PayoutTarget.ParseOrNull(walletAddress)!, ct);
+
+        walletAddress = PayoutRouting.MoneroOceanWallet(walletAddress);
         var stats = await pool.GetMinerStatsAsync(walletAddress, ct);
         return stats is null ? null : new PayoutBalance(stats.PendingXmr, stats.PaidXmr, PayoutCurrency, MoneroOceanClient.MinimumPayoutXmr, null);
     }
 
     public string? ValidatePayoutAddress(string address) =>
-        MoneroAddress.TryValidate(address, out _, out var error) ? null : error;
+        PayoutTarget.TryParse(address, out _, out var error) ? null : error;
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }

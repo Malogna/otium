@@ -56,4 +56,8 @@ public enum BandwidthProviderState
 }
 
 /// <param name="BytesSinceStart">Traffic relayed since the last start; resets when the provider restarts.</param>
-public sealed record BandwidthStatus(BandwidthProviderState State, long BytesSinceStart, string? Message = null);
+/// <param name="Earnings">
+/// What the partner network reports this computer has earned, in its own words (e.g. "0.42 MYST, paid to 0x12…ab at 5
+/// MYST"), for providers that pay the user directly; null when the Otium server credits sharing instead.
+/// </param>
+public sealed record BandwidthStatus(BandwidthProviderState State, long BytesSinceStart, string? Message = null, string? Earnings = null);

@@ -2,10 +2,19 @@ namespace Otium.Core.Accounts;
 
 // Wire contracts shared by the desktop app and the Otium server.
 
-/// <param name="PayoutAddress">The user's own XMR wallet, only for <c>PayoutMode.OwnWallet</c>; null for balance accounts.</param>
+/// <param name="PayoutAddress">
+/// The user's own payout target ("USDT:T…", or a bare Monero address), only for <c>PayoutMode.OwnWallet</c>; null for
+/// balance accounts.
+/// </param>
 public sealed record RegisterDeviceRequest(string DeviceId, string DeviceSecret, string? PayoutAddress, string? ReferralCode);
 
 /// <param name="PoolWallet">Operator wallet balance accounts mine to (with <paramref name="WorkerId"/> as the worker name).</param>
+/// <param name="ReferrerWallet">The referrer's payout target, which own-wallet apps mine the referral slice to.</param>
+/// <param name="MysteriumSponsored">Otium pays new Mysterium nodes' registration, so the app can offer internet sharing.</param>
+/// <param name="Custodial">
+/// False when the server holds no balances (non-custodial): the app then offers only own-address payouts, and
+/// <paramref name="Balance"/> is empty.
+/// </param>
 public sealed record AccountSummary(
     string WorkerId,
     string? PoolWallet,
@@ -21,7 +30,9 @@ public sealed record AccountSummary(
     string? Email = null,
     int DeviceCount = 1,
     BandwidthInfo? Bandwidth = null,
-    CpuPoolRoute? CpuPool = null);
+    CpuPoolRoute? CpuPool = null,
+    bool Custodial = true,
+    bool MysteriumSponsored = false);
 
 /// <summary>
 /// Where a balance account's CPU mines, decided by the server so the pool can change (or fail over) without an app
@@ -76,6 +87,29 @@ public static class BandwidthReportStatuses
 
 /// <param name="Note">Plain-language explanation when less than everything was credited.</param>
 public sealed record BandwidthReportResult(string Status, long CreditedBytes, decimal CreditedUsd, string? Note);
+
+/// <summary>
+/// A new Mysterium node asking Otium to pay its one-time registration fee: Otium sends a little MYST to the node's
+/// channel address on Polygon, and the node then registers with the user's own wallet as beneficiary.
+/// </summary>
+public sealed record MystSponsorRequest(string Identity, string ChannelAddress);
+
+/// <param name="Status">One of <see cref="MystSponsorStatuses"/>.</param>
+/// <param name="TransactionId">The Polygon transaction that sent the fee, when one was sent.</param>
+/// <param name="Message">Why it wasn't sent, in plain words, for the app to show.</param>
+public sealed record MystSponsorResult(string Status, string? TransactionId, decimal AmountMyst, string? Message = null);
+
+public static class MystSponsorStatuses
+{
+    /// <summary>The fee was sent now.</summary>
+    public const string Sent = "sent";
+
+    /// <summary>This identity was funded before; just register it.</summary>
+    public const string AlreadySent = "already-sent";
+
+    /// <summary>Otium can't pay it right now (no sponsor wallet, budget used up, limit reached).</summary>
+    public const string Unavailable = "unavailable";
+}
 
 /// <summary>Asks the server to email a 6-digit code.</summary>
 /// <param name="Purpose">One of <see cref="EmailCodePurposes"/>; null means signing in.</param>

@@ -103,6 +103,16 @@
                     </TextBlock>
                     <views:InternetSharingConsentView />
                 </StackPanel>
+
+                <!-- Off, with Mysterium's network service still installed -->
+                <StackPanel Spacing="6" IsVisible="{Binding CanRemoveService}">
+                    <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap"
+                               Text="Mysterium's network service, which internet sharing installed, is still on this computer. It does nothing while sharing is off; uninstalling Otium removes it too." />
+                    <Button Content="Remove Mysterium's network service" Command="{Binding RemoveServiceCommand}" IsEnabled="{Binding !IsBusy}"
+                            ToolTip.Tip="Windows asks for your permission" />
+                </StackPanel>
+                <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap" Text="{Binding ServiceMessage}"
+                           IsVisible="{Binding ServiceMessage, Converter={x:Static ObjectConverters.IsNotNull}}" />
             </StackPanel>
         </Border>
 
@@ -145,25 +155,27 @@
                 <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Text="{Binding AccountText}" />
                 <views:EmailSignInView DataContext="{Binding SignIn}" MaxWidth="420" HorizontalAlignment="Left" />
                 <TextBlock Classes="h2" Margin="0,8,0,0" Text="How you get paid" />
-                <RadioButton GroupName="payout" IsChecked="{Binding UseBalance}">
+                <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" IsVisible="{Binding !OffersBalance}"
+                           Text="The mining pool pays your own address directly, in the coin you choose. Otium never holds your money." />
+                <RadioButton GroupName="payout" IsChecked="{Binding UseOwnWallet}" IsVisible="{Binding OffersBalance}">
                     <StackPanel Spacing="2">
-                        <TextBlock Text="Otium balance (recommended)" FontWeight="SemiBold" />
+                        <TextBlock Text="My own address" FontWeight="SemiBold" />
+                        <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap"
+                                   Text="The mining pool pays your address directly, in the coin you choose; nothing passes through Otium." />
+                    </StackPanel>
+                </RadioButton>
+                <RadioButton GroupName="payout" IsChecked="{Binding UseBalance}" IsVisible="{Binding OffersBalance}">
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="Otium balance" FontWeight="SemiBold" />
                         <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap"
                                    Text="Earnings collect in your Otium balance, counted in dollars. Cash out to your own wallet in BTC, ETH, BNB or SOL whenever you like." />
                     </StackPanel>
                 </RadioButton>
-                <RadioButton GroupName="payout" IsChecked="{Binding UseOwnWallet}">
-                    <StackPanel Spacing="2">
-                        <TextBlock Text="My own Monero wallet" FontWeight="SemiBold" />
-                        <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap"
-                                   Text="The mining pool pays your wallet directly and nothing passes through Otium. For people who already use crypto." />
-                    </StackPanel>
-                </RadioButton>
-                <StackPanel Spacing="8" IsVisible="{Binding UseOwnWallet}" Margin="28,0,0,0">
-                    <TextBox Text="{Binding PayoutAddress}" PlaceholderText="Your Monero (XMR) address" FontFamily="Consolas, Menlo, monospace" />
+                <StackPanel Spacing="8" IsVisible="{Binding UseOwnWallet}" MaxWidth="520" HorizontalAlignment="Left">
+                    <views:PayoutTargetView DataContext="{Binding Payout}" />
                     <TextBlock Classes="error" Text="{Binding PayoutError}" IsVisible="{Binding PayoutError, Converter={x:Static ObjectConverters.IsNotNull}}" />
                     <TextBlock Classes="good" FontSize="13" Text="{Binding PayoutSaved}" IsVisible="{Binding PayoutSaved, Converter={x:Static ObjectConverters.IsNotNull}}" />
-                    <Button Content="Save wallet" Command="{Binding SavePayoutCommand}" />
+                    <Button Content="Save payout address" Command="{Binding SavePayoutCommand}" />
                 </StackPanel>
             </StackPanel>
         </Border>

@@ -9,7 +9,8 @@ namespace Otium.Providers.SrbMiner;
 
 /// <summary>
 /// GPU mining with SRBMiner-Multi, following the Otium server's GPU policy: which algorithms to mine, on which pool
-/// (MoneroOcean, which converts to XMR, or Kryptex Pool for coins like Pearl and Quantus) and what each pays now.
+/// (MoneroOcean, which converts to XMR; unMineable, which pays the user's chosen coin; or Kryptex Pool for balance
+/// accounts) and what each pays now.
 /// Without a policy (server unreachable) it falls back to MoneroOcean's own per-algorithm payouts.
 ///
 /// On first run each usable algorithm is benchmarked for real (the hashes still count for the user). After that,
@@ -55,6 +56,8 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
     private readonly IMinerProcessFactory _factory;
     private readonly TimeProvider _time;
     private readonly GpuPoolEndpoint _endpoint;
+    private readonly IUnmineableApi _unmineable;
+    private readonly string? _referralCode;
     private readonly ProfitSwitcher _switcher;
     private readonly BenchmarkStore _store;
     private readonly EngineInstaller _installer;
@@ -97,9 +100,13 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         ProfitSwitcher? switcher = null,
         SrbMinerAsset? asset = null,
         Func<GpuPolicy?>? policy = null,
-        Func<GpuInfo, double?>? freeMemoryGb = null)
+        Func<GpuInfo, double?>? freeMemoryGb = null,
+        IUnmineableApi? unmineable = null,
+        string? referralCode = null)
     {
         _policy = policy ?? (() => null);
+        _unmineable = unmineable ?? new UnmineableClient(http);
+        _referralCode = referralCode;
         _freeMemoryGb = freeMemoryGb ?? (_ => null);
         _pool = pool;
         _gpus = gpus.Where(g => g.Vendor is GpuVendor.Nvidia or GpuVendor.Amd).ToList();
@@ -137,7 +144,7 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
     public IReadOnlyList<string> RecentLog => _process?.RecentLog ?? [];
 
     public string? ValidatePayoutAddress(string address) =>
-        MoneroAddress.TryValidate(address, out _, out var error) ? null : error;
+        PayoutTarget.TryParse(address, out _, out var error) ? null : error;
 
     public Task InstallAsync(IProgress<InstallProgress>? progress, CancellationToken ct)
     {
@@ -358,6 +365,10 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
 
     public async Task<PayoutBalance?> GetPayoutBalanceAsync(string walletAddress, CancellationToken ct)
     {
+        if (PayoutRouting.PoolFor(walletAddress) == PayoutPool.Unmineable)
+            return await UnmineableClient.GetPayoutBalanceAsync(_unmineable, PayoutTarget.ParseOrNull(walletAddress)!, ct);
+
+        walletAddress = PayoutRouting.MoneroOceanWallet(walletAddress);
         var stats = await _pool.GetMinerStatsAsync(walletAddress, ct);
         return stats is null
             ? null
@@ -518,16 +529,25 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         _process = _factory.Start(binary, args, apiPort);
     }
 
-    /// <summary>Kryptex coins log in to the operator's account as "account.worker"; MoneroOcean uses the pool wallet.</summary>
-    private PoolLogin LoginFor(GpuAlgorithm algorithm, ProviderRunOptions options)
+    /// <summary>
+    /// Kryptex coins log in to the operator's account as "account.worker"; unMineable logs in with the slice's payout
+    /// target and Otium's referral code; MoneroOcean uses the bare Monero wallet.
+    /// </summary>
+    internal PoolLogin LoginFor(GpuAlgorithm algorithm, ProviderRunOptions options)
     {
         var policy = _policy();
         var route = policy?.For(algorithm.PoolName) is { } p ? policy.Route(p.Route) : null;
         if (route is { Kind: GpuRoutes.Kryptex, User.Length: > 0 })
-            return PoolLogin.Kryptex(new GpuPoolEndpoint(route.Host, route.Port), route.User!, options.WorkerName);
-        if (algorithm.DefaultRoute != GpuRoutes.MoneroOcean)
+            return PoolLogin.Kryptex(new GpuPoolEndpoint(route.Host, route.Port, route.Tls), route.User!, options.WorkerName);
+        if (route is { Kind: GpuRoutes.Unmineable })
+        {
+            if (PayoutRouting.PoolFor(options.Target.WalletAddress) != PayoutPool.Unmineable)
+                throw new InvalidOperationException($"{algorithm.PoolName} is paid by unMineable, which can't pay a Monero payout address.");
+            return PoolLogin.Unmineable(new GpuPoolEndpoint(route.Host, route.Port, route.Tls), options.Target.WalletAddress, options.WorkerName, _referralCode);
+        }
+        if (route is null ? algorithm.DefaultRoute != GpuRoutes.MoneroOcean : route.Kind != GpuRoutes.MoneroOcean)
             throw new InvalidOperationException($"{algorithm.PoolName} needs Otium's pool settings, which aren't available right now.");
-        return PoolLogin.MoneroOcean(_endpoint, options.Target.WalletAddress, options.WorkerName, algorithm);
+        return PoolLogin.MoneroOcean(_endpoint, PayoutRouting.MoneroOceanWallet(options.Target.WalletAddress), options.WorkerName, algorithm);
     }
 
     private async Task KillAsync()
