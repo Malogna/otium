@@ -11,6 +11,7 @@ public sealed record RegisterDeviceRequest(string DeviceId, string DeviceSecret,
 /// <param name="PoolWallet">Operator wallet balance accounts mine to (with <paramref name="WorkerId"/> as the worker name).</param>
 /// <param name="ReferrerWallet">The referrer's payout target, which own-wallet apps mine the referral slice to.</param>
 /// <param name="MysteriumSponsored">Otium pays new Mysterium nodes' registration, so the app can offer internet sharing.</param>
+/// <param name="Fees">The server's current fee and invite terms; null from servers that don't send them.</param>
 /// <param name="Custodial">
 /// False when the server holds no balances (non-custodial): the app then offers only own-address payouts, and
 /// <paramref name="Balance"/> is empty.
@@ -32,7 +33,25 @@ public sealed record AccountSummary(
     BandwidthInfo? Bandwidth = null,
     CpuPoolRoute? CpuPool = null,
     bool Custodial = true,
-    bool MysteriumSponsored = false);
+    bool MysteriumSponsored = false,
+    FeeTerms? Fees = null);
+
+/// <summary>
+/// The disclosed fee and invite terms, set by the server so they can change without an app release. Apps clamp them
+/// (fee at most 10%) and fall back to their built-in defaults when a server doesn't send them.
+/// </summary>
+/// <param name="FeePercent">Share of mining time mined for Otium (and the referrer), in percent.</param>
+/// <param name="ReferrerShareOfFee">Fraction of that fee mined for whoever invited the user, for <paramref name="ReferrerRewardDays"/>.</param>
+/// <param name="RefereeFeeFreeDays">Fee-free days for someone who joins with an invite code.</param>
+/// <param name="ReferrerFeeFreeDaysPerFriend">Fee-free days a referrer gets per invited friend who really starts mining.</param>
+/// <param name="MaxFeeFreeDays">Most fee-free time that can stack up at once.</param>
+public sealed record FeeTerms(
+    double FeePercent,
+    double ReferrerShareOfFee,
+    double ReferrerRewardDays,
+    double RefereeFeeFreeDays,
+    double ReferrerFeeFreeDaysPerFriend,
+    double MaxFeeFreeDays);
 
 /// <summary>
 /// Where a balance account's CPU mines, decided by the server so the pool can change (or fail over) without an app

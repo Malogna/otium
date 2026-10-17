@@ -21,6 +21,7 @@ var custodial = builder.Configuration.GetValue<bool>($"{CustodyOptions.Section}:
 builder.Services.Configure<CustodyOptions>(builder.Configuration.GetSection(CustodyOptions.Section));
 builder.Services.Configure<UnmineableOptions>(builder.Configuration.GetSection(UnmineableOptions.Section));
 builder.Services.Configure<MysteriumOptions>(builder.Configuration.GetSection(MysteriumOptions.Section));
+builder.Services.Configure<FeeOptions>(builder.Configuration.GetSection(FeeOptions.Section));
 
 builder.Services.Configure<ReferralOptions>(builder.Configuration.GetSection(ReferralOptions.Section));
 builder.Services.Configure<EarningsOptions>(builder.Configuration.GetSection(EarningsOptions.Section));
