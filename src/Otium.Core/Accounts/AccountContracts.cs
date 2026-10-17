@@ -2,10 +2,18 @@ namespace Otium.Core.Accounts;
 
 // Wire contracts shared by the desktop app and the Otium server.
 
-/// <param name="PayoutAddress">The user's own XMR wallet, only for <c>PayoutMode.OwnWallet</c>; null for balance accounts.</param>
+/// <param name="PayoutAddress">
+/// The user's own payout target ("USDT:T…", or a bare Monero address), only for <c>PayoutMode.OwnWallet</c>; null for
+/// balance accounts.
+/// </param>
 public sealed record RegisterDeviceRequest(string DeviceId, string DeviceSecret, string? PayoutAddress, string? ReferralCode);
 
 /// <param name="PoolWallet">Operator wallet balance accounts mine to (with <paramref name="WorkerId"/> as the worker name).</param>
+/// <param name="ReferrerWallet">The referrer's payout target, which own-wallet apps mine the referral slice to.</param>
+/// <param name="Custodial">
+/// False when the server holds no balances (non-custodial): the app then offers only own-address payouts, and
+/// <paramref name="Balance"/> is empty.
+/// </param>
 public sealed record AccountSummary(
     string WorkerId,
     string? PoolWallet,
@@ -21,7 +29,8 @@ public sealed record AccountSummary(
     string? Email = null,
     int DeviceCount = 1,
     BandwidthInfo? Bandwidth = null,
-    CpuPoolRoute? CpuPool = null);
+    CpuPoolRoute? CpuPool = null,
+    bool Custodial = true);
 
 /// <summary>
 /// Where a balance account's CPU mines, decided by the server so the pool can change (or fail over) without an app

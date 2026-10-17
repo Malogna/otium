@@ -1,5 +1,18 @@
 namespace Otium.Server;
 
+/// <summary>
+/// Whether this server holds users' earnings. Off (the default), Otium is non-custodial: pools pay users' own
+/// addresses, so the server keeps accounts and referrals only, and runs no crediting, cash-out, treasury or bandwidth
+/// jobs (their routes return 404). On, balance accounts work as before: mining to the operator's pools is credited as
+/// a USD balance and cashed out from the treasury.
+/// </summary>
+public sealed class CustodyOptions
+{
+    public const string Section = "Custody";
+
+    public bool Enabled { get; set; }
+}
+
 public sealed class ReferralOptions
 {
     public const string Section = "Referral";
@@ -12,6 +25,12 @@ public sealed class ReferralOptions
 
     /// <summary>Own-wallet accounts: hashes a referred friend must have mined (per the pool) to count as verified.</summary>
     public double VerificationHashes { get; set; } = 500_000_000;
+
+    /// <summary>
+    /// Accounts paid by unMineable: verified once unMineable has rewarded their address in a daily accounting (or paid
+    /// it), which takes at least a day of real mining. unMineable shows no prices, so this can't be a dollar amount.
+    /// </summary>
+    public bool VerifyUnmineableByRewards { get; set; } = true;
 
     /// <summary>Balance accounts: credited earnings a referred friend needs to count as verified.</summary>
     public decimal VerificationUsd { get; set; } = 0.25m;
@@ -284,6 +303,44 @@ public sealed class KryptexOptions
     /// Port 8029 is its TLS port (7029 plain); regional hosts are xmr-eu and xmr-us.
     /// </summary>
     public KryptexCoin Cpu { get; set; } = new() { Coin = "xmr", Host = "xmr.kryptex.network", Port = 8029, Tls = true };
+}
+
+/// <summary>
+/// unMineable, which mines GPU coins MoneroOcean doesn't pay for and pays users' own addresses in the coin they chose.
+/// Apps log in with the user's payout target and Otium's referral code, so nothing here is an account.
+/// </summary>
+public sealed class UnmineableOptions
+{
+    public const string Section = "Unmineable";
+
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>unMineable's fee with a referral code on the worker (1% without one).</summary>
+    public double FeePercent { get; set; } = 0.75;
+
+    /// <summary>Otium's own fee target on unMineable ("USDT:T…"), for the admin dashboard's fee and referral earnings.</summary>
+    public string? OtiumTarget { get; set; }
+
+    /// <summary>GPU algorithms mined there (SRBMiner names), with their WhatToMine id and stratum endpoint.</summary>
+    public Dictionary<string, UnmineableAlgorithm> Algorithms { get; set; } = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["pearlhash"] = new() { WhatToMineId = 469, Host = "pearlpow.unmineable.com" },
+        ["xelishash"] = new() { WhatToMineId = 459, Host = "xelishash.unmineable.com" },
+        ["fishhash"] = new() { WhatToMineId = 411, Host = "fishhash.unmineable.com", Tier = "free-power-only" },
+    };
+}
+
+public sealed class UnmineableAlgorithm
+{
+    public int WhatToMineId { get; set; }
+
+    public string Host { get; set; } = "";
+
+    /// <summary>unMineable's TLS port (443 and 4444 both work; 443 passes more firewalls).</summary>
+    public int Port { get; set; } = 443;
+
+    /// <summary>"primary" or "free-power-only" while the feed is fresh.</summary>
+    public string Tier { get; set; } = "primary";
 }
 
 /// <summary>Where balance accounts' CPUs mine. Own-wallet accounts always mine to their own address on MoneroOcean.</summary>

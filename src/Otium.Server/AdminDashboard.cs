@@ -58,6 +58,31 @@ internal static class AdminDashboard
             <div id="dashboard" hidden>
               <p class="error" id="error" role="alert"></p>
 
+              <div id="noncustodial" hidden>
+                <section>
+                  <h2>Otium on unMineable</h2>
+                  <p class="muted">Non-custodial: pools pay users directly. Otium earns its fee slices and unMineable's referral share, both paid to <span class="mono" id="nc-target"></span>.</p>
+                  <div class="tiles">
+                    <div class="tile"><span class="label">At unMineable</span><strong id="nc-balance"></strong><span class="muted" id="nc-balance-detail"></span></div>
+                    <div class="tile"><span class="label">Rewarded</span><strong id="nc-rewarded"></strong><span class="muted" id="nc-rewarded-detail"></span></div>
+                    <div class="tile"><span class="label">Paid to Otium</span><strong id="nc-paid"></strong><span class="muted" id="nc-paid-detail"></span></div>
+                    <div class="tile"><span class="label">Referral code</span><strong id="nc-code"></strong><span class="muted" id="nc-code-detail"></span></div>
+                  </div>
+                  <p class="error" id="nc-error"></p>
+                  <p><a id="nc-link" target="_blank" rel="noopener noreferrer">Open on unMineable</a></p>
+                </section>
+                <section>
+                  <h2>Accounts</h2>
+                  <div class="tiles">
+                    <div class="tile"><span class="label">Computers seen</span><strong id="nc-devices"></strong><span class="muted">in the last 7 days</span></div>
+                    <div class="tile"><span class="label">Joined by invite</span><strong id="nc-referred"></strong><span class="muted" id="nc-verified"></span></div>
+                  </div>
+                  <ul class="addresses" id="nc-coins"></ul>
+                </section>
+              </div>
+
+              <div id="custodial">
+
               <section>
                 <h2>Money</h2>
                 <div class="tiles">
@@ -118,6 +143,7 @@ internal static class AdminDashboard
                 <h2>Pool addresses</h2>
                 <ul class="addresses" id="addresses"></ul>
               </section>
+              </div>
             </div>
           </main>
         </body>
@@ -355,13 +381,47 @@ internal static class AdminDashboard
             }
           }
 
+          function renderNonCustodial(s) {
+            const o = s.otium;
+            const coin = o ? " " + o.coin : "";
+            const amount = v => v == null ? "–" : Number(v).toLocaleString("en-US", { maximumFractionDigits: 6 }) + coin;
+            $("nc-target").textContent = o ? o.target : "(not set)";
+            $("nc-balance").textContent = o ? amount(o.balance) : "–";
+            $("nc-balance-detail").textContent = o
+              ? `${amount(o.feeMiningBalance)} from fee slices, ${amount(o.referralBalance)} from referrals; paid at ${amount(o.threshold)}`
+                + (o.autoPay ? "" : " (auto-pay is OFF: turn it on at unMineable)")
+              : "";
+            $("nc-rewarded").textContent = o ? amount(o.rewardedPast24h) : "–";
+            $("nc-rewarded-detail").textContent = o ? `past 24 hours; ${amount(o.rewardedPast30d)} in 30 days` : "";
+            $("nc-paid").textContent = o ? amount(o.paid) : "–";
+            $("nc-paid-detail").textContent = o && o.problems.length ? o.problems.join(" ") : "to Otium's own address";
+            $("nc-code").textContent = o ? o.referralCode : "–";
+            $("nc-code-detail").textContent = o ? `${o.referredMiners} miners using it` : "";
+            $("nc-error").textContent = s.otiumError || "";
+            const link = $("nc-link");
+            link.hidden = !o;
+            if (o) link.href = o.dashboardUrl;
+            $("nc-devices").textContent = s.devicesSeenPast7Days;
+            $("nc-referred").textContent = s.referredAccounts;
+            $("nc-verified").textContent = `${s.verifiedReferrals} verified by their pool`;
+            const coins = $("nc-coins");
+            coins.replaceChildren(...s.accountsByCoin.map(c => el("li", `${c.coin === "none" ? "No payout address yet" : c.coin}: ${c.accounts}`)));
+          }
+
           async function refresh() {
             const status = $("status").value;
             $("refresh").disabled = true;
             try {
-              const [summary, cashouts] = await Promise.all([api("/admin/summary"), api(`/admin/cashouts?status=${encodeURIComponent(status)}`)]);
-              renderSummary(summary);
-              renderQueue(status, cashouts);
+              const summary = await api("/admin/summary");
+              const custodial = summary.custodial !== false;
+              $("custodial").hidden = !custodial;
+              $("noncustodial").hidden = custodial;
+              if (custodial) {
+                renderSummary(summary);
+                renderQueue(status, await api(`/admin/cashouts?status=${encodeURIComponent(status)}`));
+              } else {
+                renderNonCustodial(summary);
+              }
               $("updated").textContent = "Updated " + new Date().toLocaleTimeString();
               $("error").textContent = "";
             } catch (e) {

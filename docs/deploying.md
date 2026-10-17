@@ -56,11 +56,13 @@ Edit `.env`. Each setting has a comment; the essentials:
 | `ACME_EMAIL` | Your email, for Let's Encrypt notices |
 | `Referral__PublicBaseUrl` | `https://` + `OTIUM_DOMAIN` |
 | `Admin__Token` | A long random secret: `openssl rand -hex 32` |
-| `Earnings__PoolWallets__0` | Your XMR receiving (sub)address, unless the wallet RPC creates them |
+| `Custody__Enabled` | Leave unset (non-custodial: pools pay users directly). `true` turns on balances, cash-outs and the settings below marked "custodial" |
+| `Unmineable__OtiumTarget` | Otium's fee address on unMineable, e.g. `USDT:T…`, shown with its referral earnings on the admin dashboard |
+| `Earnings__PoolWallets__0` | Custodial: your XMR receiving (sub)address, unless the wallet RPC creates them |
 | `Email__*` | Your SMTP service, so email sign-in and receipts work |
-| `BitcoinWallet__*` | The Bitcoin treasury that pays every crypto cash-out (see [Bitcoin treasury](#bitcoin-treasury)) |
-| `Kryptex__*`, `CpuMining__KryptexPercent` | Kryptex Pool for GPU coins and, when moved there, CPU Monero |
-| `MoneroWallet__*` | Only with a wallet RPC for pool addresses (see [Monero wallet](#monero-wallet)) |
+| `BitcoinWallet__*` | Custodial: the Bitcoin treasury that pays every crypto cash-out (see [Bitcoin treasury](#bitcoin-treasury)) |
+| `Kryptex__*`, `CpuMining__KryptexPercent` | Custodial: Kryptex Pool for GPU coins and, when moved there, CPU Monero |
+| `MoneroWallet__*` | Custodial, and only with a wallet RPC for pool addresses (see [Monero wallet](#monero-wallet)) |
 
 Leave optional settings commented out rather than empty: an empty value overrides the default. Values containing `$`
 must be wrapped in single quotes. The README's [Running the server](../README.md#running-the-server) table describes
