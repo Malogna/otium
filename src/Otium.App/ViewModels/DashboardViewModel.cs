@@ -168,23 +168,19 @@ public partial class DashboardViewModel : ViewModelBase
 
     private async Task RefreshBalanceAsync()
     {
-        var wallet = _host.Settings.PayoutAddress;
-        if (string.IsNullOrWhiteSpace(wallet))
+        await _host.RefreshPoolBalanceAsync(force: false, CancellationToken.None);
+        if (_host.PoolBalance is not { } balance)
+        {
+            if (_host.PoolBalanceError is { } error)
+                PoolNote = error;
             return;
-        try
-        {
-            var balance = await _host.Provider.GetPayoutBalanceAsync(wallet, CancellationToken.None);
-            if (balance is null)
-                return;
-            PoolPending = Format.Xmr(balance.Pending);
-            PoolPaid = Format.Xmr(balance.Paid);
-            PoolNote = $"MoneroOcean pays your wallet automatically once pending reaches {Format.Xmr(balance.MinimumPayout)}. CPU and GPU earnings both land here.";
-            _poolDashboard = balance.DashboardUrl;
         }
-        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
-        {
-            PoolNote = "Couldn't reach the pool to check your balance. Retrying in a few minutes.";
-        }
+        PoolPending = Format.Coin(balance.Pending, balance.Coin);
+        PoolPaid = Format.Coin(balance.Paid, balance.Coin);
+        PoolNote = $"{balance.PoolName} pays your address once pending reaches {Format.Coin(balance.MinimumPayout, balance.Coin)}. CPU and GPU earnings both land here."
+                   + (balance.AutoPay ? "" : $" Auto pay is off for this address at {balance.PoolName}: turn it on there or it won't pay you by itself.")
+                   + (balance.Problems is { Count: > 0 } problems ? " " + string.Join(" ", problems) : "");
+        _poolDashboard = balance.DashboardUrl;
     }
 
     private void RefreshUpdate()

@@ -5,8 +5,10 @@
 
 .DESCRIPTION
     Starts
-      - Otium.DevPool on http://localhost:5090: a stand-in for the MoneroOcean API (earnings sped up by -Speedup)
-      - Otium.Server  on http://localhost:5080: dev settings (credits every 20 s, 1-minute hold, fake PayPal/Monero payouts)
+      - Otium.DevPool on http://localhost:5090: a stand-in for the MoneroOcean, unMineable, Kryptex and WhatToMine APIs
+        (earnings sped up by -Speedup)
+      - Otium.Server  on http://localhost:5080: non-custodial like production (accounts and referrals only), or with
+        -Custodial: balances with dev settings (credits every 20 s, 1-minute hold, fake payouts)
       - the Otium app with simulated CPU and GPU miners (one window per -Computers)
     and prints email sign-in codes here, because no real email is sent in dev mode.
     Everything stops when you close the app window(s) or press Ctrl+C. Data lives in artifacts/dev (use -Reset to start over).
@@ -15,6 +17,7 @@
     pwsh build/dev.ps1                 # one simulated computer
     pwsh build/dev.ps1 -Computers 2    # two computers, to try signing in on a second PC
     pwsh build/dev.ps1 -Reset          # wipe dev data first
+    pwsh build/dev.ps1 -Custodial      # the server holds balances (cash-outs, Kryptex, internet sharing)
     pwsh build/dev.ps1 -RealMiners     # real XMRig/SRBMiner on this PC, real MoneroOcean (see below)
     pwsh build/dev.ps1 -RealMiners -Wallet <xmr> -KryptexAccount krxABC123   # also Pearl/Quantus on real Kryptex
 
@@ -33,6 +36,8 @@ param(
     [switch] $Reset,
     [switch] $NoBuild,
     [switch] $RealMiners,
+    # Run the server with custody on (balances, cash-outs, Kryptex, internet sharing) instead of non-custodial.
+    [switch] $Custodial,
     # Route every balance account's CPU to the simulated Kryptex Monero pool instead of MoneroOcean.
     [switch] $KryptexCpu,
     # With -RealMiners: the Monero address the real pool credits (MoneroOcean refuses the dev default).
@@ -104,6 +109,9 @@ try {
         ASPNETCORE_ENVIRONMENT                = 'Development'
         ASPNETCORE_URLS                       = $serverUrl
         OTIUM_POOL_API                        = $poolUrl
+        OTIUM_UNMINEABLE_API                  = "$poolUrl/unmineable"
+        Custody__Enabled                      = $Custodial ? 'true' : 'false'
+        Unmineable__OtiumTarget               = 'USDT:TB2xNFAjGarYPykmt1dZQz8hJb2Rhry4wJ'
         ConnectionStrings__Otium              = "Data Source=$(Join-Path $dev 'otium.db')"
         Earnings__PoolWallets__0              = $devPoolWallet
         Earnings__HoldPeriod                  = '00:01:00'
@@ -130,6 +138,7 @@ try {
     if ($RealMiners) {
         Set-DevEnv @{
             OTIUM_POOL_API                    = ''        # the real MoneroOcean
+            OTIUM_UNMINEABLE_API              = ''        # the real unMineable
             Bandwidth__Enabled                = 'false'
         }
         if ($KryptexAccount) {
@@ -169,6 +178,7 @@ try {
             OTIUM_HOME         = $home_
             OTIUM_SERVER_URL   = $serverUrl
             OTIUM_POOL_API     = $RealMiners ? '' : $poolUrl
+            OTIUM_UNMINEABLE_API = $RealMiners ? '' : "$poolUrl/unmineable"
             OTIUM_SIMULATE     = $RealMiners ? '' : '1'
             OTIUM_DEVICE_SEED  = "dev-pc$n"
         }

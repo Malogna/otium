@@ -32,6 +32,9 @@ public static class Format
 
     public static string Xmr(double value) => $"{value.ToString("0.000000", Culture)} XMR";
 
+    /// <summary>A coin amount with as many decimals as it needs (up to 8), e.g. "0.8412 USDT".</summary>
+    public static string Coin(double value, string ticker) => $"{value.ToString("0.########", Culture)} {ticker}";
+
     public static string Watts(double watts) => $"{watts.ToString("0", Culture)} W";
 
     public static string Kwh(double kwh) => $"{kwh.ToString("0.00", Culture)} kWh";

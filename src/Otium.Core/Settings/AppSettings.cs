@@ -6,12 +6,15 @@ namespace Otium.Core.Settings;
 public enum PayoutMode
 {
     /// <summary>
-    /// Default. Mining goes to the operator's pool account under the user's worker id; the Otium server credits
-    /// a USD balance the user cashes out in BTC, ETH, BNB or SOL to their own wallet.
+    /// Only with a custodial server. Mining goes to the operator's pool account under the user's worker id; the Otium
+    /// server credits a USD balance the user cashes out in BTC, ETH, BNB or SOL to their own wallet.
     /// </summary>
     Balance,
 
-    /// <summary>Advanced. The pool pays the user's own Monero wallet directly; nothing passes through Otium.</summary>
+    /// <summary>
+    /// Default. The pool pays the user's own address directly, in the coin they chose (unMineable) or in Monero
+    /// (MoneroOcean); nothing passes through Otium.
+    /// </summary>
     OwnWallet,
 }
 
@@ -19,9 +22,12 @@ public sealed class AppSettings
 {
     public bool OnboardingComplete { get; set; }
 
-    public PayoutMode PayoutMode { get; set; } = PayoutMode.Balance;
+    public PayoutMode PayoutMode { get; set; } = PayoutMode.OwnWallet;
 
-    /// <summary>User's own XMR address, used only in <see cref="PayoutMode.OwnWallet"/>.</summary>
+    /// <summary>
+    /// The user's own payout target, "COIN:address" (e.g. "USDT:T…"), used in <see cref="PayoutMode.OwnWallet"/>.
+    /// Older settings hold a bare Monero address, which reads as "XMR:…".
+    /// </summary>
     public string PayoutAddress { get; set; } = "";
 
     /// <summary>Price per kWh in USD. Starts as an estimate for the user's country.</summary>

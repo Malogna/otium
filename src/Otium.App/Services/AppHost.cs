@@ -157,6 +157,51 @@ public sealed class AppHost : IAsyncDisposable
     /// <summary>The user's own payout target in canonical form ("USDT:T…", "XMR:4…"), or null while it isn't valid.</summary>
     public string? OwnPayoutTarget => PayoutTarget.ParseOrNull(Settings.PayoutAddress)?.ToString();
 
+    /// <summary>
+    /// Whether the server holds balances (custodial). Until it has answered, assume not: the app then offers only
+    /// payouts to the user's own address, which work with any server.
+    /// </summary>
+    public bool ServerIsCustodial => Account?.Custodial ?? false;
+
+    /// <summary>What the pool holds for the user's own address, refreshed every few minutes; null until known.</summary>
+    public PayoutBalance? PoolBalance { get; private set; }
+
+    /// <summary>Why the pool balance couldn't be read last time, or null.</summary>
+    public string? PoolBalanceError { get; private set; }
+
+    private DateTimeOffset _poolBalanceCheckedAt;
+    private string? _poolBalanceTarget;
+
+    /// <summary>Reads the pool balance for the user's own address (at most every 5 minutes unless forced).</summary>
+    public async Task RefreshPoolBalanceAsync(bool force, CancellationToken ct)
+    {
+        var target = Settings.PayoutMode == PayoutMode.OwnWallet ? OwnPayoutTarget : null;
+        if (target is null)
+        {
+            PoolBalance = null;
+            PoolBalanceError = null;
+            return;
+        }
+        var now = DateTimeOffset.UtcNow;
+        if (!force && target == _poolBalanceTarget && now - _poolBalanceCheckedAt < TimeSpan.FromMinutes(5))
+            return;
+        _poolBalanceCheckedAt = now;
+        if (target != _poolBalanceTarget)
+            PoolBalance = null; // a different address: don't show the old one's balance meanwhile
+        _poolBalanceTarget = target;
+        try
+        {
+            IComputeProvider provider = IsSimulated ? Engine.Provider : Provider;
+            PoolBalance = await provider.GetPayoutBalanceAsync(target, ct);
+            PoolBalanceError = null;
+        }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or InvalidOperationException or System.Text.Json.JsonException && !ct.IsCancellationRequested)
+        {
+            PoolBalanceError = "Couldn't reach the pool to check your balance. Retrying in a few minutes.";
+        }
+        AccountChanged?.Invoke();
+    }
+
     /// <summary>unMineable's terms exclude US persons, so US users are paid in Monero by MoneroOcean instead.</summary>
     public static bool InUnitedStates => System.Globalization.RegionInfo.CurrentRegion.TwoLetterISORegionName == "US";
 
@@ -267,8 +312,14 @@ public sealed class AppHost : IAsyncDisposable
     /// The one-click start: accepts the terms shown on the welcome screen, turns on start-at-sign-in and
     /// earning, then connects to the server (mining begins as soon as the account is ready).
     /// </summary>
-    public async Task StartFirstTimeAsync(string? inviteCode)
+    /// <param name="payoutTarget">The address chosen during onboarding ("USDT:T…"), paid by the pool directly.</param>
+    public async Task StartFirstTimeAsync(string? inviteCode, string? payoutTarget = null)
     {
+        if (PayoutTarget.ParseOrNull(payoutTarget) is { } target)
+        {
+            Settings.PayoutMode = PayoutMode.OwnWallet;
+            Settings.PayoutAddress = target.ToString();
+        }
         Settings.AcceptedTerms = true;
         Settings.OnboardingComplete = true;
         Settings.Referral.CodeUsed = string.IsNullOrWhiteSpace(inviteCode) ? null : ReferralCodes.Normalize(inviteCode);
@@ -496,6 +547,8 @@ public sealed class AppHost : IAsyncDisposable
         SaveSettings();
         ApplyDeviceSwitches();
         AccountChanged?.Invoke();
+        // The pool pays own-address users directly, so its balance doesn't depend on reaching the Otium server.
+        await RefreshPoolBalanceAsync(force: false, ct);
     }
 
     /// <summary>Fetches the GPU policy (it needs no account, so the welcome screen's estimate can use it).</summary>

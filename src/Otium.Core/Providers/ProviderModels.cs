@@ -61,7 +61,22 @@ public sealed record InstallProgress(string Stage, double Fraction);
 
 public sealed record RevenueEstimate(double CoinPerDay, double UsdPerDay, string Coin);
 
-public sealed record PayoutBalance(double Pending, double Paid, string Coin, double MinimumPayout, Uri? DashboardUrl);
+/// <summary>What the pool holds for a payout address and how it pays it out.</summary>
+/// <param name="Pending">Mined and not yet paid, in <paramref name="Coin"/>.</param>
+/// <param name="MinimumPayout">The pool pays once <paramref name="Pending"/> reaches this.</param>
+/// <param name="AutoPay">False when the pool won't pay by itself (unMineable's per-address "Auto pay" switch is off).</param>
+/// <param name="Problems">Plain-language problems the pool reports for the address (failed payment, network paused…).</param>
+/// <param name="PoolName">"unMineable" or "MoneroOcean", for the UI.</param>
+public sealed record PayoutBalance(
+    double Pending,
+    double Paid,
+    string Coin,
+    double MinimumPayout,
+    Uri? DashboardUrl,
+    bool AutoPay = true,
+    IReadOnlyList<string>? Problems = null,
+    DateTimeOffset? LastPayment = null,
+    string PoolName = "MoneroOcean");
 
 /// <summary>
 /// Thrown when a provider can't run for a reason it has already put in plain words (shown without "Something went

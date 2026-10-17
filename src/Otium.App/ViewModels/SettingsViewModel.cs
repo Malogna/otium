@@ -43,7 +43,8 @@ public partial class SettingsViewModel : ViewModelBase
         var country = SpotPriceZone.Find(s.ElectricityZone)?.Country ?? RegionCountry();
         Zones = SpotPriceZone.ForCountry(country);
         SelectedZone = SpotPriceZone.Find(s.ElectricityZone);
-        PayoutAddress = s.PayoutAddress;
+        Payout = new PayoutTargetEditor(s.PayoutAddress);
+        Payout.Changed += () => SavePayoutCommand.NotifyCanExecuteChanged();
         ServerUrl = s.ServerUrl;
         StartWithSystem = AutoStart.IsEnabled();
         UseBalance = s.PayoutMode == PayoutMode.Balance;
@@ -55,6 +56,7 @@ public partial class SettingsViewModel : ViewModelBase
         _ = RefreshLivePriceAsync();
         UpdateStatus = host.Updates.Status;
         host.Updates.Changed += () => Dispatcher.UIThread.Post(() => UpdateStatus = _host.Updates.Status);
+        host.AccountChanged += () => Dispatcher.UIThread.Post(() => OnPropertyChanged(nameof(OffersBalance)));
     }
 
     public InternetSharingViewModel InternetSharing => _internetSharing ??= new InternetSharingViewModel(_host);
@@ -70,8 +72,12 @@ public partial class SettingsViewModel : ViewModelBase
     private YourDataViewModel? _yourData;
 
     public string AccountText => _host.Settings.Account.Email is { } email
-        ? $"Signed in as {email}" + (_host.Settings.Account.DeviceCount > 1 ? $" · {_host.Settings.Account.DeviceCount} computers share this balance" : "")
-        : "Not signed in. Add your email so your balance can't get lost, or sign in to an account you use on another computer.";
+        ? $"Signed in as {email}" + (_host.Settings.Account.DeviceCount > 1
+            ? $" · {_host.Settings.Account.DeviceCount} computers share this {(_host.ServerIsCustodial ? "balance" : "account")}"
+            : "")
+        : _host.ServerIsCustodial
+            ? "Not signed in. Add your email so your balance can't get lost, or sign in to an account you use on another computer."
+            : "Not signed in. Add your email to keep your invite code and invited friends when you reinstall or use another computer.";
 
     public string VersionText => $"Version {_host.Updates.CurrentVersion}";
 
@@ -100,7 +106,7 @@ public partial class SettingsViewModel : ViewModelBase
     public ObservableCollection<BenchmarkRow> Benchmarks { get; } = [];
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(UseOwnWallet))]
+    [NotifyPropertyChangedFor(nameof(UseOwnWallet), nameof(OffersBalance))]
     public partial bool UseBalance { get; set; }
 
     public bool UseOwnWallet
@@ -263,13 +269,14 @@ public partial class SettingsViewModel : ViewModelBase
     public string DataFolder => _host.Paths.Root;
 
     public string EngineInfo =>
-        $"CPU: XMRig {XmrigRelease.Version} → MoneroOcean ({PoolEndpoint.MoneroOcean}). " +
-        $"GPU: SRBMiner-Multi {SrbMinerRelease.Version} → MoneroOcean ({GpuPoolEndpoint.MoneroOcean}), paid in XMR.";
+        $"CPU: XMRig {XmrigRelease.Version} → unMineable ({PoolEndpoint.Unmineable}, TLS) for your chosen coin, or MoneroOcean " +
+        $"({PoolEndpoint.MoneroOcean}) for Monero. GPU: SRBMiner-Multi {SrbMinerRelease.Version} → the pool Otium's GPU policy names " +
+        $"for each coin. unMineable logins carry Otium's referral code ({_host.ReferralCode ?? "none"}), which lowers its fee to 0.75%.";
 
     public string FeeInfo =>
         $"App fee {FeePolicy.Default.FeePercent:0.#}% of mining time (half of it goes to whoever invited you, if anyone). " +
         "XMRig keeps its own 1% developer donation; SRBMiner charges 0.65–2% depending on the GPU algorithm. " +
-        $"Fee wallet:{(_host.FeeWallet is null ? "not configured in this build, so the fee slice is mined for you" : "configured")}.";
+        $"Fee address: {(_host.FeeWallet is null ? "none for your pool in this build, so the fee slice is mined for you" : _host.FeeWallet)}.";
 
     public string WattsHint =>
         $"Leave empty to estimate (about {CpuPowerModel.ForThisMachine().FullLoadWatts:0} W for {Environment.ProcessorCount} threads). " +
@@ -284,7 +291,11 @@ public partial class SettingsViewModel : ViewModelBase
     [ObservableProperty] public partial decimal? CpuFullLoadWatts { get; set; }
     [ObservableProperty] public partial bool NeverRunAtLoss { get; set; }
     [ObservableProperty] public partial bool StartWithSystem { get; set; }
-    [ObservableProperty] public partial string PayoutAddress { get; set; } = "";
+    /// <summary>The user's own payout coin and address.</summary>
+    public PayoutTargetEditor Payout { get; }
+
+    /// <summary>The Otium balance option only exists when the server holds balances.</summary>
+    public bool OffersBalance => _host.ServerIsCustodial || UseBalance;
     [ObservableProperty] public partial string? PayoutError { get; set; }
     [ObservableProperty] public partial string? PayoutSaved { get; set; }
     [ObservableProperty] public partial string ServerUrl { get; set; } = "";
@@ -344,17 +355,23 @@ public partial class SettingsViewModel : ViewModelBase
         _host.SaveSettings();
     }
 
-    [RelayCommand]
-    private void SavePayout()
+    private bool CanSavePayout() => Payout.IsValid;
+
+    [RelayCommand(CanExecute = nameof(CanSavePayout))]
+    private async Task SavePayout()
     {
         PayoutSaved = null;
-        PayoutError = _host.Provider.ValidatePayoutAddress(PayoutAddress);
-        if (PayoutError is not null)
+        PayoutError = null;
+        if (Payout.Target is not { } target)
             return;
-        _host.Settings.PayoutAddress = Core.Wallets.PayoutTarget.Normalize(PayoutAddress);
+        _host.Settings.PayoutMode = Core.Settings.PayoutMode.OwnWallet;
+        _host.Settings.PayoutAddress = target.ToString();
         _host.SaveSettings();
-        _ = _host.SyncAccountAsync(CancellationToken.None);
-        PayoutSaved = "Saved. New earnings go to this address.";
+        _host.ApplyDeviceSwitches();
+        UseBalance = false;
+        PayoutSaved = $"Saved. New earnings go to this {target.Coin.Ticker} address.";
+        await _host.SyncAccountAsync(CancellationToken.None);
+        await _host.RefreshPoolBalanceAsync(force: true, CancellationToken.None);
     }
 
     [RelayCommand]
