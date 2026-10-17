@@ -15,8 +15,8 @@ namespace Otium.App.ViewModels;
 public sealed record EstimateRow(Geometry? Icon, string Name, string What, string PerDay);
 
 /// <summary>
-/// First launch in three short steps: what Otium is, what this PC could earn, and a clear summary before Start.
-/// Every choice has a sensible default, so a user can just press Next, Next, Start.
+/// First launch in four short steps: what Otium is, what this PC could earn, where to be paid, and a clear summary
+/// before Start. Every choice but the payout address has a sensible default.
 /// </summary>
 public partial class WelcomeViewModel : ViewModelBase
 {
@@ -33,8 +33,29 @@ public partial class WelcomeViewModel : ViewModelBase
         PayForElectricity = host.Settings.PayForElectricity;
         _ready = true;
         SignIn = new EmailSignInViewModel(host, OnSignedIn);
+        Payout = new PayoutTargetEditor(host.Settings.PayoutAddress);
+        Payout.Changed += () =>
+        {
+            NextCommand.NotifyCanExecuteChanged();
+            StartCommand.NotifyCanExecuteChanged();
+            OnPropertyChanged(nameof(PayoutLine));
+        };
         _ = LoadEstimateAsync();
     }
+
+    /// <summary>The payout step: coin and the user's own address.</summary>
+    public PayoutTargetEditor Payout { get; }
+
+    public const int PayoutStep = 2;
+    public const int LastStep = 3;
+
+    /// <summary>The summary's line about payouts.</summary>
+    public string PayoutLine => Payout.Target is { } t
+        ? $"{(t.Coin == Core.Wallets.PayoutCoins.Monero ? "MoneroOcean" : "unMineable")} pays your {t.Coin.Ticker} address " +
+          $"{Shorten(t.Address)} directly, once you've earned {(t.Coin == Core.Wallets.PayoutCoins.Monero ? "0.003 XMR" : t.Coin.ThresholdText)}. Otium never holds your money."
+        : "Add your payout address on the previous step.";
+
+    private static string Shorten(string address) => address.Length > 16 ? $"{address[..8]}…{address[^6..]}" : address;
 
     public EmailSignInViewModel SignIn { get; }
 
@@ -61,14 +82,16 @@ public partial class WelcomeViewModel : ViewModelBase
         }
     }
 
-    public string FeeLine => $"Otium keeps {_host.EffectiveFeePercent:0.#}% of earnings; the mining software adds its own 1–2%.";
+    public string FeeLine =>
+        $"Otium's fee is {_host.EffectiveFeePercent:0.#}% of mining time. The pool (unMineable 0.75%, MoneroOcean about 1%) and the mining software (1–2%) take their own share.";
 
     public ObservableCollection<EstimateRow> EstimateRows { get; } = [];
 
     // ---------- steps ----------
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsStep0), nameof(IsStep1), nameof(IsStep2))]
+    [NotifyPropertyChangedFor(nameof(IsStep0), nameof(IsStep1), nameof(IsStep2), nameof(IsStep3))]
+    [NotifyCanExecuteChangedFor(nameof(NextCommand))]
     public partial int Step { get; set; }
 
     public bool IsStep0 => Step == 0;
@@ -77,9 +100,13 @@ public partial class WelcomeViewModel : ViewModelBase
 
     public bool IsStep2 => Step == 2;
 
+    public bool IsStep3 => Step == LastStep;
+
     private long _lastStepChange;
 
-    [RelayCommand]
+    private bool CanGoNext() => Step != PayoutStep || Payout.IsValid;
+
+    [RelayCommand(CanExecute = nameof(CanGoNext))]
     private void Next() => GoTo(Step + 1);
 
     [RelayCommand]
@@ -92,7 +119,7 @@ public partial class WelcomeViewModel : ViewModelBase
         if (now - _lastStepChange < 450)
             return;
         _lastStepChange = now;
-        Step = Math.Clamp(step, 0, 2);
+        Step = Math.Clamp(step, 0, LastStep);
     }
 
     // ---------- estimate ----------
@@ -243,13 +270,13 @@ public partial class WelcomeViewModel : ViewModelBase
         Step = 1;
     }
 
-    private bool CanStart() => IsSupported && !IsStarting && InviteError is null;
+    private bool CanStart() => IsSupported && !IsStarting && InviteError is null && Payout.IsValid;
 
     [RelayCommand(CanExecute = nameof(CanStart))]
     private async Task Start()
     {
         IsStarting = true;
         _started(); // show the home screen right away; it reports progress while the account connects
-        await _host.StartFirstTimeAsync(InviteCode);
+        await _host.StartFirstTimeAsync(InviteCode, Payout.Target?.ToString());
     }
 }

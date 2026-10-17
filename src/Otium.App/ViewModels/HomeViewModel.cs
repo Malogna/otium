@@ -123,6 +123,9 @@ public partial class HomeViewModel : ViewModelBase
     [ObservableProperty] public partial string GoalEta { get; set; } = "";
     [ObservableProperty] public partial bool IsCashingOut { get; set; }
 
+    /// <summary>Own-address payouts: something the user must fix at the pool (auto-pay off, failed payment…), or "".</summary>
+    [ObservableProperty] public partial string PoolWarning { get; set; } = "";
+
     // ---------- cash-out history ----------
 
     public ObservableCollection<CashoutRow> Cashouts { get; } = [];
@@ -170,7 +173,7 @@ public partial class HomeViewModel : ViewModelBase
         {
             balanceValue = (decimal)snapshots.Sum(s => s.TotalUserUsd);
             BalanceCaption = "Earned so far · paid straight to your wallet";
-            PendingText = "";
+            PendingText = _host.PoolBalance is { Paid: > 0 } paid ? $"{Format.Coin(paid.Paid, paid.Coin)} paid to you so far" : "";
         }
         _balance.AnimateTo((double)balanceValue);
 
@@ -206,11 +209,7 @@ public partial class HomeViewModel : ViewModelBase
         // Cash-out goal
         CanCashOut = IsBalanceMode && account.AvailableUsd >= minimum && account.AvailableUsd > 0;
         if (!IsBalanceMode)
-        {
-            GoalText = "The pool pays your wallet automatically.";
-            GoalPercent = 100;
-            GoalEta = "";
-        }
+            RefreshPoolGoal(rate);
         else if (CanCashOut)
         {
             GoalText = "You can cash out now";
@@ -263,6 +262,50 @@ public partial class HomeViewModel : ViewModelBase
         HasInviteCode = InviteCode.Length > 0;
         UpdateReady = _host.Updates.ReadyVersion is not null;
         UpdateText = UpdateReady ? $"Otium {_host.Updates.ReadyVersion} is ready." : "";
+    }
+
+    /// <summary>
+    /// Own-address payouts: how far the pool balance is from its payout threshold, and anything that would stop the
+    /// pool from paying (unMineable's per-address auto-pay switch, failed payments, paused networks).
+    /// </summary>
+    private void RefreshPoolGoal(double usdPerDay)
+    {
+        var pool = _host.PoolBalance;
+        PoolWarning = "";
+        GoalEta = "";
+        if (_host.OwnPayoutTarget is null)
+        {
+            GoalText = "Add your payout address in Settings to start earning.";
+            GoalPercent = 0;
+            return;
+        }
+        if (pool is null)
+        {
+            GoalText = _host.PoolBalanceError ?? "Checking your balance at the pool…";
+            GoalPercent = 0;
+            return;
+        }
+
+        GoalPercent = pool.MinimumPayout > 0 ? Math.Clamp(pool.Pending / pool.MinimumPayout * 100, 0, 100) : 0;
+        GoalText = $"{Format.Coin(pool.Pending, pool.Coin)} at {pool.PoolName} · paid out at {Format.Coin(pool.MinimumPayout, pool.Coin)}";
+        if (pool.Pending >= pool.MinimumPayout && pool.MinimumPayout > 0)
+            GoalEta = pool.AutoPay ? "paid out at the next payout" : "ready: request it at the pool";
+        else if (pool.Coin == "USDT" && usdPerDay > 0)
+            // USDT is worth about a dollar, so the dollar rate tells how long the rest takes.
+            GoalEta = $"about {Friendly(TimeSpan.FromDays((pool.MinimumPayout - pool.Pending) / usdPerDay))} at this pace";
+
+        var warnings = new List<string>();
+        if (!pool.AutoPay)
+            warnings.Add($"Auto pay is off for your address at {pool.PoolName}, so it won't pay you by itself. Turn on \"Auto pay\" on your address page.");
+        warnings.AddRange(pool.Problems ?? []);
+        PoolWarning = string.Join(" ", warnings);
+    }
+
+    [RelayCommand]
+    private void OpenPoolPage()
+    {
+        if (_host.PoolBalance?.DashboardUrl is { } url)
+            Launch.Open(url.ToString());
     }
 
     private void RefreshCashouts()

@@ -172,6 +172,52 @@ public class UnmineableClientTests
     }
 
     [Fact]
+    public async Task The_apps_balance_says_when_the_pool_wont_pay_by_itself()
+    {
+        var target = PayoutTarget.Create(PayoutCoins.Usdt, "TB2xNFAjGarYPykmt1dZQz8hJb2Rhry4wJ");
+        var api = new OneAddress(new UnmineableAddress("u1", 0.84m, 0.84m, 1.5m, AutoPay: false, Enabled: false, "TRX",
+            ["unMineable's last payment to this address failed."], null));
+
+        var balance = await UnmineableClient.GetPayoutBalanceAsync(api, target, CancellationToken.None);
+
+        Assert.Equal(0.84, balance.Pending, 6);
+        Assert.Equal(1.5, balance.MinimumPayout);
+        Assert.Equal("USDT", balance.Coin);
+        Assert.Equal("unMineable", balance.PoolName);
+        Assert.False(balance.AutoPay);
+        Assert.Equal(2, balance.Problems!.Count); // the failed payment, and payouts of USDT being paused
+        Assert.Equal(12.5, balance.Paid);
+        Assert.Equal(UnmineableClient.DashboardUrl(target), balance.DashboardUrl);
+    }
+
+    [Fact]
+    public async Task An_address_nobody_mined_to_yet_has_an_empty_balance()
+    {
+        var target = PayoutTarget.Create(PayoutCoins.Litecoin, "LM2WMpR1Rp6j3Sa59cMXMs1SPzj9eXpGc1");
+        var api = new OneAddress(new UnmineableAddress(null, 0, 0, 0, true, true, "LTC", [], null));
+
+        var balance = await UnmineableClient.GetPayoutBalanceAsync(api, target, CancellationToken.None);
+
+        Assert.Equal(0, balance.Pending);
+        Assert.Equal((double)PayoutCoins.Litecoin.Threshold, balance.MinimumPayout); // the coin's own minimum
+        Assert.Empty(balance.Problems!);
+    }
+
+    private sealed class OneAddress(UnmineableAddress address) : IUnmineableApi
+    {
+        public Task<UnmineableAddress> GetAddressAsync(PayoutTarget target, CancellationToken ct) => Task.FromResult(address);
+
+        public Task<UnmineableStats> GetStatsAsync(string uuid, CancellationToken ct) =>
+            Task.FromResult(new UnmineableStats("USDT", 0.84m, 0, 0.84m, 0, 0, 0, 12.5m, null, 1.5m));
+
+        public Task<IReadOnlyList<UnmineableWorker>> GetWorkersAsync(string uuid, CancellationToken ct) => Task.FromResult<IReadOnlyList<UnmineableWorker>>([]);
+
+        public Task<IReadOnlyList<UnmineablePayment>> GetPaymentsAsync(string uuid, CancellationToken ct) => Task.FromResult<IReadOnlyList<UnmineablePayment>>([]);
+
+        public Task<UnmineableReferrals> GetReferralsAsync(string uuid, CancellationToken ct) => Task.FromResult(new UnmineableReferrals("", 0));
+    }
+
+    [Fact]
     public void The_dashboard_link_names_the_coin()
     {
         var target = PayoutTarget.Create(PayoutCoins.Usdt, "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t");

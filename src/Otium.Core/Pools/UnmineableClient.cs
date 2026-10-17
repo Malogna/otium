@@ -228,9 +228,15 @@ public sealed class UnmineableClient(HttpClient http) : IUnmineableApi
     public static async Task<PayoutBalance> GetPayoutBalanceAsync(IUnmineableApi api, PayoutTarget target, CancellationToken ct)
     {
         var address = await api.GetAddressAsync(target, ct);
-        var paid = address.Uuid is { } uuid ? (await api.GetStatsAsync(uuid, ct)).Paid : 0;
+        var stats = address.Uuid is { } uuid ? await api.GetStatsAsync(uuid, ct) : null;
         var threshold = address.Threshold > 0 ? address.Threshold : target.Coin.Threshold;
-        return new PayoutBalance((double)address.Balance, (double)paid, target.Coin.Ticker, (double)threshold, DashboardUrl(target));
+        var problems = address.Problems.ToList();
+        if (address.Maintenance is { } maintenance)
+            problems.Add($"unMineable: {maintenance}");
+        else if (!address.Enabled)
+            problems.Add($"unMineable has paused payouts of {target.Coin.Ticker} for now.");
+        return new PayoutBalance((double)address.Balance, (double)(stats?.Paid ?? 0), target.Coin.Ticker, (double)threshold,
+            DashboardUrl(target), address.AutoPay, problems, stats?.LastPayment, "unMineable");
     }
 
     private static string? Text(JsonElement e, string name) =>
