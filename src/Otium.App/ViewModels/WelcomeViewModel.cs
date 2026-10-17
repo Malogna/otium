@@ -39,6 +39,7 @@ public partial class WelcomeViewModel : ViewModelBase
             NextCommand.NotifyCanExecuteChanged();
             StartCommand.NotifyCanExecuteChanged();
             OnPropertyChanged(nameof(PayoutLine));
+            OnPropertyChanged(nameof(FeeLine));
         };
         _ = LoadEstimateAsync();
     }
@@ -82,8 +83,16 @@ public partial class WelcomeViewModel : ViewModelBase
         }
     }
 
-    public string FeeLine =>
-        $"Otium's fee is {_host.EffectiveFeePercent:0.#}% of mining time. The pool (unMineable 0.75%, MoneroOcean about 1%) and the mining software (1–2%) take their own share.";
+    /// <summary>The full cost stack for the payout chosen on the previous step, so nothing comes as a surprise.</summary>
+    public string FeeLine
+    {
+        get
+        {
+            var pool = Core.Pools.PayoutRouting.PoolFor(Payout.Target?.ToString()) ?? Core.Pools.PayoutPool.Unmineable;
+            var lines = Core.Fees.CostBreakdown.For(_host.Fees, pool, HasGpu && UseGpu, _host.ReferralCode is not null);
+            return "What it costs you:\n" + Core.Fees.CostBreakdown.Text(lines);
+        }
+    }
 
     public ObservableCollection<EstimateRow> EstimateRows { get; } = [];
 
@@ -173,6 +182,7 @@ public partial class WelcomeViewModel : ViewModelBase
 
     partial void OnUseGpuChanged(bool value)
     {
+        OnPropertyChanged(nameof(FeeLine));
         _host.Settings.GpuEnabled = value;
         _host.SaveSettings();
         _ = LoadEstimateAsync();
