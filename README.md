@@ -140,7 +140,7 @@ Everything technical lives under **Advanced**:
   coin and network, masked address, dates, the cash-out id and the transaction with a block-explorer link. A mail
   failure is logged and never affects the payout.
 
-**Own-wallet mode** (Advanced) works as before: the pool pays the user's own XMR wallet directly, a 2% fee is mined in short time slices, and referral rewards are mined to the referrer's wallet.
+**Own-wallet mode** (Advanced): the pool pays the user's own address directly. Monero goes through MoneroOcean; any other coin (USDT on TRON, BTC, LTC, BNB, SOL, TRX, ETH) through unMineable, which converts and pays in that coin, with Otium's referral code on every login (users pay unMineable 0.75% instead of 1%). A 2% fee is mined in one slice of about 29 minutes per 24 hours of mining, and referral rewards are mined to the referrer's address when it's paid by the same pool.
 
 ## Running the server
 

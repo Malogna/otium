@@ -4,7 +4,7 @@ namespace Otium.Core;
 
 /// <summary>
 /// Operator-level settings. Whoever publishes Otium sets these before shipping a build, either here or at build time
-/// (<c>dotnet publish -p:OtiumServerUrl=... -p:OtiumFeeWallet=... -p:OtiumHoneygainKey=...</c>, which is what
+/// (<c>dotnet publish -p:OtiumServerUrl=... -p:OtiumFeeWallet=... -p:OtiumUnmineableReferral=...</c>, which is what
 /// build/package.ps1 and the release workflow do). Build-time values win over the defaults below; environment
 /// variables win over both.
 /// </summary>
@@ -13,11 +13,19 @@ public static class AppIdentity
     public const string Name = "Otium";
 
     /// <summary>
-    /// XMR address that receives the disclosed app fee. While this is empty the fee slice is mined for
-    /// the user instead, so development builds never send hashes to an address nobody controls.
-    /// Can be overridden at runtime with the OTIUM_FEE_WALLET environment variable.
+    /// Payout targets that receive the disclosed app fee, separated by ";": one for unMineable (e.g. "USDT:T…") and
+    /// optionally one for MoneroOcean ("XMR:4…"), since a fee slice is mined on the user's own pool. While this is
+    /// empty the fee slice is mined for the user instead, so development builds never send hashes to an address
+    /// nobody controls. Can be overridden at runtime with the OTIUM_FEE_WALLET environment variable.
     /// </summary>
     public static readonly string FeeWalletAddress = BuildSetting("Otium.FeeWallet") ?? "";
+
+    /// <summary>
+    /// Otium's unMineable referral code, added to every unMineable login ("…#code"). Users pay unMineable 0.75%
+    /// instead of 1%, and Otium receives 0.25–0.50% of their rewards from unMineable. Overridable with
+    /// OTIUM_UNMINEABLE_REFERRAL ("none" turns it off).
+    /// </summary>
+    public static readonly string UnmineableReferralCode = BuildSetting("Otium.UnmineableReferral") ?? "ztjq-jr7s";
 
     /// <summary>
     /// The Otium server (accounts, balances, cash-outs, referrals). Release builds set the production URL at build time;
@@ -47,11 +55,24 @@ public static class AppIdentity
         return url.Length == 0 ? null : url;
     }
 
-    public static string? ResolveFeeWallet()
+    /// <summary>The configured fee targets that parse ("COIN:address" or a bare Monero address), canonical form.</summary>
+    public static IReadOnlyList<string> ResolveFeeWallets()
     {
         var overridden = Environment.GetEnvironmentVariable("OTIUM_FEE_WALLET");
-        var wallet = string.IsNullOrWhiteSpace(overridden) ? FeeWalletAddress : overridden.Trim();
-        return wallet.Length == 0 ? null : wallet;
+        var value = string.IsNullOrWhiteSpace(overridden) ? FeeWalletAddress : overridden;
+        return value.Split([';', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(Wallets.PayoutTarget.ParseOrNull)
+            .OfType<Wallets.PayoutTarget>()
+            .Select(t => t.ToString())
+            .Distinct()
+            .ToList();
+    }
+
+    public static string? ResolveUnmineableReferral()
+    {
+        var overridden = Environment.GetEnvironmentVariable("OTIUM_UNMINEABLE_REFERRAL")?.Trim();
+        var code = string.IsNullOrEmpty(overridden) ? UnmineableReferralCode : overridden;
+        return code.Length == 0 || code.Equals("none", StringComparison.OrdinalIgnoreCase) ? null : code;
     }
 
     /// <summary>

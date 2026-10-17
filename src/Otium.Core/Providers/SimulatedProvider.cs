@@ -137,7 +137,7 @@ public sealed class SimulatedProvider(
     }
 
     public string? ValidatePayoutAddress(string address) =>
-        MoneroAddress.TryValidate(address, out _, out var error) ? null : error;
+        PayoutTarget.TryParse(address, out _, out var error) ? null : error;
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }

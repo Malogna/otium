@@ -29,7 +29,9 @@ public sealed record FeePolicy
 
     /// <summary>
     /// Length of one fee cycle in mining time. The fee is mined as one contiguous slice at the end of each cycle,
-    /// which keeps engine restarts rare (two per cycle) and lets new users mine for themselves first.
+    /// which keeps engine restarts rare (two per cycle) and lets new users mine for themselves first. A day makes
+    /// the 2% slice about 29 minutes, long enough that a pool's share difficulty settles and little is lost to
+    /// the miner restarting.
     /// </summary>
-    public TimeSpan CycleLength { get; init; } = TimeSpan.FromHours(3);
+    public TimeSpan CycleLength { get; init; } = TimeSpan.FromHours(24);
 }
