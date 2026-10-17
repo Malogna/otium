@@ -192,6 +192,10 @@ public partial class DashboardViewModel : ViewModelBase
                    + (balance.AutoPay ? "" : $" Auto pay is off for this address at {balance.PoolName}: turn it on there or it won't pay you by itself.")
                    + (balance.Problems is { Count: > 0 } problems ? " " + string.Join(" ", problems) : "");
         _poolDashboard = balance.DashboardUrl;
+        if (_host.GpuPoolBalance is { } gpu)
+            PoolNote += $" Your graphics card mines on {gpu.PoolName}, which pays the same address separately: " +
+                        $"{Format.Coin(gpu.Pending, gpu.Coin)} there now, paid out at {Format.Coin(gpu.MinimumPayout, gpu.Coin)}" +
+                        (gpu.AutoPay ? "." : $" (auto pay is off at {gpu.PoolName}: turn it on there).");
     }
 
     private void RefreshUpdate()

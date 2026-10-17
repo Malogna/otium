@@ -541,8 +541,9 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
             return PoolLogin.Kryptex(new GpuPoolEndpoint(route.Host, route.Port, route.Tls), route.User!, options.WorkerName);
         if (route is { Kind: GpuRoutes.Unmineable })
         {
-            if (PayoutRouting.PoolFor(options.Target.WalletAddress) != PayoutPool.Unmineable)
-                throw new InvalidOperationException($"{algorithm.PoolName} is paid by unMineable, which can't pay a Monero payout address.");
+            // Any payout coin works there, Monero included (the app keeps US users off these routes).
+            if (PayoutRouting.PoolFor(options.Target.WalletAddress) is null)
+                throw new InvalidOperationException($"{algorithm.PoolName} is paid by unMineable, which needs a payout address with its coin.");
             return PoolLogin.Unmineable(new GpuPoolEndpoint(route.Host, route.Port, route.Tls), options.Target.WalletAddress, options.WorkerName, _referralCode);
         }
         if (route is null ? algorithm.DefaultRoute != GpuRoutes.MoneroOcean : route.Kind != GpuRoutes.MoneroOcean)

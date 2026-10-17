@@ -347,7 +347,11 @@ public sealed class AccountService(
         if (target is null || target.Coin == PayoutCoins.Monero)
         {
             var stats = await pool.GetMinerStatsAsync(target?.Address ?? wallet, ct);
-            return stats is not null && stats.TotalHashes >= _referral.VerificationHashes;
+            if (stats is not null && stats.TotalHashes >= _referral.VerificationHashes)
+                return true;
+            // Outside the US a Monero user's graphics card mines on unMineable, paid in XMR there.
+            if (target is null)
+                return false;
         }
         if (!_referral.VerifyUnmineableByRewards)
             return false;
