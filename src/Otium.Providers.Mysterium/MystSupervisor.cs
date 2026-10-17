@@ -105,11 +105,7 @@ public sealed class WindowsMystSupervisor : IMystSupervisor
         return exe > 0 ? value[..(exe + 4)] : value.Split(' ')[0];
     }
 
-    internal static bool IsUnder(string path, string folder)
-    {
-        var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(folder)) + Path.DirectorySeparatorChar;
-        return Path.GetFullPath(path).StartsWith(root, StringComparison.OrdinalIgnoreCase);
-    }
+    internal static bool IsUnder(string path, string folder) => Core.Platform.WindowsPaths.IsUnder(path, folder);
 
     public async Task InstallAsync(string supervisorPath, CancellationToken ct)
     {
