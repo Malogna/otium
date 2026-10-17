@@ -263,6 +263,8 @@ per-user sign-up; see `research_notes/Non-custodial bandwidth/`.
   and `dvpn` (Mysterium's business VPN), never the anonymous public exit. Windows x64 only for now.
 - **One administrator prompt.** The node needs Mysterium's network service ("MysteriumVPN Supervisor"), installed once
   per computer with a Windows UAC prompt. If the user declines, Otium asks again only when they turn sharing off and on.
+  Uninstalling Otium removes the service again (one more prompt), and so does a button in Advanced while sharing is
+  off; a Mysterium service installed by another app is never touched.
 - **Registration, paid by Otium.** Every new node needs a one-time on-chain registration (0.13 MYST, about a cent, in
   October 2026). The app sends the node's identity and channel address to `POST /api/v1/devices/{id}/mysterium/sponsor`;
   the server sends `Mysterium:AmountMyst` (default 0.15) from Otium's own Polygon wallet to the channel address, and the
@@ -278,6 +280,11 @@ per-user sign-up; see `research_notes/Non-custodial bandwidth/`.
   settlement to a user's address). The pieces were tried separately in the spike (`docs/non-custodial-plan.md`).
 - **AV and code signing.** Proxyware is a common antivirus "potentially unwanted" category. Keep the sharing state
   visible in the app, and sign the Windows build with an EV certificate.
+
+**When antivirus removes an engine**, the app says which file Microsoft Defender removed and when (from
+`Get-MpThreatDetection`, readable without admin rights) and checks which antivirus is active (Windows Security
+Center). With Defender, "Allow automatically" adds an exclusion for the engines folder after a UAC prompt; with another
+antivirus, whose settings Otium can't change, it names the product and gives the folder to add as an exception.
 
 **Custodial servers** can instead use the [Honeygain SDK](https://developers.honeygain.com/docs/), with Otium as the
 publisher: Honeygain pays Otium per active device, and the server credits each user's balance from their computer's

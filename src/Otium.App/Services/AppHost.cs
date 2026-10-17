@@ -429,6 +429,24 @@ public sealed class AppHost : IAsyncDisposable
         return problem;
     }
 
+    /// <summary>What's guarding this computer and what it removed from the engines folder; null until checked.</summary>
+    public AntivirusReport? AntivirusReport { get; private set; }
+
+    public event Action? AntivirusChanged;
+
+    private DateTimeOffset _antivirusCheckedAt;
+
+    /// <summary>Re-reads the antivirus report (at most once a minute), after an engine was blocked.</summary>
+    public async Task RefreshAntivirusAsync()
+    {
+        var now = DateTimeOffset.UtcNow;
+        if (now - _antivirusCheckedAt < TimeSpan.FromMinutes(1))
+            return;
+        _antivirusCheckedAt = now;
+        AntivirusReport = await Antivirus.InspectAsync(Paths.EnginesDir, CancellationToken.None);
+        AntivirusChanged?.Invoke();
+    }
+
     /// <summary>"Try again" after an antivirus block: re-enabling clears the engine's blocked/error state.</summary>
     public void ApplyDeviceSwitchesAfterBlock()
     {

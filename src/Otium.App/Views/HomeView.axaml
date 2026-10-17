@@ -55,6 +55,8 @@
                                 <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap"
                                            Text="Antivirus tools treat every crypto miner as a threat, including the official ones Otium downloads and verifies. Allowing Otium's engines folder fixes it; Windows will ask for your permission first, and nothing else is changed. If Windows Firewall asks about SRBMiner afterwards, choose Cancel: it only needs outgoing connections." />
                             </StackPanel>
+                            <TextBlock FontSize="13" TextWrapping="Wrap" Text="{Binding AntivirusDetail}"
+                                       IsVisible="{Binding AntivirusDetail, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                             <TextBlock FontSize="13" TextWrapping="Wrap" Text="{Binding AllowResult}"
                                        IsVisible="{Binding AllowResult, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                             <StackPanel Orientation="Horizontal" Spacing="8">

@@ -24,6 +24,7 @@ public partial class InternetSharingViewModel : ViewModelBase
         OnlyWhenAway = host.Settings.BandwidthOnlyWhenIdle;
         DailyLimitGb = (decimal)host.Settings.BandwidthDailyLimitGb;
         PolygonAddress = host.Settings.BandwidthPayoutAddress ?? "";
+        _ = CheckServiceAsync();
         _loading = false;
         host.AccountChanged += () => Dispatcher.UIThread.Post(Refresh);
         host.Bandwidth.SnapshotChanged += _ => Dispatcher.UIThread.Post(Refresh);
@@ -35,7 +36,7 @@ public partial class InternetSharingViewModel : ViewModelBase
     public partial bool IsOffered { get; set; }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CanTurnOn))]
+    [NotifyPropertyChangedFor(nameof(CanTurnOn), nameof(CanRemoveService))]
     public partial bool IsOn { get; set; }
 
     public bool CanTurnOn => IsOffered && !IsOn;
@@ -61,6 +62,34 @@ public partial class InternetSharingViewModel : ViewModelBase
         Core.Wallets.PayoutTarget.ParseOrNull(_host.Settings.PayoutAddress) is not { Coin.Format: Core.Wallets.AddressFormat.Evm };
 
     public string MysteriumTermsUrl => "https://www.mysterium.network/terms-conditions";
+
+    /// <summary>Mysterium's network service, installed by Otium, is still there while sharing is off.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanRemoveService))]
+    public partial bool ServiceInstalled { get; set; }
+
+    [ObservableProperty] public partial string? ServiceMessage { get; set; }
+
+    public bool CanRemoveService => ServiceInstalled && !IsOn;
+
+    private async Task CheckServiceAsync()
+    {
+        if (!IsMysterium || !OperatingSystem.IsWindows())
+            return;
+        var engines = _host.Paths.EnginesDir;
+        ServiceInstalled = await Task.Run(() => Otium.Providers.Mysterium.WindowsMystSupervisor.OurServiceBinary(engines) is not null);
+    }
+
+    [RelayCommand]
+    private async Task RemoveService()
+    {
+        IsBusy = true;
+        var engines = _host.Paths.EnginesDir;
+        var problem = await Task.Run(() => Otium.Providers.Mysterium.WindowsMystSupervisor.RemoveIfOurs(engines, TimeSpan.FromMinutes(2)));
+        ServiceMessage = problem ?? "Removed. Turning internet sharing on again would set it up again.";
+        await CheckServiceAsync();
+        IsBusy = false;
+    }
 
     [RelayCommand]
     private void OpenMysteriumTerms() => Launch.Open(MysteriumTermsUrl);
@@ -192,6 +221,7 @@ public partial class InternetSharingViewModel : ViewModelBase
         {
             await _host.SetBandwidthSharingAsync(on);
             ShowConsent = false;
+            await CheckServiceAsync();
         }
         catch (InvalidOperationException e)
         {
