@@ -35,7 +35,7 @@ public sealed record AntivirusReport(IReadOnlyList<AntivirusProduct> Products, I
         zone ??= TimeZoneInfo.Local;
         var parts = new List<string>();
         var removed = Removals
-            .GroupBy(r => Path.GetFileName(r.File), StringComparer.OrdinalIgnoreCase)
+            .GroupBy(r => WindowsPaths.FileName(r.File), StringComparer.OrdinalIgnoreCase)
             .OrderByDescending(g => g.Max(r => r.At))
             .Select(g =>
             {
@@ -51,6 +51,25 @@ public sealed record AntivirusReport(IReadOnlyList<AntivirusProduct> Products, I
             parts.Add($"Your antivirus is {other.Name}, and Otium can't change its settings for you. Open {other.Name}, find its " +
                       "exceptions (also called exclusions or the allow list), add this folder, then press Try again: " + enginesDir);
         return string.Join(" ", parts);
+    }
+}
+
+/// <summary>
+/// Windows paths as Defender and the service manager report them, compared as text so the same code (and its tests)
+/// behaves alike on every OS: .NET's Path helpers treat a backslash as an ordinary character on Linux and macOS.
+/// </summary>
+public static class WindowsPaths
+{
+    public static string Normalize(string path) => path.Replace('/', '\\').TrimEnd('\\');
+
+    /// <summary>Whether <paramref name="path"/> is inside <paramref name="folder"/> (not the folder itself), ignoring case.</summary>
+    public static bool IsUnder(string path, string folder) =>
+        Normalize(path).StartsWith(Normalize(folder) + "\\", StringComparison.OrdinalIgnoreCase);
+
+    public static string FileName(string path)
+    {
+        var normalized = Normalize(path);
+        return normalized[(normalized.LastIndexOf('\\') + 1)..];
     }
 }
 
@@ -107,7 +126,6 @@ public static class Antivirus
             .Where(p => p.Name.Length > 0)
             .ToList();
 
-        var folder = Path.TrimEndingDirectorySeparator(Path.GetFullPath(enginesDir)) + Path.DirectorySeparatorChar;
         var removals = new List<AntivirusRemoval>();
         foreach (var d in Items(root, "detections"))
         {
@@ -117,7 +135,7 @@ public static class Antivirus
             {
                 // Defender writes files as "file:_C:\path".
                 var path = resource.StartsWith("file:_", StringComparison.OrdinalIgnoreCase) ? resource[6..] : resource;
-                if (path.StartsWith(folder, StringComparison.OrdinalIgnoreCase))
+                if (WindowsPaths.IsUnder(path, enginesDir))
                     removals.Add(new AntivirusRemoval(path, when));
             }
         }
