@@ -328,7 +328,10 @@ public partial class HomeViewModel : ViewModelBase
     [RelayCommand]
     private void OpenPoolPage()
     {
-        if (_host.PoolBalance?.DashboardUrl is { } url)
+        // The warning may be about the graphics card's pool (unMineable for Monero users), so open the page it's about.
+        var gpu = _host.GpuPoolBalance;
+        var pool = gpu is { } g && (!g.AutoPay || g.Problems is { Count: > 0 }) ? gpu : _host.PoolBalance;
+        if (pool?.DashboardUrl is { } url)
             Launch.Open(url.ToString());
     }
 

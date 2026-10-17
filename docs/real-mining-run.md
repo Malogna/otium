@@ -272,3 +272,17 @@ its fee slice after about 3 minutes; electricity was set as free.
 
 Still open: Otium's own USDT address still has unMineable's auto-pay off (`"auto":false`), so it won't be paid until the
 operator turns it on; and a funded Mysterium registration end to end.
+
+## Monero payout: GPU on unMineable, paid in XMR (17 October 2026, 23:13–23:22)
+
+The app from `main` after PR #6 (dev mode `-RealMiners`, non-custodial server, real pools, Norway, electricity set as
+free), with the operator's own Monero address as the payout target (`XMR:42zZ…`) and no fee address.
+
+| Check | Result |
+|---|---|
+| CPU | ✅ XMRig on `gulf.moneroocean.stream:20128` with TLS, the bare Monero address as user; MoneroOcean showed the address at about 1.25 kH/s. |
+| GPU routing | ✅ The GPU policy offered MoneroOcean's algorithms and unMineable's Pearl route together. SRBMiner first benchmarked CryptoNight-GPU (new on this PC; it failed with "couldn't setup ctx->algorithm", as MoneroOcean's GPU algorithms do on this card), then settled on Pearl. |
+| GPU login | ✅ `--algorithm pearlhash --pool pearlpow.unmineable.com:443 --tls true --wallet XMR:42zZ….ot6148da9bg#ztjq-jr7s`, about 101 TH/s, 2 of 2 shares accepted in 5 minutes. |
+| unMineable | ✅ The XMR address has a `pearlpow` worker with `"referral":"ztjq-jr7s"`, the 0.75% fee, a balance building up (0.00000081 XMR after 5 minutes), threshold 0.03 XMR. Auto-pay is off, as for every new address. |
+| App | ✅ "0.00000302 XMR at MoneroOcean · paid out at 0.003 XMR · plus 0 XMR at unMineable from the graphics card, paid out at 0.03 XMR" (the unMineable figure refreshes every 5 minutes), the warning that auto-pay is off at unMineable for the graphics card's earnings, and "Mining Pearl" at 100.35 TH/s, $3.13/day. |
+| Fixed after the run | The warning's "Open my address page" opened MoneroOcean's page; it now opens the page of the pool the warning is about. |
