@@ -149,6 +149,9 @@ public sealed class AccountState
     /// <summary>The server pays new Mysterium nodes' registration fee, so internet sharing can be offered.</summary>
     public bool MysteriumSponsored { get; set; }
 
+    /// <summary>The fee and invite terms the server last announced; null until it has.</summary>
+    public Accounts.FeeTerms? Fees { get; set; }
+
     /// <summary>Last PayPal email used, to prefill the cash-out form.</summary>
     public string? LastPayPalEmail { get; set; }
 

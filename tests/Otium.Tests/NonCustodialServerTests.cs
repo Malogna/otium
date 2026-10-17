@@ -37,6 +37,7 @@ public sealed class NonCustodialServerTests : IDisposable
             builder.UseSetting("DisableBackgroundJobs", "true");
             builder.UseSetting("Admin:Token", AdminToken);
             builder.UseSetting("Unmineable:OtiumTarget", OtiumUsdt);
+            builder.UseSetting("Fees:FeePercent", "3");
             // Configured, but a non-custodial server never routes anyone to Otium's Kryptex account.
             builder.UseSetting("Kryptex:Enabled", "true");
             builder.UseSetting("Kryptex:Account", "otium");
@@ -78,6 +79,7 @@ public sealed class NonCustodialServerTests : IDisposable
         var summary = await RegisterOk(Usdt);
 
         Assert.False(summary.Custodial);
+        Assert.Equal(new FeeTerms(3, 0.25, 180, 30, 30, 90), summary.Fees); // the operator's fee, default invite terms
         Assert.Null(summary.PoolWallet);
         Assert.Null(summary.CpuPool);
         Assert.Null(summary.Bandwidth);

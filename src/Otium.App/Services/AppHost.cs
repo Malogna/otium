@@ -208,6 +208,9 @@ public sealed class AppHost : IAsyncDisposable
         AccountChanged?.Invoke();
     }
 
+    /// <summary>The fee and invite terms in force: the server's, clamped, or the built-in defaults until it has answered.</summary>
+    public FeePolicy Fees => FeePolicy.FromTerms(Settings.Account.Fees);
+
     /// <summary>unMineable's terms exclude US persons, so US users are paid in Monero by MoneroOcean instead.</summary>
     public static bool InUnitedStates => System.Globalization.RegionInfo.CurrentRegion.TwoLetterISORegionName == "US";
 
@@ -377,7 +380,7 @@ public sealed class AppHost : IAsyncDisposable
     /// <summary>Fee shown in estimates: the server's fee for balance accounts, the mined fee for own-wallet mode.</summary>
     public double EffectiveFeePercent => Settings.PayoutMode == PayoutMode.Balance
         ? (Account?.Balance.FeePercent ?? (Settings.Account.FeePercent > 0 ? Settings.Account.FeePercent : 10))
-        : FeePolicy.Default.FeePercent;
+        : Fees.FeePercent;
 
     /// <summary>What this computer could earn per 24 h of mining, from its hardware and today's payouts.</summary>
     public Task<EarningsEstimate> EstimateAsync(CancellationToken ct) =>
@@ -525,7 +528,7 @@ public sealed class AppHost : IAsyncDisposable
             TimeSpan.FromMinutes(Math.Max(1, Settings.IdleMinutes)),
             Settings.NeverRunAtLoss,
             EffectivePricePerKwh(),
-            new FeeSchedule(FeePolicy.Default, user, FeeWallet, standing),
+            new FeeSchedule(Fees, user, FeeWallet, standing),
             $"ot{DeviceId[..8]}{workerSuffix}");
     }
 
@@ -751,6 +754,11 @@ public sealed class AppHost : IAsyncDisposable
         account.FeePercent = summary.Balance.FeePercent;
         account.BandwidthAvailable = summary.Bandwidth?.Available ?? false;
         account.MysteriumSponsored = summary.MysteriumSponsored;
+        if (summary.Fees is not null && summary.Fees != account.Fees)
+        {
+            account.Fees = summary.Fees;
+            RebuildEngineConfigs(); // the new fee or referral terms apply from the next slice
+        }
         account.BandwidthUserUsdPerGb = summary.Bandwidth?.UserUsdPerGb ?? 0;
         account.BandwidthUserUsdPerSharingHour = summary.Bandwidth?.UserUsdPerSharingHour ?? 0;
         account.BandwidthServerDailyLimitBytes = summary.Bandwidth?.DailyLimitBytes ?? 0;

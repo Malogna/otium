@@ -77,8 +77,42 @@ public class FeeScheduleTests
         Assert.Equal(PayoutRole.User, noReferrer.RoleAt(Policy.CycleLength - TimeSpan.FromSeconds(1), Now));
 
         var withReferrer = new FeeSchedule(Policy, User, appWallet: null, new ReferralStanding(Referrer, Now, null));
-        Assert.Equal(1.0, withReferrer.EffectiveFeePercent(Now), precision: 6);
+        Assert.Equal(Policy.ReferrerPercent, withReferrer.EffectiveFeePercent(Now), precision: 6);
         Assert.Equal(PayoutRole.Referrer, withReferrer.RoleAt(Policy.CycleLength - TimeSpan.FromSeconds(1), Now));
+    }
+
+    [Fact]
+    public void Referrers_get_a_quarter_of_the_fee_for_six_months_by_default()
+    {
+        Assert.Equal(2.0, FeePolicy.Default.FeePercent);
+        Assert.Equal(0.25, FeePolicy.Default.ReferrerShareOfFee);
+        Assert.Equal(0.5, FeePolicy.Default.ReferrerPercent, precision: 6);
+        Assert.Equal(TimeSpan.FromDays(180), FeePolicy.Default.ReferrerRewardPeriod);
+
+        var schedule = new FeeSchedule(Policy, User, App, new ReferralStanding(Referrer, Now, null));
+        Assert.True(schedule.HasActiveReferrer(Now.AddDays(179)));
+        Assert.False(schedule.HasActiveReferrer(Now.AddDays(181)));
+    }
+
+    [Fact]
+    public void Server_terms_apply_but_are_clamped()
+    {
+        var terms = new Otium.Core.Accounts.FeeTerms(3.5, 0.2, 90, 14, 7, 60);
+        var policy = FeePolicy.FromTerms(terms);
+        Assert.Equal(3.5, policy.FeePercent);
+        Assert.Equal(0.7, policy.ReferrerPercent, precision: 6);
+        Assert.Equal(TimeSpan.FromDays(90), policy.ReferrerRewardPeriod);
+        Assert.Equal(TimeSpan.FromDays(14), policy.RefereeFeeHoliday);
+        Assert.Equal(terms, policy.ToTerms());
+
+        // A misconfigured or hostile server can't push the fee past 10% or give away more than all of it.
+        var silly = FeePolicy.FromTerms(new Otium.Core.Accounts.FeeTerms(50, 3, -1, 9999, 0, 0));
+        Assert.Equal(FeePolicy.MaxFeePercent, silly.FeePercent);
+        Assert.Equal(1, silly.ReferrerShareOfFee);
+        Assert.Equal(TimeSpan.Zero, silly.ReferrerRewardPeriod);
+        Assert.Equal(TimeSpan.FromDays(365), silly.RefereeFeeHoliday);
+
+        Assert.Same(FeePolicy.Default, FeePolicy.FromTerms(null));
     }
 
     [Fact]

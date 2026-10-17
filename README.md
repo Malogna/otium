@@ -75,9 +75,11 @@ policy.
   Without the server's policy, unMineable users' GPUs wait (unMineable's prices come from the server) and Monero
   users fall back to MoneroOcean's own rates.
 - **Fee and referrals are mining time.** 2% of mining time is mined to Otium's own address on the user's pool (one
-  slice of about 29 minutes per 24 hours of mining), and for a year half of it goes to whoever invited the user, mined
-  to the referrer's own address when the same pool pays it. New users with an invite code get 30 fee-free days; each
-  verified friend gives the referrer another 30 (capped at 90). The miner keeps its pool and algorithm; only the login
+  slice of about 29 minutes per 24 hours of mining), and for 6 months a quarter of it goes to whoever invited the user,
+  mined to the referrer's own address when the same pool pays it. New users with an invite code get 30 fee-free days;
+  each verified friend gives the referrer another 30 (capped at 90). The server sends these terms with every account
+  summary (`Fees:*`), so they change without an app release; apps cap the fee at 10% and use the built-in defaults
+  until a server answers. The miner keeps its pool and algorithm; only the login
   changes for a slice. Builds set Otium's fee targets with `-FeeWallet 'USDT:T…;XMR:4…'` (one per pool); without one,
   the slice is mined for the user.
 - **Referral checks.** An invited friend counts as verified once their pool shows real mining: MoneroOcean hashes for
@@ -192,6 +194,8 @@ Configure `src/Otium.Server/appsettings.json` (or environment variables such as 
 | Setting | Purpose |
 |---|---|
 | `ConnectionStrings:Otium` | SQLite database path |
+| `Fees:FeePercent`, `ReferrerShareOfFee`, `ReferrerRewardDays` | The disclosed fee as a share of mining time (default 2, apps cap it at 10) and the referrer's part of it (default a quarter, for 180 days); apps pick changes up at their next sync |
+| `Fees:RefereeFeeFreeDays`, `ReferrerFeeFreeDaysPerFriend`, `MaxFeeFreeDays` | Fee-free days for invited users (30), per verified friend for the referrer (30), and the most that can stack up (90) |
 | `Custody:Enabled` | Off (default): non-custodial, accounts and referrals only. On: balances, crediting, cash-outs, Kryptex and internet sharing; the settings marked "custodial" below apply only then |
 | `Unmineable:OtiumTarget` | Otium's fee address on unMineable (e.g. `USDT:T…`), shown with its fee and referral earnings on the admin dashboard |
 | `Unmineable:Enabled`, `FeePercent`, `Algorithms:{algorithm}` | unMineable GPU routes in the policy (default on, 0.75%; Pearl, Xelis and FishHash with their WhatToMine ids and hosts) |
