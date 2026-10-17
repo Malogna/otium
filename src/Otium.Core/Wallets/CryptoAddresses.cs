@@ -8,50 +8,84 @@ namespace Otium.Core.Wallets;
 /// <summary>
 /// Checks payout addresses before any money moves, so a typo is caught in the app and refused by the server instead of
 /// being sent somewhere nobody controls. Mainnet only: Bitcoin (bech32 SegWit v0, bech32m Taproot, legacy 1… and 3…),
-/// Ethereum and BNB Smart Chain (0x…, with the EIP-55 checksum when mixed case) and Solana (base58 public keys).
+/// Ethereum and BNB Smart Chain (0x…, with the EIP-55 checksum when mixed case), Solana (base58 public keys), TRON (T…)
+/// and Litecoin (ltc1…, L…, M… and 3…).
 /// </summary>
 public static class CryptoAddresses
 {
     public static bool TryValidate(string method, string? address, out string? error)
     {
-        var value = (address ?? "").Trim();
-        error = null;
-        if (value.Length == 0)
+        var format = method switch
         {
-            error = "Enter your address.";
-            return false;
-        }
-
-        var ok = method switch
-        {
-            CashoutMethods.Bitcoin => IsBitcoin(value),
-            CashoutMethods.Ethereum or CashoutMethods.Bnb => IsEvm(value, out error),
-            CashoutMethods.Solana => IsSolana(value),
-            CashoutMethods.Monero => MoneroAddress.TryValidate(value, out _, out error),
-            _ => false,
+            CashoutMethods.Bitcoin => AddressFormat.Bitcoin,
+            CashoutMethods.Ethereum or CashoutMethods.Bnb => AddressFormat.Evm,
+            CashoutMethods.Solana => AddressFormat.Solana,
+            CashoutMethods.Monero => AddressFormat.Monero,
+            _ => (AddressFormat?)null,
         };
+        var ok = format is { } f ? TryValidate(f, address, out error) : Fail(address, out error);
         if (!ok && error is null)
             error = $"That isn't a valid {CashoutMethods.Name(method)} address. Copy it from your wallet's Receive screen ({CashoutMethods.Network(method)} network).";
         return ok;
     }
 
+    /// <summary>
+    /// Checks an address of one format. <paramref name="error"/> is set only for problems worth their own message (an
+    /// empty box, a checksum typo); otherwise it's null and the caller words the "not a valid … address" message.
+    /// </summary>
+    public static bool TryValidate(AddressFormat format, string? address, out string? error)
+    {
+        var value = (address ?? "").Trim();
+        error = null;
+        if (value.Length == 0)
+            return Fail(value, out error);
+
+        return format switch
+        {
+            AddressFormat.Bitcoin => IsBitcoin(value),
+            AddressFormat.Evm => IsEvm(value, out error),
+            AddressFormat.Solana => IsSolana(value),
+            AddressFormat.Monero => MoneroAddress.TryValidate(value, out _, out error),
+            AddressFormat.Tron => IsTron(value),
+            AddressFormat.Litecoin => IsLitecoin(value),
+            _ => false,
+        };
+    }
+
+    private static bool Fail(string? address, out string? error)
+    {
+        error = string.IsNullOrWhiteSpace(address) ? "Enter your address." : null;
+        return false;
+    }
+
     // ---------- Bitcoin ----------
 
     private static bool IsBitcoin(string value) =>
-        value.StartsWith("bc1", StringComparison.OrdinalIgnoreCase) ? IsSegwit(value) : IsBase58Check(value);
+        value.StartsWith("bc1", StringComparison.OrdinalIgnoreCase) ? IsSegwit(value, "bc") : IsBase58Check(value, 0x00, 0x05);
+
+    // ---------- Litecoin ----------
+
+    /// <summary>Native SegWit (ltc1…), legacy P2PKH (L…) and P2SH (M…, or 3… from before Litecoin had its own prefix).</summary>
+    private static bool IsLitecoin(string value) =>
+        value.StartsWith("ltc1", StringComparison.OrdinalIgnoreCase) ? IsSegwit(value, "ltc") : IsBase58Check(value, 0x30, 0x32, 0x05);
+
+    // ---------- TRON ----------
+
+    /// <summary>Base58Check with version byte 0x41, which is why every TRON address starts with T.</summary>
+    private static bool IsTron(string value) => value.Length == 34 && IsBase58Check(value, 0x41);
 
     private const string Bech32Charset = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
     private const uint Bech32Constant = 1;
     private const uint Bech32mConstant = 0x2bc830a3;
 
     /// <summary>BIP-173/BIP-350: version 0 programs of 20 or 32 bytes (bech32), version 1 of 32 bytes (Taproot, bech32m).</summary>
-    private static bool IsSegwit(string value)
+    private static bool IsSegwit(string value, string hrp)
     {
         if (value.Length > 90 || (value != value.ToLowerInvariant() && value != value.ToUpperInvariant()))
             return false;
         var lower = value.ToLowerInvariant();
         var separator = lower.LastIndexOf('1');
-        if (separator < 1 || lower[..separator] != "bc" || lower.Length - separator - 1 < 7)
+        if (separator < 1 || lower[..separator] != hrp || lower.Length - separator - 1 < 7)
             return false;
 
         var data = new byte[lower.Length - separator - 1];
@@ -63,7 +97,7 @@ public static class CryptoAddresses
             data[i] = (byte)index;
         }
 
-        var check = Polymod([.. HrpExpand("bc"), .. data]);
+        var check = Polymod([.. HrpExpand(hrp), .. data]);
         var version = data[0];
         var program = ConvertBits(data.AsSpan(1, data.Length - 7), 5, 8);
         if (program is null || program.Length is < 2 or > 40)
@@ -118,11 +152,11 @@ public static class CryptoAddresses
         return [.. result];
     }
 
-    /// <summary>Legacy P2PKH (1…) and P2SH (3…) addresses.</summary>
-    private static bool IsBase58Check(string value)
+    /// <summary>A 20-byte hash behind one of the given version bytes, with a double-SHA-256 checksum (Bitcoin's 1… and 3…).</summary>
+    private static bool IsBase58Check(string value, params byte[] versions)
     {
         var bytes = DecodeBase58(value);
-        if (bytes is not { Length: 25 } || bytes[0] is not (0x00 or 0x05))
+        if (bytes is not { Length: 25 } || !versions.Contains(bytes[0]))
             return false;
         var hash = SHA256.HashData(SHA256.HashData(bytes.AsSpan(0, 21)));
         return hash.AsSpan(0, 4).SequenceEqual(bytes.AsSpan(21, 4));
@@ -178,4 +212,15 @@ public static class CryptoAddresses
         var leadingZeros = value.TakeWhile(c => c == '1').Count();
         return [.. new byte[leadingZeros], .. body];
     }
+}
+
+/// <summary>The address formats Otium can check. ETH, BNB and USDT on BNB Smart Chain all use <see cref="Evm"/>.</summary>
+public enum AddressFormat
+{
+    Bitcoin,
+    Evm,
+    Solana,
+    Monero,
+    Tron,
+    Litecoin,
 }
