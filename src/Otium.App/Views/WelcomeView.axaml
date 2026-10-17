@@ -43,8 +43,8 @@
                             <Grid ColumnDefinitions="Auto,*">
                                 <Border Classes="iconBadge"><Path Classes="icon" Data="{StaticResource IconWallet}" /></Border>
                                 <StackPanel Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center">
-                                    <TextBlock FontWeight="SemiBold" Text="Paid in crypto" />
-                                    <TextBlock Classes="muted" FontSize="13" Text="Earnings count in dollars. Cash out to your own wallet in BTC, ETH, BNB or SOL, from $5." />
+                                    <TextBlock FontWeight="SemiBold" Text="Paid straight to your own wallet" />
+                                    <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Text="The mining pool pays your address in the coin you choose, like USDT, BTC or LTC. Otium never holds your money." />
                                 </StackPanel>
                             </Grid>
                         </StackPanel>
@@ -139,7 +139,23 @@
                 </StackPanel>
             </ScrollViewer>
 
-            <!-- ===== Step 3: summary and start ===== -->
+            <!-- ===== Step 3: where to get paid ===== -->
+            <ScrollViewer>
+                <StackPanel MaxWidth="520" Margin="24,40,24,24" Spacing="18" HorizontalAlignment="Center">
+                    <StackPanel Spacing="6">
+                        <TextBlock Classes="h1" HorizontalAlignment="Center" TextAlignment="Center" Text="Where should we pay you?" />
+                        <TextBlock Classes="muted" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"
+                                   Text="Pick a coin and paste your own address for it. The pool pays it directly; Otium never touches the money." />
+                    </StackPanel>
+                    <Border Classes="card delay1" Padding="20">
+                        <views:PayoutTargetView DataContext="{Binding Payout}" />
+                    </Border>
+                    <TextBlock Classes="muted" FontSize="12" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"
+                               Text="No wallet yet? Any wallet app or exchange account that can receive the coin works. You can change this later in Settings." />
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- ===== Step 4: summary and start ===== -->
             <ScrollViewer>
                 <StackPanel MaxWidth="520" Margin="24,40,24,24" Spacing="20" HorizontalAlignment="Center">
                     <TextBlock Classes="h1" HorizontalAlignment="Center" TextAlignment="Center" Text="Ready when you are" />
@@ -154,6 +170,10 @@
                                 <Path Classes="icon" Data="{StaticResource IconCheck}" VerticalAlignment="Top" Margin="0,2,0,0" />
                                 <TextBlock Grid.Column="1" Margin="12,0,0,0" TextWrapping="Wrap"
                                            Text="It runs mining software (XMRig, and SRBMiner for graphics cards). Some antivirus tools flag these; Otium shows you how to allow them. If Windows Firewall asks to allow them, choose Cancel: they only need outgoing connections." />
+                            </Grid>
+                            <Grid ColumnDefinitions="Auto,*">
+                                <Path Classes="icon" Data="{StaticResource IconCheck}" VerticalAlignment="Top" Margin="0,2,0,0" />
+                                <TextBlock Grid.Column="1" Margin="12,0,0,0" TextWrapping="Wrap" Text="{Binding PayoutLine}" />
                             </Grid>
                             <Grid ColumnDefinitions="Auto,*">
                                 <Path Classes="icon" Data="{StaticResource IconCheck}" VerticalAlignment="Top" Margin="0,2,0,0" />
@@ -198,14 +218,15 @@
                 <Border Classes="stepDot" Classes.active="{Binding IsStep0}" />
                 <Border Classes="stepDot" Classes.active="{Binding IsStep1}" />
                 <Border Classes="stepDot" Classes.active="{Binding IsStep2}" />
+                <Border Classes="stepDot" Classes.active="{Binding IsStep3}" />
             </StackPanel>
-            <Button Grid.Column="2" Classes="accent big" HorizontalAlignment="Right" IsVisible="{Binding !IsStep2}" AutomationProperties.Name="Next" Command="{Binding NextCommand}">
+            <Button Grid.Column="2" Classes="accent big" HorizontalAlignment="Right" IsVisible="{Binding !IsStep3}" AutomationProperties.Name="Next" Command="{Binding NextCommand}">
                 <StackPanel Orientation="Horizontal" Spacing="8">
                     <TextBlock Text="Next" />
                     <Path Classes="icon" Data="{StaticResource IconArrowRight}" Width="16" Height="16" Stroke="White" />
                 </StackPanel>
             </Button>
-            <Button Grid.Column="2" Classes="accent big" HorizontalAlignment="Right" IsVisible="{Binding IsStep2}" AutomationProperties.Name="Start earning" Command="{Binding StartCommand}">
+            <Button Grid.Column="2" Classes="accent big" HorizontalAlignment="Right" IsVisible="{Binding IsStep3}" AutomationProperties.Name="Start earning" Command="{Binding StartCommand}">
                 <StackPanel Orientation="Horizontal" Spacing="8">
                     <Path Classes="icon filled" Data="{StaticResource IconPlay}" Width="14" Height="14" Stroke="White" Fill="White" />
                     <TextBlock Text="Start earning" />

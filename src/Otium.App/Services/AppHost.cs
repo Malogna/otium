@@ -15,6 +15,7 @@ using Otium.Core.Settings;
 using Otium.Core.Switching;
 using Otium.Core.Wallets;
 using Otium.Providers.Honeygain;
+using Otium.Providers.Mysterium;
 using Otium.Providers.SrbMiner;
 using Otium.Providers.XMRig;
 
@@ -48,7 +49,8 @@ public sealed class AppHost : IAsyncDisposable
 
         DeviceId = ComputeDeviceId();
         IsSimulated = SimulatedProvider.IsEnabled;
-        FeeWallet = ValidWalletOrNull(AppIdentity.ResolveFeeWallet());
+        FeeWallets = AppIdentity.ResolveFeeWallets();
+        ReferralCode = AppIdentity.ResolveUnmineableReferral();
 
         _http = new HttpClient { Timeout = TimeSpan.FromMinutes(5) };
         _http.DefaultRequestHeaders.UserAgent.ParseAdd($"{AppIdentity.Name}/0.1");
@@ -60,7 +62,7 @@ public sealed class AppHost : IAsyncDisposable
         ElectricityPrices = new ElectricityPriceProvider(_http);
 
         // CPU
-        Provider = new XmrigProvider(_http, Pool, Paths.EnginesDir);
+        Provider = new XmrigProvider(_http, Pool, Paths.EnginesDir, referralCode: ReferralCode);
         PowerModel = CpuPowerModel.ForThisMachine(Settings.CpuFullLoadWatts);
         PowerMeter = RaplPowerMeter.IsAvailable() ? new RaplPowerMeter(() => PowerModel) : new EstimatedCpuPowerMeter(() => PowerModel);
         var cpuLedger = new JsonFileStore<EarningsLedger>(Paths.LedgerFile);
@@ -77,7 +79,8 @@ public sealed class AppHost : IAsyncDisposable
         var gpuProvider = new SrbMinerGpuProvider(
             _http, Pool, Paths.EnginesDir, Paths.GpuBenchmarksFile, Gpus, GpuPowerMeter, EffectivePricePerKwh,
             policy: () => EffectiveGpuPolicy,
-            freeMemoryGb: gpu => gpu.Vendor == GpuVendor.Nvidia ? _nvml?.ReadFreeMemoryGb(gpu.Index) : null);
+            freeMemoryGb: gpu => gpu.Vendor == GpuVendor.Nvidia ? _nvml?.ReadFreeMemoryGb(gpu.Index) : null,
+            referralCode: ReferralCode);
         if (IsSimulated)
         {
             var gpuLedger = new JsonFileStore<EarningsLedger>(Paths.GpuLedgerFile);
@@ -92,14 +95,19 @@ public sealed class AppHost : IAsyncDisposable
             GpuEngine = new EarningsEngine(gpuProvider, GpuPowerMeter, idle, () => _gpuConfig, gpuLedger.Load(), gpuLedger.Save);
         }
 
-        // Internet sharing (opt-in): usage is reported to the Otium server, which credits the balance.
+        // Internet sharing (opt-in). A Mysterium node pays the user's own Polygon address directly; builds with a
+        // Honeygain publisher key (custodial operators) report usage to the Otium server, which credits the balance.
         var bandwidthLedger = new JsonFileStore<BandwidthLedger>(Paths.BandwidthLedgerFile);
-        _bandwidthConfig = BuildBandwidthConfig();
         IBandwidthProvider bandwidthProvider = IsSimulated
             ? new SimulatedBandwidthProvider()
-            : new HoneygainBandwidthProvider(AppContext.BaseDirectory, AppIdentity.ResolveHoneygainApiKey());
+            : AppIdentity.ResolveHoneygainApiKey() is { } honeygainKey
+                ? new HoneygainBandwidthProvider(AppContext.BaseDirectory, honeygainKey)
+                : new MysteriumBandwidthProvider(_http, Paths.EnginesDir, () => MysteriumBeneficiary,
+                    (request, ct) => CreateClient().SponsorMysteriumAsync(DeviceId, Settings.DeviceSecret, request, ct));
+        UsesMysterium = bandwidthProvider is MysteriumBandwidthProvider;
+        _bandwidthConfig = BuildBandwidthConfig();
         Bandwidth = new BandwidthSharer(bandwidthProvider, idle, () => _bandwidthConfig,
-            (report, ct) => CreateClient().ReportBandwidthAsync(DeviceId, Settings.DeviceSecret, report, ct),
+            UsesMysterium ? null : (report, ct) => CreateClient().ReportBandwidthAsync(DeviceId, Settings.DeviceSecret, report, ct),
             bandwidthLedger.Load(), bandwidthLedger.Save);
     }
 
@@ -143,7 +151,65 @@ public sealed class AppHost : IAsyncDisposable
 
     public string DeviceId { get; private set; }
 
-    public string? FeeWallet { get; }
+    /// <summary>Otium's fee targets from the build, one per pool (e.g. "USDT:T…" for unMineable, "XMR:4…" for MoneroOcean).</summary>
+    public IReadOnlyList<string> FeeWallets { get; }
+
+    /// <summary>The fee target on the user's pool, or null when the build has none for it (the fee then stays with the user).</summary>
+    public string? FeeWallet => PayoutRouting.FeeTargetFor(OwnPayoutTarget, FeeWallets);
+
+    /// <summary>Otium's unMineable referral code, added to every unMineable login.</summary>
+    public string? ReferralCode { get; }
+
+    /// <summary>The user's own payout target in canonical form ("USDT:T…", "XMR:4…"), or null while it isn't valid.</summary>
+    public string? OwnPayoutTarget => PayoutTarget.ParseOrNull(Settings.PayoutAddress)?.ToString();
+
+    /// <summary>
+    /// Whether the server holds balances (custodial). Until it has answered, assume not: the app then offers only
+    /// payouts to the user's own address, which work with any server.
+    /// </summary>
+    public bool ServerIsCustodial => Account?.Custodial ?? false;
+
+    /// <summary>What the pool holds for the user's own address, refreshed every few minutes; null until known.</summary>
+    public PayoutBalance? PoolBalance { get; private set; }
+
+    /// <summary>Why the pool balance couldn't be read last time, or null.</summary>
+    public string? PoolBalanceError { get; private set; }
+
+    private DateTimeOffset _poolBalanceCheckedAt;
+    private string? _poolBalanceTarget;
+
+    /// <summary>Reads the pool balance for the user's own address (at most every 5 minutes unless forced).</summary>
+    public async Task RefreshPoolBalanceAsync(bool force, CancellationToken ct)
+    {
+        var target = Settings.PayoutMode == PayoutMode.OwnWallet ? OwnPayoutTarget : null;
+        if (target is null)
+        {
+            PoolBalance = null;
+            PoolBalanceError = null;
+            return;
+        }
+        var now = DateTimeOffset.UtcNow;
+        if (!force && target == _poolBalanceTarget && now - _poolBalanceCheckedAt < TimeSpan.FromMinutes(5))
+            return;
+        _poolBalanceCheckedAt = now;
+        if (target != _poolBalanceTarget)
+            PoolBalance = null; // a different address: don't show the old one's balance meanwhile
+        _poolBalanceTarget = target;
+        try
+        {
+            IComputeProvider provider = IsSimulated ? Engine.Provider : Provider;
+            PoolBalance = await provider.GetPayoutBalanceAsync(target, ct);
+            PoolBalanceError = null;
+        }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or InvalidOperationException or System.Text.Json.JsonException && !ct.IsCancellationRequested)
+        {
+            PoolBalanceError = "Couldn't reach the pool to check your balance. Retrying in a few minutes.";
+        }
+        AccountChanged?.Invoke();
+    }
+
+    /// <summary>unMineable's terms exclude US persons, so US users are paid in Monero by MoneroOcean instead.</summary>
+    public static bool InUnitedStates => System.Globalization.RegionInfo.CurrentRegion.TwoLetterISORegionName == "US";
 
     public IMoneroPoolApi Pool { get; }
 
@@ -169,20 +235,36 @@ public sealed class AppHost : IAsyncDisposable
     public IEnumerable<EarningsEngine> Engines => GpuEngine is null ? [Engine] : [Engine, GpuEngine];
 
     /// <summary>
-    /// The server's GPU policy as it applies to this user: Kryptex coins are mined to Otium's account, so own-wallet
-    /// users only get the MoneroOcean algorithms. Null until fetched (the GPU miner then falls back to MoneroOcean).
+    /// The server's GPU policy as it applies to this user. Balance accounts get all of it. Own-wallet users get the
+    /// routes of the pool that pays their coin: MoneroOcean for Monero (null until fetched, when the GPU miner falls
+    /// back to MoneroOcean's own prices), unMineable for every other coin (nothing until fetched, since unMineable's
+    /// prices come from the server).
     /// </summary>
-    public GpuPolicy? EffectiveGpuPolicy => _gpuPolicy is { } policy
-        ? Settings.PayoutMode == PayoutMode.Balance ? policy : policy.WithoutOperatorPools()
-        : null;
+    public GpuPolicy? EffectiveGpuPolicy => Settings.PayoutMode == PayoutMode.Balance
+        ? _gpuPolicy
+        : PayoutRouting.PoolFor(Settings.PayoutAddress) == PayoutPool.Unmineable
+            ? (_gpuPolicy ?? new GpuPolicy(DateTimeOffset.MinValue, [], [])).OnlyRoutes(GpuRoutes.Unmineable)
+            : _gpuPolicy?.OnlyRoutes(GpuRoutes.MoneroOcean);
 
     /// <summary>Shares unused internet bandwidth when the user has opted in.</summary>
     public BandwidthSharer Bandwidth { get; }
 
     /// <summary>The server pays for sharing and this computer can run the partner's component.</summary>
-    public bool BandwidthOffered => Settings.PayoutMode == PayoutMode.Balance
-                                    && Settings.Account.BandwidthAvailable
-                                    && Bandwidth.Provider.UnavailableReason is null;
+    public bool BandwidthOffered => UsesMysterium
+        ? Settings.Account.MysteriumSponsored && MystRelease.ForCurrentPlatform() is not null
+        : Settings.PayoutMode == PayoutMode.Balance && Settings.Account.BandwidthAvailable && Bandwidth.Provider.UnavailableReason is null;
+
+    /// <summary>Internet sharing runs a Mysterium node that pays the user directly (not a partner paying Otium).</summary>
+    public bool UsesMysterium { get; }
+
+    /// <summary>
+    /// The Polygon address Mysterium pays: the one the user gave for sharing, or their payout address when it's an 0x
+    /// address (the same wallet works on Polygon). Null until there is one.
+    /// </summary>
+    public string? MysteriumBeneficiary =>
+        CryptoAddresses.TryValidate(AddressFormat.Evm, Settings.BandwidthPayoutAddress, out _)
+            ? Settings.BandwidthPayoutAddress!.Trim().ToLowerInvariant()
+            : PayoutTarget.ParseOrNull(Settings.PayoutAddress) is { Coin.Format: AddressFormat.Evm } evm ? evm.Address : null;
 
     public FeeSchedule FeeSchedule => _cpuConfig.FeeSchedule;
 
@@ -201,8 +283,10 @@ public sealed class AppHost : IAsyncDisposable
     /// <summary>Why mining can't start yet, or null when it can.</summary>
     public string? MiningBlocker => Settings.PayoutMode switch
     {
-        PayoutMode.OwnWallet when ValidWalletOrNull(Settings.PayoutAddress) is null =>
-            "Add your Monero wallet address in Advanced settings to earn with your own wallet.",
+        PayoutMode.OwnWallet when OwnPayoutTarget is null =>
+            "Add the address you want to be paid at in Advanced settings.",
+        PayoutMode.OwnWallet when InUnitedStates && PayoutRouting.PoolFor(Settings.PayoutAddress) == PayoutPool.Unmineable =>
+            "unMineable, which pays out in your chosen coin, doesn't serve US residents. Choose Monero (XMR) as your payout coin in Advanced settings.",
         PayoutMode.Balance when Settings.Account.WorkerId is null || ValidWalletOrNull(Settings.Account.PoolWallet) is null =>
             LastServerError is null ? "Connecting to Otium…" : "Can't reach Otium right now. Retrying automatically.",
         _ => null,
@@ -246,8 +330,14 @@ public sealed class AppHost : IAsyncDisposable
     /// The one-click start: accepts the terms shown on the welcome screen, turns on start-at-sign-in and
     /// earning, then connects to the server (mining begins as soon as the account is ready).
     /// </summary>
-    public async Task StartFirstTimeAsync(string? inviteCode)
+    /// <param name="payoutTarget">The address chosen during onboarding ("USDT:T…"), paid by the pool directly.</param>
+    public async Task StartFirstTimeAsync(string? inviteCode, string? payoutTarget = null)
     {
+        if (PayoutTarget.ParseOrNull(payoutTarget) is { } target)
+        {
+            Settings.PayoutMode = PayoutMode.OwnWallet;
+            Settings.PayoutAddress = target.ToString();
+        }
         Settings.AcceptedTerms = true;
         Settings.OnboardingComplete = true;
         Settings.Referral.CodeUsed = string.IsNullOrWhiteSpace(inviteCode) ? null : ReferralCodes.Normalize(inviteCode);
@@ -339,6 +429,24 @@ public sealed class AppHost : IAsyncDisposable
         return problem;
     }
 
+    /// <summary>What's guarding this computer and what it removed from the engines folder; null until checked.</summary>
+    public AntivirusReport? AntivirusReport { get; private set; }
+
+    public event Action? AntivirusChanged;
+
+    private DateTimeOffset _antivirusCheckedAt;
+
+    /// <summary>Re-reads the antivirus report (at most once a minute), after an engine was blocked.</summary>
+    public async Task RefreshAntivirusAsync()
+    {
+        var now = DateTimeOffset.UtcNow;
+        if (now - _antivirusCheckedAt < TimeSpan.FromMinutes(1))
+            return;
+        _antivirusCheckedAt = now;
+        AntivirusReport = await Antivirus.InspectAsync(Paths.EnginesDir, CancellationToken.None);
+        AntivirusChanged?.Invoke();
+    }
+
     /// <summary>"Try again" after an antivirus block: re-enabling clears the engine's blocked/error state.</summary>
     public void ApplyDeviceSwitchesAfterBlock()
     {
@@ -405,16 +513,19 @@ public sealed class AppHost : IAsyncDisposable
                 cpu ? Settings.Account.CpuPool : null);
         }
 
+        // Fee and referral slices mine on the user's own pool, so a referrer paid on the other pool gets no slice.
         var referral = Settings.Referral;
-        var standing = new ReferralStanding(ValidWalletOrNull(referral.ReferrerWallet), referral.ReferredAt, referral.FeeFreeUntil);
+        var user = OwnPayoutTarget ?? Settings.PayoutAddress;
+        var referrer = PayoutRouting.SamePool(user, referral.ReferrerWallet) ? PayoutTarget.Normalize(referral.ReferrerWallet!) : null;
+        var standing = new ReferralStanding(referrer, referral.ReferredAt, referral.FeeFreeUntil);
         return new EngineConfig(
-            Settings.PayoutAddress,
+            user,
             usagePercent,
             Settings.OnlyWhenIdle,
             TimeSpan.FromMinutes(Math.Max(1, Settings.IdleMinutes)),
             Settings.NeverRunAtLoss,
             EffectivePricePerKwh(),
-            new FeeSchedule(FeePolicy.Default, Settings.PayoutAddress, FeeWallet, standing),
+            new FeeSchedule(FeePolicy.Default, user, FeeWallet, standing),
             $"ot{DeviceId[..8]}{workerSuffix}");
     }
 
@@ -424,7 +535,7 @@ public sealed class AppHost : IAsyncDisposable
         var userLimit = (long)(Math.Clamp(Settings.BandwidthDailyLimitGb, 0.1, 100) * 1024 * 1024 * 1024);
         var serverLimit = account.BandwidthServerDailyLimitBytes > 0 ? account.BandwidthServerDailyLimitBytes : long.MaxValue;
         return new BandwidthConfig(
-            Settings.BandwidthEnabled && Settings.BandwidthConsentAt is not null && BandwidthOfferedBySettings() && account.WorkerId is not null,
+            Settings.BandwidthEnabled && Settings.BandwidthConsentAt is not null && BandwidthOfferedBySettings(),
             Settings.BandwidthOnlyWhenIdle,
             TimeSpan.FromMinutes(Math.Max(1, Settings.IdleMinutes)),
             Math.Min(userLimit, serverLimit),
@@ -433,7 +544,9 @@ public sealed class AppHost : IAsyncDisposable
             account.WorkerId ?? "");
 
         // Bandwidth isn't constructed yet on the first call, so check the provider separately in BandwidthOffered.
-        bool BandwidthOfferedBySettings() => Settings.PayoutMode == PayoutMode.Balance && account.BandwidthAvailable;
+        bool BandwidthOfferedBySettings() => UsesMysterium
+            ? account.MysteriumSponsored
+            : Settings.PayoutMode == PayoutMode.Balance && account.BandwidthAvailable && account.WorkerId is not null;
     }
 
     /// <summary>
@@ -447,7 +560,10 @@ public sealed class AppHost : IAsyncDisposable
         try
         {
             var client = CreateClient();
-            var ownWallet = Settings.PayoutMode == PayoutMode.OwnWallet ? ValidWalletOrNull(Settings.PayoutAddress) : null;
+            // Monero targets register as the bare address, which servers before the non-custodial switch expect.
+            var ownWallet = Settings.PayoutMode == PayoutMode.OwnWallet && OwnPayoutTarget is { } own
+                ? PayoutRouting.PoolFor(own) == PayoutPool.MoneroOcean ? PayoutRouting.MoneroOceanWallet(own) : own
+                : null;
             var needsRegister = account.WorkerId is null
                                 || referral.MyCode is null
                                 || referral.RegisteredPayoutAddress != ownWallet
@@ -469,6 +585,8 @@ public sealed class AppHost : IAsyncDisposable
         SaveSettings();
         ApplyDeviceSwitches();
         AccountChanged?.Invoke();
+        // The pool pays own-address users directly, so its balance doesn't depend on reaching the Otium server.
+        await RefreshPoolBalanceAsync(force: false, ct);
     }
 
     /// <summary>Fetches the GPU policy (it needs no account, so the welcome screen's estimate can use it).</summary>
@@ -632,6 +750,7 @@ public sealed class AppHost : IAsyncDisposable
         account.MinCryptoUsd = summary.Balance.MinCryptoUsd;
         account.FeePercent = summary.Balance.FeePercent;
         account.BandwidthAvailable = summary.Bandwidth?.Available ?? false;
+        account.MysteriumSponsored = summary.MysteriumSponsored;
         account.BandwidthUserUsdPerGb = summary.Bandwidth?.UserUsdPerGb ?? 0;
         account.BandwidthUserUsdPerSharingHour = summary.Bandwidth?.UserUsdPerSharingHour ?? 0;
         account.BandwidthServerDailyLimitBytes = summary.Bandwidth?.DailyLimitBytes ?? 0;

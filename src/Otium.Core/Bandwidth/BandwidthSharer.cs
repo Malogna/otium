@@ -53,6 +53,12 @@ public sealed record BandwidthSnapshot
     /// <summary>The server's explanation when it paid less than reported (shared connection, daily limit).</summary>
     public string? Note { get; init; }
 
+    /// <summary>
+    /// What the partner network says this computer earned, for partners that pay the user directly (Mysterium);
+    /// null when the Otium server credits sharing instead.
+    /// </summary>
+    public string? Earnings { get; init; }
+
     public TimeSpan? IdleTime { get; init; }
 }
 
@@ -81,7 +87,8 @@ public sealed class BandwidthLedger
 
 /// <summary>
 /// Runs the bandwidth provider when the user has opted in: only while away if they chose so, never past their daily
-/// data limit. Measured traffic is reported to the Otium server every few minutes, which credits the balance.
+/// data limit. For partners that pay Otium (custodial servers), measured traffic is reported to the Otium server every
+/// few minutes, which credits the balance; partners that pay the user directly (Mysterium) need no reports.
 /// </summary>
 public sealed class BandwidthSharer : IAsyncDisposable
 {
@@ -94,7 +101,7 @@ public sealed class BandwidthSharer : IAsyncDisposable
     private readonly IBandwidthProvider _provider;
     private readonly IIdleDetector _idle;
     private readonly Func<BandwidthConfig> _config;
-    private readonly Func<BandwidthReport, CancellationToken, Task<BandwidthReportResult>> _report;
+    private readonly Func<BandwidthReport, CancellationToken, Task<BandwidthReportResult>>? _report;
     private readonly BandwidthLedger _ledger;
     private readonly Action<BandwidthLedger> _save;
     private readonly TimeProvider _time;
@@ -109,13 +116,14 @@ public sealed class BandwidthSharer : IAsyncDisposable
     private DateTimeOffset _nextReportAttempt;
     private double _bytesPerSecond;
     private string? _note;
+    private string? _earnings;
     private Task? _loop;
 
     public BandwidthSharer(
         IBandwidthProvider provider,
         IIdleDetector idle,
         Func<BandwidthConfig> config,
-        Func<BandwidthReport, CancellationToken, Task<BandwidthReportResult>> report,
+        Func<BandwidthReport, CancellationToken, Task<BandwidthReportResult>>? report,
         BandwidthLedger ledger,
         Action<BandwidthLedger> save,
         TimeProvider? time = null)
@@ -236,6 +244,7 @@ public sealed class BandwidthSharer : IAsyncDisposable
         }
 
         var status = await _provider.GetStatusAsync(ct);
+        _earnings = status.Earnings ?? _earnings;
         switch (status.State)
         {
             case BandwidthProviderState.Online:
@@ -246,7 +255,7 @@ public sealed class BandwidthSharer : IAsyncDisposable
                 Publish(BandwidthState.Error, status.Message ?? "The sharing component stopped. Retrying…", idle);
                 break;
             default:
-                Publish(BandwidthState.Starting, "Connecting…", idle);
+                Publish(BandwidthState.Starting, status.Message ?? "Connecting…", idle);
                 break;
         }
     }
@@ -274,6 +283,14 @@ public sealed class BandwidthSharer : IAsyncDisposable
 
     private async Task ReportIfDueAsync(DateTimeOffset now, bool force, CancellationToken ct)
     {
+        if (_report is null)
+        {
+            // Paid by the partner directly: there's nothing to report, only totals to keep.
+            _ledger.PeriodStart = null;
+            _ledger.PeriodBytes = 0;
+            _ledger.PeriodSeconds = 0;
+            return;
+        }
         if (_ledger.Pending is null && _ledger.PeriodStart is { } start && (force || now - start >= ReportInterval))
         {
             _ledger.Pending = new BandwidthReport(_ledger.NextSequence++, start, now, _ledger.PeriodBytes, _ledger.PeriodSeconds, _provider.Id);
@@ -343,6 +360,7 @@ public sealed class BandwidthSharer : IAsyncDisposable
             UserUsdPerDay = perDay,
             TotalUserUsd = _ledger.CreditedUsd + unreported / GB * config.UserUsdPerGb,
             Note = _note,
+            Earnings = _earnings,
             IdleTime = idle,
         };
         SnapshotChanged?.Invoke(Snapshot);

@@ -5,8 +5,10 @@
 
 .DESCRIPTION
     Starts
-      - Otium.DevPool on http://localhost:5090: a stand-in for the MoneroOcean API (earnings sped up by -Speedup)
-      - Otium.Server  on http://localhost:5080: dev settings (credits every 20 s, 1-minute hold, fake PayPal/Monero payouts)
+      - Otium.DevPool on http://localhost:5090: a stand-in for the MoneroOcean, unMineable, Kryptex and WhatToMine APIs
+        (earnings sped up by -Speedup)
+      - Otium.Server  on http://localhost:5080: non-custodial like production (accounts and referrals only), or with
+        -Custodial: balances with dev settings (credits every 20 s, 1-minute hold, fake payouts)
       - the Otium app with simulated CPU and GPU miners (one window per -Computers)
     and prints email sign-in codes here, because no real email is sent in dev mode.
     Everything stops when you close the app window(s) or press Ctrl+C. Data lives in artifacts/dev (use -Reset to start over).
@@ -15,17 +17,19 @@
     pwsh build/dev.ps1                 # one simulated computer
     pwsh build/dev.ps1 -Computers 2    # two computers, to try signing in on a second PC
     pwsh build/dev.ps1 -Reset          # wipe dev data first
-    pwsh build/dev.ps1 -RealMiners     # real XMRig/SRBMiner on this PC, real MoneroOcean (see below)
-    pwsh build/dev.ps1 -RealMiners -Wallet <xmr> -KryptexAccount krxABC123   # also Pearl/Quantus on real Kryptex
+    pwsh build/dev.ps1 -Custodial      # the server holds balances (cash-outs, Kryptex, internet sharing)
+    pwsh build/dev.ps1 -RealMiners -FeeWallet 'USDT:T...'   # real XMRig/SRBMiner on the real pools (see below)
+    pwsh build/dev.ps1 -RealMiners -Custodial -Wallet <xmr> -KryptexAccount krxABC123   # the custodial setup, for real
 
 .NOTES
     -RealMiners tests the real engines on this hardware: the app downloads XMRig and SRBMiner and mines on the real
-    MoneroOcean pool, crediting the dev pool wallet (the Monero general fund, so nobody is paid). The GPU mines
-    MoneroOcean's algorithms even though they usually lose money, so they can be tested without a Kryptex account.
+    pools, paying the address chosen in the app (unMineable for most coins, MoneroOcean for Monero), with Otium's
+    referral code and, given -FeeWallet, fee slices to that address. GPU coins are priced by the live WhatToMine feed.
     Data lives in artifacts/dev-real; internet sharing is off. Stop it after a few minutes: this uses real electricity.
 
-    -KryptexAccount (with -RealMiners) routes Pearl and Quantus to that real Kryptex Pool account, priced by the live
-    WhatToMine feed, as the production server does. MoneroOcean's GPU algorithms then keep their normal tiers.
+    With -Custodial, the server holds balances again: the CPU credits -Wallet on MoneroOcean (the dev default is
+    refused there), and -KryptexAccount routes Pearl and Quantus to that real Kryptex Pool account. Without one, the GPU
+    mines MoneroOcean's algorithms even though they usually lose money, so SRBMiner can still be exercised.
 #>
 param(
     [ValidateRange(1, 4)] [int] $Computers = 1,
@@ -33,10 +37,15 @@ param(
     [switch] $Reset,
     [switch] $NoBuild,
     [switch] $RealMiners,
+    # Run the server with custody on (balances, cash-outs, Kryptex, internet sharing) instead of non-custodial.
+    [switch] $Custodial,
     # Route every balance account's CPU to the simulated Kryptex Monero pool instead of MoneroOcean.
     [switch] $KryptexCpu,
-    # With -RealMiners: the Monero address the real pool credits (MoneroOcean refuses the dev default).
+    # With -RealMiners -Custodial: the Monero address the real pool credits (MoneroOcean refuses the dev default).
     [string] $Wallet,
+    # Otium's fee targets for the app, e.g. 'USDT:T...;XMR:4...' (OTIUM_FEE_WALLET). Without it the fee slice is mined
+    # for the user.
+    [string] $FeeWallet,
     # With -RealMiners: a Kryptex Pool account (e.g. krxABC123) to mine Pearl/Quantus into, instead of skipping them.
     [string] $KryptexAccount
 )
@@ -48,8 +57,8 @@ $poolUrl = 'http://localhost:5090'
 $serverUrl = 'http://localhost:5080'
 # Any valid mainnet address works here: the simulated pool never pays anyone. (Monero project's general fund.)
 $devPoolWallet = '44AFFq5kSiGBoZ4NMDwYtN18obc8AemS33DBLWs3H7otXft3XjrpDtQGv7SqSsaBYBb98uNbr2VBBEt7f2wfn3RVGQBEP3A'
-if ($RealMiners) {
-    if (-not $Wallet) { throw 'With -RealMiners, pass -Wallet <your Monero address>: MoneroOcean refuses the dev default (the Monero general fund).' }
+if ($RealMiners -and $Custodial) {
+    if (-not $Wallet) { throw 'With -RealMiners -Custodial, pass -Wallet <your Monero address>: MoneroOcean refuses the dev default (the Monero general fund).' }
     $devPoolWallet = $Wallet.Trim()
 }
 
@@ -104,6 +113,9 @@ try {
         ASPNETCORE_ENVIRONMENT                = 'Development'
         ASPNETCORE_URLS                       = $serverUrl
         OTIUM_POOL_API                        = $poolUrl
+        OTIUM_UNMINEABLE_API                  = "$poolUrl/unmineable"
+        Custody__Enabled                      = $Custodial ? 'true' : 'false'
+        Unmineable__OtiumTarget               = 'USDT:TB2xNFAjGarYPykmt1dZQz8hJb2Rhry4wJ'
         ConnectionStrings__Otium              = "Data Source=$(Join-Path $dev 'otium.db')"
         Earnings__PoolWallets__0              = $devPoolWallet
         Earnings__HoldPeriod                  = '00:01:00'
@@ -130,7 +142,10 @@ try {
     if ($RealMiners) {
         Set-DevEnv @{
             OTIUM_POOL_API                    = ''        # the real MoneroOcean
+            OTIUM_UNMINEABLE_API              = ''        # the real unMineable
             Bandwidth__Enabled                = 'false'
+            # unMineable's GPU coins are priced from the live WhatToMine feed, as in production.
+            Kryptex__WhatToMineBase           = 'https://whattomine.com/'
         }
         if ($KryptexAccount) {
             # Pearl/Quantus on the real Kryptex Pool and WhatToMine, as in production.
@@ -169,8 +184,10 @@ try {
             OTIUM_HOME         = $home_
             OTIUM_SERVER_URL   = $serverUrl
             OTIUM_POOL_API     = $RealMiners ? '' : $poolUrl
+            OTIUM_UNMINEABLE_API = $RealMiners ? '' : "$poolUrl/unmineable"
             OTIUM_SIMULATE     = $RealMiners ? '' : '1'
             OTIUM_DEVICE_SEED  = "dev-pc$n"
+            OTIUM_FEE_WALLET   = $FeeWallet
         }
         # Errors (e.g. a crash's stack trace) go to artifacts/dev/pcN.log.
         $apps += Start-Process $exe -PassThru -RedirectStandardError (Join-Path $dev "pc$n.log") -RedirectStandardOutput (Join-Path $dev "pc$n.out.log")

@@ -17,8 +17,11 @@ namespace Otium.Core.Providers;
 /// </summary>
 public static partial class MinerLifetime
 {
-    /// <summary>Process names of the miners Otium runs. SRBMiner's watchdog child is another SRBMiner-MULTI.</summary>
-    public static readonly IReadOnlyList<string> MinerProcessNames = ["xmrig", "SRBMiner-MULTI"];
+    /// <summary>
+    /// Process names of the engines Otium runs: the miners (SRBMiner's watchdog child is another SRBMiner-MULTI) and
+    /// the Mysterium node for internet sharing.
+    /// </summary>
+    public static readonly IReadOnlyList<string> MinerProcessNames = ["xmrig", "SRBMiner-MULTI", "myst"];
 
     private const int JobObjectExtendedLimitInformation = 9;
     private const uint JobObjectLimitKillOnJobClose = 0x2000;

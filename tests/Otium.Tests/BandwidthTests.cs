@@ -32,6 +32,7 @@ public sealed class BandwidthServerTests : IDisposable
         _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseSetting("ConnectionStrings:Otium", $"Data Source={_dbPath};Pooling=False");
+            builder.UseSetting("Custody:Enabled", "true");
             builder.UseSetting("DisableBackgroundJobs", "true");
             builder.UseSetting("Earnings:PoolWallets:0", TestAddresses.Generate());
             builder.UseSetting("Earnings:FeePercent", "10");

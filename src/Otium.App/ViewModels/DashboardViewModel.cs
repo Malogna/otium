@@ -43,6 +43,7 @@ public partial class DashboardViewModel : ViewModelBase
         Recalculate();
 
         host.Updates.Changed += () => Dispatcher.UIThread.Post(RefreshUpdate);
+        host.AntivirusChanged += () => Dispatcher.UIThread.Post(Recalculate);
         RefreshUpdate();
 
         _balanceTimer = new DispatcherTimer { Interval = BalanceRefresh };
@@ -54,6 +55,12 @@ public partial class DashboardViewModel : ViewModelBase
     public ObservableCollection<DeviceViewModel> Devices { get; } = [];
 
     public bool IsWindows => OperatingSystem.IsWindows();
+
+    /// <summary>The one-click fix only changes Microsoft Defender, so it's offered only while Defender is the antivirus.</summary>
+    public bool CanAllowAutomatically => IsWindows && (_host.AntivirusReport?.DefenderIsActive ?? true);
+
+    /// <summary>What the antivirus removed and when, and how to fix it when it isn't Defender.</summary>
+    [ObservableProperty] public partial string AntivirusDetail { get; set; } = "";
 
     [ObservableProperty] public partial string StateLabel { get; set; } = "Off";
     [ObservableProperty] public partial string StatusText { get; set; } = "";
@@ -114,6 +121,10 @@ public partial class DashboardViewModel : ViewModelBase
         IsBlocked = blocked is not null;
         // One exclusion covers every engine (CPU and GPU), so name their shared folder rather than the blocked one.
         BlockedPath = blocked is null ? "" : _host.Paths.EnginesDir;
+        if (IsBlocked)
+            _ = _host.RefreshAntivirusAsync();
+        AntivirusDetail = IsBlocked ? _host.AntivirusReport?.Describe(_host.Paths.EnginesDir) ?? "" : "";
+        OnPropertyChanged(nameof(CanAllowAutomatically));
 
         var withNumbers = Devices.Where(d => d.HasNumbers).Select(d => d.Snapshot).ToList();
         var any = withNumbers.Count > 0;
@@ -168,23 +179,19 @@ public partial class DashboardViewModel : ViewModelBase
 
     private async Task RefreshBalanceAsync()
     {
-        var wallet = _host.Settings.PayoutAddress;
-        if (string.IsNullOrWhiteSpace(wallet))
+        await _host.RefreshPoolBalanceAsync(force: false, CancellationToken.None);
+        if (_host.PoolBalance is not { } balance)
+        {
+            if (_host.PoolBalanceError is { } error)
+                PoolNote = error;
             return;
-        try
-        {
-            var balance = await _host.Provider.GetPayoutBalanceAsync(wallet, CancellationToken.None);
-            if (balance is null)
-                return;
-            PoolPending = Format.Xmr(balance.Pending);
-            PoolPaid = Format.Xmr(balance.Paid);
-            PoolNote = $"MoneroOcean pays your wallet automatically once pending reaches {Format.Xmr(balance.MinimumPayout)}. CPU and GPU earnings both land here.";
-            _poolDashboard = balance.DashboardUrl;
         }
-        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
-        {
-            PoolNote = "Couldn't reach the pool to check your balance. Retrying in a few minutes.";
-        }
+        PoolPending = Format.Coin(balance.Pending, balance.Coin);
+        PoolPaid = Format.Coin(balance.Paid, balance.Coin);
+        PoolNote = $"{balance.PoolName} pays your address once pending reaches {Format.Coin(balance.MinimumPayout, balance.Coin)}. CPU and GPU earnings both land here."
+                   + (balance.AutoPay ? "" : $" Auto pay is off for this address at {balance.PoolName}: turn it on there or it won't pay you by itself.")
+                   + (balance.Problems is { Count: > 0 } problems ? " " + string.Join(" ", problems) : "");
+        _poolDashboard = balance.DashboardUrl;
     }
 
     private void RefreshUpdate()
@@ -208,8 +215,10 @@ public partial class DashboardViewModel : ViewModelBase
     {
         if (_poolDashboard is not null)
             Launch.Open(_poolDashboard.ToString());
-        else if (!string.IsNullOrWhiteSpace(_host.Settings.PayoutAddress))
-            Launch.Open(Core.Pools.MoneroOceanClient.DashboardUrl(_host.Settings.PayoutAddress).ToString());
+        else if (Core.Wallets.PayoutTarget.ParseOrNull(_host.Settings.PayoutAddress) is { } target)
+            Launch.Open((target.Coin == Core.Wallets.PayoutCoins.Monero
+                ? Core.Pools.MoneroOceanClient.DashboardUrl(target.Address)
+                : Core.Pools.UnmineableClient.DashboardUrl(target)).ToString());
     }
 
     [RelayCommand]

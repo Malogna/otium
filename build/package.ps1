@@ -15,7 +15,8 @@
 
     Release settings baked into the app (parameters, or environment variables in CI):
       -ServerUrl     / OTIUM_RELEASE_SERVER_URL    the production Otium server, e.g. https://api.example.com
-      -FeeWallet     / OTIUM_RELEASE_FEE_WALLET    XMR address for the disclosed app fee (own-wallet mode)
+      -FeeWallet     / OTIUM_RELEASE_FEE_WALLET    fee payout targets, e.g. 'USDT:T...;XMR:4...' (one per pool)
+      -UnmineableReferral / OTIUM_RELEASE_UNMINEABLE_REFERRAL  Otium's unMineable referral code (default ztjq-jr7s)
       -HoneygainKey  / OTIUM_RELEASE_HONEYGAIN_KEY Honeygain SDK publisher key (internet sharing)
     Without a server URL the build talks to http://localhost:5080, which is only right for local testing.
     Release notes come from docs/release-notes/<version>.md when that file exists.
@@ -40,6 +41,7 @@ param(
     [string] $Configuration = 'Release',
     [string] $ServerUrl = $env:OTIUM_RELEASE_SERVER_URL,
     [string] $FeeWallet = $env:OTIUM_RELEASE_FEE_WALLET,
+    [string] $UnmineableReferral = $env:OTIUM_RELEASE_UNMINEABLE_REFERRAL,
     [string] $HoneygainKey = $env:OTIUM_RELEASE_HONEYGAIN_KEY,
     # Delete existing packages for these runtimes first. Needed to rebuild the same version locally;
     # leave it off for real releases so Velopack can build delta updates from the previous version.
@@ -71,7 +73,9 @@ function Get-HostOs { if ($IsMacOS) { 'osx' } elseif ($IsLinux) { 'linux' } else
 $releaseProps = @()
 if ($ServerUrl) { $releaseProps += "-p:OtiumServerUrl=$($ServerUrl.Trim())" }
 else { Write-Warning 'No -ServerUrl / OTIUM_RELEASE_SERVER_URL: this build talks to http://localhost:5080 (fine for testing, not for users).' }
-if ($FeeWallet) { $releaseProps += "-p:OtiumFeeWallet=$($FeeWallet.Trim())" }
+# MSBuild splits -p values on ";", so the list of fee targets is passed escaped.
+if ($FeeWallet) { $releaseProps += "-p:OtiumFeeWallet=$($FeeWallet.Trim().Replace(';', '%3B'))" }
+if ($UnmineableReferral) { $releaseProps += "-p:OtiumUnmineableReferral=$($UnmineableReferral.Trim())" }
 if ($HoneygainKey) { $releaseProps += "-p:OtiumHoneygainKey=$($HoneygainKey.Trim())" }
 $releaseNotes = Join-Path $root "docs/release-notes/$Version.md"
 

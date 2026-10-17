@@ -67,6 +67,7 @@ public partial class HomeViewModel : ViewModelBase
         host.AccountChanged += () => Dispatcher.UIThread.Post(Refresh);
         host.Updates.Changed += () => Dispatcher.UIThread.Post(Refresh);
         host.HistoryChanged += () => Dispatcher.UIThread.Post(Refresh);
+        host.AntivirusChanged += () => Dispatcher.UIThread.Post(Refresh);
 
         Refresh();
         _ = LoadEstimateAsync();
@@ -103,7 +104,11 @@ public partial class HomeViewModel : ViewModelBase
     [ObservableProperty] public partial string? AllowResult { get; set; }
     [ObservableProperty] public partial bool IsAllowing { get; set; }
 
-    public bool CanAllowAutomatically => WindowsSecurity.IsSupported;
+    /// <summary>The one-click fix only changes Microsoft Defender, so it's offered only while Defender is the antivirus.</summary>
+    public bool CanAllowAutomatically => WindowsSecurity.IsSupported && (_host.AntivirusReport?.DefenderIsActive ?? true);
+
+    /// <summary>What the antivirus removed and when, and how to fix it when it isn't Defender.</summary>
+    [ObservableProperty] public partial string AntivirusDetail { get; set; } = "";
     [ObservableProperty] public partial string ActivityHeadline { get; set; } = "";
 
     // ---------- projections & chart ----------
@@ -122,6 +127,9 @@ public partial class HomeViewModel : ViewModelBase
     [ObservableProperty] public partial double GoalPercent { get; set; }
     [ObservableProperty] public partial string GoalEta { get; set; } = "";
     [ObservableProperty] public partial bool IsCashingOut { get; set; }
+
+    /// <summary>Own-address payouts: something the user must fix at the pool (auto-pay off, failed payment…), or "".</summary>
+    [ObservableProperty] public partial string PoolWarning { get; set; } = "";
 
     // ---------- cash-out history ----------
 
@@ -170,7 +178,7 @@ public partial class HomeViewModel : ViewModelBase
         {
             balanceValue = (decimal)snapshots.Sum(s => s.TotalUserUsd);
             BalanceCaption = "Earned so far · paid straight to your wallet";
-            PendingText = "";
+            PendingText = _host.PoolBalance is { Paid: > 0 } paid ? $"{Format.Coin(paid.Paid, paid.Coin)} paid to you so far" : "";
         }
         _balance.AnimateTo((double)balanceValue);
 
@@ -206,11 +214,7 @@ public partial class HomeViewModel : ViewModelBase
         // Cash-out goal
         CanCashOut = IsBalanceMode && account.AvailableUsd >= minimum && account.AvailableUsd > 0;
         if (!IsBalanceMode)
-        {
-            GoalText = "The pool pays your wallet automatically.";
-            GoalPercent = 100;
-            GoalEta = "";
-        }
+            RefreshPoolGoal(rate);
         else if (CanCashOut)
         {
             GoalText = "You can cash out now";
@@ -235,6 +239,10 @@ public partial class HomeViewModel : ViewModelBase
         ToggleText = settings.EarningEnabled ? "Pause" : "Start";
         var states = snapshots.Select(s => s.State).ToList();
         NeedsAntivirusFix = snapshots.Any(s => s.EngineBlocked);
+        if (NeedsAntivirusFix)
+            _ = _host.RefreshAntivirusAsync();
+        AntivirusDetail = NeedsAntivirusFix ? _host.AntivirusReport?.Describe(_host.Paths.EnginesDir) ?? "" : "";
+        OnPropertyChanged(nameof(CanAllowAutomatically));
         IsEarning = states.Contains(EngineState.Earning);
         IsWaiting = !IsEarning && settings.EarningEnabled && states.Contains(EngineState.WaitingForIdle);
         IsProblem = NeedsAntivirusFix || (!IsEarning && states.Contains(EngineState.Error));
@@ -257,12 +265,62 @@ public partial class HomeViewModel : ViewModelBase
         AccountLine = account.Email is null
             ? ""
             : account.DeviceCount > 1 ? $"Signed in as {account.Email} · {account.DeviceCount} computers" : $"Signed in as {account.Email}";
-        var referralPercent = _host.Account?.Balance.ReferralPercent ?? 0;
-        InviteTitle = referralPercent > 0 ? $"Get {referralPercent:0.#}% of everything your friends earn" : "Invite friends";
+        // Balance accounts get a share of friends' credited earnings; own-address users get half of Otium's fee, mined
+        // to their address, which is that share of their friends' mining time.
+        var referralPercent = IsBalanceMode
+            ? (double)(_host.Account?.Balance.ReferralPercent ?? 0)
+            : Core.Fees.FeePolicy.Default.FeePercent * Core.Fees.FeePolicy.Default.ReferrerShareOfFee;
+        InviteTitle = referralPercent <= 0 ? "Invite friends"
+            : IsBalanceMode ? $"Get {referralPercent:0.#}% of everything your friends earn"
+            : $"Get {referralPercent:0.#}% of your friends' mining time, paid to your wallet";
         InviteCode = settings.Referral.MyCode ?? "";
         HasInviteCode = InviteCode.Length > 0;
         UpdateReady = _host.Updates.ReadyVersion is not null;
         UpdateText = UpdateReady ? $"Otium {_host.Updates.ReadyVersion} is ready." : "";
+    }
+
+    /// <summary>
+    /// Own-address payouts: how far the pool balance is from its payout threshold, and anything that would stop the
+    /// pool from paying (unMineable's per-address auto-pay switch, failed payments, paused networks).
+    /// </summary>
+    private void RefreshPoolGoal(double usdPerDay)
+    {
+        var pool = _host.PoolBalance;
+        PoolWarning = "";
+        GoalEta = "";
+        if (_host.OwnPayoutTarget is null)
+        {
+            GoalText = "Add your payout address in Settings to start earning.";
+            GoalPercent = 0;
+            return;
+        }
+        if (pool is null)
+        {
+            GoalText = _host.PoolBalanceError ?? "Checking your balance at the pool…";
+            GoalPercent = 0;
+            return;
+        }
+
+        GoalPercent = pool.MinimumPayout > 0 ? Math.Clamp(pool.Pending / pool.MinimumPayout * 100, 0, 100) : 0;
+        GoalText = $"{Format.Coin(pool.Pending, pool.Coin)} at {pool.PoolName} · paid out at {Format.Coin(pool.MinimumPayout, pool.Coin)}";
+        if (pool.Pending >= pool.MinimumPayout && pool.MinimumPayout > 0)
+            GoalEta = pool.AutoPay ? "paid out at the next payout" : "ready: request it at the pool";
+        else if (pool.Coin == "USDT" && usdPerDay > 0)
+            // USDT is worth about a dollar, so the dollar rate tells how long the rest takes.
+            GoalEta = $"about {Friendly(TimeSpan.FromDays((pool.MinimumPayout - pool.Pending) / usdPerDay))} at this pace";
+
+        var warnings = new List<string>();
+        if (!pool.AutoPay)
+            warnings.Add($"Auto pay is off for your address at {pool.PoolName}, so it won't pay you by itself. Turn on \"Auto pay\" on your address page.");
+        warnings.AddRange(pool.Problems ?? []);
+        PoolWarning = string.Join(" ", warnings);
+    }
+
+    [RelayCommand]
+    private void OpenPoolPage()
+    {
+        if (_host.PoolBalance?.DashboardUrl is { } url)
+            Launch.Open(url.ToString());
     }
 
     private void RefreshCashouts()

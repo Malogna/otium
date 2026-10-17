@@ -25,6 +25,8 @@ public sealed class XmrigProvider : IComputeProvider
     private readonly IMoneroPoolApi _pool;
     private readonly string _engineDir;
     private readonly PoolEndpoint _endpoint;
+    private readonly IUnmineableApi _unmineable;
+    private readonly string? _referralCode;
     private readonly XmrigAsset? _asset;
     private readonly EngineInstaller _installer;
     private readonly ConcurrentQueue<string> _log = new();
@@ -33,10 +35,19 @@ public sealed class XmrigProvider : IComputeProvider
     private string _accessToken = "";
     private DateTimeOffset _startedAt;
 
-    public XmrigProvider(HttpClient http, IMoneroPoolApi pool, string enginesRoot, PoolEndpoint? endpoint = null)
+    /// <param name="referralCode">Otium's unMineable referral code, added to unMineable logins.</param>
+    public XmrigProvider(
+        HttpClient http,
+        IMoneroPoolApi pool,
+        string enginesRoot,
+        PoolEndpoint? endpoint = null,
+        IUnmineableApi? unmineable = null,
+        string? referralCode = null)
     {
         _http = http;
         _pool = pool;
+        _unmineable = unmineable ?? new UnmineableClient(http);
+        _referralCode = referralCode;
         _engineDir = Path.Combine(enginesRoot, $"xmrig-{XmrigRelease.Version}");
         _endpoint = endpoint ?? PoolEndpoint.MoneroOcean;
         _asset = XmrigRelease.ForCurrentPlatform();
@@ -63,7 +74,7 @@ public sealed class XmrigProvider : IComputeProvider
     public IReadOnlyList<string> RecentLog => _log.ToArray();
 
     public string? ValidatePayoutAddress(string address) =>
-        MoneroAddress.TryValidate(address, out _, out var error) ? null : error;
+        PayoutTarget.TryParse(address, out _, out var error) ? null : error;
 
     public Task InstallAsync(IProgress<InstallProgress>? progress, CancellationToken ct)
     {
@@ -81,7 +92,7 @@ public sealed class XmrigProvider : IComputeProvider
 
         _httpPort = FreeLoopbackPort();
         _accessToken = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(16));
-        await File.WriteAllTextAsync(ConfigPath, XmrigConfig.Build(options, _endpoint, _httpPort, _accessToken), ct);
+        await File.WriteAllTextAsync(ConfigPath, XmrigConfig.Build(options, _endpoint, _httpPort, _accessToken, _referralCode), ct);
 
         var startInfo = new ProcessStartInfo(binary)
         {
@@ -184,6 +195,10 @@ public sealed class XmrigProvider : IComputeProvider
 
     public async Task<PayoutBalance?> GetPayoutBalanceAsync(string walletAddress, CancellationToken ct)
     {
+        if (PayoutRouting.PoolFor(walletAddress) == PayoutPool.Unmineable)
+            return await UnmineableClient.GetPayoutBalanceAsync(_unmineable, PayoutTarget.ParseOrNull(walletAddress)!, ct);
+
+        walletAddress = PayoutRouting.MoneroOceanWallet(walletAddress);
         var stats = await _pool.GetMinerStatsAsync(walletAddress, ct);
         return stats is null
             ? null
