@@ -46,7 +46,8 @@ public static class SrbMinerRelease
 /// <param name="DevFeePercent">SRBMiner's developer fee for this algorithm.</param>
 /// <param name="MinMemoryGb">Approximate VRAM needed (DAG sizes grow over time); cards below it are skipped.</param>
 /// <param name="DefaultTier">Tier used when the server's policy can't be fetched (see <see cref="GpuTiers"/>).</param>
-/// <param name="DefaultRoute">Pool kind used without a policy; Kryptex coins need the policy's route, so they wait for it.</param>
+/// <param name="DefaultRoute">Pool kind used without a policy; Kryptex and unMineable coins need the policy's route and
+/// price, so they wait for it.</param>
 public sealed record GpuAlgorithm(
     string PoolName,
     string MinerName,
@@ -62,8 +63,9 @@ public sealed record GpuAlgorithm(
 
 /// <summary>
 /// GPU algorithms SRBMiner can mine. The server's GPU policy decides which are mined and where; as of October 2026
-/// the MoneroOcean algorithms lose money at normal electricity prices, so they only run on free power, while Pearl
-/// and Quantus are mined on Kryptex Pool (auto-exchanged) for balance accounts.
+/// the MoneroOcean algorithms lose money at normal electricity prices, so they only run on free power. Pearl, Xelis
+/// and FishHash (Iron Fish) are mined on unMineable, paid to the user's own address in their chosen coin; balance
+/// accounts mine Pearl and Quantus on Kryptex Pool instead. Dev fees are SRBMiner's (README, October 2026).
 /// </summary>
 public static class GpuAlgorithms
 {
@@ -71,8 +73,10 @@ public static class GpuAlgorithms
 
     public static readonly IReadOnlyList<GpuAlgorithm> All =
     [
-        new("pearlhash", "pearlhash", 2.0, 8, NvidiaAmd, GpuTiers.Primary, GpuRoutes.Kryptex),
+        new("pearlhash", "pearlhash", 2.0, 8, NvidiaAmd, GpuTiers.Primary, GpuRoutes.Unmineable),
         new("quantus", "quantus", 2.0, 2, NvidiaAmd, GpuTiers.Primary, GpuRoutes.Kryptex),
+        new("xelishash", "xelishashv3", 1.5, 2, NvidiaAmd, GpuTiers.Primary, GpuRoutes.Unmineable),
+        new("fishhash", "fishhash", 0.85, 4, NvidiaAmd, GpuTiers.FreePowerOnly, GpuRoutes.Unmineable),
         new("kawpow", "kawpow", 0.85, 6, NvidiaAmd),
         new("autolykos2", "autolykos2", 1.0, 4, NvidiaAmd),
         new("etchash", "etchash", 0.65, 4, NvidiaAmd),

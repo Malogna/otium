@@ -2,8 +2,9 @@
 
 *Latin for "idle time".* Otium is a desktop app for Windows, macOS and Linux that brings the different ways a computer can earn
 while nobody is using it (CPU and GPU mining, internet sharing, and more to come) into one place, set up and switched
-automatically, as close to one click as possible. It's for people with some tech knowledge: users cash out in crypto
-(BTC, ETH, BNB or SOL) to their own wallet.
+automatically, as close to one click as possible. It's for people with some tech knowledge: the pools pay each user
+directly to their own wallet, in the coin they choose (USDT on TRON, BTC, LTC, BNB, SOL, TRX, ETH or Monero). Otium
+never holds anyone's money.
 
 | First launch | What this PC could earn | Overview | Advanced |
 |---|---|---|---|
@@ -13,22 +14,26 @@ automatically, as close to one click as possible. It's for people with some tech
 
 ## For users: one button
 
-1. Install and open Otium. Three short screens explain it, show what this computer could earn per month (from its
-   processor and graphics card, today's payouts and your electricity price), and summarise what will happen.
-2. Press **Start earning**. No settings are needed to start; you only need a wallet address when you cash out.
-3. Otium starts when you sign in and earns only while you're away from the computer, after 3 minutes without keyboard or mouse input. It pauses the moment you come back, and also when electricity would cost more than it earns (the price is estimated from your country; in Norway, Sweden, Denmark and Finland it follows live hourly spot prices, from hvakosterstrommen.no, elprisetjustnu.se, elprisenligenu.dk and sahkotin.fi).
-4. Your balance grows in dollars. Add your email when Otium asks; that keeps the balance safe if you reinstall, lets you
-   sign in on your other PCs (they all earn into one balance), and is needed before the first cash-out.
-5. Press **Cash out**, pick BTC, ETH, BNB or SOL and paste your wallet address (checked as you type, including the
-   network). The overview lists every cash-out with its status in plain words (sending, swapping, being checked, paid,
-   returned to balance) and a link to the transaction, and an email receipt arrives when it's paid.
-6. Share your invite code. Friends mine fee-free for 30 days, and you get 5% of everything they earn. The Invites page
+1. Install and open Otium. Four short screens explain it, show what this computer could earn per month (from its
+   processor and graphics card, today's payouts and your electricity price), ask where to pay you, and summarise what
+   will happen.
+2. **Where should we pay you?** Pick a coin (USDT on TRON by default) and paste your own address for it. It's checked as
+   you type, including the network, and the screen says which network to pick in your wallet and when the pool pays
+   (unMineable: daily once you reach its minimum, e.g. 1.5 USDT). US users are paid in Monero by MoneroOcean, because
+   unMineable doesn't serve US residents.
+3. Press **Start earning**. Otium starts when you sign in and earns only while you're away from the computer, after 3 minutes without keyboard or mouse input. It pauses the moment you come back, and also when electricity would cost more than it earns (the price is estimated from your country; in Norway, Sweden, Denmark and Finland it follows live hourly spot prices, from hvakosterstrommen.no, elprisetjustnu.se, elprisenligenu.dk and sahkotin.fi).
+4. The pool pays your address by itself. The overview shows how far you are from its next payout ("0.84 USDT at
+   unMineable · paid out at 1.5 USDT", with an estimate of when) and warns you if the pool won't pay on its own, for
+   example when unMineable's "Auto pay" switch is off for your address (new TRC-20 addresses start with it off), with a
+   link to your address page there.
+5. Share your invite code. Friends mine fee-free for 30 days, and part of Otium's fee is mined for you. The Invites page
    has ready-made messages (short, explained, for gamers) that you can edit, one-click sharing to WhatsApp, Discord and
    email, and a monthly leaderboard of top inviters, counted by friends who actually started earning.
-7. Optionally, earn from your internet connection too: the overview suggests it once, explains in plain words what
-   sharing unused bandwidth means, and turns it on only when you agree. It pays into the same balance.
+6. Optionally, earn from your internet connection too: the overview suggests it once, explains in plain words what
+   sharing unused bandwidth means, and turns it on only when you agree. A Mysterium node then pays you in MYST, straight
+   to your own Polygon address; Otium pays its one-time registration.
 
-The overview shows, at a glance: the balance and progress to the first cash-out (with an ETA), what each device is
+The overview shows, at a glance: what you've earned and progress to the pool's next payout (with an ETA), what each device is
 doing right now in plain words ("Mining Monero", "Waiting for you to step away · starts in 1:42"), what you can expect
 today, this week and this month, and an hour-by-hour chart of the last 24 hours. Projections use how many hours a day
 this computer actually earns once there is a day of history.
@@ -37,23 +42,59 @@ Everything technical lives under **Advanced**:
 - Details per device, including GPU algorithm and speed, power draw, and profit per day.
 - CPU usage, the idle delay, your electricity price, and switching devices on or off.
 - Internet sharing: on or off, only while away, and a daily data limit.
-- Getting paid by the pool straight to your own Monero wallet instead of an Otium balance.
+- Your payout coin and address.
 - Updates.
 
 ## How it works
 
 ```
- desktop app (Avalonia, .NET 10)                         Otium server (ASP.NET Core + SQLite)
- ┌──────────────────────────────┐   register / balance   ┌─────────────────────────────────────┐
- │ CPU: XMRig (RandomX)         │ ─────────────────────▶ │ accounts, worker ids, pool addresses │
- │ GPU: SRBMiner, best algorithm│ ◀───────────────────── │ ledger (USD), referrals              │
- │ idle detection, power meter  │   cash-out requests    │ earnings creditor  (every 10 min)    │
- └──────────────┬───────────────┘                        │ cash-out processor (every minute)    │
-                │ hashes, worker = account id            └───────┬──────────────────┬───────────┘
-                ▼                                                │ pool stats       │ payouts
-        MoneroOcean pool  ── pays XMR ──▶ operator wallet ◀──────┘                  ▼
-                                       Bitcoin treasury (bitcoind) ── BTC, or swapped via THORChain ──▶ users' wallets
+ desktop app (Avalonia, .NET 10)                              Otium server (ASP.NET Core + SQLite)
+ ┌────────────────────────────────┐   register, invites       ┌──────────────────────────────────┐
+ │ CPU: XMRig (RandomX)           │ ────────────────────────▶ │ accounts, invite codes, referrals │
+ │ GPU: SRBMiner, best algorithm  │ ◀──────────────────────── │ GPU policy (which coins, where)   │
+ │ fee/referral time slices       │   GPU policy, referrer    └──────────────────────────────────┘
+ └───────────────┬────────────────┘
+                 │ login "USDT:T….worker#ztjq-jr7s"    (Monero: wallet + worker on MoneroOcean)
+                 ▼
+     unMineable (or MoneroOcean) ── pays the coin straight to ──▶ the user's own address
 ```
+
+Otium is **non-custodial by default**: it never receives or holds users' money, so there is no balance, ledger,
+treasury or cash-out queue to run. The server only keeps accounts, invite codes and referrals, and publishes the GPU
+policy.
+
+**Mining**
+- The **payout coin decides the pool.** Monero mines on MoneroOcean to the bare address (worker name as password).
+  Every other coin mines on **unMineable**, which mines and converts, and pays the address in its own coin once a day
+  after it reaches the coin's minimum. The login is `COIN:address.worker#ztjq-jr7s`, and unMineable picks the network
+  from the address (a TRON address gets USDT on TRC-20). `ztjq-jr7s` is Otium's unMineable referral code: users pay
+  unMineable 0.75% instead of 1%, and unMineable pays Otium 0.25–0.50% of their rewards.
+- CPU: XMRig on `rx.unmineable.com:443` with TLS (unMineable's only RandomX port that works). GPU: SRBMiner on the
+  routes in the server's GPU policy: unMineable for **Pearl, Xelis (`xelishashv3`) and FishHash**, with `--tls true`,
+  priced from WhatToMine minus unMineable's 0.75%; MoneroOcean's algorithms for Monero users, still "free power only".
+  Without the server's policy, unMineable users' GPUs wait (unMineable's prices come from the server) and Monero
+  users fall back to MoneroOcean's own rates.
+- **Fee and referrals are mining time.** 2% of mining time is mined to Otium's own address on the user's pool (one
+  slice of about 29 minutes per 24 hours of mining), and for a year half of it goes to whoever invited the user, mined
+  to the referrer's own address when the same pool pays it. New users with an invite code get 30 fee-free days; each
+  verified friend gives the referrer another 30 (capped at 90). The miner keeps its pool and algorithm; only the login
+  changes for a slice. Builds set Otium's fee targets with `-FeeWallet 'USDT:T…;XMR:4…'` (one per pool); without one,
+  the slice is mined for the user.
+- **Referral checks.** An invited friend counts as verified once their pool shows real mining: MoneroOcean hashes for
+  Monero addresses, or unMineable having rewarded or paid their address. The same address typed differently (case,
+  with or without the coin) can't invite itself.
+- The **kill switch** still works: `GpuPolicy:Disabled` turns an algorithm off for every app at the next refresh, and a
+  failed, lagging or more than 2-hour-old feed disables a coin automatically.
+
+Spike results behind these choices (logins, TLS ports, the referral code on workers, auto-pay, the worker API) are in
+[docs/non-custodial-plan.md](docs/non-custodial-plan.md).
+
+### Custodial mode (`Custody:Enabled`, off by default)
+
+The original design is still in the code and tested: the server holds a USD balance per account, mining goes to the
+operator's pools, and users cash out from a Bitcoin treasury. It only runs with `Custody:Enabled=true`; otherwise its
+background jobs don't start and its routes (`/cashouts`, `/bandwidth`, admin cash-outs) return 404. Holding users'
+earnings has legal consequences (see [Before launch](#before-launch)).
 
 **Mining**
 - The CPU runs XMRig (RandomX). For balance accounts the **server decides the pool** and sends it with the account
@@ -62,7 +103,7 @@ Everything technical lives under **Advanced**:
   `CpuMining:KryptexPercent` moves a stable share of accounts (a canary, by a hash of the worker id) and 100 moves
   everyone; raising it only ever adds accounts. Kryptex CPU work is credited at the same Monero network value as
   MoneroOcean work (block reward ÷ difficulty × price, minus the pool fee), so a move doesn't change what a user earns.
-  Own-wallet users always mine to their own address on MoneroOcean.
+  Users paid at their own address mine as described above.
 - The GPU runs SRBMiner on whichever algorithm pays most after miner and pool fees and measured electricity. Which
   algorithms are allowed, on which pool and at what rate comes from the server's **GPU policy**
   (`GET /api/v1/gpu-policy`, `src/Otium.Server/Gpu`), rebuilt every 10 minutes from live feeds:
@@ -140,7 +181,6 @@ Everything technical lives under **Advanced**:
   coin and network, masked address, dates, the cash-out id and the transaction with a block-explorer link. A mail
   failure is logged and never affects the payout.
 
-**Own-wallet mode** (Advanced) works as before: the pool pays the user's own XMR wallet directly, a 2% fee is mined in short time slices, and referral rewards are mined to the referrer's wallet.
 
 ## Running the server
 
@@ -152,11 +192,15 @@ Configure `src/Otium.Server/appsettings.json` (or environment variables such as 
 | Setting | Purpose |
 |---|---|
 | `ConnectionStrings:Otium` | SQLite database path |
-| `Earnings:PoolWallets` | Operator XMR addresses (subaddresses of one wallet). Balance mode is off until at least one is set or the wallet RPC is configured. |
+| `Custody:Enabled` | Off (default): non-custodial, accounts and referrals only. On: balances, crediting, cash-outs, Kryptex and internet sharing; the settings marked "custodial" below apply only then |
+| `Unmineable:OtiumTarget` | Otium's fee address on unMineable (e.g. `USDT:T…`), shown with its fee and referral earnings on the admin dashboard |
+| `Unmineable:Enabled`, `FeePercent`, `Algorithms:{algorithm}` | unMineable GPU routes in the policy (default on, 0.75%; Pearl, Xelis and FishHash with their WhatToMine ids and hosts) |
+| `Referral:VerifyUnmineableByRewards` | Count an invited friend paid by unMineable as verified once unMineable has rewarded their address (default on) |
+| `Earnings:PoolWallets` | Custodial: operator XMR addresses (subaddresses of one wallet). Balance mode is off until at least one is set or the wallet RPC is configured. |
 | `Earnings:FeePercent`, `ReferralPercent`, `HoldPeriod` | Business terms; defaults 10%, 5%, 48 h |
-| `Cashouts:Methods`, `MinUsd:{method}` | Payout methods offered (default `btc`, `eth`, `bnb`, `sol`) and their minimums |
+| `Cashouts:Methods`, `MinUsd:{method}` | Custodial: payout methods offered (default `btc`, `eth`, `bnb`, `sol`) and their minimums |
 | `Cashouts:*` | Automatic-approval limit, daily budget, minimum account age |
-| `BitcoinWallet:RpcUrl`, `Username`, `Password`, `Wallet`, `ConfTarget` | The Bitcoin treasury: bitcoind's JSON-RPC (pruned is fine) on localhost or a private network. Crypto payouts are paused until it's set. |
+| `BitcoinWallet:RpcUrl`, `Username`, `Password`, `Wallet`, `ConfTarget` | Custodial: the Bitcoin treasury: bitcoind's JSON-RPC (pruned is fine) on localhost or a private network. Crypto payouts are paused until it's set. |
 | `Thorchain:ApiBase` | THORNode API used for prices, quotes and swap status (default: Liquify's public gateway) |
 | `Sanctions:ListUrls:{list}`, `RefreshInterval` | Sanctioned-address lists (btc, evm, bsc, sol) and how often to reload them |
 | `PayPal:*`, `MoneroWallet:*` | Older payout methods, off by default (see above). The Monero wallet RPC is still used to create pool addresses. |
@@ -164,12 +208,14 @@ Configure `src/Otium.Server/appsettings.json` (or environment variables such as 
 | `ReverseProxy:Enabled`, `KnownProxies`, `KnownNetworks` | Behind an HTTPS proxy: take client IPs from `X-Forwarded-For`, trusted only from these proxy addresses or CIDR networks (localhost if neither is set) |
 | `Email:SmtpHost`, `Port`, `Username`, `Password`, `From` | SMTP service for sign-in codes and cash-out receipts (Postmark, SES, Mailgun, ...) |
 | `Referral:PublicBaseUrl`, `DownloadUrl` | Invite links and the landing page |
-| `Kryptex:Enabled`, `Account` | GPU coins on Kryptex Pool (off by default). Set up auto-exchange on that Kryptex account. |
+| `Kryptex:Enabled`, `Account` | Custodial: GPU coins on Kryptex Pool (off by default). Set up auto-exchange on that Kryptex account. |
 | `Kryptex:Coins:{algorithm}` | Kryptex coin slug, WhatToMine id and stratum host per algorithm (defaults for `pearlhash` and `quantus`) |
 | `Kryptex:Cpu:Coin`, `Host`, `Port`, `Tls` | Kryptex's Monero pool for CPUs (default `xmr.kryptex.network:8029`, TLS) |
 | `CpuMining:KryptexPercent` | Share of balance accounts (0–100) whose CPU mines on Kryptex instead of MoneroOcean; default 0 |
 | `GpuPolicy:Disabled`, `Tiers`, `RefreshInterval` | Kill switch, tier overrides and refresh interval for the GPU policy |
-| `Bandwidth:Enabled`, `PartnerName` | Internet sharing (off by default); the partner's name appears on the consent screen |
+| `Mysterium:Enabled`, `SponsorPrivateKey`, `PolygonRpcUrl` | Internet sharing through Mysterium nodes: Otium pays each new node's registration from this Polygon wallet (a secret; keep only a few days of MYST and some POL in it) |
+| `Mysterium:AmountMyst`, `DailyBudgetMyst`, `MaxPerAccount`, `MaxPerIpPerDay` | Fee sent per node (default 0.15 MYST) and the limits on sponsoring (15 MYST a day, 5 per account, 3 per connection a day) |
+| `Bandwidth:Enabled`, `PartnerName` | Custodial: internet sharing through Honeygain (off by default); the partner's name appears on the consent screen |
 | `Bandwidth:UsdPerSharingHour`, `UsdPerGb` | Gross rates credited from usage reports, before the fee. Set them from the partner agreement (Honeygain pays per active device, so per hour). |
 | `Bandwidth:DailyLimitBytes`, `MaxBytesPerSecond`, `MaxReportPeriod`, `SharedConnectionWindow` | Limits on self-reported usage: daily cap, speed cap, longest report, one paid computer per connection |
 
@@ -179,10 +225,12 @@ Run it locally:
 dotnet run --project src/Otium.Server
 ```
 
-**Operator dashboard:** open `/admin` on the server (e.g. `https://your-server/admin`) and enter the `Admin:Token`. It shows
-what was credited against what was paid out and what is still owed, a MoneroOcean check (pool earned vs. credited), and
-the cash-out review queue with Approve, Reject (the note is shown to the user) and Mark paid buttons, plus the other
-cash-out statuses. The page holds no data itself: the token stays in that browser tab's session storage and is sent only
+**Operator dashboard:** open `/admin` on the server (e.g. `https://your-server/admin`) and enter the `Admin:Token`.
+Non-custodial, it shows what Otium itself earns on unMineable (fee slices and referral rewards on
+`Unmineable:OtiumTarget`, its auto-pay state and problems, how many miners use the referral code), accounts by payout
+coin, computers seen this week, and invites and verified friends. Custodial, it shows what was credited against what
+was paid out and what is still owed, a MoneroOcean check (pool earned vs. credited), and the cash-out review queue with
+Approve, Reject (the note is shown to the user) and Mark paid buttons, plus the other cash-out statuses. The page holds no data itself: the token stays in that browser tab's session storage and is sent only
 as a header to the API below, under a strict content security policy. It's served only when `Admin:Token` is set, and
 the admin API is rate-limited per IP. Serve it over HTTPS only.
 
@@ -190,7 +238,7 @@ Operator endpoints:
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /admin/summary` | Credited vs. pool-earned totals, money owed to users (balances and unpaid cash-outs), pool address load, bandwidth credited (GB and USD) to check against the partner's statements. Ledger totals still load when the pool API is down (`poolError`). |
+| `GET /admin/summary` | Non-custodial: `custodial: false`, Otium's unMineable earnings, accounts by coin, referrals. Custodial: credited vs. pool-earned totals, money owed to users (balances and unpaid cash-outs), pool address load, bandwidth credited (GB and USD) to check against the partner's statements. Ledger totals still load when the pool API is down (`poolError`). |
 | `GET /admin/cashouts?status=review` | The review queue (or `queued`, `sending`, `paid`, `failed`), with the account's email, age, lifetime earnings, payouts and how many other accounts used the destination |
 | `POST /admin/cashouts/{id}/approve` | Release a reviewed cash-out for automatic sending |
 | `POST /admin/cashouts/{id}/reject` | Reject it; the amount goes back to the balance (`{"note": "..."}`) |
@@ -200,9 +248,42 @@ The app finds the server through `AppIdentity.DefaultServerUrl`, which is overri
 
 ### Internet sharing (bandwidth)
 
-Users can also opt in to sharing unused internet bandwidth. It runs inside Otium through the
-[Honeygain SDK](https://developers.honeygain.com/docs/), with Otium as the publisher: Honeygain pays Otium per
-active device, and the server credits each user's balance from their computer's usage reports.
+Users can also opt in to sharing unused internet bandwidth. Non-custodial, this runs a **Mysterium Network node**
+(the open-source `myst` node, `src/Otium.Providers.Mysterium`): Mysterium's business customers pay the node in MYST,
+which settles **straight to the user's own Polygon address** at 5 MYST (Mysterium keeps 20%). Otium takes nothing from
+it. It was the only bandwidth network found (October 2026) that pays the user's own wallet in a liquid coin with no
+per-user sign-up; see `research_notes/Non-custodial bandwidth/`.
+
+- **Consent first.** Sharing is off until the user reads Otium's plain-language explanation (business services only,
+  what websites see, MYST paid to their own address, Mysterium's terms) and presses "I agree". Only then does the node
+  record agreement to Mysterium's provider terms. Users can share only while away and set a daily GB limit.
+- **The node** is the pinned `myst` 1.39.7 release, checked against GitHub's SHA-256 (its executables aren't signed).
+  It runs headless (`--ui.enable=false`, local API on 127.0.0.1 with a per-run password, `--usermode daemon`), dies
+  with Otium, and keeps its identity in `engines/myst-data`. Only the B2B services run: `scraping`, `data_transfer`
+  and `dvpn` (Mysterium's business VPN), never the anonymous public exit. Windows x64 only for now.
+- **One administrator prompt.** The node needs Mysterium's network service ("MysteriumVPN Supervisor"), installed once
+  per computer with a Windows UAC prompt. If the user declines, Otium asks again only when they turn sharing off and on.
+- **Registration, paid by Otium.** Every new node needs a one-time on-chain registration (0.13 MYST, about a cent, in
+  October 2026). The app sends the node's identity and channel address to `POST /api/v1/devices/{id}/mysterium/sponsor`;
+  the server sends `Mysterium:AmountMyst` (default 0.15) from Otium's own Polygon wallet to the channel address, and the
+  node registers with the user's address as beneficiary (Mysterium's transactor pays the gas). Each identity and each
+  computer is paid for once, at most `MaxPerAccount` per account and `MaxPerIpPerDay` per connection, within
+  `DailyBudgetMyst`. The money is Otium's, so this keeps Otium non-custodial.
+- **Payout address.** A user paid in an 0x coin (BNB, ETH) already has a Polygon address; anyone else enters one on
+  the consent screen.
+- **To ship it:** set `Mysterium:Enabled=true` and `Mysterium:SponsorPrivateKey` (a secret), and keep a few days' MYST
+  and a little POL for gas in that wallet; the admin dashboard shows its balance and what was spent. Without them the
+  option stays hidden. Mysterium also has a partner program with free registrations; worth asking about at scale.
+- **Still to verify on a real run:** a funded registration end to end (fee sent, node registered, B2B sessions, first
+  settlement to a user's address). The pieces were tried separately in the spike (`docs/non-custodial-plan.md`).
+- **AV and code signing.** Proxyware is a common antivirus "potentially unwanted" category. Keep the sharing state
+  visible in the app, and sign the Windows build with an EV certificate.
+
+**Custodial servers** can instead use the [Honeygain SDK](https://developers.honeygain.com/docs/), with Otium as the
+publisher: Honeygain pays Otium per active device, and the server credits each user's balance from their computer's
+usage reports. Builds with a Honeygain key (`OTIUM_HONEYGAIN_KEY`) use it instead of Mysterium.
+
+Honeygain details:
 
 - **Consent first.** Sharing is off until the user reads Otium's plain-language explanation and presses "I agree"
   (on the overview or in Advanced). Consent is recorded, passed to the SDK (`hgsdk_opt_in`) and withdrawn when they
@@ -222,8 +303,6 @@ active device, and the server credits each user's balance from their computer's 
   - that rewarding users in cash for opting in is allowed,
   - whether they can supply per-device reports (the SDK's device id is available as `PartnerDeviceId`),
   - how they treat a connection that also runs their own consumer app.
-- **AV and code signing.** Proxyware is a common antivirus "potentially unwanted" category. Keep the sharing state
-  visible in the app, and sign the Windows build with an EV certificate.
 
 ## Your data: what Otium stores, export and deletion
 
@@ -234,15 +313,15 @@ The draft privacy policy is in [docs/privacy.md](docs/privacy.md) and **still ne
 
 | Data | Why |
 |---|---|
-| Account: random id, pool worker id, invite code, email (if added), own XMR wallet (own-wallet mode), who invited it and when, fee-free period | Crediting mining to the right person, sign-in, referrals |
+| Account: random id, pool worker id, invite code, email (if added), payout address with its coin, who invited it and when, fee-free period | Referrals (mining the referrer's share to their address, checking friends with their pool), sign-in; custodial: crediting mining |
 | Computers: random device id (a hash of the machine id), a SHA-256 hash of its secret, first and last seen | Authenticating each computer |
-| Ledger: every earning, referral reward, cash-out, refund and adjustment, in micro-dollars, with dates and a reference to the pool record | The balance, and bookkeeping |
-| Cash-outs: method, destination (PayPal email or XMR address), amount, status, provider reference, review notes | Paying out, fraud checks, bookkeeping |
-| Bandwidth reports: computer, public IP address, period, bytes, credited amount | Paying for internet sharing; one paid computer per connection |
+| Custodial only. Ledger: every earning, referral reward, cash-out, refund and adjustment, in micro-dollars, with dates and a reference to the pool record | The balance, and bookkeeping |
+| Custodial only. Cash-outs: method, destination address, amount, status, provider reference, review notes | Paying out, fraud checks, bookkeeping |
+| Custodial only. Bandwidth reports: computer, public IP address, period, bytes, credited amount | Paying for internet sharing; one paid computer per connection |
 | Email codes: salted hash, expiry, attempts | Sign-in; useless after 15 minutes |
 
 The desktop app keeps its settings, a cached copy of the account summary and local earnings stats in its data folder
-(Advanced → About → Open data folder). Mining pools (MoneroOcean, Kryptex), PayPal, the email provider and the
+(Advanced → About → Open data folder). Mining pools (unMineable, MoneroOcean, and Kryptex in custodial mode), the email provider and the
 bandwidth partner see what they need to do their part; [docs/privacy.md](docs/privacy.md) lists them.
 
 **Export** (Advanced → Settings → Your data → Download my data)
@@ -284,7 +363,7 @@ You need the .NET 10 SDK. On this machine it's installed per-user, so add it to 
 $env:PATH = "$env:LOCALAPPDATA\Microsoft\dotnet;$env:PATH"
 ```
 
-Run the tests (314, covering accounts and sign-in, data export and deletion, crediting on MoneroOcean and Kryptex, CPU pool routing, crypto payouts (addresses, the Bitcoin treasury, THORChain swaps, sanctions screening) and receipts, the operator dashboard, the reverse proxy, invites and the leaderboard, fraud rules, GPU profit switching, policy and stall failover, internet sharing, live electricity prices, the simulated pool, wallet checksums and the engine):
+Run the tests (370, covering payout addresses (TRON, Litecoin and the other coins' checksums) and unMineable logins, fee slices and the non-custodial server, accounts and sign-in, data export and deletion, crediting on MoneroOcean and Kryptex, CPU pool routing, crypto payouts (addresses, the Bitcoin treasury, THORChain swaps, sanctions screening) and receipts, the operator dashboard, the reverse proxy, invites and the leaderboard, fraud rules, GPU profit switching, policy and stall failover, internet sharing, live electricity prices, the simulated pool, wallet checksums and the engine):
 
 ```bash
 dotnet test
@@ -299,10 +378,11 @@ pwsh build/dev.ps1
 ```
 
 This starts everything locally, with no real mining and no real money:
-- **Otium.DevPool**, a simulated MoneroOcean, Kryptex Pool and WhatToMine (same APIs). Earnings are sped up 3000× so
-  balances move in minutes; `-Speedup 1` shows real-world numbers.
-- **Otium.Server** with dev timings: credits every 20 s, a 1-minute hold, no new-account review, and fake PayPal/Monero
-  payouts that are marked paid 15 s later.
+- **Otium.DevPool**, a simulated MoneroOcean, unMineable (v5 API, auto-pay off for USDT like a real new TRC-20 address),
+  Kryptex Pool and WhatToMine. Earnings are sped up 3000× so balances move in minutes; `-Speedup 1` shows real-world
+  numbers.
+- **Otium.Server**, non-custodial like production. With `-Custodial` it holds balances with dev timings: credits every
+  20 s, a 1-minute hold, no new-account review, and fake payouts that are marked paid 15 s later.
 - **The app** with simulated CPU and GPU miners.
 
 Sign-in codes are printed in the console. Closing the app window stops everything.
@@ -312,11 +392,12 @@ Sign-in codes are printed in the console. Closing the app window stops everythin
 | `-Computers 2` | Two simulated PCs, to try signing in on a second computer |
 | `-Reset` | Wipe dev data (`artifacts/dev`) first |
 | `-Speedup N` | Change the earnings speed-up |
-| `-KryptexCpu` | Route every balance account's CPU to the simulated Kryptex Monero pool instead of MoneroOcean |
+| `-Custodial` | Run the server with custody on (balances, cash-outs, Kryptex, internet sharing) |
+| `-KryptexCpu` | With `-Custodial`: route every balance account's CPU to the simulated Kryptex Monero pool instead of MoneroOcean |
 
 Operator dashboard while it runs: http://localhost:5080/admin (token `dev`). Or the raw summary:
-`curl -H "X-Admin-Token: dev" http://localhost:5080/admin/summary`. It compares what
-users were credited against what the simulated pool paid, which is a quick check that crediting is right.
+`curl -H "X-Admin-Token: dev" http://localhost:5080/admin/summary`. Custodial, it compares what users were credited
+against what the simulated pool paid, which is a quick check that crediting is right.
 
 ### Running the app on its own
 
@@ -351,10 +432,12 @@ src/Otium.Core               engine, provider interface, fees, power, GPU detect
                              wallet checksums, account contracts and client
 src/Otium.Providers.XMRig    CPU miner provider
 src/Otium.Providers.SrbMiner GPU miner provider with benchmarking and profit switching
-src/Otium.Providers.Honeygain internet sharing through the Honeygain SDK (loaded at runtime)
+src/Otium.Providers.Mysterium internet sharing as a Mysterium node paying the user's Polygon address
+src/Otium.Providers.Honeygain internet sharing through the Honeygain SDK (custodial servers; loaded at runtime)
 src/Otium.App                desktop app (Welcome → Home ⇄ Advanced), Velopack updates
-src/Otium.Server             accounts and email sign-in, crediting, cash-outs, referrals, landing page, admin API
-src/Otium.DevPool            simulated MoneroOcean, Kryptex Pool and WhatToMine for dev mode
+src/Otium.Server             accounts and email sign-in, referrals, GPU policy, landing page, admin API; custodial
+                             crediting and cash-outs
+src/Otium.DevPool            simulated MoneroOcean, unMineable, Kryptex Pool and WhatToMine for dev mode
 tests/Otium.Tests            unit and API tests
 build/                       dev.ps1 (dev mode), package.ps1 (installers), icon generator, icons
 ```
@@ -362,28 +445,29 @@ build/                       dev.ps1 (dev mode), package.ps1 (installers), icon 
 ## Before launch
 
 - **Legal review (required).**
-  - In balance mode the operator holds users' earnings and pays them out.
-  - US: FinCEN treats pool payouts as non-transmission, but hosting balances for members can make the operator a money transmitter.
-  - EU: MiCA may apply to holding or transferring crypto for users.
-  - The design keeps balances in USD for compute bought from users and never offers a withdrawable crypto balance, but this needs counsel to confirm.
-  - Collect tax details (W-9/W-8) before anyone passes the yearly reporting threshold.
+  - Non-custodial (the default), pools pay users directly and Otium earns from its own fee slices and unMineable's
+    referral rewards, so it doesn't receive or transfer users' money. Counsel should still confirm that this keeps
+    Otium outside money-transmission (US) and crypto-asset-service (MiCA) rules, and review the fee and referral
+    disclosures.
+  - unMineable's terms exclude US persons; the app sends US users to MoneroOcean. Confirm that region check is enough.
+  - Custodial mode holds users' earnings and pays them out: hosting balances can make the operator a money transmitter
+    (US) and MiCA may apply (EU). Don't turn it on without counsel; collect tax details (W-9/W-8) before anyone passes
+    the yearly reporting threshold.
   - Privacy: have [docs/privacy.md](docs/privacy.md) reviewed (controller details, legal bases, retention periods,
     processor agreements with the hosting, email, payout and bandwidth providers, transfers outside the EU), then
     publish it and link it from the welcome screen and the landing page.
-- **Crypto payouts and regulation.** Paying users in crypto from balances Otium holds may make Otium a crypto-asset
-  service provider (MiCA in the EU/EEA) or a money transmitter (US), with know-your-customer duties that the current
-  no-KYC design doesn't meet. Get counsel's view before launch; the cash-out flow can add identity checks later
-  without a redesign.
+- **unMineable:** check Otium's own address has "Auto pay" on, and ask unMineable whether an app may put one referral
+  code on its whole install base (and about a custom code with a higher tier).
 - **Deploy the server** behind HTTPS with backups of the SQLite database. Set the `OTIUM_SERVER_URL` repository
   variable so release builds use it.
-- **Fund the Bitcoin treasury** (bitcoind) and keep only a few weeks of payouts in it; sweep the Kryptex account's BTC
-  into it weekly. The admin dashboard shows its balance and warns when it's below the open cash-outs.
+- **Custodial only: fund the Bitcoin treasury** (bitcoind) and keep only a few weeks of payouts in it; sweep the Kryptex
+  account's BTC into it weekly. The admin dashboard shows its balance and warns when it's below the open cash-outs.
 - **Code signing** for Windows and macOS: see [docs/code-signing.md](docs/code-signing.md) (Azure Artifact Signing or
   a cloud-HSM certificate for Windows, Developer ID and notarization for macOS).
 - **Real-machine run:** mostly done; see [docs/real-mining-run.md](docs/real-mining-run.md). SRBMiner's stats format,
   H/s units (including `pearlhash`/`quantus` on Kryptex), NVML power, stall failover and miners dying with the app are
   confirmed. On an RTX 3080 the Kryptex coins earn through Otium; MoneroOcean's GPU algorithms fail in SRBMiner's OpenCL
   path there. Still open: other NVIDIA machines, and the Kryptex account setting on the deployed server.
-- **Kryptex:** confirm in writing that one operator account may aggregate an app's whole install base, and ask how Pearl's
+- **Kryptex (custodial only):** confirm in writing that one operator account may aggregate an app's whole install base, and ask how Pearl's
   August 2026 "rank-penalty" softfork treats a large pooled account. Kryptex runs a competing consumer app, so keep
   MoneroOcean as the fallback route.

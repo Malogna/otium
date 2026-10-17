@@ -85,12 +85,22 @@
                             </Border>
                         </Grid>
 
-                        <StackPanel Spacing="6" IsVisible="{Binding IsBalanceMode}">
+                        <!-- Cash-out goal (balance) or progress to the pool's payout threshold (own address) -->
+                        <StackPanel Spacing="6">
                             <ProgressBar Classes="goal onHero" Value="{Binding GoalPercent}" Maximum="100" />
                             <Grid ColumnDefinitions="*,Auto">
-                                <TextBlock Classes="heroMuted" FontSize="12.5" Text="{Binding GoalText}" />
-                                <TextBlock Grid.Column="1" Classes="heroMuted" FontSize="12.5" Text="{Binding GoalEta}" />
+                                <TextBlock Classes="heroMuted" FontSize="12.5" TextWrapping="Wrap" Text="{Binding GoalText}" />
+                                <TextBlock Grid.Column="1" Classes="heroMuted" FontSize="12.5" Margin="12,0,0,0" Text="{Binding GoalEta}" />
                             </Grid>
+                            <Border Classes="heroChip" IsVisible="{Binding PoolWarning, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                                <StackPanel Spacing="6">
+                                    <TextBlock FontSize="12.5" FontWeight="SemiBold" TextWrapping="Wrap" Text="{Binding PoolWarning}" />
+                                    <Button Classes="link" HorizontalAlignment="Left" AutomationProperties.Name="Open my address page at the pool"
+                                            Command="{Binding OpenPoolPageCommand}">
+                                        <TextBlock Text="Open my address page" FontSize="12.5" TextDecorations="Underline" />
+                                    </Button>
+                                </StackPanel>
+                            </Border>
                         </StackPanel>
 
                         <Grid ColumnDefinitions="*,12,*">

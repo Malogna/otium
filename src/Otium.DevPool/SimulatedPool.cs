@@ -107,6 +107,23 @@ public sealed class SimulatedPool(TimeProvider time, double speedup)
         }
     }
 
+    /// <summary>Everything credited to a wallet so far, in XMR.</summary>
+    public double EarnedXmr(string wallet) => _wallets.TryGetValue(wallet, out var state) ? state.EarnedAtomic / 1e12 : 0;
+
+    /// <summary>Workers that reported for a wallet within the last few minutes, with their current XMR-equivalent speed.</summary>
+    public IReadOnlyList<(string Worker, double Hs)> OnlineWorkers(string wallet)
+    {
+        var now = time.GetUtcNow();
+        if (!_wallets.TryGetValue(wallet, out var state))
+            return [];
+        lock (state)
+            return state.Workers
+                .Select(w => (w.Key, Rigs: w.Value.Rigs.Values.Where(r => now - r.LastReport <= RigTimeout).ToList()))
+                .Where(w => w.Rigs.Count > 0)
+                .Select(w => (w.Key, w.Rigs.Sum(r => r.Hs)))
+                .ToList();
+    }
+
     public object Summary() => new
     {
         speedup = Speedup,

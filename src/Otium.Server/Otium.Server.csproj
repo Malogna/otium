@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.13" />
+    <PackageReference Include="Nethereum.Web3" Version="7.0.0" />
   </ItemGroup>
 
   <ItemGroup>

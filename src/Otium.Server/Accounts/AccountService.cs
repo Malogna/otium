@@ -29,6 +29,7 @@ public sealed class AccountService(
     OtiumStore store,
     PoolWalletAllocator allocator,
     IMoneroPoolApi pool,
+    IUnmineableApi unmineable,
     IEmailSender email,
     IOptions<ReferralOptions> referralOptions,
     IOptions<EarningsOptions> earningsOptions,
@@ -37,7 +38,9 @@ public sealed class AccountService(
     Gpu.CpuPoolRouter cpuRouter,
     BandwidthService bandwidth,
     TimeProvider time,
-    ILogger<AccountService> logger)
+    ILogger<AccountService> logger,
+    IOptions<CustodyOptions> custodyOptions,
+    MystSponsorService mystSponsor)
 {
     public static readonly TimeSpan CodeLifetime = TimeSpan.FromMinutes(15);
     public const int MaxCodeAttempts = 5;
@@ -48,6 +51,13 @@ public sealed class AccountService(
     private readonly ReferralOptions _referral = referralOptions.Value;
     private readonly EarningsOptions _earnings = earningsOptions.Value;
     private readonly CashoutOptions _cashouts = cashoutOptions.Value;
+    private readonly bool _custodial = custodyOptions.Value.Enabled;
+
+    /// <summary>
+    /// How a payout target is stored and compared: "COIN:address" in canonical form, except Monero, which stays a bare
+    /// address as it was stored before other coins existed (and as MoneroOcean expects it).
+    /// </summary>
+    public static string StoredWallet(PayoutTarget target) => target.Coin == PayoutCoins.Monero ? target.Address : target.ToString();
 
     // ---------- registration & authentication ----------
 
@@ -61,9 +71,9 @@ public sealed class AccountService(
         string? ownWallet = null;
         if (!string.IsNullOrWhiteSpace(request.PayoutAddress))
         {
-            if (!MoneroAddress.TryValidate(request.PayoutAddress, out _, out var addressError))
+            if (!PayoutTarget.TryParse(request.PayoutAddress, out var target, out var addressError))
                 throw new OtiumException(400, addressError!);
-            ownWallet = request.PayoutAddress.Trim();
+            ownWallet = StoredWallet(target);
         }
 
         var now = time.GetUtcNow();
@@ -83,8 +93,9 @@ public sealed class AccountService(
             device = device with { AccountId = account.AccountId, LastSeenAt = now };
         }
 
-        // Balance accounts need a pool address to mine to; keep it if switching back and forth between modes.
-        if (account.IsBalanceAccount && account.PoolWallet is null)
+        // Balance accounts need a pool address to mine to; keep it if switching back and forth between modes. Without
+        // custody there are no balance accounts, only ones that haven't chosen their payout address yet.
+        if (_custodial && account.IsBalanceAccount && account.PoolWallet is null)
             account = account with { PoolWallet = await allocator.AssignAsync(ct) };
 
         string? codeError = null;
@@ -288,7 +299,8 @@ public sealed class AccountService(
 
     /// <summary>
     /// Marks invited friends as verified once they have really contributed (balance accounts: credited earnings;
-    /// own-wallet accounts: hashes reported by the pool) and gives the referrer fee-free time.
+    /// Monero addresses: hashes reported by MoneroOcean; other coins: rewards from unMineable) and gives the referrer
+    /// fee-free time.
     /// </summary>
     private async Task RefreshVerificationsAsync(AccountRecord referrer, CancellationToken ct)
     {
@@ -301,16 +313,16 @@ public sealed class AccountService(
             bool verified;
             if (referee.IsBalanceAccount)
             {
-                verified = store.LifetimeEarningMicros(referee.AccountId) >= ToMicros(_referral.VerificationUsd);
+                // Without custody this is an account that hasn't set a payout address, so it hasn't mined anything.
+                verified = _custodial && store.LifetimeEarningMicros(referee.AccountId) >= ToMicros(_referral.VerificationUsd);
             }
             else
             {
                 try
                 {
-                    var stats = await pool.GetMinerStatsAsync(referee.OwnWallet!, ct);
-                    verified = stats is not null && stats.TotalHashes >= _referral.VerificationHashes;
+                    verified = await PoolConfirmsMiningAsync(referee.OwnWallet!, ct);
                 }
-                catch (HttpRequestException e)
+                catch (Exception e) when (e is HttpRequestException or TaskCanceledException or InvalidOperationException or System.Text.Json.JsonException && !ct.IsCancellationRequested)
                 {
                     logger.LogWarning(e, "Pool lookup failed for referee {Account}", referee.AccountId);
                     continue;
@@ -326,6 +338,24 @@ public sealed class AccountService(
         }
     }
 
+    /// <summary>Whether the pool that pays this stored wallet shows real mining by it.</summary>
+    private async Task<bool> PoolConfirmsMiningAsync(string wallet, CancellationToken ct)
+    {
+        var target = PayoutTarget.ParseOrNull(wallet);
+        if (target is null || target.Coin == PayoutCoins.Monero)
+        {
+            var stats = await pool.GetMinerStatsAsync(target?.Address ?? wallet, ct);
+            return stats is not null && stats.TotalHashes >= _referral.VerificationHashes;
+        }
+        if (!_referral.VerifyUnmineableByRewards)
+            return false;
+        var address = await unmineable.GetAddressAsync(target, ct);
+        if (address.Uuid is not { } uuid)
+            return false;
+        var mined = await unmineable.GetStatsAsync(uuid, ct);
+        return mined.Rewarded7d > 0 || mined.Rewarded30d > 0 || mined.Paid > 0;
+    }
+
     // ---------- summary ----------
 
     public AccountSummary Summarize(AccountRecord account, string publicBaseUrl, string? codeError)
@@ -335,15 +365,16 @@ public sealed class AccountService(
         var referees = store.FindReferees(account.Code);
         var totals = store.Balance(account.AccountId, now);
         var cashouts = store.CashoutsFor(account.AccountId).Select(ToInfo).ToList();
-        var methods = cashoutMethods.Current;
+        // Without custody nothing can be cashed out, so no methods are offered (the app hides the balance UI).
+        var methods = _custodial ? cashoutMethods.Current : [];
 
         return new AccountSummary(
             account.WorkerId,
-            account.IsBalanceAccount ? account.PoolWallet : null,
+            _custodial && account.IsBalanceAccount ? account.PoolWallet : null,
             account.Code,
             $"{publicBaseUrl.TrimEnd('/')}/r/{account.Code}",
             // Own-wallet clients mine the referrer's slice to this wallet; balance accounts are rewarded server-side.
-            account.IsBalanceAccount ? null : referrer?.OwnWallet,
+            _custodial && account.IsBalanceAccount ? null : referrer?.OwnWallet,
             account.ReferredAt,
             account.FeeFreeUntil,
             referees.Count,
@@ -363,8 +394,10 @@ public sealed class AccountService(
                 methods),
             account.Email,
             (int)store.DeviceCount(account.AccountId),
-            bandwidth.Terms(account),
-            cpuRouter.For(account));
+            _custodial ? bandwidth.Terms(account) : null,
+            _custodial ? cpuRouter.For(account) : null,
+            _custodial,
+            mystSponsor.IsAvailable);
     }
 
     public static CashoutInfo ToInfo(CashoutRecord c) => new(

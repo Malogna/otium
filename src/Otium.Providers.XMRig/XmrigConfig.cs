@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Otium.Core.Pools;
 using Otium.Core.Providers;
 
 namespace Otium.Providers.XMRig;
@@ -9,6 +10,9 @@ public sealed record PoolEndpoint(string Host, int Port, bool Tls)
     /// <summary>MoneroOcean pays straight to the user's own address (non-custodial). Port 20128 is its TLS port.</summary>
     public static readonly PoolEndpoint MoneroOcean = new("gulf.moneroocean.stream", 20128, Tls: true);
 
+    /// <summary>unMineable's RandomX endpoint, which pays every coin except Monero (TLS only on 443).</summary>
+    public static readonly PoolEndpoint Unmineable = new(PayoutRouting.UnmineableCpuHost, PayoutRouting.UnmineableTlsPort, Tls: true);
+
     public override string ToString() => $"{Host}:{Port}";
 }
 
@@ -17,15 +21,32 @@ internal static class XmrigConfig
     /// <summary>XMRig's minimum donation level for official builds; disclosed to the user alongside the app fee.</summary>
     public const int DonateLevelPercent = 1;
 
-    public static string Build(ProviderRunOptions options, PoolEndpoint pool, int httpPort, string accessToken)
+    /// <param name="pool">The MoneroOcean endpoint (or a simulated pool in dev mode) for Monero targets.</param>
+    /// <param name="unmineable">The unMineable endpoint for every other coin; defaults to <see cref="PoolEndpoint.Unmineable"/>.</param>
+    public static string Build(
+        ProviderRunOptions options,
+        PoolEndpoint pool,
+        int httpPort,
+        string accessToken,
+        string? referralCode = null,
+        PoolEndpoint? unmineable = null)
     {
-        // The server's route (balance accounts) decides pool and login; otherwise mine to the target wallet on the
-        // default pool with the worker name as the password, as MoneroOcean expects.
+        // The server's route (balance accounts) decides pool and login. Otherwise the slice's payout target does:
+        // Monero mines on MoneroOcean to the bare address with the worker name as the password; any other coin mines
+        // on unMineable as "COIN:address.worker#referral".
+        var target = options.Target.WalletAddress;
         var route = options.Pool;
-        var url = route is null ? pool.ToString() : $"{route.Host}:{route.Port}";
-        var user = route?.User ?? options.Target.WalletAddress;
-        var pass = route?.Password ?? SanitizeWorker(options.WorkerName);
-        var tls = route?.Tls ?? pool.Tls;
+        string url, user, pass;
+        bool tls;
+        if (route is not null)
+            (url, user, pass, tls) = ($"{route.Host}:{route.Port}", route.User, route.Password, route.Tls);
+        else if (PayoutRouting.PoolFor(target) == PayoutPool.Unmineable)
+        {
+            var endpoint = unmineable ?? PoolEndpoint.Unmineable;
+            (url, user, pass, tls) = (endpoint.ToString(), PayoutRouting.UnmineableLogin(target, options.WorkerName, referralCode), "x", endpoint.Tls);
+        }
+        else
+            (url, user, pass, tls) = (pool.ToString(), PayoutRouting.MoneroOceanWallet(target), SanitizeWorker(options.WorkerName), pool.Tls);
 
         var config = new JsonObject
         {
@@ -69,9 +90,5 @@ internal static class XmrigConfig
         return config.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
     }
 
-    internal static string SanitizeWorker(string worker)
-    {
-        var cleaned = new string(worker.Where(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_').ToArray());
-        return cleaned.Length == 0 ? "otium" : cleaned[..Math.Min(cleaned.Length, 32)];
-    }
+    internal static string SanitizeWorker(string worker) => PayoutRouting.SanitizeWorker(worker);
 }

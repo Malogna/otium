@@ -98,6 +98,8 @@ public static class DevPoolHost
             {
                 "469" => 3.4e-14, // Pearl: an RTX 4090 at ~310 TH/s grosses about $10.5 a day
                 "473" => 1.6e-9,  // Quantus
+                "459" => 6e-6,    // Xelis: an RTX 3080 at ~50 kH/s grosses about $0.30 a day
+                "411" => 5e-9,    // Iron Fish (FishHash): an RTX 3080 at ~40 MH/s, about $0.20 a day
                 _ => 0,
             } * pool.Speedup;
             if (usdPerHashDay <= 0)
@@ -117,6 +119,68 @@ public static class DevPoolHost
             });
         });
 
+        // ---------- unMineable (OTIUM_UNMINEABLE_API=<this pool>/unmineable) ----------
+
+        // Simulated miners report unMineable work under the payout target ("USDT:T…"), valued in XMR like everything
+        // else here; these endpoints convert it into the target's coin at fixed dev prices, minus unMineable's 0.75%.
+        // Like a real new TRC-20 address, USDT addresses have auto-pay off, so the app's warning can be seen.
+        app.MapGet("/unmineable/v5/address/{address}", (string address, string coin, SimulatedPool pool) =>
+        {
+            var target = $"{coin.ToUpperInvariant()}:{address}";
+            var balance = UnmineableAmount(target, pool);
+            return Results.Ok(new
+            {
+                success = true,
+                msg = "Ok",
+                data = new
+                {
+                    balance = balance.ToString("0.######", System.Globalization.CultureInfo.InvariantCulture),
+                    balance_payable = balance.ToString("0.######", System.Globalization.CultureInfo.InvariantCulture),
+                    payment_threshold = DevCoins.GetValueOrDefault(coin.ToUpperInvariant()).Threshold.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    mining_fee = "0.75",
+                    auto = !coin.Equals("USDT", StringComparison.OrdinalIgnoreCase),
+                    enabled = true,
+                    maintenance_message = (string?)null,
+                    uuid = Convert.ToHexString(System.Text.Encoding.UTF8.GetBytes(target)),
+                    network = coin.ToUpperInvariant() == "USDT" ? "TRX" : coin.ToUpperInvariant(),
+                    err_flags = new { payment_error = false, missing_memo = false, not_activated = false, restricted = false },
+                },
+            });
+        });
+
+        app.MapGet("/unmineable/v5/account/{uuid}/stats", (string uuid, SimulatedPool pool) =>
+        {
+            var target = System.Text.Encoding.UTF8.GetString(Convert.FromHexString(uuid));
+            var coin = target.Split(':')[0];
+            var balance = UnmineableAmount(target, pool).ToString("0.######", System.Globalization.CultureInfo.InvariantCulture);
+            return Results.Ok(new
+            {
+                success = true,
+                msg = "Ok",
+                data = new
+                {
+                    balance_mining = balance, balance_referral = "0", balance,
+                    rewarded = new { past_24h = balance, past_7d = balance, past_30d = balance },
+                    paid = "0", last_payment = (long?)null,
+                    payment_threshold = DevCoins.GetValueOrDefault(coin).Threshold.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    mining_fee = "0.75", coin,
+                },
+            });
+        });
+
+        app.MapGet("/unmineable/v5/account/{uuid}/workers", (string uuid, SimulatedPool pool) =>
+        {
+            var target = System.Text.Encoding.UTF8.GetString(Convert.FromHexString(uuid));
+            var workers = pool.OnlineWorkers(target).Select(w => new { name = w.Worker, online = true, chr = w.Hs.ToString(System.Globalization.CultureInfo.InvariantCulture), rhr = w.Hs.ToString(System.Globalization.CultureInfo.InvariantCulture), referral = "ztjq-jr7s" });
+            return Results.Ok(new { success = true, msg = "Ok", data = new { randomx = new { workers, chart = new { } } } });
+        });
+
+        app.MapGet("/unmineable/v5/account/{uuid}/payments", () =>
+            Results.Ok(new { success = true, message = "Ok", data = new { list = Array.Empty<object>(), has_next = false, count = 0 } }));
+
+        app.MapGet("/unmineable/v5/account/{uuid}/referrals", () =>
+            Results.Ok(new { success = true, msg = "Ok", data = new { code = "ztjq-jr7s", custom_code = (string?)null, list = Array.Empty<object>(), count = 0 } }));
+
         // ---------- simulation controls ----------
 
         app.MapPost("/dev/report", (MinerReport report, SimulatedPool pool) =>
@@ -131,4 +195,25 @@ public static class DevPoolHost
     }
 
     public static string KryptexWallet(string coin, string account) => $"kryptex:{coin}:{account}";
+
+    /// <summary>Dev prices (USD) and unMineable's payout thresholds for the coins Otium offers.</summary>
+    private static readonly Dictionary<string, (double PriceUsd, decimal Threshold)> DevCoins = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["USDT"] = (1, 1.5m),
+        ["BTC"] = (100_000, 0.00075m),
+        ["LTC"] = (80, 0.00075m),
+        ["BNB"] = (600, 0.01m),
+        ["SOL"] = (150, 0.05m),
+        ["TRX"] = (0.25, 15m),
+        ["ETH"] = (3_000, 0.025m),
+        ["XMR"] = (SimulatedPool.PriceUsd, 0.03m),
+    };
+
+    /// <summary>A target's simulated earnings in its own coin, after unMineable's 0.75% fee.</summary>
+    private static double UnmineableAmount(string target, SimulatedPool pool)
+    {
+        var coin = target.Split(':')[0];
+        var price = DevCoins.TryGetValue(coin, out var c) ? c.PriceUsd : 1;
+        return pool.EarnedXmr(target) * SimulatedPool.PriceUsd / price * 0.9925;
+    }
 }

@@ -6,12 +6,15 @@ namespace Otium.Core.Settings;
 public enum PayoutMode
 {
     /// <summary>
-    /// Default. Mining goes to the operator's pool account under the user's worker id; the Otium server credits
-    /// a USD balance the user cashes out in BTC, ETH, BNB or SOL to their own wallet.
+    /// Only with a custodial server. Mining goes to the operator's pool account under the user's worker id; the Otium
+    /// server credits a USD balance the user cashes out in BTC, ETH, BNB or SOL to their own wallet.
     /// </summary>
     Balance,
 
-    /// <summary>Advanced. The pool pays the user's own Monero wallet directly; nothing passes through Otium.</summary>
+    /// <summary>
+    /// Default. The pool pays the user's own address directly, in the coin they chose (unMineable) or in Monero
+    /// (MoneroOcean); nothing passes through Otium.
+    /// </summary>
     OwnWallet,
 }
 
@@ -19,9 +22,12 @@ public sealed class AppSettings
 {
     public bool OnboardingComplete { get; set; }
 
-    public PayoutMode PayoutMode { get; set; } = PayoutMode.Balance;
+    public PayoutMode PayoutMode { get; set; } = PayoutMode.OwnWallet;
 
-    /// <summary>User's own XMR address, used only in <see cref="PayoutMode.OwnWallet"/>.</summary>
+    /// <summary>
+    /// The user's own payout target, "COIN:address" (e.g. "USDT:T…"), used in <see cref="PayoutMode.OwnWallet"/>.
+    /// Older settings hold a bare Monero address, which reads as "XMR:…".
+    /// </summary>
     public string PayoutAddress { get; set; } = "";
 
     /// <summary>Price per kWh in USD. Starts as an estimate for the user's country.</summary>
@@ -76,6 +82,12 @@ public sealed class AppSettings
 
     /// <summary>Most data to share per day, in GB.</summary>
     public double BandwidthDailyLimitGb { get; set; } = 2;
+
+    /// <summary>
+    /// The user's own Polygon (0x…) address that Mysterium settles internet sharing earnings to, when their payout
+    /// address isn't already an 0x address (which works on Polygon too).
+    /// </summary>
+    public string? BandwidthPayoutAddress { get; set; }
 
     /// <summary>The user answered "Not now" to the internet sharing suggestion on the overview.</summary>
     public bool BandwidthPromptDismissed { get; set; }
@@ -133,6 +145,9 @@ public sealed class AccountState
     public long BandwidthServerDailyLimitBytes { get; set; }
 
     public string? BandwidthPartnerName { get; set; }
+
+    /// <summary>The server pays new Mysterium nodes' registration fee, so internet sharing can be offered.</summary>
+    public bool MysteriumSponsored { get; set; }
 
     /// <summary>Last PayPal email used, to prefill the cash-out form.</summary>
     public string? LastPayPalEmail { get; set; }

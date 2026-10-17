@@ -58,6 +58,17 @@ public sealed record CashoutRecord(
     int Attempts);
 
 /// <summary>A bandwidth usage report as received, with what was credited for it.</summary>
+/// <summary>Mysterium's registration fee Otium paid for one node (see MystSponsorService).</summary>
+public sealed record MystSponsorshipRecord(
+    string Identity,
+    string ChannelAddress,
+    string AccountId,
+    string DeviceId,
+    string Ip,
+    decimal AmountMyst,
+    string TransactionId,
+    DateTimeOffset CreatedAt);
+
 public sealed record BandwidthReportRecord(
     string DeviceId,
     long Seq,
@@ -84,7 +95,7 @@ public sealed record EmailCodeRecord(long Id, string Email, string DeviceId, str
 public sealed class OtiumStore
 {
     public const long MicrosPerDollar = 1_000_000;
-    private const int SchemaVersion = 4;
+    private const int SchemaVersion = 5;
 
     private readonly string _connectionString;
 
@@ -232,6 +243,23 @@ public sealed class OtiumStore
         // Version 4: account deletion. A deleted account keeps its (anonymized) row and money records.
         if (Scalar<long>("SELECT COUNT(*) FROM pragma_table_info('accounts') WHERE name = 'deleted_at'") == 0)
             Execute("ALTER TABLE accounts ADD COLUMN deleted_at TEXT NULL;");
+
+        // Version 5: Mysterium registration fees Otium paid for users' nodes. Amounts in micro-MYST.
+        Execute("""
+            CREATE TABLE IF NOT EXISTS myst_sponsorships (
+                identity     TEXT PRIMARY KEY,
+                channel      TEXT NOT NULL,
+                account_id   TEXT NOT NULL,
+                device_id    TEXT NOT NULL,
+                ip           TEXT NOT NULL,
+                amount_micro INTEGER NOT NULL,
+                tx           TEXT NOT NULL,
+                created_at   TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS ix_myst_account ON myst_sponsorships(account_id);
+            CREATE INDEX IF NOT EXISTS ix_myst_device ON myst_sponsorships(device_id);
+            CREATE INDEX IF NOT EXISTS ix_myst_ip ON myst_sponsorships(ip, created_at);
+            """);
 
         Execute($"PRAGMA user_version = {SchemaVersion};");
     }
@@ -410,6 +438,9 @@ public sealed class OtiumStore
 
             foreach (var cashout in Rows("SELECT id, method, destination FROM cashouts WHERE account_id = $a", ("$a", id)))
                 Run("UPDATE cashouts SET destination = $d WHERE id = $id", ("$d", maskDestination(cashout[1], cashout[2])), ("$id", cashout[0]));
+
+            // The record of a paid Mysterium fee stays (it's Otium's spending), without the computer or connection.
+            Run("UPDATE myst_sponsorships SET device_id = $t, ip = '' WHERE account_id = $a", ("$t", tombstone), ("$a", id));
 
             // A new random id per computer keeps (device, sequence) unique if this computer starts sharing again.
             foreach (var device in Rows("SELECT DISTINCT device_id FROM bandwidth_reports WHERE account_id = $a", ("$a", id)))
@@ -733,6 +764,75 @@ public sealed class OtiumStore
         Execute("INSERT OR IGNORE INTO pool_wallets (address, created_at) VALUES ($a, $c)", ("$a", address), ("$c", Format(now)));
 
     /// <summary>Pool addresses with how many balance accounts each one carries, least loaded first.</summary>
+    // ---------- Mysterium sponsorships ----------
+
+    public void AddMystSponsorship(MystSponsorshipRecord r) =>
+        Execute("""
+            INSERT INTO myst_sponsorships (identity, channel, account_id, device_id, ip, amount_micro, tx, created_at)
+            VALUES ($i, $c, $a, $d, $ip, $m, $t, $at)
+            """, ("$i", r.Identity), ("$c", r.ChannelAddress), ("$a", r.AccountId), ("$d", r.DeviceId), ("$ip", r.Ip),
+            ("$m", (long)decimal.Round(r.AmountMyst * 1_000_000m)), ("$t", r.TransactionId), ("$at", Format(r.CreatedAt)));
+
+    public MystSponsorshipRecord? FindMystSponsorship(string identity)
+    {
+        using var connection = Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT identity, channel, account_id, device_id, ip, amount_micro, tx, created_at FROM myst_sponsorships WHERE identity = $i";
+        cmd.Parameters.AddWithValue("$i", identity);
+        using var reader = cmd.ExecuteReader();
+        return reader.Read()
+            ? new MystSponsorshipRecord(reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3),
+                reader.GetString(4), reader.GetInt64(5) / 1_000_000m, reader.GetString(6), Parse(reader.GetString(7)))
+            : null;
+    }
+
+    public long MystSponsorshipsForDevice(string deviceId) =>
+        Scalar<long>("SELECT COUNT(*) FROM myst_sponsorships WHERE device_id = $d", ("$d", deviceId));
+
+    public long MystSponsorshipsForAccount(string accountId) =>
+        Scalar<long>("SELECT COUNT(*) FROM myst_sponsorships WHERE account_id = $a", ("$a", accountId));
+
+    public long MystSponsorshipsFromIpSince(string ip, DateTimeOffset since) =>
+        Scalar<long>("SELECT COUNT(*) FROM myst_sponsorships WHERE ip = $ip AND created_at >= $s", ("$ip", ip), ("$s", Format(since)));
+
+    /// <summary>MYST paid out in registration fees since <paramref name="since"/> (or ever).</summary>
+    public decimal MystSponsoredSince(DateTimeOffset? since = null) =>
+        Scalar<long>("SELECT COALESCE(SUM(amount_micro), 0) FROM myst_sponsorships WHERE created_at >= $s",
+            ("$s", Format(since ?? DateTimeOffset.MinValue))) / 1_000_000m;
+
+    public long MystSponsorshipCount() => Scalar<long>("SELECT COUNT(*) FROM myst_sponsorships");
+
+    /// <summary>
+    /// Live accounts by payout coin: the part before ":" of the payout target, "XMR" for a bare Monero address, and
+    /// "none" for accounts without one yet. For the non-custodial admin dashboard.
+    /// </summary>
+    public IReadOnlyList<(string Coin, long Accounts)> PayoutCoinCounts()
+    {
+        using var connection = Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT CASE WHEN own_wallet IS NULL THEN 'none'
+                        WHEN instr(own_wallet, ':') > 0 THEN substr(own_wallet, 1, instr(own_wallet, ':') - 1)
+                        ELSE 'XMR' END AS coin,
+                   COUNT(*) AS n
+            FROM accounts WHERE merged_into IS NULL AND deleted_at IS NULL
+            GROUP BY coin ORDER BY n DESC, coin
+            """;
+        using var reader = cmd.ExecuteReader();
+        var result = new List<(string, long)>();
+        while (reader.Read())
+            result.Add((reader.GetString(0), reader.GetInt64(1)));
+        return result;
+    }
+
+    /// <summary>Accounts that joined through an invite, and how many of them have been verified by their pool.</summary>
+    public (long Referred, long Verified) ReferralCounts() => (
+        Scalar<long>("SELECT COUNT(*) FROM accounts WHERE referred_by IS NOT NULL AND merged_into IS NULL"),
+        Scalar<long>("SELECT COUNT(*) FROM accounts WHERE referred_by IS NOT NULL AND verified = 1 AND merged_into IS NULL"));
+
+    public long DevicesSeenSince(DateTimeOffset since) =>
+        Scalar<long>("SELECT COUNT(*) FROM devices WHERE last_seen_at >= $s", ("$s", Format(since)));
+
     public IReadOnlyList<(string Address, long Accounts)> PoolWalletLoads()
     {
         using var connection = Open();
