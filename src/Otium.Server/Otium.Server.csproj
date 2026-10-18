@@ -13,4 +13,9 @@
     <InternalsVisibleTo Include="Otium.Tests" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The website's stylesheet, script, logo and fonts (served at /site/..., see SiteAssets). -->
+    <EmbeddedResource Include="Site\**\*" LogicalName="Site/%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
 </Project>

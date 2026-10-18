@@ -117,12 +117,30 @@ site block in the `Caddyfile` and run `docker compose restart caddy`:
 respond @admin_elsewhere 404
 ```
 
+Behind Cloudflare (`Caddyfile.cloudflare`) write `not client_ip 198.51.100.7` instead: `remote_ip` would be
+Cloudflare's address there.
+
 Changing the token: edit `Admin__Token` in `.env`, then `docker compose up -d` (it recreates the server container
 with the new value).
 
 Finally, point the desktop app at the server: set the GitHub repository variable `OTIUM_SERVER_URL` to
 `https://api.otium.example` (Settings → Secrets and variables → Actions → Variables, or
 `gh variable set OTIUM_SERVER_URL --body https://api.otium.example`). The release workflow bakes it into the app.
+
+**The website.** The server's address is also Otium's website: `/` is the front page (what Otium does, honest earnings
+and the cost breakdown, built from the server's `Fees:*` settings), and invite links open `/r/<code>`. The Download
+buttons go to `Referral__DownloadUrl` (the latest GitHub release by default). Privacy and terms pages appear at
+`/privacy` and `/terms`, and in every page's footer, once you add their reviewed text as HTML (just the body, no
+`<html>` or `<head>`):
+
+```bash
+docker compose exec otium mkdir -p /data/site
+docker compose cp privacy.html otium:/data/site/privacy.html
+docker compose cp terms.html otium:/data/site/terms.html
+```
+
+They're read on every request, so no restart is needed. Backups copy only the database, so keep your own copy of
+these files. `docs/privacy.md` is a draft for legal review, not a policy to publish as it is.
 
 ## 6. Updating
 
