@@ -1,5 +1,6 @@
 using System.Globalization;
 using Microsoft.Data.Sqlite;
+using Otium.Core.Accounts;
 
 namespace Otium.Server.Data;
 
@@ -95,7 +96,7 @@ public sealed record EmailCodeRecord(long Id, string Email, string DeviceId, str
 public sealed class OtiumStore
 {
     public const long MicrosPerDollar = 1_000_000;
-    private const int SchemaVersion = 5;
+    private const int SchemaVersion = 6;
 
     private readonly string _connectionString;
 
@@ -259,6 +260,36 @@ public sealed class OtiumStore
             CREATE INDEX IF NOT EXISTS ix_myst_account ON myst_sponsorships(account_id);
             CREATE INDEX IF NOT EXISTS ix_myst_device ON myst_sponsorships(device_id);
             CREATE INDEX IF NOT EXISTS ix_myst_ip ON myst_sponsorships(ip, created_at);
+            """);
+
+        // Version 6: real numbers for the website. Opt-in earnings reports (one row per device, report and processor or
+        // graphics card) and what the pools have paid each account's own address.
+        Execute("""
+            CREATE TABLE IF NOT EXISTS earnings_reports (
+                device_id       TEXT NOT NULL,
+                seq             INTEGER NOT NULL,
+                kind            TEXT NOT NULL,
+                account_id      TEXT NOT NULL,
+                model           TEXT NULL,
+                period_start    TEXT NOT NULL,
+                period_end      TEXT NOT NULL,
+                seconds         REAL NOT NULL,
+                user_usd        REAL NOT NULL,
+                electricity_usd REAL NOT NULL,
+                created_at      TEXT NOT NULL,
+                PRIMARY KEY (device_id, seq, kind)
+            );
+            CREATE INDEX IF NOT EXISTS ix_earnings_end ON earnings_reports(period_end);
+            CREATE INDEX IF NOT EXISTS ix_earnings_account ON earnings_reports(account_id);
+
+            CREATE TABLE IF NOT EXISTS pool_payouts (
+                account_id       TEXT PRIMARY KEY,
+                coin             TEXT NOT NULL,
+                paid             REAL NOT NULL,
+                paid_usd         REAL NOT NULL,
+                rewarded_30d_usd REAL NOT NULL,
+                checked_at       TEXT NOT NULL
+            );
             """);
 
         Execute($"PRAGMA user_version = {SchemaVersion};");
@@ -442,6 +473,10 @@ public sealed class OtiumStore
             // The record of a paid Mysterium fee stays (it's Otium's spending), without the computer or connection.
             Run("UPDATE myst_sponsorships SET device_id = $t, ip = '' WHERE account_id = $a", ("$t", tombstone), ("$a", id));
 
+            // Earnings statistics the user chose to share, and what the pools paid their address, go with the account.
+            Run("DELETE FROM earnings_reports WHERE account_id = $a", ("$a", id));
+            Run("DELETE FROM pool_payouts WHERE account_id = $a", ("$a", id));
+
             // A new random id per computer keeps (device, sequence) unique if this computer starts sharing again.
             foreach (var device in Rows("SELECT DISTINCT device_id FROM bandwidth_reports WHERE account_id = $a", ("$a", id)))
                 Run("UPDATE bandwidth_reports SET device_id = $t, ip = '' WHERE account_id = $a AND device_id = $d",
@@ -593,6 +628,100 @@ public sealed class OtiumStore
                 Parse(r.GetString(r.GetOrdinal("created_at")))));
         }
         return list;
+    }
+
+    // ---------- real earnings (opt-in reports, pool payouts) ----------
+
+    /// <summary>Stores a report's rows. Returns false when this report (device and sequence) was already stored.</summary>
+    public bool AddEarningsReport(string deviceId, string accountId, EarningsReport report, DateTimeOffset now)
+    {
+        using var connection = Open();
+        using var tx = connection.BeginTransaction(deferred: false);
+        var added = 0;
+        foreach (var device in report.Devices)
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.Transaction = tx;
+            cmd.CommandText = """
+                INSERT OR IGNORE INTO earnings_reports (device_id, seq, kind, account_id, model, period_start, period_end,
+                                                        seconds, user_usd, electricity_usd, created_at)
+                VALUES ($d, $s, $k, $a, $m, $ps, $pe, $sec, $u, $e, $c)
+                """;
+            Bind(cmd, [("$d", deviceId), ("$s", report.Sequence), ("$k", device.Kind), ("$a", accountId), ("$m", device.Model),
+                ("$ps", Format(report.PeriodStart)), ("$pe", Format(report.PeriodEnd)), ("$sec", device.EarningSeconds),
+                ("$u", device.UserUsd), ("$e", device.ElectricityUsd), ("$c", Format(now))]);
+            added += cmd.ExecuteNonQuery();
+        }
+        tx.Commit();
+        return added > 0;
+    }
+
+    /// <summary>Per device and model, what was earned in reports ending after <paramref name="since"/>.</summary>
+    public IReadOnlyList<(string DeviceId, string Kind, string Model, double Seconds, double UserUsd, double ElectricityUsd)> EarningsSince(DateTimeOffset since)
+    {
+        using var connection = Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT device_id, kind, model, SUM(seconds), SUM(user_usd), SUM(electricity_usd) FROM earnings_reports
+            WHERE period_end > $s AND model IS NOT NULL GROUP BY device_id, kind, model
+            """;
+        Bind(cmd, [("$s", Format(since))]);
+        using var r = cmd.ExecuteReader();
+        var list = new List<(string, string, string, double, double, double)>();
+        while (r.Read())
+            list.Add((r.GetString(0), r.GetString(1), r.GetString(2), r.GetDouble(3), r.GetDouble(4), r.GetDouble(5)));
+        return list;
+    }
+
+    public IReadOnlyList<(string Kind, string? Model, DateTimeOffset PeriodStart, DateTimeOffset PeriodEnd, double Seconds, double UserUsd, double ElectricityUsd)> EarningsReportsFor(string accountId)
+    {
+        using var connection = Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT kind, model, period_start, period_end, seconds, user_usd, electricity_usd FROM earnings_reports
+            WHERE account_id = $a ORDER BY period_start, kind
+            """;
+        Bind(cmd, [("$a", accountId)]);
+        using var r = cmd.ExecuteReader();
+        var list = new List<(string, string?, DateTimeOffset, DateTimeOffset, double, double, double)>();
+        while (r.Read())
+            list.Add((r.GetString(0), r.IsDBNull(1) ? null : r.GetString(1), Parse(r.GetString(2)), Parse(r.GetString(3)), r.GetDouble(4), r.GetDouble(5), r.GetDouble(6)));
+        return list;
+    }
+
+    /// <summary>Accounts paid at their own address (not merged or deleted), with the address as stored.</summary>
+    public IReadOnlyList<(string AccountId, string Wallet)> OwnWallets()
+    {
+        using var connection = Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT account_id, own_wallet FROM accounts WHERE own_wallet IS NOT NULL AND merged_into IS NULL AND deleted_at IS NULL";
+        using var r = cmd.ExecuteReader();
+        var list = new List<(string, string)>();
+        while (r.Read())
+            list.Add((r.GetString(0), r.GetString(1)));
+        return list;
+    }
+
+    public void SetPoolPayout(string accountId, string coin, double paid, double paidUsd, double rewarded30dUsd, DateTimeOffset now) =>
+        Execute("""
+            INSERT INTO pool_payouts (account_id, coin, paid, paid_usd, rewarded_30d_usd, checked_at)
+            VALUES ($a, $c, $p, $pu, $r, $t)
+            ON CONFLICT(account_id) DO UPDATE SET coin = $c, paid = $p, paid_usd = $pu, rewarded_30d_usd = $r, checked_at = $t
+            """, ("$a", accountId), ("$c", coin), ("$p", paid), ("$pu", paidUsd), ("$r", rewarded30dUsd), ("$t", Format(now)));
+
+    /// <summary>What the pools have paid Otium users' own addresses, in dollars at the time of each check, and how many were paid.</summary>
+    public (double PaidUsd, double Rewarded30dUsd, long PaidAccounts) PoolPayoutTotals()
+    {
+        using var connection = Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT COALESCE(SUM(p.paid_usd), 0), COALESCE(SUM(p.rewarded_30d_usd), 0), COALESCE(SUM(CASE WHEN p.paid > 0 THEN 1 ELSE 0 END), 0)
+            FROM pool_payouts p JOIN accounts a ON a.account_id = p.account_id
+            WHERE a.merged_into IS NULL AND a.deleted_at IS NULL
+            """;
+        using var r = cmd.ExecuteReader();
+        r.Read();
+        return (r.GetDouble(0), r.GetDouble(1), r.GetInt64(2));
     }
 
     // ---------- ledger ----------

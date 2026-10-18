@@ -53,6 +53,9 @@ public partial class HomeViewModel : ViewModelBase
         if (host.GpuEngine is not null)
             Activity.Add(new ActivityRow { Icon = Icon("IconGpu"), Title = host.GpuProvider?.Gpus.FirstOrDefault()?.Name ?? "Graphics card" });
 
+        Results = new ResultsViewModel(host);
+        host.MeasurementChanged += () => Dispatcher.UIThread.Post(Refresh);
+
         _internetRow = new ActivityRow { Icon = Icon("IconGlobe"), Title = "Internet connection" };
         InternetSharing = new InternetSharingViewModel(host);
         InternetSharing.PropertyChanged += (_, e) =>
@@ -78,6 +81,9 @@ public partial class HomeViewModel : ViewModelBase
     public EmailSignInViewModel SignIn { get; }
 
     public ObservableCollection<ActivityRow> Activity { get; } = [];
+
+    /// <summary>The test, "while you were away" and the monthly report.</summary>
+    public ResultsViewModel Results { get; }
 
     /// <summary>Opt-in internet sharing: the suggestion card and its consent screen.</summary>
     public InternetSharingViewModel InternetSharing { get; }
@@ -156,14 +162,17 @@ public partial class HomeViewModel : ViewModelBase
         var snapshots = engines.Select(e => e.Snapshot).ToList();
         var earningNow = snapshots.Where(s => s.State == EngineState.Earning).ToList();
 
-        // Rates: live while earning; otherwise the last live rate; otherwise the hardware estimate.
+        // Rates: live while earning; otherwise the last live rate; otherwise the test's measurement; otherwise the
+        // hardware estimate. A device the test found unprofitable counts as zero: Otium doesn't run it.
         if (earningNow.Count > 0)
         {
             _lastRate = earningNow.Sum(s => s.UserUsdPerDay);
             _lastElectricity = earningNow.Sum(s => s.ElectricityUsdPerDay);
         }
-        var rate = _lastRate > 0 ? _lastRate : _estimate?.GrossUsdPerDay ?? 0;
-        var electricity = _lastRate > 0 ? _lastElectricity : _estimate?.ElectricityUsdPerDay ?? 0;
+        var measured = settings.Measurement?.Devices.Where(d => d.NetUsdPerDay > 0).ToList();
+        var (rate, electricity) = _lastRate > 0 ? (_lastRate, _lastElectricity)
+            : measured is { Count: > 0 } ? (measured.Sum(d => d.UserUsdPerDay), measured.Sum(d => d.ElectricityUsdPerDay))
+            : (_estimate?.GrossUsdPerDay ?? 0, _estimate?.ElectricityUsdPerDay ?? 0);
 
         // Balance
         IsBalanceMode = settings.PayoutMode == PayoutMode.Balance;
@@ -201,7 +210,7 @@ public partial class HomeViewModel : ViewModelBase
                 ? "Mining doesn't pay at your electricity price, so this comes from internet sharing alone."
                 : projection.HoursAreMeasured
                     ? $"Based on your PC earning about {projection.HoursPerDay:0.#} hours a day, after electricity."
-                    : _lastRate > 0
+                    : _lastRate > 0 || measured is { Count: > 0 }
                         ? $"Assuming about {projection.HoursPerDay:0} hours a day{away}. Otium learns your real pattern within a day."
                         : $"Estimated from your hardware, about {projection.HoursPerDay:0} hours a day{away}. Real numbers appear once it runs.";
 

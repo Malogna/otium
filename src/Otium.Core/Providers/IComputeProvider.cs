@@ -46,3 +46,17 @@ public interface IComputeProvider : IAsyncDisposable
     /// <summary>Checks a payout address for this provider. Returns null when valid, otherwise a user-facing error.</summary>
     string? ValidatePayoutAddress(string address);
 }
+
+/// <summary>
+/// A provider whose engine can stop hashing without exiting, keeping what it spent time preparing (XMRig's 2 GB
+/// RandomX dataset, the pool connection). When the user comes back for a moment, the engine pauses it instead of
+/// stopping it, so it earns again the moment they leave instead of after another warm-up.
+/// </summary>
+public interface IPausableProvider
+{
+    /// <summary>Stops hashing; the engine keeps running. Returns false when it couldn't (the engine then stops it).</summary>
+    Task<bool> PauseAsync(CancellationToken ct);
+
+    /// <summary>Hashing again after <see cref="PauseAsync"/>. Returns false when it couldn't (the engine then restarts it).</summary>
+    Task<bool> ResumeAsync(CancellationToken ct);
+}

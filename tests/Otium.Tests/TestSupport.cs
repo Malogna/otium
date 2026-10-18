@@ -21,6 +21,23 @@ public static class TestAddresses
         return Encode(data);
     }
 
+    /// <summary>A well-formed USDT payout target on TRON ("USDT:T…"), the same for the same seed.</summary>
+    public static string Usdt(int seed)
+    {
+        var data = new byte[25];
+        data[0] = 0x41;
+        SHA256.HashData(BitConverter.GetBytes(seed)).AsSpan(0, 20).CopyTo(data.AsSpan(1));
+        SHA256.HashData(SHA256.HashData(data.AsSpan(0, 21))).AsSpan(0, 4).CopyTo(data.AsSpan(21));
+        var value = new System.Numerics.BigInteger(data, isUnsigned: true, isBigEndian: true);
+        var sb = new System.Text.StringBuilder();
+        while (value > 0)
+        {
+            sb.Insert(0, Alphabet[(int)(value % 58)]);
+            value /= 58;
+        }
+        return "USDT:" + sb;
+    }
+
     private static string Encode(byte[] data)
     {
         var sb = new System.Text.StringBuilder();

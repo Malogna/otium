@@ -67,6 +67,8 @@ public partial class App : Application
                 _host.RecordHistory();
                 _host.UpdateKeepAwake(); // also notices a laptop's charger being unplugged
                 _ = _host.RefreshElectricityAsync(CancellationToken.None);
+                _ = _host.ReportEarningsAsync(CancellationToken.None); // opt-in; sends only every few hours
+                _host.ObserveMeasurement(); // the test also ends on time when the engines go quiet
             };
             historyTimer.Start();
 

@@ -64,7 +64,8 @@ internal static class XmrigConfig
                 ["host"] = "127.0.0.1",
                 ["port"] = httpPort,
                 ["access-token"] = accessToken,
-                ["restricted"] = true,
+                // Unrestricted only for pause and resume; the API listens on loopback and needs the per-run token.
+                ["restricted"] = false,
             },
             ["cpu"] = new JsonObject
             {

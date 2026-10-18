@@ -28,6 +28,8 @@ Contact: **[privacy email address]**. [Data protection officer, if one is appoin
 | **Computers:** a device id (a one-way hash of your computer's machine id; the machine id itself never leaves your computer), a hash of the computer's secret key, when it first and last connected | Recognising your computers and keeping others out of your account | Contract; legitimate interest in security (art. 6(1)(f)) |
 | **Invites:** who invited you and whom you invited, and whether their pool shows that they started mining | Fee-free periods and the referral share of Otium's fee | Contract |
 | **Mysterium registrations** (only if you turn internet sharing on): your node's Mysterium identity and channel address, your computer, the internet address it asked from, and the Polygon transaction in which Otium paid the registration | Paying each node's registration once, and limiting how many we pay for | Contract; legitimate interest in preventing abuse |
+| **Earnings statistics** (only if you tick "Help show what PCs really earn"): every few hours, your graphics card model, processor name, how long each mined and what it earned and used in electricity, linked to your computer's device id. Never your address | Publishing real per-card earnings on otium.lol, only as medians across at least three computers, so no single computer's numbers are shown | Consent (art. 6(1)(a)); you can withdraw it in Settings at any time |
+| **What the pools paid your address:** the coin, the total the pool reports as paid to your payout address and its last 30 days, checked about twice a day from the pools' public APIs | Showing on otium.lol the total paid to Otium users (one sum over everyone, never per person) | Legitimate interest in showing what Otium is worth [to confirm] |
 | **Server logs:** IP addresses and request details, [kept for N days] | Security and troubleshooting | Legitimate interest |
 
 We don't collect your name, address, phone number or browsing history, and we don't use your data for advertising or
@@ -40,8 +42,9 @@ thresholds, with their legal bases and retention.]
 
 ### Data that stays on your computer
 
-The app keeps its settings (including your payout address), a copy of your account summary (invite code, email) and
-local earnings statistics
+The app keeps its settings (including your payout address and the result of the "measure my PC" test), a copy of
+your account summary (invite code, email) and local earnings statistics (hour by hour for 14 days, month by month for
+two years)
 in its data folder (Advanced → About → Open data folder). It isn't sent anywhere except as described here.
 
 ## 3. Who else receives data
@@ -55,6 +58,7 @@ in its data folder (Advanced → About → Open data folder). It isn't sent anyw
 | **Honeygain** (internet sharing partner, only if you turn sharing on) | Runs inside Otium and routes its customers' traffic through your connection; sees your IP address and the traffic it routes. [Link to Honeygain's privacy notice; confirm their role (separate controller?) and whether a data processing agreement is needed.] | Internet sharing |
 | **Mysterium Network** (only if you turn internet sharing on) | Runs a node on your computer that routes its business customers' traffic through your connection; sees your IP address and the traffic it routes, and pays your Polygon address. [Link to Mysterium's privacy notice; it is a separate controller under its own terms.] | Internet sharing |
 | **Polygon blockchain** | Your node's channel address and Otium's registration payment; later, Mysterium's payments to your Polygon address | Registering your node; paying you |
+| **CoinGecko** | Nothing about you: the server asks it for today's coin prices | Converting what the pools paid into dollars for otium.lol |
 | **Electricity price services:** hvakosterstrommen.no, elprisetjustnu.se | Your computer's IP address when the app fetches today's prices for your price area (no account data) | Pausing in expensive hours |
 | **GitHub** | Your computer's IP address when the app checks for updates | Updates |
 | **Hosting provider** [name, location] | Everything on the server, as our processor | Running the server |
@@ -67,8 +71,8 @@ the safeguards used (adequacy decision, EU–US Data Privacy Framework, standard
 
 - **While you have an account**, we keep the data above.
 - **When you delete your account**, we delete or anonymize everything that identifies you straight away: your email,
-  payout address, invite code, the link between you and your mining worker, your computers and their keys and your
-  sign-in codes. What the pools themselves keep about your address is up to them.
+  payout address, invite code, the link between you and your mining worker, your computers and their keys, your
+  sign-in codes, the earnings statistics you shared and the record of what the pools paid your address. What the pools themselves keep about your address is up to them.
 - **Sign-in codes** stop working after 15 minutes. [Decide how long old used/expired code hashes are kept, e.g. 30 days.]
 - **Server logs** are kept for [N] days.
 - **Backups** of the server database are kept for [N] days, so deleted data disappears from them within that time.

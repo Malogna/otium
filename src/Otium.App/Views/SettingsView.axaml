@@ -30,6 +30,12 @@
                                Text="Otherwise Windows puts it to sleep a little while after you leave, and earning stops for the night. The screen still turns off, and a laptop on battery is never kept awake." />
                 </StackPanel>
                 <ToggleSwitch IsChecked="{Binding StartWithSystem}" OnContent="Start Otium when I sign in" OffContent="Start Otium when I sign in" />
+                <StackPanel Spacing="2">
+                    <ToggleSwitch IsChecked="{Binding ShareEarningsStats}"
+                                  OnContent="Help show what PCs really earn" OffContent="Help show what PCs really earn" />
+                    <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap"
+                               Text="Sends Otium this PC's graphics card model, processor name, hours earning and amounts earned, a few times a day; never your address. otium.lol shows only totals across several PCs." />
+                </StackPanel>
             </StackPanel>
         </Border>
 

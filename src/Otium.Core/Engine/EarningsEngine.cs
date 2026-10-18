@@ -1,5 +1,6 @@
 using Otium.Core.Platform;
 using Otium.Core.Power;
+using Otium.Core.Projections;
 using Otium.Core.Providers;
 
 namespace Otium.Core.Engine;
@@ -15,6 +16,12 @@ public sealed class EarningsEngine : IAsyncDisposable
     public static readonly TimeSpan LossTolerance = TimeSpan.FromMinutes(5);
     public static readonly TimeSpan UnprofitableRecheck = TimeSpan.FromMinutes(30);
     public static readonly TimeSpan ErrorRetry = TimeSpan.FromMinutes(1);
+
+    /// <summary>
+    /// How long a paused engine (see <see cref="IPausableProvider"/>) is kept ready after the user comes back. Within it,
+    /// earning resumes the moment they leave again; after it, the engine is stopped and its memory freed.
+    /// </summary>
+    public static readonly TimeSpan PauseGrace = TimeSpan.FromMinutes(10);
     private static readonly TimeSpan LedgerSaveInterval = TimeSpan.FromMinutes(1);
 
     private readonly IComputeProvider _provider;
@@ -35,6 +42,8 @@ public sealed class EarningsEngine : IAsyncDisposable
     private DateTimeOffset? _lossSince;
     private DateTimeOffset? _pausedUntil;
     private DateTimeOffset? _retryAt;
+    private DateTimeOffset? _runNowUntil;
+    private DateTimeOffset? _suspendedSince;
     private DateTimeOffset _lastLedgerSave;
     private string? _lastError;
     private string? _lastProblem;
@@ -69,6 +78,9 @@ public sealed class EarningsEngine : IAsyncDisposable
 
     public IComputeProvider Provider => _provider;
 
+    /// <summary>The running totals right now (available before the first tick, unlike the snapshot's).</summary>
+    public EarningsTotals Totals => new(_ledger.MiningTime, _ledger.EstimatedUserUsd, _ledger.ElectricityCostUsd);
+
     public void Start() => _loop ??= Task.Run(() => LoopAsync(_shutdown.Token));
 
     public void Enable()
@@ -88,6 +100,25 @@ public sealed class EarningsEngine : IAsyncDisposable
 
     /// <summary>Re-evaluate immediately, e.g. after settings change.</summary>
     public void Nudge() => _wake.Release();
+
+    /// <summary>
+    /// Earns now for up to <paramref name="duration"/> even while the user is at the computer (the "measure my PC" test
+    /// they start themselves). Electricity checks still apply. <see cref="EndRunNow"/> ends it early.
+    /// </summary>
+    public void RunNow(TimeSpan duration)
+    {
+        _runNowUntil = _time.GetUtcNow() + duration;
+        _wake.Release();
+    }
+
+    public void EndRunNow()
+    {
+        _runNowUntil = null;
+        _wake.Release();
+    }
+
+    /// <summary>Whether a <see cref="RunNow"/> window is open.</summary>
+    public bool IsRunningNow => _runNowUntil is { } until && _time.GetUtcNow() < until;
 
     private async Task LoopAsync(CancellationToken ct)
     {
@@ -183,20 +214,17 @@ public sealed class EarningsEngine : IAsyncDisposable
             }
         }
 
-        if (config.OnlyWhenIdle)
+        if (config.OnlyWhenIdle && !IsRunningNow)
         {
             var idle = _idle.GetIdleTime();
             if (idle is { } idleTime && idleTime < config.IdleThreshold)
             {
-                await StopRunningAsync(ct);
+                await SuspendOrStopAsync(now, ct);
                 var wait = config.IdleThreshold - idleTime;
                 Publish(EngineState.WaitingForIdle, $"Waiting until you're away ({FormatMinutes(wait)} more)", idleTime: idle);
                 return;
             }
         }
-
-        if (_running is null && !await PassesProfitGateAsync(config, now, ct))
-            return;
 
         // A new pool route from the server changes the options, which restarts the miner on the new pool.
         var desired = new ProviderRunOptions(
@@ -204,6 +232,23 @@ public sealed class EarningsEngine : IAsyncDisposable
             config.WorkerName,
             config.UsagePercent,
             config.CpuPool);
+
+        // Back from a pause: hashing again at once, with the dataset and pool connection it kept.
+        if (_suspendedSince is not null && _running is not null)
+        {
+            if (_running == desired && _provider is IPausableProvider pausable && await pausable.ResumeAsync(ct))
+            {
+                _suspendedSince = null;
+                _lastTick = now; // the paused time earned nothing
+                _lossSince = null;
+                Publish(EngineState.Starting, "Back to earning…");
+                return;
+            }
+            await StopRunningAsync(ct); // a new slice or route, or it couldn't resume: start afresh below
+        }
+
+        if (_running is null && !await PassesProfitGateAsync(config, now, ct))
+            return;
 
         if (_running is null || _running != desired)
         {
@@ -287,8 +332,36 @@ public sealed class EarningsEngine : IAsyncDisposable
             costPerDay: costPerDay,
             role: _running.Target.Role,
             detail: status.Detail,
-            problem: status.Problem);
+            problem: status.Problem,
+            calibrating: status.IsCalibrating);
     }
+
+    /// <summary>
+    /// The user is back. A pausable engine keeps its prepared state for <see cref="PauseGrace"/>, so earning resumes the
+    /// moment they leave again; others (and one paused for longer) are stopped.
+    /// </summary>
+    private async Task SuspendOrStopAsync(DateTimeOffset now, CancellationToken ct)
+    {
+        if (_running is null)
+            return;
+        if (_suspendedSince is { } since)
+        {
+            if (now - since >= PauseGrace)
+                await StopRunningAsync(ct);
+            return;
+        }
+        if (_provider is IPausableProvider pausable && await pausable.PauseAsync(ct))
+        {
+            _suspendedSince = now;
+            _saveLedger(_ledger);
+            _lastLedgerSave = now;
+            return;
+        }
+        await StopRunningAsync(ct);
+    }
+
+    /// <summary>Whether the engine is paused with its miner kept ready (see <see cref="PauseGrace"/>).</summary>
+    public bool IsSuspended => _suspendedSince is not null;
 
     /// <summary>Before starting, use what the provider (or the last run) says to avoid mining at a loss.</summary>
     private async Task<bool> PassesProfitGateAsync(EngineConfig config, DateTimeOffset now, CancellationToken ct)
@@ -343,6 +416,7 @@ public sealed class EarningsEngine : IAsyncDisposable
         if (_running is null)
             return;
         _running = null;
+        _suspendedSince = null;
         await _provider.StopAsync(ct);
         _saveLedger(_ledger);
         _lastLedgerSave = _time.GetUtcNow();
@@ -361,7 +435,8 @@ public sealed class EarningsEngine : IAsyncDisposable
         EngineBlockedException? blocked = null,
         TimeSpan? idleTime = null,
         string? detail = null,
-        string? problem = null)
+        string? problem = null,
+        bool calibrating = false)
     {
         var config = _config();
         var now = _time.GetUtcNow();
@@ -384,6 +459,8 @@ public sealed class EarningsEngine : IAsyncDisposable
             IdleTime = idleTime,
             Detail = detail,
             Problem = problem,
+            IsCalibrating = calibrating,
+            RunningNow = IsRunningNow,
             IdleDetectionAvailable = !config.OnlyWhenIdle || _idle.GetIdleTime() is not null,
             TotalUserUsd = _ledger.EstimatedUserUsd,
             TotalElectricityUsd = _ledger.ElectricityCostUsd,

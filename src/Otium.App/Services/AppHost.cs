@@ -112,7 +112,180 @@ public sealed class AppHost : IAsyncDisposable
             bandwidthLedger.Load(), bandwidthLedger.Save);
 
         foreach (var engine in Engines)
-            engine.SnapshotChanged += _ => UpdateKeepAwake();
+        {
+            engine.SnapshotChanged += _ =>
+            {
+                UpdateKeepAwake();
+                ObserveAway();
+                ObserveMeasurement();
+            };
+        }
+    }
+
+    // ---------- "While you were away" ----------
+
+    private readonly object _sessionLock = new();
+    private readonly AwaySessionTracker _away = new();
+
+    /// <summary>The last stretch of earning that ended, until the user closes its card; null when there's none.</summary>
+    public AwaySummary? LastAway { get; private set; }
+
+    public event Action? AwayChanged;
+
+    public void DismissAway()
+    {
+        LastAway = null;
+        AwayChanged?.Invoke();
+    }
+
+    /// <summary>
+    /// Watches the engines for a stretch of earning ending (the user came back) and keeps its summary. The "measure my
+    /// PC" test isn't time away, so it doesn't count.
+    /// </summary>
+    private void ObserveAway()
+    {
+        AwaySummary? ended;
+        lock (_sessionLock)
+        {
+            var engines = Engines.ToList();
+            var active = engines.Any(e => e.Snapshot.State is EngineState.Earning or EngineState.Starting) && !engines.Any(e => e.IsRunningNow);
+            var totals = engines.Select(e => e.Totals).ToList();
+            ended = _away.Observe(DateTimeOffset.Now, active, totals.Sum(t => t.UserUsd), totals.Sum(t => t.ElectricityUsd));
+            if (ended is not null)
+                LastAway = ended;
+        }
+        if (ended is not null)
+            AwayChanged?.Invoke();
+    }
+
+    // ---------- "Measure my PC" ----------
+
+    /// <summary>The test under way or just finished; null before the first one this session.</summary>
+    public PcMeasurementRun? MeasurementRun { get; private set; }
+
+    public event Action? MeasurementChanged;
+
+    /// <summary>Why the test can't run now, or null when it can.</summary>
+    public string? MeasurementBlocker =>
+        !Settings.OnboardingComplete ? "Finish setting up Otium first."
+        : !Settings.EarningEnabled ? "Press Start first: the test earns for real, to your address."
+        : MiningBlocker is { } blocker ? blocker
+        : !Engines.Any(e => e.Enabled) ? "Turn on the processor or the graphics card in Settings first."
+        : null;
+
+    public bool IsMeasuring => MeasurementRun is { Phase: not MeasurementPhase.Done };
+
+    /// <summary>
+    /// Starts the two-minute test: the miners earn now (to the user's address, fee slices as usual) even though the user
+    /// is at the computer, and their measured rates replace the hardware estimate. Returns why it can't, or null.
+    /// </summary>
+    public string? StartMeasurement()
+    {
+        lock (_sessionLock)
+        {
+            if (IsMeasuring)
+                return null;
+            if (MeasurementBlocker is { } blocker)
+                return blocker;
+            MeasurementRun = new PcMeasurementRun(DateTimeOffset.UtcNow);
+            foreach (var engine in Engines.Where(e => e.Enabled))
+                engine.RunNow(PcMeasurementRun.RunNowWindow);
+        }
+        MeasurementChanged?.Invoke();
+        return null;
+    }
+
+    /// <summary>Ends the test now, keeping whatever it measured.</summary>
+    public void StopMeasurement()
+    {
+        lock (_sessionLock)
+        {
+            if (MeasurementRun is not { Phase: not MeasurementPhase.Done } run)
+                return;
+            run.Stop();
+            FinishMeasurement(run);
+        }
+        MeasurementChanged?.Invoke();
+    }
+
+    /// <summary>Feeds the test the engines' latest numbers; ends it when it has enough.</summary>
+    public void ObserveMeasurement()
+    {
+        lock (_sessionLock)
+        {
+            if (MeasurementRun is not { Phase: not MeasurementPhase.Done } run)
+                return;
+            var devices = new List<MeasuredDevice> { new(DeviceKind.Cpu, CpuInfo.Name, Engine.Snapshot, "rx/0") };
+            if (GpuEngine is not null && GpuEngine.Enabled)
+                devices.Add(new MeasuredDevice(DeviceKind.Gpu, GpuProvider?.Gpus.FirstOrDefault()?.Name ?? "Graphics card", GpuEngine.Snapshot));
+            if (!Engine.Enabled)
+                devices.RemoveAt(0);
+            run.Observe(DateTimeOffset.UtcNow, devices);
+            if (run.Phase == MeasurementPhase.Done)
+                FinishMeasurement(run);
+        }
+        MeasurementChanged?.Invoke();
+    }
+
+    private void FinishMeasurement(PcMeasurementRun run)
+    {
+        foreach (var engine in Engines)
+            engine.EndRunNow(); // back to earning only while the user is away
+        if (run.Result() is { } result)
+        {
+            Settings.Measurement = result;
+            _settingsStore.Save(Settings);
+        }
+    }
+
+    // ---------- Opt-in earnings reports for otium.lol ----------
+
+    private int _reporting;
+
+    /// <summary>The devices the reports cover, with their models and running totals.</summary>
+    private List<ReportedDevice> ReportedDevices()
+    {
+        var devices = new List<ReportedDevice> { new("cpu", CpuInfo.Name, Engine.Totals) };
+        if (GpuEngine is not null)
+            devices.Add(new ReportedDevice("gpu", CardIds.FromName(GpuProvider?.Gpus.FirstOrDefault()?.Name) ?? GpuProvider?.Gpus.FirstOrDefault()?.Name, GpuEngine.Totals));
+        return devices;
+    }
+
+    /// <summary>Turns the opt-in on or off. Turning it on counts from now: nothing earned before is sent.</summary>
+    public void SetShareEarningsStats(bool on)
+    {
+        if (on && !Settings.ShareEarningsStats)
+            EarningsReports.Reset(Settings.EarningsReports, ReportedDevices(), DateTimeOffset.UtcNow);
+        Settings.ShareEarningsStats = on;
+        _settingsStore.Save(Settings);
+    }
+
+    /// <summary>When the user agreed and a report is due, sends what was earned since the last one. Failures retry later.</summary>
+    public async Task ReportEarningsAsync(CancellationToken ct)
+    {
+        if (!Settings.ShareEarningsStats || !Settings.OnboardingComplete || Settings.Account.WorkerId is null)
+            return;
+        if (Interlocked.Exchange(ref _reporting, 1) == 1)
+            return;
+        try
+        {
+            if (EarningsReports.Next(Settings.EarningsReports, ReportedDevices(), DateTimeOffset.UtcNow) is not { } pending)
+            {
+                _settingsStore.Save(Settings); // the first call sets the baselines
+                return;
+            }
+            await CreateClient().ReportEarningsAsync(DeviceId, Settings.DeviceSecret, pending.Report, ct);
+            EarningsReports.Commit(Settings.EarningsReports, pending);
+            _settingsStore.Save(Settings);
+        }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or AccountRequestException or UriFormatException)
+        {
+            // Not important enough to bother the user: the same period goes out with the next attempt.
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _reporting, 0);
+        }
     }
 
     private readonly ISleepInhibitor _sleep = SleepInhibitor.ForThisPlatform();
@@ -429,8 +602,11 @@ public sealed class AppHost : IAsyncDisposable
     /// earning, then connects to the server (mining begins as soon as the account is ready).
     /// </summary>
     /// <param name="payoutTarget">The address chosen during onboarding ("USDT:T…"), paid by the pool directly.</param>
-    public async Task StartFirstTimeAsync(string? inviteCode, string? payoutTarget = null)
+    /// <param name="shareEarnings">The user ticked "Help show what PCs earn" (see <see cref="SetShareEarningsStats"/>).</param>
+    public async Task StartFirstTimeAsync(string? inviteCode, string? payoutTarget = null, bool shareEarnings = false)
     {
+        if (shareEarnings)
+            SetShareEarningsStats(true);
         if (PayoutTarget.ParseOrNull(payoutTarget) is { } target)
         {
             Settings.PayoutMode = PayoutMode.OwnWallet;
@@ -449,6 +625,9 @@ public sealed class AppHost : IAsyncDisposable
         }
         SetEarning(true);
         await SyncAccountAsync(CancellationToken.None);
+        // Measure this PC right away (the user is watching), so the overview shows its own numbers, not a table's.
+        if (Settings.Measurement is null && !Settings.MeasurementSkipped)
+            StartMeasurement();
     }
 
     /// <summary>Re-applies the per-device toggles after the main switch or settings change.</summary>

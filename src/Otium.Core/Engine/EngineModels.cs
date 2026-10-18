@@ -68,6 +68,12 @@ public sealed record EngineSnapshot
     /// <summary>A problem the provider explained in plain words (e.g. "Graphics card isn't mining: …"), shown as is.</summary>
     public string? Problem { get; init; }
 
+    /// <summary>The provider is still measuring itself (e.g. testing graphics card algorithms one by one).</summary>
+    public bool IsCalibrating { get; init; }
+
+    /// <summary>Earning while the user is at the computer, because they started the "measure my PC" test.</summary>
+    public bool RunningNow { get; init; }
+
     public bool IdleDetectionAvailable { get; init; } = true;
 
     public double TotalUserUsd { get; init; }

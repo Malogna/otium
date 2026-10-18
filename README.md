@@ -21,7 +21,9 @@ never holds anyone's money.
    you type, including the network, and the screen says which network to pick in your wallet and when the pool pays
    (unMineable: daily once you reach its minimum, e.g. 1.5 USDT). US users are paid in Monero by MoneroOcean, because
    unMineable doesn't serve US residents.
-3. Press **Start earning**. Otium starts when you sign in and earns only while you're away from the computer, after 3 minutes without keyboard or mouse input. While it earns on mains power it keeps the computer awake, so Windows' usual sleep timer doesn't stop it for the night; the screen still turns off, and laptops on battery are left alone (Settings can turn this off). It pauses the moment you come back, and also when electricity would cost more than it earns (the price is estimated from your country; in Norway, Sweden, Denmark and Finland it follows live hourly spot prices, from hvakosterstrommen.no, elprisetjustnu.se, elprisenligenu.dk and sahkotin.fi).
+3. Press **Start earning**. Right away, a two-minute test runs the miners while you watch and measures what this PC
+   really earns (on its best coin, after Otium's fee and electricity), so the overview shows your own numbers instead
+   of a hardware table's; it earns for real, to your address, and can be run again from the overview. From then on Otium starts when you sign in and earns only while you're away from the computer, after 3 minutes without keyboard or mouse input. While it earns on mains power it keeps the computer awake, so Windows' usual sleep timer doesn't stop it for the night; the screen still turns off, and laptops on battery are left alone (Settings can turn this off). It pauses the moment you come back, and also when electricity would cost more than it earns (the price is estimated from your country; in Norway, Sweden, Denmark and Finland it follows live hourly spot prices, from hvakosterstrommen.no, elprisetjustnu.se, elprisenligenu.dk and sahkotin.fi).
 4. The pool pays your address by itself. The overview shows how far you are from its next payout ("0.84 USDT at
    unMineable · paid out at 1.5 USDT", with an estimate of when) and warns you if the pool won't pay on its own, for
    example when unMineable's "Auto pay" switch is off for your address (new TRC-20 addresses start with it off), with a
@@ -32,6 +34,16 @@ never holds anyone's money.
 6. Optionally, earn from your internet connection too: the overview suggests it once, explains in plain words what
    sharing unused bandwidth means, and turns it on only when you agree. A Mysterium node then pays you in MYST, straight
    to your own Polygon address; Otium pays its one-time registration.
+
+When you come back after a stretch of earning, the overview says what it brought in ("While you were away: $0.84 in
+7 h 40 min of earning"), and in the first days of a month it sums up the last one. Each can be copied as a message
+with your invite code or saved as a picture to post. Optionally ("Help show what PCs really earn", off until you tick
+it), the app sends a few times a day what each device earned, with the card model and processor name and never your
+address; otium.lol then shows real per-card medians from at least three computers, next to the total the pools have paid
+Otium users (read from unMineable's and MoneroOcean's public APIs, counting only addresses mined by Otium alone).
+
+When you come back for a moment, the processor miner is paused rather than stopped, keeping its 2 GB dataset and pool
+connection for up to 10 minutes, so earning resumes the instant you leave again instead of after another warm-up.
 
 The overview shows, at a glance: what you've earned and progress to the pool's next payout (with an ETA), what each device is
 doing right now in plain words ("Mining Monero", "Waiting for you to step away · starts in 1:42"), what you can expect
