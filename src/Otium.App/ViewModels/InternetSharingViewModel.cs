@@ -23,7 +23,7 @@ public partial class InternetSharingViewModel : ViewModelBase
         _host = host;
         OnlyWhenAway = host.Settings.BandwidthOnlyWhenIdle;
         DailyLimitGb = (decimal)host.Settings.BandwidthDailyLimitGb;
-        PolygonAddress = host.Settings.BandwidthPayoutAddress ?? "";
+        PayoutAddress = host.Settings.BandwidthPayoutAddress ?? "";
         _ = CheckServiceAsync();
         _loading = false;
         host.AccountChanged += () => Dispatcher.UIThread.Post(Refresh);
@@ -56,18 +56,21 @@ public partial class InternetSharingViewModel : ViewModelBase
     [ObservableProperty] public partial bool OnlyWhenAway { get; set; }
     [ObservableProperty] public partial decimal? DailyLimitGb { get; set; }
 
-    /// <summary>Mysterium pays a Polygon (0x…) address; asked for only when the payout address isn't one.</summary>
-    [ObservableProperty] public partial string PolygonAddress { get; set; } = "";
+    /// <summary>Proxybase pays an 0x address (USDC on Tempo); asked for only when the payout address isn't one.</summary>
+    [ObservableProperty] public partial string PayoutAddress { get; set; } = "";
 
-    [ObservableProperty] public partial string? PolygonError { get; set; }
+    [ObservableProperty] public partial string? PayoutAddressError { get; set; }
 
-    public bool IsMysterium => _host.UsesMysterium;
+    public bool IsProxybase => _host.UsesProxybase;
 
-    /// <summary>The user's payout address can't receive MYST on Polygon, so the consent screen asks for one.</summary>
-    public bool NeedsPolygonAddress => IsMysterium &&
+    /// <summary>The user's payout address can't receive USDC on Tempo, so the consent screen asks for an 0x address.</summary>
+    public bool NeedsPayoutAddress => IsProxybase &&
         Core.Wallets.PayoutTarget.ParseOrNull(_host.Settings.PayoutAddress) is not { Coin.Format: Core.Wallets.AddressFormat.Evm };
 
-    public string MysteriumTermsUrl => "https://www.mysterium.network/terms-conditions";
+    /// <summary>Proxybase reports no byte counts Otium can see, so there's no daily data limit to set.</summary>
+    public bool SupportsDailyLimit => !IsProxybase;
+
+    public string TermsUrl => "https://proxybase.xyz/terms";
 
     /// <summary>Mysterium's network service, installed by Otium, is still there while sharing is off.</summary>
     [ObservableProperty]
@@ -78,9 +81,10 @@ public partial class InternetSharingViewModel : ViewModelBase
 
     public bool CanRemoveService => ServiceInstalled && !IsOn;
 
+    /// <summary>Earlier versions shared through Mysterium, whose Windows service may still be installed.</summary>
     private async Task CheckServiceAsync()
     {
-        if (!IsMysterium || !OperatingSystem.IsWindows())
+        if (!OperatingSystem.IsWindows())
             return;
         var engines = _host.Paths.EnginesDir;
         ServiceInstalled = await Task.Run(() => Otium.Providers.Mysterium.WindowsMystSupervisor.OurServiceBinary(engines) is not null);
@@ -98,12 +102,14 @@ public partial class InternetSharingViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private void OpenMysteriumTerms() => Launch.Open(MysteriumTermsUrl);
+    private void OpenTerms() => Launch.Open(TermsUrl);
 
-    public string UnavailableText => IsMysterium
-        ? Otium.Providers.Mysterium.MystRelease.ForCurrentPlatform() is null
-            ? "Internet sharing through Mysterium isn't available on this computer yet (Windows only for now)."
-            : "Internet sharing isn't available from this Otium server yet."
+    public string UnavailableText => IsProxybase
+        ? Otium.Providers.Proxybase.ProxybaseRelease.ForCurrentPlatform() is null
+            ? "Internet sharing through Proxybase isn't available on this computer (it needs Windows, Linux, or a Mac with Apple silicon)."
+            : _host.Settings.PayoutMode != Core.Settings.PayoutMode.OwnWallet
+                ? "Internet sharing pays your own wallet, so it's off while Otium holds a balance for you."
+                : "Internet sharing is switched off on this Otium server for now."
         : _host.Bandwidth.Provider.UnavailableReason
           ?? (_host.Settings.PayoutMode == Core.Settings.PayoutMode.Balance
               ? "Internet sharing isn't available right now."
@@ -112,23 +118,23 @@ public partial class InternetSharingViewModel : ViewModelBase
     public string PartnerName => _host.Settings.Account.BandwidthPartnerName is { Length: > 0 } name ? name : "Otium's partner";
 
     /// <summary>The explanation users agree to. Plain words, no small print.</summary>
-    public string ConsentText => IsMysterium
-        ? "Otium runs a Mysterium Network node on this computer. Mysterium's business customers use a small part of your " +
-          "unused internet connection to load public web pages and move data, for things like price comparison, ad checks " +
-          "and market research; only business services are switched on, not the anonymous public VPN. Websites they visit " +
-          "see your internet address. Nothing on your computer is accessed: not your files, passwords or browsing.\n\n" +
-          "Mysterium pays in MYST, straight to your own Polygon address, automatically once 5 MYST has built up (it keeps " +
-          "20%). Otium pays the node's one-time registration and takes nothing from these earnings. Turning this on means " +
-          "you agree to Mysterium's terms for node runners, and Windows asks once for administrator permission to set up " +
-          "Mysterium's network service."
+    public string ConsentText => IsProxybase
+        ? "Otium runs Proxybase's open-source client on this computer. Proxybase's customers, mostly AI agents and " +
+          "businesses that collect public web pages or check ads, send some of their web traffic through your unused " +
+          "internet connection. Websites they visit see your internet address, so sites may sometimes show you more " +
+          "CAPTCHAs. Nothing on your computer is accessed: not your files, passwords or browsing.\n\n" +
+          "Proxybase pays per GB. Whenever $1 has built up, Otium has it paid straight to your own 0x address, in USDC on " +
+          "the Tempo network (add Tempo to your wallet to see it). Otium takes nothing from these earnings. Turning this on " +
+          "means you agree to Proxybase's terms."
         : $"{PartnerName} uses a small part of your unused internet connection to load public web pages for its business " +
         "customers, for things like price comparison, ad checks and market research. Websites they visit see your " +
         "internet address. Nothing on your computer is accessed: not your files, passwords or browsing.";
 
-    public string LimitsText => IsMysterium
-        ? FormattableString.Invariant($"Uses at most {_host.Settings.BandwidthDailyLimitGb:0.#} GB a day (you can change this). ") +
-          "Earnings vary a lot with demand in your country: independent estimates say a dollar or two a month for an always-on " +
-          "computer. Turn it off any time in Advanced settings."
+    public string LimitsText => IsProxybase
+        ? "There's no daily data cap: your connection is used whenever Proxybase's customers need an address like yours" +
+          (_host.Settings.BandwidthOnlyWhenIdle ? ", and only while you're away. " : ". ") +
+          "Earnings depend on demand in your country; most home connections see modest traffic, so expect a few dollars a " +
+          "month rather than the rates Proxybase advertises. Turn it off any time in Advanced settings."
         : FormattableString.Invariant($"Uses at most {_host.Settings.BandwidthDailyLimitGb:0.#} GB a day (you can change this). ") +
           "Only one computer per internet connection is paid. Turn it off any time in Advanced settings.";
 
@@ -151,7 +157,7 @@ public partial class InternetSharingViewModel : ViewModelBase
         IsOn = settings.BandwidthEnabled && settings.BandwidthConsentAt is not null;
         ShowSuggestion = IsOffered && !IsOn && !settings.BandwidthPromptDismissed;
         var month = ExpectedUsdPerDay * 30;
-        EstimateText = IsMysterium ? "usually a dollar or two a month, paid in MYST" : month > 0 ? $"about {Format.Usd(month)} a month extra" : "";
+        EstimateText = IsProxybase ? "usually a few dollars a month, paid in USDC" : month > 0 ? $"about {Format.Usd(month)} a month extra" : "";
         OnPropertyChanged(nameof(LimitsText));
         OnPropertyChanged(nameof(ConsentText));
         OnPropertyChanged(nameof(UnavailableText));
@@ -202,15 +208,15 @@ public partial class InternetSharingViewModel : ViewModelBase
     [RelayCommand]
     private Task Agree()
     {
-        if (NeedsPolygonAddress)
+        if (NeedsPayoutAddress)
         {
-            if (!Core.Wallets.CryptoAddresses.TryValidate(Core.Wallets.AddressFormat.Evm, PolygonAddress, out var error))
+            if (!Core.Wallets.CryptoAddresses.TryValidate(Core.Wallets.AddressFormat.Evm, PayoutAddress, out var error))
             {
-                PolygonError = error ?? "That isn't a valid Polygon address. Copy your 0x… address from your wallet.";
+                PayoutAddressError = error ?? "That isn't a valid 0x address. Copy it from your wallet.";
                 return Task.CompletedTask;
             }
-            PolygonError = null;
-            _host.Settings.BandwidthPayoutAddress = PolygonAddress.Trim().ToLowerInvariant();
+            PayoutAddressError = null;
+            _host.Settings.BandwidthPayoutAddress = PayoutAddress.Trim().ToLowerInvariant();
             _host.SaveSettings();
         }
         return SetAsync(true);
