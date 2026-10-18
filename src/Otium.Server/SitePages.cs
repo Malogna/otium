@@ -199,7 +199,6 @@ internal static class SitePages
         if (policy is null)
             return [];
         var pearl = Usable(policy, "pearlhash");
-        var quantus = Usable(policy, "quantus");
         var otium = 1 - fees.FeePercent / 100;
         var list = new List<CardEarnings>();
         foreach (var c in Cards)
@@ -207,8 +206,6 @@ internal static class SitePages
             var coins = new List<CardCoin>();
             if (pearl is { } p && c.PearlTh > 0 && c.MemoryGb >= PearlMinMemoryGb && p.Allows([$"NVIDIA GeForce {c.Name}"]))
                 coins.Add(new("Pearl", c.PearlTh * 1e12 * p.UsdPerHashPerSecondDay * 0.98 * (1 - p.PoolFeePercent / 100) * otium, c.PearlW, "paid in your coin"));
-            if (quantus is { } q && c.QuantusMh > 0)
-                coins.Add(new("Quantus", c.QuantusMh * 1e6 * q.UsdPerHashPerSecondDay * 0.975 * (1 - q.PoolFeePercent / 100) * otium, c.QuantusW, "with a Quantus wallet"));
             if (coins.Count > 0)
                 list.Add(new(c.Id, c.Name, $"{(c.Id.StartsWith("rx", StringComparison.Ordinal) ? "AMD" : "NVIDIA")} · {c.MemoryGb} GB", coins, c.Group));
         }
@@ -489,7 +486,7 @@ internal static class SitePages
                       <details><summary>Why does my antivirus warn about it?</summary><p>Antivirus tools flag every mining program, because criminals hide miners on other people's computers. Otium downloads the official open-source XMRig and SRBMiner releases, checks their fingerprints, and keeps them in one folder you can allow. It only mines when you've set it up and turned it on.</p></details>
                       <details><summary>Will it slow my computer down?</summary><p>By default it only runs while you're away, at the lowest priority, and you choose how much of the processor it may use. Games and work always come first.</p></details>
                       <details><summary>I live in the United States</summary><p>unMineable doesn't serve US residents, so Otium pays you in Monero through MoneroOcean instead.</p></details>
-                      <details><summary>What about AMD graphics cards?</summary><p>They can't mine Pearl, the best coin for NVIDIA cards. Add a free Quantus wallet in Settings and your card mines Quantus, paid hourly by Kryptex Pool.</p></details>
+                      <details><summary>What about AMD graphics cards?</summary><p>Otium tests Pearl on yours too: the mining software now runs it on recent AMD cards (an RX 9070 XT makes about $2 a day before power). If the pool doesn't accept an AMD card's work, Otium moves it to the next coin that pays your wallet more than the power it uses. Either way it's paid to your one wallet, and your processor earns too.</p></details>
                       <details><summary>Which download do I need?</summary><p>The Download button picks the installer for the computer you're on. To choose one yourself: <a href="/download?os=windows">Windows</a>, <a href="/download?os=macos">Mac with Apple silicon</a>, <a href="/download?os=macos-intel">Mac with Intel</a> or <a href="/download?os=linux">Linux (AppImage)</a>.</p></details>
                       <details><summary>Will my computer go to sleep?</summary><p>Not while it's earning: Otium keeps it awake so it can mine through the night, and the screen still turns off. When it stops earning (you're back, power is too expensive, or a laptop runs on battery) your usual sleep settings apply again. You can switch this off in Settings.</p></details>
                     </div>

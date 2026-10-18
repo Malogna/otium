@@ -366,9 +366,10 @@ public sealed class KryptexOptions
 
     /// <summary>
     /// Coins apps may mine on Kryptex without an account, to the user's own wallet for the coin (Kryptex pays it
-    /// directly). Offered by every server, custodial or not, to apps whose user added an address for the coin.
+    /// directly). Off by default: everything is paid to the user's one payout address, and Quantus would need a
+    /// separate Quantus wallet, so the app no longer mines it.
     /// </summary>
-    public bool AddressMining { get; set; } = true;
+    public bool AddressMining { get; set; }
 
     /// <summary>Quantus: 0.1 QTC minimum, hourly payouts, 3% fee (October 2026). Port 8049 is the TLS port (7049 plain).</summary>
     public Dictionary<string, KryptexCoin> AddressCoins { get; set; } = new(StringComparer.OrdinalIgnoreCase)
@@ -402,8 +403,10 @@ public sealed class UnmineableOptions
     /// <summary>GPU algorithms mined there (SRBMiner names), with their WhatToMine id and stratum endpoint.</summary>
     public Dictionary<string, UnmineableAlgorithm> Algorithms { get; set; } = new(StringComparer.OrdinalIgnoreCase)
     {
-        // unMineable's PearlPow doesn't work on AMD cards (its support article, October 2026).
-        ["pearlhash"] = new() { WhatToMineId = 469, Host = "pearlpow.unmineable.com", OnlyGpus = ["NVIDIA"] },
+        // Offered to AMD cards too: SRBMiner 3.7.6 mines pearlhash on AMD (WhatToMine benchmarks the RX 9070 XT and
+        // 7900 XTX on it), although unMineable's support article still says NVIDIA only. If unMineable rejects an AMD
+        // card's shares, the app's share-rejection failover sets Pearl aside for that card and it mines the next coin.
+        ["pearlhash"] = new() { WhatToMineId = 469, Host = "pearlpow.unmineable.com" },
         // Loses money at $0.15/kWh on every card checked (October 2026).
         ["xelishash"] = new() { WhatToMineId = 459, Host = "xelishash.unmineable.com", Tier = "free-power-only" },
         ["fishhash"] = new() { WhatToMineId = 411, Host = "fishhash.unmineable.com", Tier = "free-power-only" },

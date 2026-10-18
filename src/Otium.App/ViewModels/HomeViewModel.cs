@@ -332,7 +332,6 @@ public partial class HomeViewModel : ViewModelBase
             warnings.AddRange(gpu.Problems ?? []);
         }
 
-        // Quantus mined by the graphics card is paid by Kryptex to the user's Quantus wallet.
         if (_host.QuantusBalance is { } quantus && (quantus.Pending > 0 || quantus.Paid > 0))
             GoalText += $" · plus {Format.Coin(quantus.Pending, quantus.Coin)} at {quantus.PoolName} for your Quantus wallet, paid out at {Format.Coin(quantus.MinimumPayout, quantus.Coin)}";
         PoolWarning = string.Join(" ", warnings);
