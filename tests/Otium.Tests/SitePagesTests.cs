@@ -14,6 +14,7 @@ public sealed class SitePagesTests : IDisposable
     private readonly string _pages = Path.Combine(Path.GetTempPath(), $"otium-site-pages-{Guid.NewGuid():N}");
     private readonly ManualTime _time = new(new DateTimeOffset(2026, 10, 18, 15, 0, 0, TimeSpan.Zero));
     private readonly GpuPolicyTests.FakeFeed _feed = new();
+    private readonly FakeReleases _releases = new();
     private readonly WebApplicationFactory<Program> _factory;
     private readonly HttpClient _http;
 
@@ -40,6 +41,8 @@ public sealed class SitePagesTests : IDisposable
                 services.AddSingleton<IKryptexApi>(new GpuPolicyTests.FakeKryptex());
                 services.RemoveAll<IPearlPipFeed>();
                 services.AddSingleton<IPearlPipFeed>(new GpuPolicyTests.FakePip());
+                services.RemoveAll<Otium.Server.IReleaseFeed>();
+                services.AddSingleton<Otium.Server.IReleaseFeed>(_releases);
                 services.RemoveAll<TimeProvider>();
                 services.AddSingleton<TimeProvider>(_time);
             });
@@ -60,7 +63,7 @@ public sealed class SitePagesTests : IDisposable
 
         Assert.Equal(HttpStatusCode.OK, status);
         Assert.Contains("Your computer works the night shift.", html);
-        Assert.Contains("""href="https://example.com/download?a=1&amp;b=2">""", html);
+        Assert.Contains("""<a class="button" href="/download">""", html); // straight to the installer
         // The cost list comes from the same breakdown the app shows, with the server's 3% fee.
         Assert.Contains("<dt>Otium</dt><dd>3% of mining time, about 43 minutes per day of mining", html);
         Assert.Contains("<dt>Pool</dt><dd>unMineable keeps 0.75%", html);
@@ -73,21 +76,34 @@ public sealed class SitePagesTests : IDisposable
     }
 
     [Fact]
-    public async Task Each_card_shows_its_best_coin_after_fees_and_electricity()
+    public async Task The_first_thing_on_the_page_is_what_a_typical_pc_earns_a_month()
     {
         var html = (await Get("/")).Html;
 
-        // RTX 3080: Pearl 100 TH/s × 3.4e-14 $/H/s/day = $3.40, less SRBMiner 2%, unMineable 0.75% and Otium 3% = $3.21,
-        // less 240 W for 24 h at $0.15/kWh ($0.86) = $2.34. Quantus earns it less, so Pearl is shown.
-        var row = html[html.IndexOf("""data-card="rtx3080""", StringComparison.Ordinal)..];
-        Assert.Contains("""<span class="amount">$2.34</span>""", row[..800]);
-        Assert.Contains("Pearl · paid in your coin", row[..800]);
-        // AMD can't mine Pearl on unMineable: the RX 6700 XT only has Quantus, which loses money at $0.15/kWh.
-        var amd = html[html.IndexOf("""data-card="rx6700xt""", StringComparison.Ordinal)..];
-        Assert.Contains("stays paused", amd[..800]);
-        // The slider's data for the script, with "</" escaped so it can't close the script tag.
-        Assert.Contains("""<script type="application/json" id="otium-data">{"cards":[""", html);
-        Assert.Contains("Coin prices from WhatToMine via Otium's server, 18 October 2026, 15:00 UTC", html);
+        // RTX 3060, the typical gaming PC: Pearl 41 TH/s × 3.4e-14 $/H/s/day = $1.39, less SRBMiner 2%, unMineable 0.75%
+        // and Otium 3% = $1.32, less 100 W for 24 h at $0.15/kWh ($0.36) = $0.96 a day of mining; left alone 12 hours a
+        // day, $0.48 a day and $14 a month. 1.5 USDT takes a little over 3 days.
+        Assert.Contains("""<span class="est-amount" id="est-month">$14</span>""", html);
+        Assert.Contains("$0.48 a day with an RTX 3060, mining Pearl (paid in your coin)", html);
+        Assert.Contains("First payout of 1.5 USDT to your wallet in about 4 days, then daily.", html);
+        Assert.True(html.IndexOf("est-month", StringComparison.Ordinal) < html.IndexOf("id=\"night-shift\"", StringComparison.Ordinal));
+        Assert.Contains("""data-card="rtx3060" aria-pressed="true">""", html);
+        Assert.Contains("""data-card="rx6700xt" aria-pressed="false">""", html);
+        Assert.Contains("""<script type="application/json" id="otium-data">{"cards":[{"id":"rtx3060","name":"RTX 3060",""", html);
+        Assert.Contains("\"payoutUsdt\":1.5", html);
+        Assert.Contains("Today's coin prices from WhatToMine (18 October 2026, 15:00 UTC)", html);
+    }
+
+    [Fact]
+    public void A_card_that_costs_more_in_power_than_it_earns_shows_nothing_earned()
+    {
+        // AMD can't mine Pearl on unMineable; Quantus on an RX 6700 XT earns $0.19 a day against $0.32 of power.
+        var rx = new Otium.Server.CardEarnings("rx6700xt", "RX 6700 XT", "AMD · 12 GB", [new("Quantus", 0.1908, 90, "with a Quantus wallet")]);
+        var estimate = Otium.Server.SitePages.Estimate(rx, 12, 0.15)!.Value;
+        Assert.Equal(0, estimate.Day);
+        Assert.Equal(0, estimate.Month);
+        // With free power it pays: 12 hours of $0.19.
+        Assert.Equal(0.0954, Otium.Server.SitePages.Estimate(rx, 12, 0)!.Value.Day, 4);
     }
 
     [Fact]
@@ -97,6 +113,7 @@ public sealed class SitePagesTests : IDisposable
         var html = (await Get("/")).Html;
         Assert.Contains("Today's coin prices aren't available right now.", html);
         Assert.DoesNotContain("data-card=", html);
+        Assert.DoesNotContain("est-month", html);
     }
 
     [Fact]
@@ -148,6 +165,64 @@ public sealed class SitePagesTests : IDisposable
         Assert.DoesNotContain("<b>x", html);
         Assert.Contains("""<a href="/">How Otium works</a>""", html);
         Assert.Contains("""<a href="https://github.com/Malogna/otium">Source code</a>""", html);
+    }
+
+    [Theory]
+    [InlineData("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0 Safari/537.36", "windows")]
+    [InlineData("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Safari/605.1.15", "macos")]
+    [InlineData("Mozilla/5.0 (X11; Linux x86_64; rv:131.0) Gecko/20100101 Firefox/131.0", "linux")]
+    [InlineData("Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/130.0 Mobile Safari/537.36", null)]
+    [InlineData("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148", null)]
+    [InlineData(null, null)]
+    public void The_visitors_system_is_read_from_the_browser(string? userAgent, string? os) =>
+        Assert.Equal(os, Otium.Server.ReleaseDownloads.DetectOs(userAgent));
+
+    [Fact]
+    public async Task Download_goes_straight_to_the_installer_for_the_visitors_computer()
+    {
+        _releases.Assets =
+        [
+            new("Otium.Desktop-win-x64-Setup.exe", "https://dl.example/win-setup.exe"),
+            new("Otium.Desktop-win-x64-Portable.zip", "https://dl.example/win.zip"),
+            new("Otium.Desktop-osx-arm64-Setup.pkg", "https://dl.example/mac-arm.pkg"),
+            new("Otium.Desktop-osx-x64-Setup.pkg", "https://dl.example/mac-intel.pkg"),
+            new("Otium.Desktop-linux-x64.AppImage", "https://dl.example/linux.AppImage"),
+            new("RELEASES-win-x64", "https://dl.example/RELEASES"),
+        ];
+        using var noRedirect = _factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        async Task<string?> Where(string path, string? userAgent)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, path);
+            if (userAgent is not null)
+                request.Headers.TryAddWithoutValidation("User-Agent", userAgent);
+            using var response = await noRedirect.SendAsync(request);
+            Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+            return response.Headers.Location?.ToString();
+        }
+
+        Assert.Equal("https://dl.example/win-setup.exe", await Where("/download", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"));
+        Assert.Equal("https://dl.example/mac-arm.pkg", await Where("/download", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"));
+        Assert.Equal("https://dl.example/linux.AppImage", await Where("/download", "Mozilla/5.0 (X11; Linux x86_64)"));
+        Assert.Equal("https://dl.example/mac-intel.pkg", await Where("/download?os=macos-intel", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"));
+        // Phones can't install it: the releases page explains what's there.
+        Assert.Equal("https://example.com/download?a=1&b=2", await Where("/download", "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Mobile"));
+    }
+
+    [Fact]
+    public async Task Before_the_first_release_download_goes_to_the_releases_page()
+    {
+        using var noRedirect = _factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/download");
+        request.Headers.TryAddWithoutValidation("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
+        using var response = await noRedirect.SendAsync(request);
+        Assert.Equal("https://example.com/download?a=1&b=2", response.Headers.Location?.ToString());
+    }
+
+    private sealed class FakeReleases : Otium.Server.IReleaseFeed
+    {
+        public IReadOnlyList<Otium.Server.ReleaseAsset> Assets { get; set; } = [];
+
+        public Task<IReadOnlyList<Otium.Server.ReleaseAsset>> GetLatestAsync(CancellationToken ct) => Task.FromResult(Assets);
     }
 
     public void Dispose()
