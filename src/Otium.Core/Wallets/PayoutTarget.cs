@@ -48,8 +48,21 @@ public static class PayoutCoins
 
     public static readonly IReadOnlyList<PayoutCoin> All = [Usdt, Bitcoin, Litecoin, Bnb, Solana, Tron, Ether, Monero];
 
+    /// <summary>
+    /// Quantus, paid by Kryptex Pool to a Quantus wallet (0.1 QTC minimum, hourly, October 2026). Not a payout coin of
+    /// its own: nothing mines it on the processor, so it's an optional second address for the graphics card only.
+    /// </summary>
+    public static readonly PayoutCoin Quantus = new("QTC", "Quantus", "QTC", "Quantus", AddressFormat.Quantus, 0.1m, "qz…");
+
+    /// <summary>Coins only the graphics card is paid in, each at its own address next to the main payout address.</summary>
+    public static readonly IReadOnlyList<PayoutCoin> GpuOnly = [Quantus];
+
     public static PayoutCoin? Find(string? symbol) =>
         All.FirstOrDefault(c => string.Equals(c.Symbol, symbol?.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>A payout coin or a graphics-card-only coin.</summary>
+    public static PayoutCoin? FindAny(string? symbol) =>
+        Find(symbol) ?? GpuOnly.FirstOrDefault(c => string.Equals(c.Symbol, symbol?.Trim(), StringComparison.OrdinalIgnoreCase));
 }
 
 /// <summary>
@@ -89,10 +102,17 @@ public sealed record PayoutTarget
     }
 
     /// <summary>
-    /// Reads "COIN:address". A bare Monero address (what Otium stored before payouts went to other coins) reads as
-    /// "XMR:address".
+    /// Reads "COIN:address" for a payout coin. A bare Monero address (what Otium stored before payouts went to other
+    /// coins) reads as "XMR:address". Graphics-card-only coins (Quantus) are refused: see <see cref="TryParseAny"/>.
     /// </summary>
-    public static bool TryParse(string? text, [NotNullWhen(true)] out PayoutTarget? target, out string? error)
+    public static bool TryParse(string? text, [NotNullWhen(true)] out PayoutTarget? target, out string? error) =>
+        TryParse(text, PayoutCoins.Find, out target, out error);
+
+    /// <summary>Like <see cref="TryParse(string?, out PayoutTarget?, out string?)"/>, but also reads graphics-card-only coins ("QTC:qz…").</summary>
+    public static bool TryParseAny(string? text, [NotNullWhen(true)] out PayoutTarget? target, out string? error) =>
+        TryParse(text, PayoutCoins.FindAny, out target, out error);
+
+    private static bool TryParse(string? text, Func<string, PayoutCoin?> find, [NotNullWhen(true)] out PayoutTarget? target, out string? error)
     {
         target = null;
         var value = (text ?? "").Trim();
@@ -105,9 +125,11 @@ public sealed record PayoutTarget
             return false;
         }
 
-        if (PayoutCoins.Find(value[..colon]) is not { } coin)
+        if (find(value[..colon]) is not { } coin)
         {
-            error = $"Otium can't pay out in {value[..colon]}. Choose one of: {string.Join(", ", PayoutCoins.All.Select(c => c.Ticker))}.";
+            error = PayoutCoins.GpuOnly.Any(c => string.Equals(c.Symbol, value[..colon].Trim(), StringComparison.OrdinalIgnoreCase))
+                ? $"{value[..colon].Trim().ToUpperInvariant()} can only be added as a second address for the graphics card. Choose one of: {string.Join(", ", PayoutCoins.All.Select(c => c.Ticker))}."
+                : $"Otium can't pay out in {value[..colon]}. Choose one of: {string.Join(", ", PayoutCoins.All.Select(c => c.Ticker))}.";
             return false;
         }
         return TryCreate(coin, value[(colon + 1)..], out target, out error);
@@ -115,12 +137,15 @@ public sealed record PayoutTarget
 
     public static PayoutTarget? ParseOrNull(string? text) => TryParse(text, out var target, out _) ? target : null;
 
+    /// <summary>Any known coin's target, graphics-card-only coins included, or null.</summary>
+    public static PayoutTarget? ParseAnyOrNull(string? text) => TryParseAny(text, out var target, out _) ? target : null;
+
     /// <summary>Whether two stored targets are the same coin and address, however each was typed.</summary>
     public static bool SameAs(string? a, string? b) =>
-        ParseOrNull(a) is { } x && ParseOrNull(b) is { } y ? x == y : string.Equals(a?.Trim(), b?.Trim(), StringComparison.Ordinal);
+        ParseAnyOrNull(a) is { } x && ParseAnyOrNull(b) is { } y ? x == y : string.Equals(a?.Trim(), b?.Trim(), StringComparison.Ordinal);
 
     /// <summary>The canonical "COIN:address" for a stored value, or the value trimmed when it doesn't parse.</summary>
-    public static string Normalize(string text) => ParseOrNull(text)?.ToString() ?? text.Trim();
+    public static string Normalize(string text) => ParseAnyOrNull(text)?.ToString() ?? text.Trim();
 
     private static string Canonical(AddressFormat format, string address) => format switch
     {

@@ -18,6 +18,15 @@ public interface IMinerProcess : IAsyncDisposable
 
     /// <summary>Current total hashrate in H/s, or null if the miner hasn't reported one yet.</summary>
     Task<double?> ReadHashrateAsync(CancellationToken ct);
+
+    /// <summary>Shares the pool has accepted and rejected since launch, as of the last hashrate read; null if unknown.</summary>
+    ShareCounts? Shares => null;
+}
+
+/// <summary>Shares sent to the pool since the miner started.</summary>
+public sealed record ShareCounts(long Accepted, long Rejected)
+{
+    public long Total => Accepted + Rejected;
 }
 
 public interface IMinerProcessFactory
@@ -96,6 +105,8 @@ internal sealed class SrbMinerProcess : IMinerProcess
 
     public IReadOnlyList<string> RecentLog => _log.ToArray();
 
+    public ShareCounts? Shares { get; private set; }
+
     public async Task<double?> ReadHashrateAsync(CancellationToken ct)
     {
         try
@@ -103,6 +114,7 @@ internal sealed class SrbMinerProcess : IMinerProcess
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
             timeout.CancelAfter(TimeSpan.FromSeconds(3));
             var json = await _http.GetStringAsync($"http://127.0.0.1:{_apiPort}/", timeout.Token);
+            Shares = SrbMinerStats.ParseApiShares(json) ?? Shares;
             if (SrbMinerStats.ParseApiHashrate(json) is { } hashrate)
                 return hashrate;
         }
@@ -110,7 +122,9 @@ internal sealed class SrbMinerProcess : IMinerProcess
         {
         }
         // SRBMiner prints a "Total" line every 30 s; an older one means the miner has stopped (e.g. frozen).
-        return SrbMinerStats.ParseConsoleHashrate(RecentLog.TakeLast(40), DateTime.Now - TimeSpan.FromSeconds(90));
+        var recent = RecentLog.TakeLast(40).ToList();
+        Shares = SrbMinerStats.ParseConsoleShares(recent) ?? Shares;
+        return SrbMinerStats.ParseConsoleHashrate(recent, DateTime.Now - TimeSpan.FromSeconds(90));
     }
 
     private void Append(string? line)

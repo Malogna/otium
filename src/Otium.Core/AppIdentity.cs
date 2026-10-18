@@ -55,13 +55,16 @@ public static class AppIdentity
         return url.Length == 0 ? null : url;
     }
 
-    /// <summary>The configured fee targets that parse ("COIN:address" or a bare Monero address), canonical form.</summary>
+    /// <summary>
+    /// The configured fee targets that parse ("COIN:address", a bare Monero address, or "QTC:qz…" for the graphics
+    /// card's Quantus), canonical form.
+    /// </summary>
     public static IReadOnlyList<string> ResolveFeeWallets()
     {
         var overridden = Environment.GetEnvironmentVariable("OTIUM_FEE_WALLET");
         var value = string.IsNullOrWhiteSpace(overridden) ? FeeWalletAddress : overridden;
         return value.Split([';', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(Wallets.PayoutTarget.ParseOrNull)
+            .Select(Wallets.PayoutTarget.ParseAnyOrNull)
             .OfType<Wallets.PayoutTarget>()
             .Select(t => t.ToString())
             .Distinct()

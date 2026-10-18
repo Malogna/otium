@@ -34,12 +34,24 @@ public sealed class GpuPolicyTests
             Fail ? throw new HttpRequestException("down") : Task.FromResult(Coins.GetValueOrDefault(whatToMineId));
     }
 
+    /// <summary>PIP-3 as the server reads it; null text means it couldn't be read. No network in tests.</summary>
+    internal sealed class FakePip : IPearlPipFeed
+    {
+        public string? Text { get; set; }
+
+        public Task<string?> GetAsync(CancellationToken ct) => Task.FromResult(Text);
+    }
+
     internal sealed class FakeKryptex : IKryptexApi
     {
         /// <summary>"coin:worker" → the worker's 30-minute average (and optional 3-hour average), in H/s.</summary>
         public Dictionary<string, (double Avg30m, double? Avg3h)> Workers { get; } = [];
 
-        public Task<KryptexPoolInfo> GetPoolInfoAsync(string coin, CancellationToken ct) => Task.FromResult(new KryptexPoolInfo(3));
+        /// <summary>Chain height per coin slug, as pool/info reports it.</summary>
+        public Dictionary<string, long> Heights { get; } = [];
+
+        public Task<KryptexPoolInfo> GetPoolInfoAsync(string coin, CancellationToken ct) =>
+            Task.FromResult(new KryptexPoolInfo(3, Heights.TryGetValue(coin, out var height) ? height : null));
 
         public Task<IReadOnlyList<KryptexWorker>> GetWorkersAsync(string coin, string account, CancellationToken ct) =>
             Task.FromResult<IReadOnlyList<KryptexWorker>>(Workers.Where(w => w.Key.StartsWith(coin + ":", StringComparison.Ordinal))
@@ -119,7 +131,7 @@ public sealed class GpuPolicyTests
     }
 
     [Fact]
-    public async Task Without_a_kryptex_account_only_moneroocean_is_offered()
+    public async Task Without_a_kryptex_account_only_moneroocean_and_kryptex_address_logins_are_offered()
     {
         FreshFeeds();
         _kryptexOptions.Account = null;
@@ -127,7 +139,11 @@ public sealed class GpuPolicyTests
         var policy = await Service().BuildAsync(CancellationToken.None);
 
         Assert.Null(policy.For("pearlhash"));
-        Assert.Single(policy.Routes);
+        Assert.Equal([GpuRoutes.MoneroOcean, GpuRoutes.KryptexAddress], policy.Routes.Select(r => r.Kind));
+        Assert.Equal(GpuTiers.Primary, policy.For("quantus")!.Tier);
+
+        _kryptexOptions.AddressMining = false;
+        Assert.Single((await Service().BuildAsync(CancellationToken.None)).Routes);
     }
 
     [Fact]
@@ -245,6 +261,8 @@ public sealed class KryptexCreditingTests : IDisposable
                 services.AddSingleton<IMoneroPoolApi>(new GpuPolicyTests.FakePool());
                 services.RemoveAll<IKryptexApi>();
                 services.AddSingleton<IKryptexApi>(_kryptex);
+                services.RemoveAll<IPearlPipFeed>();
+                services.AddSingleton<IPearlPipFeed>(new GpuPolicyTests.FakePip());
                 services.RemoveAll<IProfitFeed>();
                 services.AddSingleton<IProfitFeed>(_feed);
                 services.RemoveAll<TimeProvider>();

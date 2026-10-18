@@ -89,6 +89,12 @@ public sealed class AppSettings
     /// </summary>
     public string? BandwidthPayoutAddress { get; set; }
 
+    /// <summary>
+    /// Optional "QTC:qz…": the user's own Quantus wallet. With it, the graphics card may also mine Quantus on Kryptex
+    /// Pool (paid there, in QTC) whenever Quantus pays more than the coins paid to <see cref="PayoutAddress"/>.
+    /// </summary>
+    public string? QuantusAddress { get; set; }
+
     /// <summary>The user answered "Not now" to the internet sharing suggestion on the overview.</summary>
     public bool BandwidthPromptDismissed { get; set; }
 

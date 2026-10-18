@@ -10,6 +10,9 @@ public enum PayoutPool
 
     /// <summary>Every other coin: unMineable mines and converts, and pays the address in its own coin.</summary>
     Unmineable,
+
+    /// <summary>Quantus, mined by the graphics card to the user's own Quantus wallet (Kryptex Pool's address login).</summary>
+    Kryptex,
 }
 
 /// <summary>
@@ -23,10 +26,11 @@ public static class PayoutRouting
     public const string UnmineableCpuHost = "rx.unmineable.com";
     public const int UnmineableTlsPort = 443;
 
-    public static PayoutPool? PoolFor(string? target) => PayoutTarget.ParseOrNull(target) switch
+    public static PayoutPool? PoolFor(string? target) => PayoutTarget.ParseAnyOrNull(target) switch
     {
         null => null,
         { Coin.Symbol: "XMR" } => PayoutPool.MoneroOcean,
+        { Coin.Symbol: "QTC" } => PayoutPool.Kryptex,
         _ => PayoutPool.Unmineable,
     };
 
@@ -47,6 +51,13 @@ public static class PayoutRouting
     /// <summary>The first fee target that fits the user's pool, or null (the fee slice then stays with the user).</summary>
     public static string? FeeTargetFor(string? user, IEnumerable<string> feeTargets) =>
         feeTargets.FirstOrDefault(t => SamePool(user, t)) is { } fee ? PayoutTarget.Normalize(fee) : null;
+
+    /// <summary>
+    /// The user's Quantus target ("QTC:qz…") in canonical form, or null when the setting is empty or not a Quantus
+    /// address. Only the graphics card mines to it.
+    /// </summary>
+    public static string? QuantusTarget(string? setting) =>
+        PayoutTarget.ParseAnyOrNull(setting) is { Coin.Symbol: "QTC" } quantus ? quantus.ToString() : null;
 
     /// <summary>The wallet MoneroOcean expects: the bare Monero address.</summary>
     public static string MoneroOceanWallet(string target) => PayoutTarget.ParseOrNull(target)?.Address ?? target.Trim();

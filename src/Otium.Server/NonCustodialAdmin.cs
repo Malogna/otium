@@ -13,7 +13,7 @@ public static class NonCustodialAdmin
 {
     public static async Task<IResult> SummaryAsync(
         OtiumStore store, IUnmineableApi unmineable, UnmineableOptions options, Bandwidth.IMystWallet myst, bool mystSponsoring,
-        TimeProvider time, ILogger logger, CancellationToken ct)
+        TimeProvider time, ILogger logger, CancellationToken ct, Gpu.PearlForkWatcher? pearlFork = null)
     {
         var now = time.GetUtcNow();
         var (referred, verified) = store.ReferralCounts();
@@ -96,6 +96,8 @@ public static class NonCustodialAdmin
             verifiedReferrals = verified,
             otium,
             otiumError,
+            // Pearl's FP8 fork (PIP-3): once active, only Hopper and Blackwell cards mine Pearl.
+            pearlFork = pearlFork is null ? null : await pearlFork.GetAsync(ct),
         });
     }
 }

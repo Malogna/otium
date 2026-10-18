@@ -23,7 +23,12 @@ public enum PayoutRole
     App,
 }
 
-public sealed record MiningTarget(string WalletAddress, PayoutRole Role);
+/// <param name="WalletAddress">The payout target this slice mines to ("USDT:T…", or the operator's pool wallet).</param>
+/// <param name="QuantusTarget">
+/// Where Quantus mined by the graphics card goes during this slice ("QTC:qz…"), or null when the user hasn't added a
+/// Quantus address (the graphics card then doesn't mine Quantus).
+/// </param>
+public sealed record MiningTarget(string WalletAddress, PayoutRole Role, string? QuantusTarget = null);
 
 /// <param name="UsagePercent">Share of the device to use (CPU threads for CPU providers; GPU providers may ignore it).</param>
 /// <param name="Pool">The server's pool route for this CPU, overriding the provider's default pool; null for own-wallet mining.</param>

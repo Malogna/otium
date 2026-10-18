@@ -323,6 +323,7 @@ public sealed class SrbMinerProviderTests : IDisposable
         public int? ExitCode => Exited ? 1 : null;
         public List<string> Log { get; } = ["not enough GPU memory"];
         public IReadOnlyList<string> RecentLog => Log.ToArray();
+        public ShareCounts? Shares { get; set; }
         public bool Disposed { get; private set; }
 
         public Task<double?> ReadHashrateAsync(CancellationToken ct) => Task.FromResult<double?>(Script?.Invoke() ?? Hashrate);
@@ -519,6 +520,41 @@ public sealed class SrbMinerProviderTests : IDisposable
         // After the cool-down it gets another chance at the next re-check.
         await RunFor(SrbMinerGpuProvider.StallCooldown);
         Assert.Equal(autolykosLaunches + 1, _factory.Launches.Count(l => l.Algorithm == "autolykos2"));
+    }
+
+    [Fact]
+    public async Task A_coin_whose_shares_the_pool_rejects_is_failed_over_even_though_the_card_hashes()
+    {
+        // After a fork (Pearl's PIP-3 drops consumer cards) the card keeps hashing, but the pool refuses its work.
+        await MineAutolykosAfterBenchmarks();
+        var rejected = _factory.Launches[^1].Process;
+
+        rejected.Shares = new ShareCounts(Accepted: 3, Rejected: 4); // not yet: below the count and the 80% share
+        var status = await RunFor(TimeSpan.FromSeconds(10));
+        Assert.Equal("autolykos2", _provider.CurrentAlgorithm);
+        Assert.Null(status.Problem);
+
+        rejected.Shares = new ShareCounts(Accepted: 1, Rejected: 9);
+        status = await RunUntil(s => s.Problem is not null, TimeSpan.FromSeconds(30));
+        Assert.True(rejected.Disposed);
+        Assert.Equal("kawpow", _factory.Launches[^1].Algorithm);
+        Assert.StartsWith("Graphics card isn't mining autolykos2: the pool rejected 9 of its 10 shares", status.Problem);
+        Assert.Contains("fork", status.Problem);
+        Assert.NotNull(_provider.SetAsideReason("autolykos2"));
+    }
+
+    [Fact]
+    public void Share_counts_are_read_from_the_api_and_the_console()
+    {
+        const string json = """
+            {"algorithms":[{"name":"pearlhash","shares":{"total":12,"accepted":2,"rejected":10,"avg_find_time":9},
+              "hashrate":{"gpu":{"gpu0":1.0e14,"total":1.0e14}}}]}
+            """;
+        Assert.Equal(new ShareCounts(2, 10), SrbMinerStats.ParseApiShares(json));
+        Assert.Null(SrbMinerStats.ParseApiShares("""{"algorithms":null}"""));
+        Assert.Equal(new ShareCounts(2, 1), SrbMinerStats.ParseConsoleShares(
+            ["[2026-10-16 16:36:28] GPU0 RTX 3080: 360.53 MH/s [A:9 R:9 HW:0]", "[2026-10-16 16:36:28] Total: 360.53 MH/s [P:349.2W EFF: A:2 R:1 HW:0]"]));
+        Assert.Null(SrbMinerStats.ParseConsoleShares(["nothing here"]));
     }
 
     [Fact]

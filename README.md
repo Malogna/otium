@@ -77,6 +77,18 @@ policy.
   overview shows that balance next to MoneroOcean's), alongside MoneroOcean's GPU algorithms, which are "free power
   only". US users' graphics cards stay on MoneroOcean. Without the server's policy, unMineable users' GPUs wait
   (unMineable's prices come from the server) and Monero users fall back to MoneroOcean's own rates.
+- **Quantus (optional, any payout coin).** Users who add their own Quantus wallet (`qz…`, checked with its SS58
+  checksum) in Settings let the graphics card also mine **Quantus** on Kryptex Pool's address login
+  (`qtc.kryptex.network:8049`, TLS, `--wallet qz… --worker …`), whenever it pays more than the coins paid to the
+  payout address. Kryptex pays the Quantus wallet in QTC every hour from 0.1 QTC (3% pool fee, SRBMiner 2.5%). It is
+  the best coin for most AMD cards and NVIDIA's second best, and the fallback once Pearl's fork drops consumer cards.
+  Otium's fee slice mines Quantus to Otium's own Quantus address when the build has one (`-FeeWallet '…;QTC:qz…'`);
+  without one, Quantus mined in that slice stays with the user. The overview shows the Kryptex balance too.
+- **Pearl fork switch.** Pearl's planned FP8 fork (PIP-3) only accepts NVIDIA Hopper and Blackwell cards. The server
+  watches PIP-3 for an activation height and Pearl's chain height on Kryptex; once the chain reaches it, the policy
+  limits `pearlhash` to those cards (`GpuPolicy:PearlFork:SupportedGpus`), so every other card moves to its next best
+  coin at the next refresh. Apps also drop any coin whose shares the pool mostly rejects (5 or more, at least 80%),
+  which covers a fork the server hasn't seen yet. The admin summary shows the fork's state.
 - **Fee and referrals are mining time.** 2% of mining time is mined to Otium's own address on the user's pool (one
   slice of about 29 minutes per 24 hours of mining), and for 6 months a quarter of it goes to whoever invited the user,
   mined to the referrer's own address when the same pool pays it. New users with an invite code get 30 fee-free days;
@@ -220,6 +232,8 @@ Configure `src/Otium.Server/appsettings.json` (or environment variables such as 
 | `Kryptex:Cpu:Coin`, `Host`, `Port`, `Tls` | Kryptex's Monero pool for CPUs (default `xmr.kryptex.network:8029`, TLS) |
 | `CpuMining:KryptexPercent` | Share of balance accounts (0–100) whose CPU mines on Kryptex instead of MoneroOcean; default 0 |
 | `GpuPolicy:Disabled`, `Tiers`, `RefreshInterval` | Kill switch, tier overrides and refresh interval for the GPU policy |
+| `GpuPolicy:PearlFork:Mode`, `ActivationHeight`, `SupportedGpus`, `CheckInterval` | Pearl's FP8 fork: `auto` (default) follows PIP-3 and Pearl's chain height, `active` limits Pearl to the supported cards now, `off` never; an operator-set height overrides PIP-3 |
+| `Kryptex:AddressMining`, `AddressCoins:{algorithm}` | Quantus on Kryptex's address login, paid to users' own Quantus wallets (default on, any server; `qtc.kryptex.network:8049` with TLS) |
 | `Mysterium:Enabled`, `SponsorPrivateKey`, `PolygonRpcUrl` | Internet sharing through Mysterium nodes: Otium pays each new node's registration from this Polygon wallet (a secret; keep only a few days of MYST and some POL in it) |
 | `Mysterium:AmountMyst`, `DailyBudgetMyst`, `MaxPerAccount`, `MaxPerIpPerDay` | Fee sent per node (default 0.15 MYST) and the limits on sponsoring (15 MYST a day, 5 per account, 3 per connection a day) |
 | `Bandwidth:Enabled`, `PartnerName` | Custodial: internet sharing through Honeygain (off by default); the partner's name appears on the consent screen |
