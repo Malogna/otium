@@ -78,8 +78,9 @@ start.
   allow it.
 - Otium's server keeps your payout address, your computers and invite codes. An email address is optional (it lets
   you keep your invites when you reinstall). Settings has **Download my data** and **Delete my account**.
-- "Help show what PCs really earn" (on by default, can be turned off at the start or in Settings) sends your graphics
-  card and processor model and what they earned, never your address. otium.lol shows only totals across several PCs.
+- "Help show what PCs really earn" is a yes-or-no question at the start (and a switch in Settings). If you say yes,
+  the app sends your graphics card and processor model and what they earned, never your address; otium.lol shows only
+  totals across several PCs. Saying no later deletes what was sent.
 - Uninstalling removes the miners, Otium's scheduled tasks and its downloaded files.
 
 ## Help

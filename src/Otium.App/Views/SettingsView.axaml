@@ -42,7 +42,7 @@
                     <ToggleSwitch IsChecked="{Binding ShareEarningsStats}"
                                   OnContent="Help show what PCs really earn" OffContent="Help show what PCs really earn" />
                     <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap"
-                               Text="Sends Otium this PC's graphics card model, processor name, hours earning and amounts earned, a few times a day; never your address. otium.lol shows only totals across several PCs." />
+                               Text="Sends Otium this PC's graphics card model, processor name, hours earning and amounts earned, a few times a day; never your address. otium.lol shows only totals across several PCs. Turning it off deletes what this PC sent." />
                 </StackPanel>
             </StackPanel>
         </Border>

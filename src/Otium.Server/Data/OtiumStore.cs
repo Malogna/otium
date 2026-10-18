@@ -694,6 +694,16 @@ public sealed class OtiumStore
 
     // ---------- real earnings (opt-in reports, pool payouts) ----------
 
+    /// <summary>Deletes everything a computer shared for the real-earnings figures (the user withdrew their consent).</summary>
+    public void DeleteEarningsReports(string deviceId)
+    {
+        using var connection = Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "DELETE FROM earnings_reports WHERE device_id = $d";
+        cmd.Parameters.AddWithValue("$d", deviceId);
+        cmd.ExecuteNonQuery();
+    }
+
     /// <summary>Stores a report's rows. Returns false when this report (device and sequence) was already stored.</summary>
     public bool AddEarningsReport(string deviceId, string accountId, EarningsReport report, DateTimeOffset now)
     {

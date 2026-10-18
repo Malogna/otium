@@ -16,9 +16,10 @@ public sealed record EstimateRow(Geometry? Icon, string Name, string What, strin
 
 /// <summary>
 /// First launch. The first screen offers two ways in: <b>Quick start</b> turns mining on (processor, graphics card,
-/// keeping the miner ready, sharing earnings figures) and asks only where to pay, then shows exactly what's on before
-/// Start, with internet sharing as its own tick box (it uses the user's internet address, so it's never agreed to in
-/// passing); <b>Customize</b> walks through what this PC could earn, where to be paid, and each choice.
+/// keeping the miner ready) and asks only where to pay, then shows exactly what's on before Start, with internet
+/// sharing as its own tick box (it uses the user's internet address, so it's never agreed to in passing);
+/// <b>Customize</b> walks through what this PC could earn, where to be paid, and each choice. Both end with a plain
+/// yes or no on sharing earnings figures, with nothing preselected, because that needs the user's consent.
 /// </summary>
 public partial class WelcomeViewModel : ViewModelBase
 {
@@ -157,7 +158,6 @@ public partial class WelcomeViewModel : ViewModelBase
             UseGpu = true;
         ShareInternet = false;
         KeepMinerReady = true;
-        ShareEarnings = true;
         GoTo(PayoutStep);
     }
 
@@ -200,7 +200,6 @@ public partial class WelcomeViewModel : ViewModelBase
             if (HasGpu)
                 list.Add($"Your {GpuName} mines the best-paying coin while you're away.");
             list.Add("The processor miner pauses instead of closing when you come back, so it earns again the moment you leave (it keeps about 2.5 GB of memory for up to 10 minutes).");
-            list.Add("This PC's hardware model and earnings (never your address) go into the real-earnings figures on otium.lol.");
             return list;
         }
     }
@@ -343,8 +342,23 @@ public partial class WelcomeViewModel : ViewModelBase
 
     [ObservableProperty] public partial string? InviteError { get; set; }
 
-    /// <summary>"Help show what PCs really earn": ticked, and the user can untick it here or later in Settings.</summary>
-    [ObservableProperty] public partial bool ShareEarnings { get; set; } = true;
+    /// <summary>"Help show what PCs really earn": null until the user answers yes or no; Start waits for an answer.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShareEarningsYes), nameof(ShareEarningsNo), nameof(ShareEarningsUnanswered))]
+    [NotifyCanExecuteChangedFor(nameof(StartCommand))]
+    public partial bool? ShareEarnings { get; set; }
+
+    public bool ShareEarningsYes => ShareEarnings == true;
+
+    public bool ShareEarningsNo => ShareEarnings == false;
+
+    public bool ShareEarningsUnanswered => ShareEarnings is null;
+
+    [RelayCommand]
+    private void AnswerShareEarningsYes() => ShareEarnings = true;
+
+    [RelayCommand]
+    private void AnswerShareEarningsNo() => ShareEarnings = false;
 
     /// <summary>Pause the processor miner instead of stopping it when the user comes back: only if they tick it.</summary>
     [ObservableProperty] public partial bool KeepMinerReady { get; set; }
@@ -373,13 +387,13 @@ public partial class WelcomeViewModel : ViewModelBase
         Step = 1;
     }
 
-    private bool CanStart() => CanBegin && !IsStarting && InviteError is null && Payout.IsValid && (UseCpu || (HasGpu && UseGpu));
+    private bool CanStart() => CanBegin && !IsStarting && ShareEarnings is not null && InviteError is null && Payout.IsValid && (UseCpu || (HasGpu && UseGpu));
 
     [RelayCommand(CanExecute = nameof(CanStart))]
     private async Task Start()
     {
         IsStarting = true;
         _started(); // show the home screen right away; it reports progress while the account connects
-        await _host.StartFirstTimeAsync(InviteCode, Payout.Target?.ToString(), ShareEarnings, KeepMinerReady, ShareInternet && CanShareInternet);
+        await _host.StartFirstTimeAsync(InviteCode, Payout.Target?.ToString(), ShareEarnings == true, KeepMinerReady, ShareInternet && CanShareInternet);
     }
 }
