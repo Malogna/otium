@@ -61,13 +61,13 @@ public sealed class QuantusAndPearlForkTests
 
         Assert.True(PayoutTarget.TryParseAny($"qtc:{Quantus1}", out var target, out _));
         Assert.Equal($"QTC:{Quantus1}", target.ToString());
-        Assert.Equal(PayoutPool.Kryptex, PayoutRouting.PoolFor($"QTC:{Quantus1}"));
+        Assert.Equal(PayoutPool.Kryptex, PayoutRouting.PoolFor($"QTC:{Quantus1}", unitedStates: false));
         Assert.Equal($"QTC:{Quantus1}", PayoutRouting.QuantusTarget($" QTC:{Quantus1} "));
         Assert.Null(PayoutRouting.QuantusTarget(Usdt));
         Assert.Null(PayoutRouting.QuantusTarget(null));
 
         // Otium's Quantus fee address never counts as the fee target for a USDT user's pool.
-        Assert.Equal(OtiumUsdt, PayoutRouting.FeeTargetFor(Usdt, [$"QTC:{Quantus2}", OtiumUsdt]));
+        Assert.Equal(OtiumUsdt, PayoutRouting.FeeTargetFor(Usdt, [$"QTC:{Quantus2}", OtiumUsdt], unitedStates: false));
     }
 
     [Fact]
@@ -81,14 +81,14 @@ public sealed class QuantusAndPearlForkTests
         var cycle = FeePolicy.Default.CycleLength;
 
         Assert.Equal(new MiningTarget(Usdt, PayoutRole.User, user), schedule.TargetAt(TimeSpan.Zero, now));
-        // Referrers register only their main address, so Quantus mined in their slice stays with the user.
+        // Referrers register only their main address, so their slice has no Quantus target: the card mines Pearl for them.
         var referrerSlice = schedule.TargetAt(cycle - TimeSpan.FromMinutes(25), now);
         Assert.Equal(PayoutRole.Referrer, referrerSlice.Role);
-        Assert.Equal(user, referrerSlice.QuantusTarget);
+        Assert.Null(referrerSlice.QuantusTarget);
         Assert.Equal(new MiningTarget(OtiumUsdt, PayoutRole.App, otium), schedule.TargetAt(cycle - TimeSpan.FromSeconds(1), now));
 
-        // Without Otium's Quantus address the user keeps Quantus mined in the fee slice; without the user's, there's none.
-        Assert.Equal(user, new FeeSchedule(FeePolicy.Default, Usdt, OtiumUsdt, standing, user).TargetAt(cycle - TimeSpan.FromSeconds(1), now).QuantusTarget);
+        // Otium's only fee address is USDT: its slice mines Pearl to that, never Quantus to the user.
+        Assert.Null(new FeeSchedule(FeePolicy.Default, Usdt, OtiumUsdt, standing, user).TargetAt(cycle - TimeSpan.FromSeconds(1), now).QuantusTarget);
         Assert.Null(new FeeSchedule(FeePolicy.Default, Usdt, OtiumUsdt, standing).TargetAt(TimeSpan.Zero, now).QuantusTarget);
     }
 
@@ -96,10 +96,11 @@ public sealed class QuantusAndPearlForkTests
     private static readonly GpuInfo Rtx5090 = new(GpuVendor.Nvidia, 0, "NVIDIA GeForce RTX 5090", 32);
     private static readonly GpuInfo Rx6700 = new(GpuVendor.Amd, 0, "AMD Radeon RX 6700 XT", 12);
 
+    /// <summary>The server's policy shape: Pearl on unMineable for NVIDIA cards only, Quantus on Kryptex's address login.</summary>
     private static GpuPolicy Policy(IReadOnlyList<string>? pearlOnly = null) => new(
         DateTimeOffset.UtcNow,
         [
-            new GpuAlgorithmPolicy("pearlhash", GpuTiers.Primary, "unmineable-pearlhash", 3.4e-14, 0.75, OnlyGpus: pearlOnly),
+            new GpuAlgorithmPolicy("pearlhash", GpuTiers.Primary, "unmineable-pearlhash", 3.4e-14, 0.75, OnlyGpus: pearlOnly ?? ["NVIDIA"]),
             new GpuAlgorithmPolicy("quantus", GpuTiers.Primary, "kryptex-address-qtc", 1.6e-9, 3),
         ],
         [
@@ -133,6 +134,25 @@ public sealed class QuantusAndPearlForkTests
 
         // No Quantus wallet: no Quantus login (the app leaves the route out of its policy in that case anyway).
         Assert.Throws<InvalidOperationException>(() => Gpu(Policy()).LoginFor(quantus, options with { Target = new MiningTarget(Usdt, PayoutRole.User) }));
+    }
+
+    [Fact]
+    public async Task Fee_slices_without_a_quantus_target_mine_pearl_or_rest()
+    {
+        var quantusSlice = new ProviderRunOptions(new MiningTarget(Usdt, PayoutRole.User, $"QTC:{Quantus1}"), "w", 100);
+        var otiumSlice = new ProviderRunOptions(new MiningTarget(OtiumUsdt, PayoutRole.App), "w", 100);
+
+        // NVIDIA: Otium's slice mines Pearl to its USDT address, since there's no Quantus target in that slice.
+        var nvidia = Gpu(Policy(), Rtx3080);
+        await Assert.ThrowsAnyAsync<Exception>(() => nvidia.StartAsync(otiumSlice, CancellationToken.None)); // no stand-in miner here
+        Assert.Equal(["pearlhash"], (await nvidia.QuotesAsync(CancellationToken.None)).Select(q => q.Algorithm.PoolName));
+
+        // AMD only mines Quantus, so in Otium's slice it rests and says why, instead of reporting a failure.
+        var amd = Gpu(Policy(), Rx6700);
+        var resting = await Assert.ThrowsAsync<ProviderProblemException>(() => amd.StartAsync(otiumSlice, CancellationToken.None));
+        Assert.StartsWith("Graphics card is resting during Otium's short fee slice", resting.Message);
+        await Assert.ThrowsAnyAsync<Exception>(() => amd.StartAsync(quantusSlice, CancellationToken.None));
+        Assert.Equal(["quantus"], (await amd.QuotesAsync(CancellationToken.None)).Select(q => q.Algorithm.PoolName));
     }
 
     [Fact]

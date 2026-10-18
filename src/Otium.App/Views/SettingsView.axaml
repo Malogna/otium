@@ -23,6 +23,12 @@
                 </StackPanel>
                 <TextBlock Classes="error" IsVisible="{Binding IdleUnsupported}"
                            Text="Idle detection isn't available on this desktop (install 'xprintidle' on Linux). Mining will run continuously." />
+                <StackPanel Spacing="2">
+                    <ToggleSwitch IsChecked="{Binding KeepAwakeWhileEarning}"
+                                  OnContent="Keep the computer awake while it's earning" OffContent="Keep the computer awake while it's earning" />
+                    <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap"
+                               Text="Otherwise Windows puts it to sleep a little while after you leave, and earning stops for the night. The screen still turns off, and a laptop on battery is never kept awake." />
+                </StackPanel>
                 <ToggleSwitch IsChecked="{Binding StartWithSystem}" OnContent="Start Otium when I sign in" OffContent="Start Otium when I sign in" />
             </StackPanel>
         </Border>
@@ -32,6 +38,11 @@
                 <TextBlock Classes="h2" Text="Devices" />
                 <ToggleSwitch IsChecked="{Binding UseCpu}"
                               OnContent="Earn with my processor" OffContent="Earn with my processor" />
+                <StackPanel Spacing="6" IsVisible="{Binding LargePagesSupported}">
+                    <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Text="{Binding LargePagesText}" />
+                    <Button Content="Speed up processor mining" Command="{Binding SpeedUpProcessorCommand}"
+                            IsVisible="{Binding CanSpeedUpProcessor}" ToolTip.Tip="Windows asks for your permission once" />
+                </StackPanel>
                 <ToggleSwitch IsVisible="{Binding HasGpu}" IsChecked="{Binding UseGpu}"
                               OnContent="Earn with my graphics card" OffContent="Earn with my graphics card" />
                 <TextBlock Classes="muted" Text="{Binding GpuSummary}" TextWrapping="Wrap" />
@@ -90,7 +101,7 @@
             </StackPanel>
         </Border>
 
-        <Border Classes="card">
+        <Border Classes="card" IsVisible="{Binding InternetSharing.ShowInSettings}">
             <StackPanel Spacing="12" DataContext="{Binding InternetSharing}" x:DataType="vm:InternetSharingViewModel">
                 <TextBlock Classes="h2" Text="Internet sharing" />
                 <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" IsVisible="{Binding !IsOffered}" Text="{Binding UnavailableText}" />

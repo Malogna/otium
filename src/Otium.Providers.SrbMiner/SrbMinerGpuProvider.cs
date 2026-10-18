@@ -68,6 +68,9 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
     private readonly GpuPoolEndpoint _endpoint;
     private readonly IUnmineableApi _unmineable;
     private readonly IKryptexAddressApi _kryptex;
+
+    /// <summary>The user is in the US, where Monero mines on MoneroOcean instead of unMineable.</summary>
+    private readonly bool _unitedStates;
     private readonly string? _referralCode;
     private readonly ProfitSwitcher _switcher;
     private readonly BenchmarkStore _store;
@@ -114,8 +117,10 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         Func<GpuInfo, double?>? freeMemoryGb = null,
         IUnmineableApi? unmineable = null,
         string? referralCode = null,
-        IKryptexAddressApi? kryptex = null)
+        IKryptexAddressApi? kryptex = null,
+        bool unitedStates = false)
     {
+        _unitedStates = unitedStates;
         _policy = policy ?? (() => null);
         _unmineable = unmineable ?? new UnmineableClient(http);
         _kryptex = kryptex ?? new KryptexAddressClient(http);
@@ -180,6 +185,8 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         // A restart (e.g. for a fee slice) resumes the coin being mined; after an interrupted test there's none to resume.
         var resume = !_benchmarking;
         var eligible = await EligibleAsync(ct);
+        if (eligible.Count == 0 && options.Target.Role != PayoutRole.User)
+            throw new ProviderProblemException("Graphics card is resting during Otium's short fee slice: none of the coins it can mine there pay on this card. It carries on afterwards.");
         if (eligible.Count == 0)
             throw new ProviderProblemException("Graphics card isn't mining: no coin it can mine pays more than its electricity right now.");
 
@@ -369,8 +376,10 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
             foreach (var a in supported)
             {
                 // A card the coin no longer accepts (OnlyGpus, e.g. after Pearl's fork) skips it.
-                if (policy.For(a.PoolName) is { UsdPerHashPerSecondDay: > 0 } p && Usable(p.Tier, freePower) && policy.Route(p.Route) is not null
-                    && p.Allows(names))
+                // Quantus goes to a Quantus wallet, so it's left out of slices that have none (Otium's and the referrer's).
+                if (policy.For(a.PoolName) is { UsdPerHashPerSecondDay: > 0 } p && Usable(p.Tier, freePower) && policy.Route(p.Route) is { } route
+                    && p.Allows(names)
+                    && !(route.Kind == GpuRoutes.KryptexAddress && _options is { Target.QuantusTarget: null }))
                     list.Add((a, new AlgorithmQuote(a.PoolName, p.UsdPerHashPerSecondDay, a.DevFeePercent, p.PoolFeePercent)));
             }
             return list;
@@ -388,9 +397,9 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
 
     public async Task<PayoutBalance?> GetPayoutBalanceAsync(string walletAddress, CancellationToken ct)
     {
-        if (PayoutRouting.PoolFor(walletAddress) == PayoutPool.Unmineable)
+        if (PayoutRouting.PoolFor(walletAddress, _unitedStates) == PayoutPool.Unmineable)
             return await UnmineableClient.GetPayoutBalanceAsync(_unmineable, PayoutTarget.ParseOrNull(walletAddress)!, ct);
-        if (PayoutRouting.PoolFor(walletAddress) == PayoutPool.Kryptex)
+        if (PayoutRouting.PoolFor(walletAddress, _unitedStates) == PayoutPool.Kryptex)
             return await KryptexAddressClient.GetPayoutBalanceAsync(_kryptex, PayoutTarget.ParseAnyOrNull(walletAddress)!, ct);
 
         walletAddress = PayoutRouting.MoneroOceanWallet(walletAddress);
@@ -574,7 +583,7 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         if (route is { Kind: GpuRoutes.Unmineable })
         {
             // Any payout coin works there, Monero included (the app keeps US users off these routes).
-            if (PayoutRouting.PoolFor(options.Target.WalletAddress) is null)
+            if (PayoutRouting.PoolFor(options.Target.WalletAddress, _unitedStates) is null)
                 throw new InvalidOperationException($"{algorithm.PoolName} is paid by unMineable, which needs a payout address with its coin.");
             return PoolLogin.Unmineable(new GpuPoolEndpoint(route.Host, route.Port, route.Tls), options.Target.WalletAddress, options.WorkerName, _referralCode);
         }

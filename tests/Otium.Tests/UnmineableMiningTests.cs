@@ -17,11 +17,11 @@ public class UnmineableMiningTests
     private const string OtiumUsdt = "USDT:TB2xNFAjGarYPykmt1dZQz8hJb2Rhry4wJ";
     private const string Bnb = "BNB:0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed";
 
-    private static JsonElement XmrigPool(string target, PayoutRole role = PayoutRole.User)
+    private static JsonElement XmrigPool(string target, PayoutRole role = PayoutRole.User, bool unitedStates = false)
     {
         var json = XmrigConfig.Build(
             new ProviderRunOptions(new MiningTarget(target, role), "ot1234abcd", 50),
-            PoolEndpoint.MoneroOcean, httpPort: 45678, accessToken: "secret", referralCode: "ztjq-jr7s");
+            PoolEndpoint.MoneroOcean, httpPort: 45678, accessToken: "secret", referralCode: "ztjq-jr7s", unitedStates: unitedStates);
         return JsonDocument.Parse(json).RootElement.GetProperty("pools")[0].Clone();
     }
 
@@ -44,13 +44,18 @@ public class UnmineableMiningTests
     }
 
     [Fact]
-    public void Monero_still_mines_on_moneroocean_to_the_bare_address()
+    public void Monero_mines_on_unmineable_paid_in_xmr_except_in_the_us()
     {
         var wallet = TestAddresses.Generate();
         var pool = XmrigPool($"XMR:{wallet}");
-        Assert.Equal("gulf.moneroocean.stream:20128", pool.GetProperty("url").GetString());
-        Assert.Equal(wallet, pool.GetProperty("user").GetString());
-        Assert.Equal("ot1234abcd", pool.GetProperty("pass").GetString());
+        Assert.Equal("rx.unmineable.com:443", pool.GetProperty("url").GetString());
+        Assert.Equal($"XMR:{wallet}.ot1234abcd#ztjq-jr7s", pool.GetProperty("user").GetString());
+
+        // unMineable doesn't serve US residents: their Monero mines on MoneroOcean to the bare address.
+        var us = XmrigPool($"XMR:{wallet}", unitedStates: true);
+        Assert.Equal("gulf.moneroocean.stream:20128", us.GetProperty("url").GetString());
+        Assert.Equal(wallet, us.GetProperty("user").GetString());
+        Assert.Equal("ot1234abcd", us.GetProperty("pass").GetString());
     }
 
     [Fact]
@@ -64,19 +69,23 @@ public class UnmineableMiningTests
     public void Slices_only_go_to_targets_on_the_users_pool()
     {
         var xmr = TestAddresses.Generate();
-        Assert.Equal(PayoutPool.Unmineable, PayoutRouting.PoolFor(Bnb));
-        Assert.Equal(PayoutPool.MoneroOcean, PayoutRouting.PoolFor(xmr));
-        Assert.Null(PayoutRouting.PoolFor("not an address"));
+        Assert.Equal(PayoutPool.Unmineable, PayoutRouting.PoolFor(Bnb, unitedStates: false));
+        Assert.Equal(PayoutPool.Unmineable, PayoutRouting.PoolFor(xmr, unitedStates: false));
+        Assert.Equal(PayoutPool.MoneroOcean, PayoutRouting.PoolFor(xmr, unitedStates: true));
+        Assert.Null(PayoutRouting.PoolFor("not an address", unitedStates: false));
 
-        Assert.True(PayoutRouting.SamePool(Usdt, Bnb));
-        Assert.True(PayoutRouting.SamePool(xmr, $"XMR:{xmr}"));
-        Assert.False(PayoutRouting.SamePool(Usdt, xmr));
+        Assert.True(PayoutRouting.SamePool(Usdt, Bnb, unitedStates: false));
+        Assert.True(PayoutRouting.SamePool(xmr, $"XMR:{xmr}", unitedStates: true));
+        Assert.True(PayoutRouting.SamePool(Usdt, xmr, unitedStates: false)); // both unMineable outside the US
+        Assert.False(PayoutRouting.SamePool(Usdt, xmr, unitedStates: true));
 
-        // Otium's fee goes to its target on the user's pool, or stays with the user when the build has none there.
+        // One USDT fee address covers every user outside the US, Monero users included.
+        Assert.Equal(OtiumUsdt, PayoutRouting.FeeTargetFor(Bnb, [OtiumUsdt], unitedStates: false));
+        Assert.Equal(OtiumUsdt, PayoutRouting.FeeTargetFor(xmr, [OtiumUsdt], unitedStates: false));
+        // A US Monero user's fee slice needs an XMR fee address, and stays with them without one.
         string[] fees = [OtiumUsdt, $"XMR:{TestAddresses.Generate()}"];
-        Assert.Equal(OtiumUsdt, PayoutRouting.FeeTargetFor(Bnb, fees));
-        Assert.Equal(fees[1], PayoutRouting.FeeTargetFor(xmr, fees));
-        Assert.Null(PayoutRouting.FeeTargetFor(xmr, [OtiumUsdt]));
+        Assert.Equal(fees[1], PayoutRouting.FeeTargetFor(xmr, fees, unitedStates: true));
+        Assert.Null(PayoutRouting.FeeTargetFor(xmr, [OtiumUsdt], unitedStates: true));
     }
 
     [Fact]
@@ -143,10 +152,8 @@ public class UnmineableMiningTests
         Assert.Equal($"XMR:{xmr}.w#ztjq-jr7s", login.Wallet);
 
         // Outside the US only: US users' graphics cards stay on MoneroOcean.
-        Assert.Equal(PayoutPool.Unmineable, PayoutRouting.GpuPoolFor($"XMR:{xmr}", unitedStates: false));
-        Assert.Equal(PayoutPool.MoneroOcean, PayoutRouting.GpuPoolFor($"XMR:{xmr}", unitedStates: true));
-        Assert.Equal(PayoutPool.Unmineable, PayoutRouting.GpuPoolFor(Usdt, unitedStates: false));
-        Assert.Null(PayoutRouting.GpuPoolFor("nonsense", unitedStates: false));
+        Assert.Equal(PayoutPool.Unmineable, PayoutRouting.PoolFor($"XMR:{xmr}", unitedStates: false));
+        Assert.Equal(PayoutPool.MoneroOcean, PayoutRouting.PoolFor($"XMR:{xmr}", unitedStates: true));
 
         // A bad target can't be logged in with, and without the server's policy there's no unMineable route or price.
         Assert.Throws<InvalidOperationException>(() => Gpu(Policy).LoginFor(pearl, options with { Target = new MiningTarget("nonsense", PayoutRole.User) }));
