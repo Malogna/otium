@@ -24,10 +24,17 @@ public static class CostBreakdown
     public static double PoolPercent(PayoutPool pool, bool referralCode) =>
         pool == PayoutPool.Unmineable ? referralCode ? 0.75 : 1.0 : 0;
 
+    /// <summary>Kryptex Pool's fee on Quantus mined to the user's own wallet (PROP, October 2026).</summary>
+    public const double KryptexQuantusPercent = 3.0;
+
+    /// <summary>SRBMiner's developer fee on Quantus, as Kryptex's and NurseryPool's guides give it.</summary>
+    public const double QuantusMinerPercent = 2.5;
+
     /// <param name="cpuPool">The pool that pays the processor's mining.</param>
     /// <param name="gpuPool">The pool that pays the graphics card's mining, or null without one (Monero users outside the
     /// US mine their graphics card on unMineable, paid in XMR).</param>
-    public static IReadOnlyList<CostLine> For(FeePolicy fees, PayoutPool cpuPool, PayoutPool? gpuPool, bool referralCode)
+    /// <param name="quantus">The user added a Quantus wallet, so the graphics card may also mine Quantus on Kryptex.</param>
+    public static IReadOnlyList<CostLine> For(FeePolicy fees, PayoutPool cpuPool, PayoutPool? gpuPool, bool referralCode, bool quantus = false)
     {
         var minutes = fees.CycleLength.TotalMinutes * fees.FeePercent / 100;
         var lines = new List<CostLine>
@@ -62,6 +69,10 @@ public static class CostBreakdown
         {
             lines.Add(new("In total", $"about {P(cpuTotal)}."));
         }
+
+        if (quantus && gpuPool is not null)
+            lines.Add(new("Quantus", $"while the graphics card mines Quantus for your Quantus wallet, Kryptex keeps {P(KryptexQuantusPercent)} and " +
+                                     $"SRBMiner {P(QuantusMinerPercent)}: about {P(fees.FeePercent + KryptexQuantusPercent + QuantusMinerPercent)} in total."));
 
         if (referralCode && (cpuPool == PayoutPool.Unmineable || gpuPool == PayoutPool.Unmineable))
             lines.Add(new("Also", "unMineable pays Otium 0.25–0.5% of what you mine there, out of its own fee. It doesn't come out of " +

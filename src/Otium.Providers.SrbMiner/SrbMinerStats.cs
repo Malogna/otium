@@ -53,6 +53,46 @@ internal static partial class SrbMinerStats
         return null;
     }
 
+    /// <summary>Accepted and rejected shares summed over algorithms[].shares, or null when the API has none yet.</summary>
+    public static ShareCounts? ParseApiShares(string json)
+    {
+        using var doc = JsonDocument.Parse(json);
+        if (!doc.RootElement.TryGetProperty("algorithms", out var algorithms) || algorithms.ValueKind != JsonValueKind.Array)
+            return null;
+        long accepted = 0, rejected = 0;
+        var found = false;
+        foreach (var algo in algorithms.EnumerateArray())
+        {
+            if (!algo.TryGetProperty("shares", out var shares) || shares.ValueKind != JsonValueKind.Object)
+                continue;
+            if (shares.TryGetProperty("accepted", out var a) && TryNumber(a, out var acceptedCount))
+            {
+                accepted += (long)acceptedCount;
+                found = true;
+            }
+            if (shares.TryGetProperty("rejected", out var r) && TryNumber(r, out var rejectedCount))
+            {
+                rejected += (long)rejectedCount;
+                found = true;
+            }
+        }
+        return found ? new ShareCounts(accepted, rejected) : null;
+    }
+
+    /// <summary>The share counts on the last console "Total" line ("Total: … [P:349.2W EFF: A:2 R:1 HW:0]"), or null.</summary>
+    public static ShareCounts? ParseConsoleShares(IEnumerable<string> lines)
+    {
+        foreach (var line in lines.Reverse())
+        {
+            if (!line.Contains("Total", StringComparison.OrdinalIgnoreCase))
+                continue;
+            var match = ConsoleSharesRegex().Match(line);
+            if (match.Success)
+                return new ShareCounts(long.Parse(match.Groups["a"].Value, CultureInfo.InvariantCulture), long.Parse(match.Groups["r"].Value, CultureInfo.InvariantCulture));
+        }
+        return null;
+    }
+
     /// <summary>
     /// Last hashrate printed on a console line, normalised to H/s. With <paramref name="notBefore"/>, a line whose
     /// "[yyyy-MM-dd HH:mm:ss]" timestamp (local time) is older counts as stale and gives null: a frozen miner stops
@@ -160,4 +200,7 @@ internal static partial class SrbMinerStats
 
     [GeneratedRegex(@"\s*\[\d+\]$")]
     private static partial Regex DeviceTagRegex();
+
+    [GeneratedRegex(@"\bA:(?<a>\d+)\s+R:(?<r>\d+)\b")]
+    private static partial Regex ConsoleSharesRegex();
 }

@@ -61,7 +61,8 @@ public sealed class WhatToMineClient(HttpClient http, IOptions<KryptexOptions> o
     }
 }
 
-public sealed record KryptexPoolInfo(double FeePercent);
+/// <param name="Height">The coin's current block height as Kryptex's node sees it, or null if not reported.</param>
+public sealed record KryptexPoolInfo(double FeePercent, long? Height = null);
 
 /// <param name="Hashrate">The worker's average over the last 30 minutes, in H/s.</param>
 /// <param name="Average3h">The average over the last 3 hours, used to cover longer gaps between crediting runs.</param>
@@ -85,7 +86,8 @@ public sealed class KryptexClient(HttpClient http, IOptions<KryptexOptions> opti
     {
         using var doc = await GetAsync($"{Esc(coin)}/api/v1/pool/info", ct);
         var fee = doc.RootElement.TryGetProperty("fee", out var f) && f.ValueKind == JsonValueKind.Number ? f.GetDouble() : 0.01;
-        return new KryptexPoolInfo(fee * 100);
+        var height = doc.RootElement.TryGetProperty("height", out var h) && h.ValueKind == JsonValueKind.Number && h.TryGetInt64(out var n) ? n : (long?)null;
+        return new KryptexPoolInfo(fee * 100, height);
     }
 
     public async Task<IReadOnlyList<KryptexWorker>> GetWorkersAsync(string coin, string account, CancellationToken ct)

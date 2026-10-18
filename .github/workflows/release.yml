@@ -5,7 +5,7 @@
 #
 # Repository variables (Settings → Secrets and variables → Actions → Variables):
 #   OTIUM_SERVER_URL           required: the production server, e.g. https://api.example.com (baked into the app)
-#   OTIUM_FEE_WALLET           fee payout targets, e.g. "USDT:T...;XMR:4..." (empty: that fee is mined for the user)
+#   OTIUM_FEE_WALLET           fee payout targets, e.g. "USDT:T...;XMR:4...;QTC:qz..." (empty: that fee is mined for the user)
 #   AZURE_SIGNING_ENDPOINT, AZURE_SIGNING_ACCOUNT, AZURE_SIGNING_PROFILE   Azure Artifact Signing, if used
 #
 # Secrets:
