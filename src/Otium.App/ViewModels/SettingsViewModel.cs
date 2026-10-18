@@ -45,7 +45,7 @@ public partial class SettingsViewModel : ViewModelBase
         SelectedZone = SpotPriceZone.Find(s.ElectricityZone);
         Payout = new PayoutTargetEditor(s.PayoutAddress);
         Payout.Changed += () => SavePayoutCommand.NotifyCanExecuteChanged();
-        ServerUrl = s.ServerUrl;
+        ServerUrl = Core.AppIdentity.ResolveServerUrl(s.ServerUrl);
         StartWithSystem = AutoStart.IsEnabled();
         UseBalance = s.PayoutMode == PayoutMode.Balance;
         UseCpu = s.CpuEnabled;

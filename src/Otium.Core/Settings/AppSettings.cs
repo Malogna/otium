@@ -98,7 +98,26 @@ public sealed class AppSettings
     /// <summary>The user answered "Not now" to the internet sharing suggestion on the overview.</summary>
     public bool BandwidthPromptDismissed { get; set; }
 
-    public string ServerUrl { get; set; } = AppIdentity.DefaultServerUrl;
+    /// <summary>
+    /// A server the user chose in Advanced settings, or null to use the one this build was made for. Only a real choice
+    /// is kept: a build's default saved by older versions (or the development default) is dropped on load, so a new
+    /// build or a server move reaches everyone who didn't pick a server themselves.
+    /// </summary>
+    public string? ServerUrl
+    {
+        get => _serverUrl;
+        set => _serverUrl = IsBuildDefault(value) ? null : value!.Trim();
+    }
+
+    private string? _serverUrl;
+
+    /// <summary>The unconfigured development address every build used as its default before release builds set one.</summary>
+    public const string DevelopmentServerUrl = "http://localhost:5080";
+
+    private static bool IsBuildDefault(string? url) =>
+        string.IsNullOrWhiteSpace(url)
+        || string.Equals(url.Trim().TrimEnd('/'), DevelopmentServerUrl, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(url.Trim().TrimEnd('/'), AppIdentity.DefaultServerUrl.TrimEnd('/'), StringComparison.OrdinalIgnoreCase);
 
     public ReferralState Referral { get; set; } = new();
 
