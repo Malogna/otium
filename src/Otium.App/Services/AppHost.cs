@@ -57,13 +57,22 @@ public sealed class AppHost : IAsyncDisposable
         _http.DefaultRequestHeaders.UserAgent.ParseAdd($"{AppIdentity.Name}/0.1");
         Pool = new MoneroOceanClient(_http);
         var idle = IdleDetector.ForThisPlatform();
+        _idle = idle;
+        // The graphics card may also mine while the user does ordinary things at the computer, if they turned that on.
+        var gpuIdle = new BrowsingIdleDetector(idle, () => Settings.EarnWhileBrowsing, ForegroundMonitor.ForThisPlatform(), PowerSource.OnBattery);
         _historyStore = new JsonFileStore<EarningsHistory>(Paths.HistoryFile);
         History = _historyStore.Load();
         Estimator = new EarningsEstimator(Pool);
         ElectricityPrices = new ElectricityPriceProvider(_http);
 
+        // When a miner can't reach its pool, check whether something on this computer blocks it (antivirus web protection).
+        var enginesDir = Paths.EnginesDir;
+        PoolReachability = new PoolReachability(new TcpProbe(), async ct =>
+            (await Antivirus.InspectAsync(enginesDir, ct))?.Products.Where(p => p.Enabled && !p.IsMicrosoftDefender).Select(p => p.Name).ToList() ?? []);
+
         // CPU
-        Provider = new XmrigProvider(_http, Pool, Paths.EnginesDir, referralCode: ReferralCode, unitedStates: InUnitedStates);
+        Provider = new XmrigProvider(_http, Pool, Paths.EnginesDir, referralCode: ReferralCode, unitedStates: InUnitedStates,
+            poolBlocked: PoolReachability.BlockedReasonAsync);
         PowerModel = CpuPowerModel.ForThisMachine(Settings.CpuFullLoadWatts);
         PowerMeter = RaplPowerMeter.IsAvailable() ? new RaplPowerMeter(() => PowerModel) : new EstimatedCpuPowerMeter(() => PowerModel);
         var cpuLedger = new JsonFileStore<EarningsLedger>(Paths.LedgerFile);
@@ -82,19 +91,20 @@ public sealed class AppHost : IAsyncDisposable
             policy: () => EffectiveGpuPolicy,
             freeMemoryGb: gpu => gpu.Vendor == GpuVendor.Nvidia ? _nvml?.ReadFreeMemoryGb(gpu.Index) : null,
             referralCode: ReferralCode,
-            unitedStates: InUnitedStates);
+            unitedStates: InUnitedStates,
+            poolBlocked: PoolReachability.BlockedReasonAsync);
         if (IsSimulated)
         {
             var gpuLedger = new JsonFileStore<EarningsLedger>(Paths.GpuLedgerFile);
             // kawpow at RTX 3080-like speed; the factor converts to the XMR-equivalent rate the simulated pool pays for.
             var simulatedGpu = new SimulatedProvider(_http, Pool, DeviceKind.Gpu, "kawpow", 45e6, 8.7e-5, policy: () => EffectiveGpuPolicy);
-            GpuEngine = new EarningsEngine(simulatedGpu, new EstimatedCpuPowerMeter(new CpuPowerModel(200, 30)), idle, () => _gpuConfig, gpuLedger.Load(), gpuLedger.Save);
+            GpuEngine = new EarningsEngine(simulatedGpu, new EstimatedCpuPowerMeter(new CpuPowerModel(200, 30)), gpuIdle, () => _gpuConfig, gpuLedger.Load(), gpuLedger.Save);
         }
         else if (gpuProvider.IsSupportedOnThisPlatform)
         {
             GpuProvider = gpuProvider;
             var gpuLedger = new JsonFileStore<EarningsLedger>(Paths.GpuLedgerFile);
-            GpuEngine = new EarningsEngine(gpuProvider, GpuPowerMeter, idle, () => _gpuConfig, gpuLedger.Load(), gpuLedger.Save);
+            GpuEngine = new EarningsEngine(gpuProvider, GpuPowerMeter, gpuIdle, () => _gpuConfig, gpuLedger.Load(), gpuLedger.Save);
         }
 
         // Internet sharing (opt-in). Proxybase's client earns per GB; the server routes each payout through a conversion
@@ -119,6 +129,7 @@ public sealed class AppHost : IAsyncDisposable
             engine.SnapshotChanged += _ =>
             {
                 UpdateKeepAwake();
+                UpdateGpuPowerCap();
                 ObserveAway();
                 ObserveMeasurement();
             };
@@ -128,6 +139,11 @@ public sealed class AppHost : IAsyncDisposable
     // ---------- "While you were away" ----------
 
     private readonly object _sessionLock = new();
+    private readonly IIdleDetector _idle;
+
+    /// <summary>The user is away by Otium's own rule (or earning isn't limited to time away).</summary>
+    private bool UserAway =>
+        !Settings.OnlyWhenIdle || _idle.GetIdleTime() is not { } idle || idle >= TimeSpan.FromMinutes(Math.Max(1, Settings.IdleMinutes));
     private readonly AwaySessionTracker _away = new();
 
     /// <summary>The last stretch of earning that ended, until the user closes its card; null when there's none.</summary>
@@ -151,7 +167,8 @@ public sealed class AppHost : IAsyncDisposable
         lock (_sessionLock)
         {
             var engines = Engines.ToList();
-            var active = engines.Any(e => e.Snapshot.State is EngineState.Earning or EngineState.Starting) && !engines.Any(e => e.IsRunningNow);
+            // Earning while the user browses (or runs the test) isn't time away.
+            var active = engines.Any(e => e.Snapshot.State is EngineState.Earning or EngineState.Starting) && !engines.Any(e => e.IsRunningNow) && UserAway;
             var totals = engines.Select(e => e.Totals).ToList();
             ended = _away.Observe(DateTimeOffset.Now, active, totals.Sum(t => t.UserUsd), totals.Sum(t => t.ElectricityUsd));
             if (ended is not null)
@@ -293,6 +310,67 @@ public sealed class AppHost : IAsyncDisposable
 
     private readonly ISleepInhibitor _sleep = SleepInhibitor.ForThisPlatform();
 
+    // ---------- Graphics card efficiency mode ----------
+
+    private int _capApplied = -1; // -1 unknown (restore once at start), 0 restored, 1 capped
+
+    /// <summary>NVIDIA cards on Windows can use efficiency mode.</summary>
+    public bool GpuEfficiencySupported => GpuEfficiency.IsSupported && !IsSimulated && Gpus.Any(g => g.Vendor == GpuVendor.Nvidia);
+
+    /// <summary>
+    /// Turns efficiency mode on (setting up its tasks with one administrator prompt, the first time) or off. Returns
+    /// what to tell the user.
+    /// </summary>
+    public async Task<string> SetGpuEfficiencyAsync(bool on)
+    {
+        if (on && !GpuEfficiency.IsSetUp())
+        {
+            if (Environment.ProcessPath is not { } self)
+                return "Couldn't find Otium's program file to ask Windows for permission.";
+            try
+            {
+                using var helper = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(self, [GpuEfficiency.SetupArgument])
+                {
+                    UseShellExecute = true,
+                    Verb = "runas", // the Windows administrator prompt
+                    WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden,
+                });
+                if (helper is null)
+                    return "Couldn't ask Windows for permission. Try again.";
+                await helper.WaitForExitAsync();
+                if (helper.ExitCode != 0)
+                    return $"Windows didn't set it up (error {helper.ExitCode}). Your graphics card mines at full power as before.";
+            }
+            catch (System.ComponentModel.Win32Exception e) when (e.NativeErrorCode == 1223)
+            {
+                return "Nothing changed, because the Windows permission prompt was cancelled.";
+            }
+        }
+        Settings.GpuEfficiencyMode = on;
+        SaveSettings();
+        UpdateGpuPowerCap();
+        return on
+            ? $"On. While it mines, your graphics card runs at {GpuEfficiency.CapPercent}% of its usual power limit, and back at full power the moment it stops."
+            : "Off. Your graphics card mines at its usual power limit.";
+    }
+
+    /// <summary>
+    /// Caps the power limit while the graphics card is mining with efficiency mode on, and restores it as soon as it
+    /// isn't (and once at start, in case Otium closed while capped). Called on every graphics card engine change.
+    /// </summary>
+    public void UpdateGpuPowerCap()
+    {
+        if (!GpuEfficiencySupported || GpuEngine is null)
+            return;
+        var mining = GpuEngine.Snapshot.State is EngineState.Starting or EngineState.Earning;
+        var want = Settings.GpuEfficiencyMode && mining ? 1 : 0;
+        if (Interlocked.Exchange(ref _capApplied, want) == want)
+            return;
+        if (want == 0 && !GpuEfficiency.IsSetUp())
+            return; // never set up: nothing to restore
+        _ = Task.Run(() => GpuEfficiency.Trigger(cap: want == 1));
+    }
+
     /// <summary>
     /// "Speed up processor mining": runs Otium once with administrator rights (Windows asks) to give this account the
     /// "Lock pages in memory" right, which the miner needs for large memory pages. Returns what to tell the user.
@@ -341,6 +419,9 @@ public sealed class AppHost : IAsyncDisposable
     }
 
     public static AppHost Create() => new();
+
+    /// <summary>Tells a blocked pool apart from a dead internet connection, naming the security product to look at.</summary>
+    public PoolReachability PoolReachability { get; }
 
     public EarningsHistory History { get; }
 
@@ -1094,6 +1175,8 @@ public sealed class AppHost : IAsyncDisposable
             await GpuProvider.DisposeAsync();
         await Bandwidth.Provider.DisposeAsync();
         _sleep.Dispose();
+        if (_capApplied == 1)
+            GpuEfficiency.Trigger(cap: false); // full power again once Otium is closed
         _nvml?.Dispose();
         _settingsStore.Save(Settings);
         _http.Dispose();

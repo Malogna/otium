@@ -17,6 +17,10 @@ sealed class Program
         if (OperatingSystem.IsWindows() && args is [Otium.Core.Platform.LargePages.GrantArgument, var sid])
             Environment.Exit(Otium.Core.Platform.LargePages.Grant(sid));
 
+        // Graphics card efficiency mode: setting up its tasks (elevated, once), or capping/restoring the power limit.
+        if (OperatingSystem.IsWindows() && Otium.Core.Gpu.GpuEfficiency.IsHelper(args))
+            Environment.Exit(Otium.Core.Gpu.GpuEfficiency.RunHelper(args, Environment.ProcessPath ?? "Otium.exe"));
+
         // Must run first: Velopack's install/update/uninstall hooks re-launch the app with special arguments
         // and expect it to exit quickly without showing UI.
         var velopack = VelopackApp.Build();

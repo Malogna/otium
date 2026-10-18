@@ -376,7 +376,7 @@
                                 <TextBlock Classes="h2" Text="Earn from your internet too" />
                                 <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap">
                                     <Run Text="Share internet you're not using, even while you're at the computer." />
-                                    <Run Text="{Binding EstimateText, Mode=OneWay, StringFormat='Typically {0}.'}" />
+                                    <Run Text="{Binding EstimateSentence, Mode=OneWay}" />
                                 </TextBlock>
                             </StackPanel>
                             <Button Grid.Column="2" Classes="accent" VerticalAlignment="Center" Content="Learn more"
