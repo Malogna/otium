@@ -5,6 +5,7 @@
     <Project Path="src/Otium.DevPool/Otium.DevPool.csproj" />
     <Project Path="src/Otium.Providers.Honeygain/Otium.Providers.Honeygain.csproj" />
     <Project Path="src/Otium.Providers.Mysterium/Otium.Providers.Mysterium.csproj" />
+    <Project Path="src/Otium.Providers.Proxybase/Otium.Providers.Proxybase.csproj" />
     <Project Path="src/Otium.Providers.SrbMiner/Otium.Providers.SrbMiner.csproj" />
     <Project Path="src/Otium.Providers.XMRig/Otium.Providers.XMRig.csproj" />
     <Project Path="src/Otium.Server/Otium.Server.csproj" />

@@ -16,6 +16,7 @@ using Otium.Core.Switching;
 using Otium.Core.Wallets;
 using Otium.Providers.Honeygain;
 using Otium.Providers.Mysterium;
+using Otium.Providers.Proxybase;
 using Otium.Providers.SrbMiner;
 using Otium.Providers.XMRig;
 
@@ -96,19 +97,19 @@ public sealed class AppHost : IAsyncDisposable
             GpuEngine = new EarningsEngine(gpuProvider, GpuPowerMeter, idle, () => _gpuConfig, gpuLedger.Load(), gpuLedger.Save);
         }
 
-        // Internet sharing (opt-in). A Mysterium node pays the user's own Polygon address directly; builds with a
-        // Honeygain publisher key (custodial operators) report usage to the Otium server, which credits the balance.
+        // Internet sharing (opt-in). Proxybase's client earns per GB and Otium has it paid to the user's own 0x address;
+        // builds with a Honeygain publisher key (custodial operators) report usage to the Otium server, which credits
+        // the balance. (Mysterium's node, the earlier choice, stays in the code base but isn't offered.)
         var bandwidthLedger = new JsonFileStore<BandwidthLedger>(Paths.BandwidthLedgerFile);
         IBandwidthProvider bandwidthProvider = IsSimulated
             ? new SimulatedBandwidthProvider()
             : AppIdentity.ResolveHoneygainApiKey() is { } honeygainKey
                 ? new HoneygainBandwidthProvider(AppContext.BaseDirectory, honeygainKey)
-                : new MysteriumBandwidthProvider(_http, Paths.EnginesDir, () => MysteriumBeneficiary,
-                    (request, ct) => CreateClient().SponsorMysteriumAsync(DeviceId, Settings.DeviceSecret, request, ct));
-        UsesMysterium = bandwidthProvider is MysteriumBandwidthProvider;
+                : new ProxybaseBandwidthProvider(_http, Paths.EnginesDir, () => BandwidthBeneficiary);
+        UsesProxybase = bandwidthProvider is ProxybaseBandwidthProvider;
         _bandwidthConfig = BuildBandwidthConfig();
         Bandwidth = new BandwidthSharer(bandwidthProvider, idle, () => _bandwidthConfig,
-            UsesMysterium ? null : (report, ct) => CreateClient().ReportBandwidthAsync(DeviceId, Settings.DeviceSecret, report, ct),
+            UsesProxybase ? null : (report, ct) => CreateClient().ReportBandwidthAsync(DeviceId, Settings.DeviceSecret, report, ct),
             bandwidthLedger.Load(), bandwidthLedger.Save);
 
         foreach (var engine in Engines)
@@ -521,18 +522,18 @@ public sealed class AppHost : IAsyncDisposable
     public BandwidthSharer Bandwidth { get; }
 
     /// <summary>The server pays for sharing and this computer can run the partner's component.</summary>
-    public bool BandwidthOffered => UsesMysterium
-        ? Settings.Account.MysteriumSponsored && MystRelease.ForCurrentPlatform() is not null
+    public bool BandwidthOffered => UsesProxybase
+        ? Settings.PayoutMode == PayoutMode.OwnWallet && !Settings.Account.ProxybaseDisabled && ProxybaseRelease.ForCurrentPlatform() is not null
         : Settings.PayoutMode == PayoutMode.Balance && Settings.Account.BandwidthAvailable && Bandwidth.Provider.UnavailableReason is null;
 
     /// <summary>Internet sharing runs a Mysterium node that pays the user directly (not a partner paying Otium).</summary>
-    public bool UsesMysterium { get; }
+    public bool UsesProxybase { get; }
 
     /// <summary>
-    /// The Polygon address Mysterium pays: the one the user gave for sharing, or their payout address when it's an 0x
-    /// address (the same wallet works on Polygon). Null until there is one.
+    /// The 0x address internet sharing pays (Proxybase: USDC on Tempo): the one the user gave for sharing, or their
+    /// payout address when it's an 0x address (the same key works on every EVM network). Null until there is one.
     /// </summary>
-    public string? MysteriumBeneficiary =>
+    public string? BandwidthBeneficiary =>
         CryptoAddresses.TryValidate(AddressFormat.Evm, Settings.BandwidthPayoutAddress, out _)
             ? Settings.BandwidthPayoutAddress!.Trim().ToLowerInvariant()
             : PayoutTarget.ParseOrNull(Settings.PayoutAddress) is { Coin.Format: AddressFormat.Evm } evm ? evm.Address : null;
@@ -825,8 +826,8 @@ public sealed class AppHost : IAsyncDisposable
             account.WorkerId ?? "");
 
         // Bandwidth isn't constructed yet on the first call, so check the provider separately in BandwidthOffered.
-        bool BandwidthOfferedBySettings() => UsesMysterium
-            ? account.MysteriumSponsored
+        bool BandwidthOfferedBySettings() => UsesProxybase
+            ? Settings.PayoutMode == PayoutMode.OwnWallet && !account.ProxybaseDisabled
             : Settings.PayoutMode == PayoutMode.Balance && account.BandwidthAvailable && account.WorkerId is not null;
     }
 
@@ -1032,6 +1033,7 @@ public sealed class AppHost : IAsyncDisposable
         account.FeePercent = summary.Balance.FeePercent;
         account.BandwidthAvailable = summary.Bandwidth?.Available ?? false;
         account.MysteriumSponsored = summary.MysteriumSponsored;
+        account.ProxybaseDisabled = summary.ProxybaseDisabled;
         if (summary.Fees is not null && summary.Fees != account.Fees)
         {
             account.Fees = summary.Fees;

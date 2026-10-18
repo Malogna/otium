@@ -90,8 +90,8 @@ public sealed class AppSettings
     public double BandwidthDailyLimitGb { get; set; } = 2;
 
     /// <summary>
-    /// The user's own Polygon (0x…) address that Mysterium settles internet sharing earnings to, when their payout
-    /// address isn't already an 0x address (which works on Polygon too).
+    /// The user's own 0x address that internet sharing earnings are paid to (Proxybase: USDC on Tempo), when their
+    /// payout address isn't already an 0x address (the same key works on every EVM network).
     /// </summary>
     public string? BandwidthPayoutAddress { get; set; }
 
@@ -202,6 +202,9 @@ public sealed class AccountState
 
     /// <summary>The server pays new Mysterium nodes' registration fee, so internet sharing can be offered.</summary>
     public bool MysteriumSponsored { get; set; }
+
+    /// <summary>The operator switched internet sharing through Proxybase off.</summary>
+    public bool ProxybaseDisabled { get; set; }
 
     /// <summary>The fee and invite terms the server last announced; null until it has.</summary>
     public Accounts.FeeTerms? Fees { get; set; }

@@ -11,6 +11,10 @@ public sealed record RegisterDeviceRequest(string DeviceId, string DeviceSecret,
 /// <param name="PoolWallet">Operator wallet balance accounts mine to (with <paramref name="WorkerId"/> as the worker name).</param>
 /// <param name="ReferrerWallet">The referrer's payout target, which own-wallet apps mine the referral slice to.</param>
 /// <param name="MysteriumSponsored">Otium pays new Mysterium nodes' registration, so the app can offer internet sharing.</param>
+/// <param name="ProxybaseDisabled">
+/// The operator switched internet sharing through Proxybase off (it's on unless they do, so servers that don't send this
+/// field leave it on).
+/// </param>
 /// <param name="Fees">The server's current fee and invite terms; null from servers that don't send them.</param>
 /// <param name="Custodial">
 /// False when the server holds no balances (non-custodial): the app then offers only own-address payouts, and
@@ -34,7 +38,8 @@ public sealed record AccountSummary(
     CpuPoolRoute? CpuPool = null,
     bool Custodial = true,
     bool MysteriumSponsored = false,
-    FeeTerms? Fees = null);
+    FeeTerms? Fees = null,
+    bool ProxybaseDisabled = false);
 
 /// <summary>
 /// The disclosed fee and invite terms, set by the server so they can change without an app release. Apps clamp them

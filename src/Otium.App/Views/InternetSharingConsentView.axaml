@@ -11,20 +11,20 @@
                 <TextBlock FontWeight="SemiBold" Text="How it works" />
                 <TextBlock TextWrapping="Wrap" FontSize="13" Text="{Binding ConsentText}" />
                 <TextBlock Classes="muted" TextWrapping="Wrap" FontSize="12.5" Text="{Binding LimitsText}" />
-                <Button Classes="link" HorizontalAlignment="Left" IsVisible="{Binding IsMysterium}" Command="{Binding OpenMysteriumTermsCommand}"
-                        AutomationProperties.Name="Read Mysterium's terms">
-                    <TextBlock Text="Read Mysterium's terms" FontSize="12.5" Foreground="{DynamicResource GoodBrush}" />
+                <Button Classes="link" HorizontalAlignment="Left" IsVisible="{Binding IsProxybase}" Command="{Binding OpenTermsCommand}"
+                        AutomationProperties.Name="Read Proxybase's terms">
+                    <TextBlock Text="Read Proxybase's terms" FontSize="12.5" Foreground="{DynamicResource GoodBrush}" />
                 </Button>
             </StackPanel>
         </Border>
-        <StackPanel Spacing="4" IsVisible="{Binding NeedsPolygonAddress}">
-            <TextBlock Classes="label" Text="Your Polygon address for MYST" />
-            <TextBox Text="{Binding PolygonAddress}" PlaceholderText="0x…" FontFamily="Consolas, Menlo, monospace"
-                     AutomationProperties.Name="Your Polygon address" />
+        <StackPanel Spacing="4" IsVisible="{Binding NeedsPayoutAddress}">
+            <TextBlock Classes="label" Text="Your 0x address for USDC on Tempo" />
+            <TextBox Text="{Binding PayoutAddress}" PlaceholderText="0x…" FontFamily="Consolas, Menlo, monospace"
+                     AutomationProperties.Name="Your 0x address" />
             <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
-                       Text="Your payout address isn't on Polygon, so Mysterium needs one: any 0x address from a wallet that supports Polygon (MetaMask, Trust Wallet, an exchange's Polygon deposit address for MYST)." />
-            <TextBlock Classes="error" TextWrapping="Wrap" Text="{Binding PolygonError}"
-                       IsVisible="{Binding PolygonError, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                       Text="Your payout address isn't an 0x address, so Proxybase needs one: the address of a wallet you hold the keys to (MetaMask, Rabby, Trust Wallet). Use an exchange deposit address only if the exchange says it accepts USDC on the Tempo network." />
+            <TextBlock Classes="error" TextWrapping="Wrap" Text="{Binding PayoutAddressError}"
+                       IsVisible="{Binding PayoutAddressError, Converter={x:Static ObjectConverters.IsNotNull}}" />
         </StackPanel>
         <TextBlock Classes="error" TextWrapping="Wrap" Text="{Binding Error}"
                    IsVisible="{Binding Error, Converter={x:Static ObjectConverters.IsNotNull}}" />
