@@ -403,8 +403,10 @@ public sealed class UnmineableOptions
     /// <summary>GPU algorithms mined there (SRBMiner names), with their WhatToMine id and stratum endpoint.</summary>
     public Dictionary<string, UnmineableAlgorithm> Algorithms { get; set; } = new(StringComparer.OrdinalIgnoreCase)
     {
-        // unMineable's PearlPow doesn't work on AMD cards (its support article, October 2026).
-        ["pearlhash"] = new() { WhatToMineId = 469, Host = "pearlpow.unmineable.com", OnlyGpus = ["NVIDIA"] },
+        // Offered to AMD cards too: SRBMiner 3.7.6 mines pearlhash on AMD (WhatToMine benchmarks the RX 9070 XT and
+        // 7900 XTX on it), although unMineable's support article still says NVIDIA only. If unMineable rejects an AMD
+        // card's shares, the app's share-rejection failover sets Pearl aside for that card and it mines the next coin.
+        ["pearlhash"] = new() { WhatToMineId = 469, Host = "pearlpow.unmineable.com" },
         // Loses money at $0.15/kWh on every card checked (October 2026).
         ["xelishash"] = new() { WhatToMineId = 459, Host = "xelishash.unmineable.com", Tier = "free-power-only" },
         ["fishhash"] = new() { WhatToMineId = 411, Host = "fishhash.unmineable.com", Tier = "free-power-only" },
