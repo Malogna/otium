@@ -40,6 +40,9 @@ internal static class SitePages
 {
     public static readonly string[] LegalPages = ["privacy", "terms"];
 
+    /// <summary>Where visitors and users ask for help (the app's Settings links the same page).</summary>
+    private const string HelpUrl = Core.AppIdentity.HelpUrl;
+
     /// <summary>The electricity price the page opens with, in $/kWh (the slider changes it).</summary>
     public const double DefaultPricePerKwh = 0.15;
 
@@ -254,7 +257,7 @@ internal static class SitePages
           <footer>
             <div class="wrap">
               <span>Otium · <i>otium</i> is Latin for leisure</span>
-              <nav aria-label="Site">{{string.Concat(legalLinks.Select(p => $"""<a href="/{p}">{Capitalize(p)}</a>"""))}}<a href="https://github.com/Malogna/otium">Source code</a><a href="https://github.com/Malogna/otium/releases">Releases</a></nav>
+              <nav aria-label="Site">{{string.Concat(legalLinks.Select(p => $"""<a href="/{p}">{Capitalize(p)}</a>"""))}}<a href="{{HelpUrl}}">Help</a><a href="https://github.com/Malogna/otium">Source code</a><a href="https://github.com/Malogna/otium/releases">Releases</a></nav>
             </div>
           </footer>
           <script src="{{SiteAssets.Url("site.js")}}" defer></script>
@@ -487,7 +490,8 @@ internal static class SitePages
                       <details><summary>Will it slow my computer down?</summary><p>By default it only runs while you're away, at the lowest priority, and you choose how much of the processor it may use. Games and work always come first.</p></details>
                       <details><summary>I live in the United States</summary><p>unMineable doesn't serve US residents, so Otium pays you in Monero through MoneroOcean instead.</p></details>
                       <details><summary>What about AMD graphics cards?</summary><p>Otium tests Pearl on yours too: the mining software now runs it on recent AMD cards (an RX 9070 XT makes about $2 a day before power). If the pool doesn't accept an AMD card's work, Otium moves it to the next coin that pays your wallet more than the power it uses. Either way it's paid to your one wallet, and your processor earns too.</p></details>
-                      <details><summary>Which download do I need?</summary><p>The Download button picks the installer for the computer you're on. To choose one yourself: <a href="/download?os=windows">Windows</a>, <a href="/download?os=macos">Mac with Apple silicon</a>, <a href="/download?os=macos-intel">Mac with Intel</a> or <a href="/download?os=linux">Linux (AppImage)</a>.</p></details>
+                      <details><summary>Which download do I need?</summary><p>The Download button picks the installer for the computer you're on. To choose one yourself: <a href="/download?os=windows">Windows</a>, <a href="/download?os=macos">Mac with Apple silicon</a>, <a href="/download?os=macos-intel">Mac with Intel</a> or <a href="/download?os=linux">Linux (AppImage)</a>. The Mac and Linux versions are a beta in this first release: they work, but have been tested less than Windows.</p></details>
+                      <details><summary>Something isn't working</summary><p>In Otium, open Advanced and press "Send a problem report". It sends what Otium knows about why it isn't earning, without your payout address or any keys, and gives you a reference. Then <a href="{HelpUrl}">ask for help</a> and mention it.</p></details>
                       <details><summary>Will my computer go to sleep?</summary><p>Not while it's earning: Otium keeps it awake so it can mine through the night, and the screen still turns off. When it stops earning (you're back, power is too expensive, or a laptop runs on battery) your usual sleep settings apply again. You can switch this off in Settings.</p></details>
                     </div>
                   </div>

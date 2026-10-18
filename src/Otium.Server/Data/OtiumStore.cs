@@ -96,7 +96,7 @@ public sealed record EmailCodeRecord(long Id, string Email, string DeviceId, str
 public sealed class OtiumStore
 {
     public const long MicrosPerDollar = 1_000_000;
-    private const int SchemaVersion = 6;
+    private const int SchemaVersion = 7;
 
     private readonly string _connectionString;
 
@@ -292,6 +292,22 @@ public sealed class OtiumStore
             );
             """);
 
+        // Version 7: problem reports users send from the app, kept so support can look them up by reference.
+        Execute("""
+            CREATE TABLE IF NOT EXISTS problem_reports (
+                reference   TEXT PRIMARY KEY,
+                account_id  TEXT NOT NULL,
+                device_id   TEXT NOT NULL,
+                app_version TEXT NOT NULL,
+                platform    TEXT NOT NULL,
+                note        TEXT NULL,
+                details     TEXT NOT NULL,
+                created_at  TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS ix_problem_device ON problem_reports(device_id, created_at);
+            CREATE INDEX IF NOT EXISTS ix_problem_account ON problem_reports(account_id);
+            """);
+
         Execute($"PRAGMA user_version = {SchemaVersion};");
     }
 
@@ -475,6 +491,7 @@ public sealed class OtiumStore
 
             // Earnings statistics the user chose to share, and what the pools paid their address, go with the account.
             Run("DELETE FROM earnings_reports WHERE account_id = $a", ("$a", id));
+            Run("DELETE FROM problem_reports WHERE account_id = $a", ("$a", id));
             Run("DELETE FROM pool_payouts WHERE account_id = $a", ("$a", id));
 
             // A new random id per computer keeps (device, sequence) unique if this computer starts sharing again.
@@ -626,6 +643,51 @@ public sealed class OtiumStore
                 r.GetInt64(r.GetOrdinal("credited_micros")),
                 r.GetString(r.GetOrdinal("status")),
                 Parse(r.GetString(r.GetOrdinal("created_at")))));
+        }
+        return list;
+    }
+
+    // ---------- problem reports ----------
+
+    public sealed record ProblemReportRecord(string Reference, string AccountId, string DeviceId, string AppVersion, string Platform,
+        string? Note, string Details, DateTimeOffset CreatedAt);
+
+    public void AddProblemReport(ProblemReportRecord r) =>
+        Execute("""
+            INSERT INTO problem_reports (reference, account_id, device_id, app_version, platform, note, details, created_at)
+            VALUES ($r, $a, $d, $v, $p, $n, $t, $c)
+            """, ("$r", r.Reference), ("$a", r.AccountId), ("$d", r.DeviceId), ("$v", r.AppVersion), ("$p", r.Platform),
+            ("$n", r.Note), ("$t", r.Details), ("$c", Format(r.CreatedAt)));
+
+    public long ProblemReportsSince(string deviceId, DateTimeOffset since) =>
+        Scalar<long>("SELECT COUNT(*) FROM problem_reports WHERE device_id = $d AND created_at > $s", ("$d", deviceId), ("$s", Format(since)));
+
+    /// <summary>The newest reports first, without their details (<see cref="FindProblemReport"/> has those).</summary>
+    public IReadOnlyList<ProblemReportRecord> ProblemReports(int limit = 50) =>
+        QueryProblemReports("SELECT reference, account_id, device_id, app_version, platform, note, '' AS details, created_at FROM problem_reports ORDER BY created_at DESC LIMIT $l",
+            ("$l", limit));
+
+    public ProblemReportRecord? FindProblemReport(string reference) =>
+        QueryProblemReports("SELECT * FROM problem_reports WHERE reference = $r", ("$r", reference)).FirstOrDefault();
+
+    public IReadOnlyList<ProblemReportRecord> ProblemReportsFor(string accountId) =>
+        QueryProblemReports("SELECT * FROM problem_reports WHERE account_id = $a ORDER BY created_at", ("$a", accountId));
+
+    private IReadOnlyList<ProblemReportRecord> QueryProblemReports(string sql, params (string, object?)[] parameters)
+    {
+        using var connection = Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = sql;
+        Bind(cmd, parameters);
+        using var r = cmd.ExecuteReader();
+        var list = new List<ProblemReportRecord>();
+        while (r.Read())
+        {
+            list.Add(new ProblemReportRecord(
+                r.GetString(r.GetOrdinal("reference")), r.GetString(r.GetOrdinal("account_id")), r.GetString(r.GetOrdinal("device_id")),
+                r.GetString(r.GetOrdinal("app_version")), r.GetString(r.GetOrdinal("platform")),
+                r.IsDBNull(r.GetOrdinal("note")) ? null : r.GetString(r.GetOrdinal("note")),
+                r.GetString(r.GetOrdinal("details")), Parse(r.GetString(r.GetOrdinal("created_at")))));
         }
         return list;
     }

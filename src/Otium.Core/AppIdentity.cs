@@ -10,6 +10,9 @@ namespace Otium.Core;
 /// </summary>
 public static class AppIdentity
 {
+    /// <summary>Where users ask for help: the project's public issue tracker.</summary>
+    public const string HelpUrl = "https://github.com/Malogna/otium/issues";
+
     public const string Name = "Otium";
 
     /// <summary>
