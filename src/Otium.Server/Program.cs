@@ -24,6 +24,7 @@ builder.Services.Configure<MysteriumOptions>(builder.Configuration.GetSection(My
 builder.Services.Configure<FeeOptions>(builder.Configuration.GetSection(FeeOptions.Section));
 
 builder.Services.Configure<ReferralOptions>(builder.Configuration.GetSection(ReferralOptions.Section));
+builder.Services.Configure<SiteOptions>(builder.Configuration.GetSection(SiteOptions.Section));
 builder.Services.Configure<EarningsOptions>(builder.Configuration.GetSection(EarningsOptions.Section));
 builder.Services.Configure<CashoutOptions>(builder.Configuration.GetSection(CashoutOptions.Section));
 builder.Services.Configure<PayPalOptions>(builder.Configuration.GetSection(PayPalOptions.Section));
@@ -216,11 +217,26 @@ api.MapPost("/devices/{deviceId}/email/verify", (string deviceId, EmailVerifyReq
 // Which GPU algorithms to mine and where; the same for every app, rebuilt from live feeds every few minutes.
 api.MapGet("/gpu-policy", async (GpuPolicyService policy, CancellationToken ct) => Results.Ok(await policy.GetAsync(ct)));
 
-app.MapGet("/r/{code}", (string code, OtiumStore store, IOptions<ReferralOptions> options) =>
+app.MapGet("/r/{code}", (string code, OtiumStore store, IOptions<ReferralOptions> options, IOptions<SiteOptions> site) =>
 {
     var normalized = ReferralCodes.Normalize(code);
     var exists = ReferralCodes.IsWellFormed(normalized) && store.CodeExists(normalized);
-    return Results.Content(LandingPage.Render(normalized, options.Value.DownloadUrl, exists), "text/html; charset=utf-8");
+    return Results.Content(LandingPage.Render(normalized, options.Value.DownloadUrl, exists, SitePages.AvailableLegalPages(site.Value.PagesDirectory)),
+        "text/html; charset=utf-8");
+}).RequireRateLimiting("per-ip");
+
+// The public website: the front page, and the operator's legal pages once their reviewed files are in place.
+app.MapGet("/", (IOptions<FeeOptions> fees, IOptions<ReferralOptions> referral, IOptions<SiteOptions> site) =>
+    Results.Content(SitePages.Home(Otium.Core.Fees.FeePolicy.FromTerms(fees.Value.ToTerms()), referral.Value.DownloadUrl,
+        SitePages.AvailableLegalPages(site.Value.PagesDirectory)), "text/html; charset=utf-8")).RequireRateLimiting("per-ip");
+
+app.MapGet("/{page:regex(^(privacy|terms)$)}", (string page, IOptions<SiteOptions> site) =>
+{
+    var directory = site.Value.PagesDirectory;
+    var file = Path.Combine(directory, $"{page}.html");
+    return File.Exists(file)
+        ? Results.Content(SitePages.Legal(page, File.ReadAllText(file), SitePages.AvailableLegalPages(directory)), "text/html; charset=utf-8")
+        : Results.NotFound();
 }).RequireRateLimiting("per-ip");
 
 app.MapGet("/healthz", () => Results.Ok("ok"));
