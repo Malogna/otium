@@ -52,9 +52,11 @@
 
                     <TextBlock Classes="error" HorizontalAlignment="Center" IsVisible="{Binding !IsSupported}"
                                Text="Sorry, Otium doesn't support this type of computer yet." />
+                    <TextBlock Classes="error" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" Text="{Binding UnavailableHere}"
+                               IsVisible="{Binding UnavailableHere, Converter={x:Static ObjectConverters.IsNotNull}}" />
 
                     <!-- Two ways in: everything on now, or step by step -->
-                    <Grid ColumnDefinitions="*,14,*" IsEnabled="{Binding IsSupported}">
+                    <Grid ColumnDefinitions="*,14,*" IsEnabled="{Binding CanBegin}">
                         <Button Classes="choice accent" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" HorizontalContentAlignment="Stretch"
                                 Command="{Binding QuickStartCommand}" AutomationProperties.Name="Quick start">
                             <StackPanel Spacing="4" Margin="4">
@@ -63,7 +65,7 @@
                                     <TextBlock Text="Quick start" FontWeight="Bold" FontSize="16" />
                                 </StackPanel>
                                 <TextBlock FontSize="12.5" TextWrapping="Wrap" Opacity="0.9"
-                                           Text="Everything on: processor, graphics card and internet sharing. Just tell us where to pay you." />
+                                           Text="Processor and graphics card on, internet sharing one tick away. Just tell us where to pay you." />
                             </StackPanel>
                         </Button>
                         <Button Grid.Column="2" Classes="choice plain" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" HorizontalContentAlignment="Stretch"
@@ -238,10 +240,15 @@
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
-                            <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap" IsVisible="{Binding CanShareInternet}"
-                                       Text="Pressing Start earning means you agree to all of these, including Proxybase's terms for internet sharing. Turn any of them off in Settings at any time, or go Back and choose Customize." />
-                            <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap" IsVisible="{Binding !CanShareInternet}"
+                            <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap"
                                        Text="Pressing Start earning means you agree to all of these. Turn any of them off in Settings at any time, or go Back and choose Customize." />
+                            <CheckBox IsChecked="{Binding ShareInternet}" IsVisible="{Binding CanShareInternet}" Margin="0,6,0,0"
+                                      AutomationProperties.Name="Also share my unused internet">
+                                <StackPanel Spacing="2">
+                                    <TextBlock FontWeight="SemiBold" Text="Also share my unused internet" TextWrapping="Wrap" />
+                                    <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap" Text="{Binding SharingChoiceText}" />
+                                </StackPanel>
+                            </CheckBox>
                             <Button Classes="link" HorizontalAlignment="Left" IsVisible="{Binding CanShareInternet}" Command="{Binding OpenProxybaseTermsCommand}"
                                     AutomationProperties.Name="Read Proxybase's terms">
                                 <TextBlock Text="Read Proxybase's terms" FontSize="12.5" Foreground="{DynamicResource GoodBrush}" />
@@ -255,8 +262,7 @@
                             <CheckBox IsChecked="{Binding ShareInternet}" IsVisible="{Binding CanShareInternet}" AutomationProperties.Name="Share my unused internet too">
                                 <StackPanel Spacing="2">
                                     <TextBlock FontWeight="SemiBold" Text="Share my unused internet too" TextWrapping="Wrap" />
-                                    <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap"
-                                               Text="Proxybase's customers, mostly AI agents and businesses collecting public web pages, use some of your unused internet connection. Websites they visit see your internet address. It's paid to your address in your coin, like mining. Ticking it means you agree to Proxybase's terms." />
+                                    <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap" Text="{Binding SharingChoiceText}" />
                                 </StackPanel>
                             </CheckBox>
                             <CheckBox IsChecked="{Binding ShareEarnings}" AutomationProperties.Name="Help show what PCs really earn">

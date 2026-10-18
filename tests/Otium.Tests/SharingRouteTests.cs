@@ -18,7 +18,7 @@ namespace Otium.Tests;
 
 /// <summary>
 /// Internet sharing payouts reach the user's own coin: the server opens a one-time conversion from Proxybase's Tempo
-/// USDC (Relay, plus SideShift for LTC or ChangeNOW for XMR) and takes Otium's cut as Relay's app fee.
+/// USDC (Relay, plus SideShift for LTC or ChangeNOW for XMR), with no Otium fee in it; Otium's share is paid separately.
 /// </summary>
 public sealed class SharingRouteTests
 {
@@ -89,12 +89,12 @@ public sealed class SharingRouteTests
     private sealed class FakeRelay : IRelayApi
     {
         public double NetworkCostUsd { get; set; } = 0.75;
-        public List<(RelayDestination Destination, string Recipient, long Amount)> Quotes { get; } = [];
+        public List<(RelayDestination Destination, string Recipient, long Amount, bool WithAppFee)> Quotes { get; } = [];
 
         public Task<RelayQuote> QuoteDepositAddressAsync(RelayDestination destination, string recipient, long amountMicro, string refundTo,
             string? feeRecipient, int feeBps, CancellationToken ct)
         {
-            Quotes.Add((destination, recipient, amountMicro));
+            Quotes.Add((destination, recipient, amountMicro, feeRecipient is not null && feeBps > 0));
             var usd = amountMicro / 1e6;
             var app = feeRecipient is null ? 0 : usd * feeBps / 10_000;
             var cost = destination.ChainId == 728126428 ? NetworkCostUsd : 0.03;
@@ -200,8 +200,15 @@ public sealed class SharingRouteTests
         var quote = Assert.Single(server.Relay.Quotes);
         Assert.Equal(usdt["USDT:".Length..], quote.Recipient); // the registered address, whatever the app might want
         Assert.Equal(728126428, quote.Destination.ChainId);
-        Assert.Equal(20_000_000, route.AmountMicrocredits);
         Assert.Equal("0xdeposit1", route.DepositAddress);
+
+        // Otium's 2% isn't in the conversion: only the user's part is converted, with no app fee, and the app pays
+        // Otium's share to Otium's own address itself.
+        Assert.Equal(19_600_000, quote.Amount);
+        Assert.False(quote.WithAppFee);
+        Assert.Equal(19_600_000, route.AmountMicrocredits);
+        Assert.Equal(400_000, route.FeeMicrocredits);
+        Assert.Equal(OtiumFee, route.FeeAddress);
 
         Assert.Equal(SharingRouteDecisions.Wait, (await server.Route(device, secret, 5_000_000)).Decision);
         Assert.Equal(SharingRouteDecisions.Wait, (await server.Route(device, secret, 500_000)).Decision);

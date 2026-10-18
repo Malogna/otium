@@ -60,7 +60,7 @@ Otium is free to download, with no subscription. You pay with a share of mining 
 | Otium | 2% of mining time, about 29 minutes per day of mining, mined to Otium's address. Nothing while Otium is paused or during fee-free days. |
 | Mining software | XMRig 1% (processor); SRBMiner 0.85–2% (graphics card, depending on the coin) |
 | Pool | unMineable 0.75%. Otium's referral code lowers it from 1%, and unMineable pays Otium 0.25–0.5% of what you mine there, out of its own fee |
-| Internet sharing | [2% of each conversion to your coin, plus network costs: see legal-review.md D1] |
+| Internet sharing | Otium: 2% of what Proxybase pays you, paid to Otium's address from your sharing earnings. The conversion to your coin has no Otium fee; its network costs come off each payout |
 
 If you join with an invite code, Otium's fee is off for 30 days. If you invite friends, part of Otium's fee on their
 mining is mined to your address for 6 months.

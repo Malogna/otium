@@ -195,15 +195,29 @@ string PublicBase(HttpRequest request, IOptions<ReferralOptions> options) =>
 
 string Secret(HttpRequest request) => request.Headers[AccountClient.SecretHeader].ToString();
 
+// Countries Otium doesn't run in (sanctions, mining bans), by Cloudflare's visitor country. Exporting and deleting an
+// account stay open everywhere.
+void CheckCountry(HttpRequest request)
+{
+    if (Otium.Core.Availability.BlockedReason(request.Headers["CF-IPCountry"].ToString()) is { } reason)
+        throw new OtiumException(StatusCodes.Status451UnavailableForLegalReasons, reason);
+}
+
 // ---------- app API ----------
 
 var api = app.MapGroup("/api/v1").RequireRateLimiting("per-ip");
 
 api.MapPost("/devices", async (RegisterDeviceRequest body, HttpRequest request, AccountService accounts, IOptions<ReferralOptions> options, CancellationToken ct) =>
-    Results.Ok(await accounts.RegisterAsync(body, PublicBase(request, options), ct)));
+{
+    CheckCountry(request);
+    return Results.Ok(await accounts.RegisterAsync(body, PublicBase(request, options), ct));
+});
 
 api.MapGet("/devices/{deviceId}/account", async (string deviceId, HttpRequest request, AccountService accounts, IOptions<ReferralOptions> options, CancellationToken ct) =>
-    Results.Ok(await accounts.GetSummaryAsync(deviceId, Secret(request), PublicBase(request, options), ct)));
+{
+    CheckCountry(request);
+    return Results.Ok(await accounts.GetSummaryAsync(deviceId, Secret(request), PublicBase(request, options), ct));
+});
 
 api.MapGet("/devices/{deviceId}/invites/leaderboard", async (string deviceId, HttpRequest request, AccountService accounts, CancellationToken ct) =>
     Results.Ok(await accounts.GetLeaderboardAsync(deviceId, Secret(request), ct)));
@@ -241,6 +255,7 @@ if (custodial)
 api.MapPost("/devices/{deviceId}/sharing/route", async (string deviceId, SharingRouteRequest body, HttpContext context, AccountService accounts,
     Otium.Server.Sharing.SharingRouteService routes, CancellationToken ct) =>
 {
+    CheckCountry(context.Request);
     var session = accounts.Authenticate(deviceId, Secret(context.Request));
     var ip = context.Connection.RemoteIpAddress?.MapToIPv4().ToString() ?? "unknown";
     return Results.Ok(await routes.RouteAsync(session, body, ip, ct));

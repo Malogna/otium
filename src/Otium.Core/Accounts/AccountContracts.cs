@@ -126,10 +126,14 @@ public sealed record SharingRouteRequest(long AvailableMicrocredits, string? Ref
 /// <summary>Where to have Proxybase pay, or why to wait.</summary>
 /// <param name="Decision">One of <see cref="SharingRouteDecisions"/>.</param>
 /// <param name="DepositAddress">With "pay": the Tempo address of a one-time conversion to the user's coin and address.</param>
-/// <param name="AmountMicrocredits">With "pay": how much to send there (all that's waiting).</param>
+/// <param name="AmountMicrocredits">With "pay": how much to send there (what's waiting, less Otium's fee).</param>
 /// <param name="ExpectedOutput">With "pay": what the user should receive, e.g. "4.23 USDT (TRON)".</param>
-/// <param name="CostPercent">Conversion, network and Otium's fees together, as a share of the amount.</param>
+/// <param name="CostPercent">The conversion's own network costs, as a share of the amount converted.</param>
 /// <param name="Message">With "wait" or "unsupported": why, in plain words.</param>
+/// <param name="FeeAddress">With "pay": Otium's own address on Tempo, where the app pays Otium's fee itself.</param>
+/// <param name="FeeMicrocredits">With "pay": Otium's fee on this payout (its mining share of the amount), kept back at
+/// Proxybase and paid to <paramref name="FeeAddress"/> once at least $1 of it has built up. It never goes through the
+/// conversion.</param>
 public sealed record SharingRoute(
     string Decision,
     string? DepositAddress = null,
@@ -137,7 +141,9 @@ public sealed record SharingRoute(
     string? ExpectedOutput = null,
     double CostPercent = 0,
     string? Message = null,
-    string? RequestId = null);
+    string? RequestId = null,
+    string? FeeAddress = null,
+    long FeeMicrocredits = 0);
 
 public static class SharingRouteDecisions
 {

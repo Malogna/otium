@@ -65,7 +65,7 @@ Otium never holds your money. There's no balance to cash out and no account you 
 | Otium | 2% of mining time (about 29 minutes per day of mining), mined to Otium's address. Nothing while paused. |
 | Mining software | XMRig 1% (processor), SRBMiner 0.85–2% (graphics card, depending on the coin) |
 | Pool | unMineable 0.75% (1% without Otium's referral code; unMineable pays Otium part of its own fee for the code) |
-| Internet sharing | 2% of each payout's conversion to your coin |
+| Internet sharing | 2% of sharing earnings, paid to Otium's address before the rest is converted to your coin (the conversion itself has no Otium fee) |
 
 In total about 3.75% on the processor and 3.6–4.75% on the graphics card. The app shows the same breakdown before you
 start.
