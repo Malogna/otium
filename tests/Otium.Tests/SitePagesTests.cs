@@ -95,8 +95,8 @@ public sealed class SitePagesTests : IDisposable
         Assert.Contains("""data-card="rtx3060" aria-pressed="false">""", html);
         Assert.Contains("""<optgroup label="RTX 50 series"><option value="rtx5090">RTX 5090 · NVIDIA &#183; 32 GB</option>""", html);
         Assert.Contains("""<option value="rtx4090" selected>RTX 4090 · NVIDIA &#183; 24 GB</option>""", html);
-        Assert.Contains("""<optgroup label="AMD Radeon"><option value="rx6700xt">""", html);
-        Assert.Equal(32, System.Text.RegularExpressions.Regex.Matches(html, "<option value=").Count);
+        Assert.DoesNotContain("AMD Radeon", html); // no card list entry without a coin it can mine to the user's wallet
+        Assert.Equal(30, System.Text.RegularExpressions.Regex.Matches(html, "<option value=").Count);
         Assert.Contains("""<script type="application/json" id="otium-data">{"cards":[{"id":"rtx5090","name":"RTX 5090",""", html);
         Assert.Contains("\"payoutUsdt\":1.5", html);
         Assert.Contains("Today's coin prices from WhatToMine (18 October 2026, 15:00 UTC)", html);
@@ -113,14 +113,13 @@ public sealed class SitePagesTests : IDisposable
     }
 
     [Fact]
-    public async Task Six_gigabyte_cards_only_get_quantus_because_pearl_needs_eight()
+    public async Task Cards_that_cant_mine_pearl_arent_listed_since_quantus_needs_a_second_wallet()
     {
         var html = (await Get("/")).Html;
         var data = html[html.IndexOf("""id="otium-data">""", StringComparison.Ordinal)..];
-        var rtx2060 = data[data.IndexOf("\"id\":\"rtx2060\"", StringComparison.Ordinal)..];
-        rtx2060 = rtx2060[..rtx2060.IndexOf("]}", StringComparison.Ordinal)];
-        Assert.Contains("\"coin\":\"Quantus\"", rtx2060);
-        Assert.DoesNotContain("Pearl", rtx2060);
+        Assert.DoesNotContain("\"id\":\"rtx2060\"", data); // 6 GB: Pearl needs 8
+        Assert.DoesNotContain("\"id\":\"rx6700xt\"", data);
+        Assert.DoesNotContain("Quantus", data);
     }
 
     [Theory]
