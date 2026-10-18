@@ -36,9 +36,11 @@ services:
       - "443:443/udp"
     environment:
       OTIUM_DOMAIN: ${OTIUM_DOMAIN:?set OTIUM_DOMAIN in .env}
-      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env}
+      # Used by Caddyfile; Caddyfile.cloudflare works without it (Let's Encrypt doesn't need an email).
+      ACME_EMAIL: ${ACME_EMAIL:-}
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Caddyfile, or Caddyfile.cloudflare when the domain is proxied by Cloudflare (CADDYFILE in .env).
+      - ./${CADDYFILE:-Caddyfile}:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
     networks:
