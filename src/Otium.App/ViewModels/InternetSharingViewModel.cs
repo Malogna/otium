@@ -63,9 +63,11 @@ public partial class InternetSharingViewModel : ViewModelBase
 
     public bool IsProxybase => _host.UsesProxybase;
 
-    /// <summary>The user's payout address can't receive USDC on Tempo, so the consent screen asks for an 0x address.</summary>
-    public bool NeedsPayoutAddress => IsProxybase &&
-        Core.Wallets.PayoutTarget.ParseOrNull(_host.Settings.PayoutAddress) is not { Coin.Format: Core.Wallets.AddressFormat.Evm };
+    /// <summary>
+    /// Mysterium (earlier versions) needed a Polygon address; Proxybase's earnings are converted to the user's own payout
+    /// coin, so no extra address is asked for.
+    /// </summary>
+    public bool NeedsPayoutAddress => false;
 
     /// <summary>Proxybase reports no byte counts Otium can see, so there's no daily data limit to set.</summary>
     public bool SupportsDailyLimit => !IsProxybase;
@@ -123,9 +125,9 @@ public partial class InternetSharingViewModel : ViewModelBase
           "businesses that collect public web pages or check ads, send some of their web traffic through your unused " +
           "internet connection. Websites they visit see your internet address, so sites may sometimes show you more " +
           "CAPTCHAs. Nothing on your computer is accessed: not your files, passwords or browsing.\n\n" +
-          "Proxybase pays per GB. Whenever $1 has built up, Otium has it paid straight to your own 0x address, in USDC on " +
-          "the Tempo network (add Tempo to your wallet to see it). Otium takes nothing from these earnings. Turning this on " +
-          "means you agree to Proxybase's terms."
+          "Proxybase pays per GB. When enough has built up, Otium has it converted and paid straight to your payout " +
+          "address, in the coin you chose, like your mining earnings. The conversion's network costs and Otium's fee (the " +
+          "same share as for mining) come off each payout. Turning this on means you agree to Proxybase's terms."
         : $"{PartnerName} uses a small part of your unused internet connection to load public web pages for its business " +
         "customers, for things like price comparison, ad checks and market research. Websites they visit see your " +
         "internet address. Nothing on your computer is accessed: not your files, passwords or browsing.";
@@ -157,7 +159,7 @@ public partial class InternetSharingViewModel : ViewModelBase
         IsOn = settings.BandwidthEnabled && settings.BandwidthConsentAt is not null;
         ShowSuggestion = IsOffered && !IsOn && !settings.BandwidthPromptDismissed;
         var month = ExpectedUsdPerDay * 30;
-        EstimateText = IsProxybase ? "usually a few dollars a month, paid in USDC" : month > 0 ? $"about {Format.Usd(month)} a month extra" : "";
+        EstimateText = IsProxybase ? "usually a few dollars a month, paid in your coin" : month > 0 ? $"about {Format.Usd(month)} a month extra" : "";
         OnPropertyChanged(nameof(LimitsText));
         OnPropertyChanged(nameof(ConsentText));
         OnPropertyChanged(nameof(UnavailableText));

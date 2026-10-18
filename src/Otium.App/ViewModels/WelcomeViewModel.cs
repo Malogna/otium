@@ -15,8 +15,9 @@ namespace Otium.App.ViewModels;
 public sealed record EstimateRow(Geometry? Icon, string Name, string What, string PerDay);
 
 /// <summary>
-/// First launch in four short steps: what Otium is, what this PC could earn, where to be paid, and a clear summary
-/// before Start. Every choice but the payout address has a sensible default.
+/// First launch. The first screen offers two ways in: <b>Quick start</b> turns everything on (processor, graphics card,
+/// internet sharing, keeping the miner ready, sharing earnings figures) and asks only where to pay, then shows exactly
+/// what's on before Start; <b>Customize</b> walks through what this PC could earn, where to be paid, and each choice.
 /// </summary>
 public partial class WelcomeViewModel : ViewModelBase
 {
@@ -29,6 +30,7 @@ public partial class WelcomeViewModel : ViewModelBase
         _started = started;
         InviteCode = host.Settings.Referral.CodeUsed ?? "";
         UseGpu = host.Settings.GpuEnabled;
+        UseCpu = host.Settings.CpuEnabled;
         ElectricityPrice = (decimal)host.Settings.ElectricityPricePerKwh;
         PayForElectricity = host.Settings.PayForElectricity;
         _ready = true;
@@ -101,7 +103,7 @@ public partial class WelcomeViewModel : ViewModelBase
     // ---------- steps ----------
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsStep0), nameof(IsStep1), nameof(IsStep2), nameof(IsStep3))]
+    [NotifyPropertyChangedFor(nameof(IsStep0), nameof(IsStep1), nameof(IsStep2), nameof(IsStep3), nameof(ShowNext))]
     [NotifyCanExecuteChangedFor(nameof(NextCommand))]
     public partial int Step { get; set; }
 
@@ -113,6 +115,9 @@ public partial class WelcomeViewModel : ViewModelBase
 
     public bool IsStep3 => Step == LastStep;
 
+    /// <summary>The first screen has its own two buttons (Quick start, Customize) instead of Next.</summary>
+    public bool ShowNext => Step != 0 && Step != LastStep;
+
     private long _lastStepChange;
 
     private bool CanGoNext() => Step != PayoutStep || Payout.IsValid;
@@ -121,7 +126,75 @@ public partial class WelcomeViewModel : ViewModelBase
     private void Next() => GoTo(Step + 1);
 
     [RelayCommand]
-    private void Back() => GoTo(Step - 1);
+    private void Back() => GoTo(IsQuick && Step == PayoutStep ? 0 : Step - 1);
+
+    // ---------- quick start or customize ----------
+
+    /// <summary>The user chose Quick start: the estimate step is skipped and every option is on.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsCustom))]
+    public partial bool IsQuick { get; set; }
+
+    public bool IsCustom => !IsQuick;
+
+    /// <summary>Internet sharing can run on this computer (Proxybase has a client for it).</summary>
+    public bool CanShareInternet => _host.UsesProxybase ? Otium.Providers.Proxybase.ProxybaseRelease.ForCurrentPlatform() is not null : false;
+
+    /// <summary>Everything on, then straight to where to be paid.</summary>
+    [RelayCommand]
+    private void QuickStart()
+    {
+        IsQuick = true;
+        UseCpu = true;
+        if (HasGpu)
+            UseGpu = true;
+        ShareInternet = CanShareInternet;
+        KeepMinerReady = true;
+        ShareEarnings = true;
+        GoTo(PayoutStep);
+    }
+
+    /// <summary>Step by step, with the cautious defaults: internet sharing and keeping the miner ready stay off.</summary>
+    [RelayCommand]
+    private void Customize()
+    {
+        IsQuick = false;
+        ShareInternet = false;
+        KeepMinerReady = false;
+        GoTo(1);
+    }
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(StartCommand))]
+    public partial bool UseCpu { get; set; }
+
+    partial void OnUseCpuChanged(bool value)
+    {
+        _host.Settings.CpuEnabled = value;
+        _host.SaveSettings();
+    }
+
+    /// <summary>Share unused internet through Proxybase: on with Quick start, a choice with Customize.</summary>
+    [ObservableProperty] public partial bool ShareInternet { get; set; }
+
+    /// <summary>What Quick start turns on, one line each, so the user sees it all before pressing Start.</summary>
+    public IReadOnlyList<string> QuickList
+    {
+        get
+        {
+            var list = new List<string> { "Your processor mines while you're away." };
+            if (HasGpu)
+                list.Add($"Your {GpuName} mines the best-paying coin while you're away.");
+            if (CanShareInternet)
+                list.Add("Internet sharing: Proxybase's customers, mostly AI agents and businesses collecting public web pages, use some of your unused internet connection. Websites they visit see your internet address. It's paid to your address in your coin, like mining; Proxybase's terms apply.");
+            list.Add("The processor miner pauses instead of closing when you come back, so it earns again the moment you leave (it keeps about 2.5 GB of memory for up to 10 minutes).");
+            list.Add("This PC's hardware model and earnings (never your address) go into the real-earnings figures on otium.lol.");
+            return list;
+        }
+    }
+
+    [RelayCommand]
+    private void OpenProxybaseTerms() => Launch.Open("https://proxybase.xyz/terms");
 
     // A double-click on Next would otherwise skip the estimate step entirely.
     private void GoTo(int step)
@@ -288,13 +361,13 @@ public partial class WelcomeViewModel : ViewModelBase
         Step = 1;
     }
 
-    private bool CanStart() => IsSupported && !IsStarting && InviteError is null && Payout.IsValid;
+    private bool CanStart() => IsSupported && !IsStarting && InviteError is null && Payout.IsValid && (UseCpu || (HasGpu && UseGpu));
 
     [RelayCommand(CanExecute = nameof(CanStart))]
     private async Task Start()
     {
         IsStarting = true;
         _started(); // show the home screen right away; it reports progress while the account connects
-        await _host.StartFirstTimeAsync(InviteCode, Payout.Target?.ToString(), ShareEarnings, KeepMinerReady);
+        await _host.StartFirstTimeAsync(InviteCode, Payout.Target?.ToString(), ShareEarnings, KeepMinerReady, ShareInternet && CanShareInternet);
     }
 }

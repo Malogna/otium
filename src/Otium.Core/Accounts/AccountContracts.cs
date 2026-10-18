@@ -112,6 +112,44 @@ public sealed record EarningsReport(long Sequence, DateTimeOffset PeriodStart, D
 /// <param name="ElectricityUsd">The extra power used, at the user's electricity price.</param>
 public sealed record DeviceEarnings(string Kind, string? Model, double EarningSeconds, double UserUsd, double ElectricityUsd);
 
+/// <summary>
+/// The app has internet sharing earnings waiting at Proxybase (paid only in USDC on the Tempo network) and asks where
+/// to send them so they reach the user's own payout address in the coin they chose.
+/// </summary>
+/// <param name="AvailableMicrocredits">What's waiting (1,000,000 = $1).</param>
+/// <param name="RefundAddress">
+/// The sharing client's own wallet address on this computer (0x…), where a conversion that fails is refunded. The user's
+/// money either way; never Otium's.
+/// </param>
+public sealed record SharingRouteRequest(long AvailableMicrocredits, string? RefundAddress);
+
+/// <summary>Where to have Proxybase pay, or why to wait.</summary>
+/// <param name="Decision">One of <see cref="SharingRouteDecisions"/>.</param>
+/// <param name="DepositAddress">With "pay": the Tempo address of a one-time conversion to the user's coin and address.</param>
+/// <param name="AmountMicrocredits">With "pay": how much to send there (all that's waiting).</param>
+/// <param name="ExpectedOutput">With "pay": what the user should receive, e.g. "4.23 USDT (TRON)".</param>
+/// <param name="CostPercent">Conversion, network and Otium's fees together, as a share of the amount.</param>
+/// <param name="Message">With "wait" or "unsupported": why, in plain words.</param>
+public sealed record SharingRoute(
+    string Decision,
+    string? DepositAddress = null,
+    long AmountMicrocredits = 0,
+    string? ExpectedOutput = null,
+    double CostPercent = 0,
+    string? Message = null,
+    string? RequestId = null);
+
+public static class SharingRouteDecisions
+{
+    public const string Pay = "pay";
+
+    /// <summary>Not enough waiting yet for the conversion's fixed costs to be small; ask again later.</summary>
+    public const string Wait = "wait";
+
+    /// <summary>The user's payout coin can't be reached from Proxybase's network (yet).</summary>
+    public const string Unsupported = "unsupported";
+}
+
 public static class BandwidthReportStatuses
 {
     public const string Credited = "credited";

@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using Otium.Core.Accounts;
 using Otium.Core.Bandwidth;
 using Otium.Core.Providers;
 using Otium.Providers.Proxybase;
@@ -7,17 +8,19 @@ namespace Otium.Tests;
 
 /// <summary>
 /// Internet sharing through Proxybase's client, with a fake client that answers like the real one (proxybase-cli
-/// 0.1.60's output): wallet set-up, sign-in, the direct-only relay, and paying earnings to the user's own address.
+/// 0.1.60's output): wallet set-up, sign-in, the direct-only relay, and paying earnings into the conversion the server
+/// opens to the user's own coin and address.
 /// </summary>
 public sealed class ProxybaseTests : IDisposable
 {
     private const string NodeAddress = "0xb956cb455901fba57a330221bb1caa00c3ec7acb";
-    private const string UserAddress = "0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed";
+    private const string DepositAddress = "0xae1c7232180e29a332e9eee015f9a1082c8a2beb";
 
     private readonly string _engines = Path.Combine(Path.GetTempPath(), $"otium-proxybase-{Guid.NewGuid():N}");
     private readonly FakeCli _cli = new();
     private readonly ManualTime _time = new(new DateTimeOffset(2026, 10, 18, 12, 0, 0, TimeSpan.Zero));
-    private string? _beneficiary = UserAddress;
+    private readonly List<SharingRouteRequest> _routeRequests = [];
+    private SharingRoute _route = new(SharingRouteDecisions.Pay, DepositAddress, 0, "4.18 USDT (TRON)", 16.5);
 
     private sealed class FakeSeller : ISellerProcess
     {
@@ -91,7 +94,11 @@ public sealed class ProxybaseTests : IDisposable
     }
 
     private ProxybaseBandwidthProvider Provider() =>
-        new(new HttpClient(), _engines, () => _beneficiary, _cli, new ProxybaseAsset("test.zip", "00"), _time);
+        new(new HttpClient(), _engines, (request, _) =>
+        {
+            _routeRequests.Add(request);
+            return Task.FromResult(_route.Decision == SharingRouteDecisions.Pay ? _route with { AmountMicrocredits = request.AvailableMicrocredits } : _route);
+        }, _cli, new ProxybaseAsset("test.zip", "00"), _time);
 
     [Fact]
     public async Task First_start_makes_a_wallet_signs_in_and_relays_this_connection_only()
@@ -125,40 +132,43 @@ public sealed class ProxybaseTests : IDisposable
     }
 
     [Fact]
-    public async Task From_one_dollar_earnings_are_paid_to_the_users_own_address()
+    public async Task Earnings_are_paid_into_the_conversion_the_server_opens_for_the_users_coin()
     {
         var provider = Provider();
         await provider.StartAsync(new BandwidthRunOptions("w1"), CancellationToken.None);
 
-        _cli.SellerAvailable = 420_000; // $0.42: below the minimum
+        _cli.SellerAvailable = 420_000; // $0.42: below Proxybase's minimum, so the server isn't even asked
         await provider.CheckBalanceAndPayAsync(CancellationToken.None);
-        Assert.DoesNotContain(_cli.Commands, c => c.StartsWith("seller payout", StringComparison.Ordinal));
-        Assert.Equal("$0.42 waiting at Proxybase; $0.00 paid to 0x5aae…eaed so far, in USDC on Tempo, automatically from $1", provider.EarningsText());
+        Assert.Empty(_routeRequests);
+        Assert.Equal("$0.42 waiting at Proxybase; $0.00 paid out to your wallet so far", provider.EarningsText());
 
-        _cli.SellerAvailable = 1_250_000;
+        _cli.SellerAvailable = 16_000_000;
         await provider.CheckBalanceAndPayAsync(CancellationToken.None);
-        Assert.Contains($"seller payout create --amount 1250000 --tempo-address {UserAddress}", _cli.Commands);
+        var asked = Assert.Single(_routeRequests);
+        Assert.Equal(16_000_000, asked.AvailableMicrocredits);
+        Assert.Equal(NodeAddress, asked.RefundAddress); // a failed conversion refunds to this computer's own wallet
+        Assert.Contains($"seller payout create --amount 16000000 --tempo-address {DepositAddress}", _cli.Commands);
         var payout = Assert.Single(provider.Payouts);
         Assert.Equal("po_123", payout.PayoutId);
-        Assert.Contains("$1.25 paid", provider.EarningsText());
+        Assert.Equal("4.18 USDT (TRON)", payout.ExpectedOutput);
+        Assert.Equal("$0.00 waiting at Proxybase; $16.00 paid out to your wallet so far (last: 4.18 USDT (TRON))", provider.EarningsText());
 
         // The record survives a restart of Otium.
         Assert.Single(Provider().Payouts);
     }
 
     [Fact]
-    public async Task Without_an_address_nothing_is_paid_and_sharing_says_why()
+    public async Task When_the_server_says_wait_nothing_is_paid_and_the_reason_shows()
     {
-        _beneficiary = null;
         var provider = Provider();
-        Assert.Equal("Add a 0x address for internet sharing payouts.", provider.UnavailableReason);
-
-        _beneficiary = UserAddress;
         await provider.StartAsync(new BandwidthRunOptions("w1"), CancellationToken.None);
-        _beneficiary = null;
-        _cli.SellerAvailable = 2_000_000;
+        _route = new SharingRoute(SharingRouteDecisions.Wait, Message: "Waiting until about $15 has built up, so the network fee ($0.75 a payout) stays small.");
+        _cli.SellerAvailable = 5_000_000;
         await provider.CheckBalanceAndPayAsync(CancellationToken.None);
+
         Assert.DoesNotContain(_cli.Commands, c => c.StartsWith("seller payout", StringComparison.Ordinal));
+        _time.Advance(ProxybaseBandwidthProvider.BalanceInterval);
+        Assert.Equal(_route.Message, (await provider.GetStatusAsync(CancellationToken.None)).Message);
     }
 
     [Fact]

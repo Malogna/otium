@@ -33,7 +33,7 @@ never holds anyone's money.
    email, and a monthly leaderboard of top inviters, counted by friends who actually started earning.
 6. Optionally, earn from your internet connection too: the overview suggests it once, explains in plain words what
    sharing unused bandwidth means, and turns it on only when you agree. Proxybase's client then earns per GB, and Otium has
-   it paid in USDC on the Tempo network, straight to your own 0x address, whenever $1 has built up.
+   it converted and paid to your own payout address, in the coin you chose, like your mining earnings.
 
 When you come back after a stretch of earning, the overview says what it brought in ("While you were away: $0.84 in
 7 h 40 min of earning"), and in the first days of a month it sums up the last one. Each can be copied as a message
@@ -291,26 +291,43 @@ The app finds the server through `AppIdentity.DefaultServerUrl`, which is overri
 Users can also opt in to sharing unused internet bandwidth. Non-custodial, this runs **Proxybase's seller client**
 (proxybase.xyz; the open-source `proxybase-cli`, MIT/Apache-2.0, `src/Otium.Providers.Proxybase`). Proxybase sells
 SOCKS5 access, mostly to AI agents and scraping/ad-verification jobs, and pays sellers per GB. It needs no account:
-the client makes a wallet key on the computer and signs in with it. Otium has the earnings paid **straight to the user's
-own 0x address**, in USDC on the Tempo network, whenever $1 has built up, and takes nothing from them. (The earlier
+the client makes a wallet key on the computer and signs in with it. Proxybase pays only USDC on the Tempo network, so
+each payout goes **through a one-time conversion to the user's own payout address and coin** (USDT on TRON, BTC, SOL…),
+and users never see Tempo. Otium's cut is the conversion's app fee. (The earlier
 Mysterium node, `src/Otium.Providers.Mysterium`, stays in the code base but isn't offered; its "remove the network
 service" button in Advanced remains for computers that installed it.)
 
-- **Consent first.** Sharing is off until the user reads Otium's plain-language explanation (who the buyers are, what
-  websites see, USDC to their own address, Proxybase's terms) and presses "I agree". Users can share only while away.
+- **Consent first.** Sharing is off until the user agrees: Quick start lists it with the rest, Customize and the
+  overview explain it on its own (who the buyers are, what websites see, paid in their coin, Proxybase's terms). Users
+  can share only while away.
   Proxybase reports no byte counts Otium can see, so there's no daily GB limit for it; the consent screen says so.
 - **The client** is the pinned `proxybase-cli` 0.1.60, checked against GitHub's SHA-256 for each asset (its builds aren't
   signed): Windows x64, Linux x64/arm64 and Apple-silicon Macs (no Intel Mac build). It runs as
   `seller start --foreground` in direct mode only (this connection, no resold proxies; `seller_config.json` says so), dies
   with Otium, and keeps its wallet key, session and config in `engines/proxybase-data` (`PROXYBASE_DIR`). The key never
   leaves the computer and Otium never shows or stores its recovery phrase; only unpaid credits (under $1) depend on it.
-- **Payouts.** Every 10 minutes the app reads `buyer balance` (`seller_available`, in microcredits; 1,000,000 = $1) and,
-  from $1, runs `seller payout create --amount … --tempo-address <user's 0x address>`. Payouts it requested are kept in
-  `otium-payouts.json`, so the overview shows what was paid. A user paid in an 0x coin (BNB, ETH) already has an address;
-  anyone else enters one on the consent screen.
+- **Payouts.** Every 10 minutes the app reads `buyer balance` (`seller_available`, in microcredits; 1,000,000 = $1).
+  From $1 it asks the server (`POST /api/v1/devices/{id}/sharing/route`), which opens a one-time conversion to the
+  account's **registered** payout address (the app can't redirect it) and answers "pay" with a Tempo deposit address, or
+  "wait" while the network fee would be a large share. The app then runs `seller payout create --amount …
+  --tempo-address <deposit address>`; the conversion delivers the user's coin and refunds a failure to the client's own
+  wallet on the computer. Payouts are kept in `otium-payouts.json`, so the overview shows what was paid.
+- **Routes** (`src/Otium.Server/Sharing`): [Relay](https://docs.relay.link) deposit addresses (open, from Tempo USDC)
+  deliver USDT on TRON, TRX, BTC, SOL, BNB and ETH directly. LTC goes Relay → USDC on Base → a SideShift variable shift;
+  XMR goes Relay → USDC on Base → a ChangeNOW exchange (minimum about 12 USDC). Payouts wait while the network part of
+  the cost is above `Sharing:MaxNetworkCostPercent` (5%), up to `Sharing:PayAnywayUsd` ($25): TRON's delivery fee
+  (about $0.75 in October 2026) means USDT-on-TRON payouts of about $16.
+- **Otium's cut:** Relay's app fee, `Sharing:FeeBps` (default: the mining fee, 2% = 200), credited by Relay to
+  `Sharing:FeeRecipient` (Otium's 0x address; claim it in Relay's dashboard). SideShift's own commission is set to 0 so
+  the fee isn't taken twice; ChangeNOW's partner commission (from 0.4%) applies on XMR.
+- **Server secrets:** `Sharing:RelayApiKey` (Relay requires one for quotes from October 2026), `Sharing:SideShiftSecret`
+  and `Sharing:SideShiftAffiliateId` for LTC, `Sharing:ChangeNowApiKey` for XMR. Without the last two, LTC and XMR users
+  are told to pick another coin for sharing.
 - **Operator switch.** On by default; `Proxybase:Enabled=false` on the server hides it in every app (the account summary
   sends `proxybaseDisabled`).
-- **Still to verify on a real run:** a node relaying traffic and a first payout arriving at a user's address on Tempo.
+- **Still to verify on a real run:** a node relaying traffic; which token Proxybase actually pays (Relay expects
+  Stargate's USDC on Tempo, `0x20c0…8b50`); a first payout through Relay arriving as USDT on TRON; and that Relay's app
+  fee is charged on open deposit addresses (`/requests/v3` shows `appFees.actual`).
 - **AV and code signing.** Proxyware is a common antivirus "potentially unwanted" category. Keep the sharing state
   visible in the app, and sign the Windows build with an EV certificate.
 

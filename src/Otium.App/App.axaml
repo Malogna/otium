@@ -292,6 +292,14 @@
             <Setter Property="CornerRadius" Value="14" />
         </Style>
 
+        <!-- The two ways in on the welcome screen: card-sized buttons -->
+        <Style Selector="Button.choice">
+            <Setter Property="Padding" Value="16,14" />
+            <Setter Property="CornerRadius" Value="16" />
+            <Setter Property="MinHeight" Value="96" />
+            <Setter Property="VerticalContentAlignment" Value="Top" />
+        </Style>
+
         <!-- White button on the gradient hero. -->
         <Style Selector="Button.onHero">
             <Setter Property="Background" Value="#FFFFFF" />

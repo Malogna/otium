@@ -1,21 +1,29 @@
 using System.Globalization;
 using System.Text.Json;
+using Otium.Core.Accounts;
 using Otium.Core.Bandwidth;
 using Otium.Core.Providers;
 
 namespace Otium.Providers.Proxybase;
 
 /// <summary>A payout Otium asked Proxybase for, kept so the overview can say what was paid.</summary>
-public sealed record ProxybasePayout(DateTimeOffset At, long Microcredits, string PayoutId);
+/// <param name="ExpectedOutput">What the conversion said the user receives, e.g. "4.23 USDT (TRON)".</param>
+public sealed record ProxybasePayout(DateTimeOffset At, long Microcredits, string PayoutId, string? ExpectedOutput = null);
+
+/// <summary>Asks the Otium server where to send a payout so it reaches the user's own address in their coin.</summary>
+public delegate Task<SharingRoute> SharingRouter(SharingRouteRequest request, CancellationToken ct);
 
 /// <summary>
 /// Internet sharing through Proxybase (proxybase.xyz): its open-source client relays SOCKS5 traffic for Proxybase's
 /// buyers (AI agents, scraping and ad-verification jobs) and earns per GB. It needs no account: on first start the
 /// client makes a wallet key on this computer, signs in with it, and earnings build up as credits for that key.
 ///
-/// Otium never holds the money: whenever $1 has built up, it asks Proxybase to pay it to the user's own 0x address,
-/// in USDC on the Tempo network. Only direct mode runs (this computer's own connection, no resold proxies). The wallet
-/// key stays in Otium's data folder on this computer; only unpaid credits (under $1) depend on it.
+/// Proxybase pays only in USDC on the Tempo network, which users shouldn't have to deal with. So when enough has built
+/// up, the Otium server opens a one-time conversion (Relay) from Tempo USDC to the coin and address the user chose, and
+/// Proxybase pays straight into it: the user receives their own coin, and Otium never holds the money (its fee is taken
+/// by the conversion). A failed conversion refunds to this computer's own Proxybase wallet. Only direct mode runs (this
+/// computer's own connection, no resold proxies). The wallet key stays in Otium's data folder on this computer; only
+/// unpaid credits depend on it.
 /// </summary>
 public sealed class ProxybaseBandwidthProvider : IBandwidthProvider
 {
@@ -29,7 +37,7 @@ public sealed class ProxybaseBandwidthProvider : IBandwidthProvider
 
     private readonly EngineInstaller _installer;
     private readonly string _dataDir;
-    private readonly Func<string?> _beneficiary;
+    private readonly SharingRouter _route;
     private readonly IProxybaseCli _cli;
     private readonly ProxybaseAsset? _asset;
     private readonly TimeProvider _time;
@@ -41,11 +49,11 @@ public sealed class ProxybaseBandwidthProvider : IBandwidthProvider
     private long? _available;
     private string? _payoutProblem;
 
-    /// <param name="beneficiary">The user's own 0x address that payouts go to; null until they set one.</param>
+    /// <param name="route">Asks the Otium server where to send a payout (see <see cref="SharingRouter"/>).</param>
     public ProxybaseBandwidthProvider(
         HttpClient http,
         string enginesRoot,
-        Func<string?> beneficiary,
+        SharingRouter route,
         IProxybaseCli? cli = null,
         ProxybaseAsset? asset = null,
         TimeProvider? time = null)
@@ -54,7 +62,7 @@ public sealed class ProxybaseBandwidthProvider : IBandwidthProvider
         _installer = new EngineInstaller(http, engineDir, ProxybaseRelease.BinaryName);
         // Outside the versioned folder, so the wallet key and its unpaid credits survive an upgrade.
         _dataDir = Path.Combine(enginesRoot, "proxybase-data");
-        _beneficiary = beneficiary;
+        _route = route;
         _cli = cli ?? new ProxybaseCli(_installer.FindBinary, _dataDir);
         _asset = asset ?? ProxybaseRelease.ForCurrentPlatform();
         _time = time ?? TimeProvider.System;
@@ -66,7 +74,6 @@ public sealed class ProxybaseBandwidthProvider : IBandwidthProvider
 
     public string? UnavailableReason =>
         _asset is null ? "Internet sharing through Proxybase isn't available on this computer (it needs Windows, Linux, or a Mac with Apple silicon)."
-        : _beneficiary() is null ? "Add a 0x address for internet sharing payouts."
         : null;
 
     public bool IsInstalled => _installer.IsInstalled;
@@ -74,7 +81,7 @@ public sealed class ProxybaseBandwidthProvider : IBandwidthProvider
     /// <summary>The address this computer's earnings build up under at Proxybase, once the wallet exists.</summary>
     public string? NodeAddress { get; private set; }
 
-    /// <summary>Payouts Otium requested to the user's address, oldest first.</summary>
+    /// <summary>Payouts Otium requested for the user, oldest first.</summary>
     public IReadOnlyList<ProxybasePayout> Payouts => LoadPayouts();
 
     private string PayoutsFile => Path.Combine(_dataDir, "otium-payouts.json");
@@ -141,23 +148,47 @@ public sealed class ProxybaseBandwidthProvider : IBandwidthProvider
         return new BandwidthStatus(BandwidthProviderState.Online, 0, _payoutProblem, EarningsText());
     }
 
-    /// <summary>Reads what's waiting at Proxybase and, from $1, has it paid to the user's own address.</summary>
+    /// <summary>
+    /// Reads what's waiting at Proxybase and, from $1, asks the server where to send it; pays it there when the server
+    /// says the conversion's costs are reasonable for the amount, otherwise lets it build up.
+    /// </summary>
     internal async Task CheckBalanceAndPayAsync(CancellationToken ct)
     {
         var balance = await _cli.RunAsync(["buyer", "balance"], ct);
         if (ProxybaseOutput.SellerAvailable(balance.Output) is not { } available)
             return; // the backend didn't answer; try again next time
         _available = available;
-
-        if (available < MinimumPayoutMicrocredits || _beneficiary() is not { } address)
+        if (available < MinimumPayoutMicrocredits)
+        {
+            _payoutProblem = null;
             return;
-        var payout = await _cli.RunAsync(["seller", "payout", "create", "--amount", available.ToString(CultureInfo.InvariantCulture), "--tempo-address", address], ct);
+        }
+
+        SharingRoute route;
+        try
+        {
+            route = await _route(new SharingRouteRequest(available, NodeAddress), ct);
+        }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or AccountRequestException or InvalidOperationException && !ct.IsCancellationRequested)
+        {
+            _payoutProblem = "Couldn't reach Otium to arrange the payout. Trying again in a few minutes.";
+            return;
+        }
+
+        if (route.Decision != SharingRouteDecisions.Pay || route.DepositAddress is not { } depositAddress || route.AmountMicrocredits <= 0)
+        {
+            _payoutProblem = route.Message;
+            return;
+        }
+
+        var amount = Math.Min(route.AmountMicrocredits, available);
+        var payout = await _cli.RunAsync(["seller", "payout", "create", "--amount", amount.ToString(CultureInfo.InvariantCulture), "--tempo-address", depositAddress], ct);
         if (ProxybaseOutput.PayoutId(payout.Output) is { } id)
         {
             var payouts = LoadPayouts().ToList();
-            payouts.Add(new ProxybasePayout(_time.GetUtcNow(), available, id));
+            payouts.Add(new ProxybasePayout(_time.GetUtcNow(), amount, id, route.ExpectedOutput));
             await File.WriteAllTextAsync(PayoutsFile, JsonSerializer.Serialize(payouts), ct);
-            _available = 0;
+            _available = available - amount;
             _payoutProblem = null;
         }
         else
@@ -166,15 +197,16 @@ public sealed class ProxybaseBandwidthProvider : IBandwidthProvider
         }
     }
 
-    /// <summary>"$0.42 waiting · $3.00 paid to 0x12…ab so far (USDC on Tempo, from $1)".</summary>
+    /// <summary>"$0.42 waiting at Proxybase; $3.00 paid out so far, last: 4.23 USDT (TRON) on its way to your wallet".</summary>
     internal string? EarningsText()
     {
-        var paid = LoadPayouts().Sum(p => p.Microcredits) / MicrocreditsPerUsd;
-        if (_available is not { } available && paid == 0)
+        var payouts = LoadPayouts();
+        var paid = payouts.Sum(p => p.Microcredits) / MicrocreditsPerUsd;
+        if (_available is null && paid == 0)
             return null;
-        var address = _beneficiary() is { Length: > 10 } a ? $"{a[..6]}…{a[^4..]}" : "your address";
         var waiting = (_available ?? 0) / MicrocreditsPerUsd;
-        return FormattableString.Invariant($"${waiting:0.00} waiting at Proxybase; ${paid:0.00} paid to {address} so far, in USDC on Tempo, automatically from $1");
+        var text = FormattableString.Invariant($"${waiting:0.00} waiting at Proxybase; ${paid:0.00} paid out to your wallet so far");
+        return payouts.LastOrDefault()?.ExpectedOutput is { } last ? $"{text} (last: {last})" : text;
     }
 
     private IReadOnlyList<ProxybasePayout> LoadPayouts()
