@@ -304,3 +304,20 @@ Settings → Apps → Installed apps, as a user would.
 Testing from an app inside a Windows package container (such as an automation tool installed from the Store) doesn't
 work: its writes to `%LOCALAPPDATA%` go to the container's private copy, which elevated processes and Windows' own
 uninstall list can't see. Install and uninstall by hand from Explorer and Settings instead.
+
+## Launch rehearsal: release build against otium.lol (18 October 2026, 19:05–19:30)
+
+The Windows installer built as the release workflow builds it (`build/package.ps1 -ServerUrl https://otium.lol
+-FeeWallet USDT:TB2x…`, unsigned, 0.1.0) from `main` at 43ee761, with the server at https://otium.lol on the same
+commit (Lightsail, behind Cloudflare). The welcome screens weren't clicked through; their result (payout address,
+terms accepted, earning on) was set in settings, which is exactly what finishing them stores.
+
+| Check | Result |
+|---|---|
+| Server address | ❌ then ✅ The first install talked to `http://localhost:5080`: older builds saved their default server address into `settings.json`, and settings survive an uninstall, so a release build installed over a test build kept the test build's server. Fixed: settings keep only a server the user chose, and a saved build default (or the old development default) is dropped on load. After the fix the same leftover settings healed themselves. |
+| Registration | ✅ The app registered with the live server: worker `ot72b65fx36yb5`, the server's 2% fee terms, invite code `HXKDU49`, share link `https://otium.lol/r/HXKDU49`. |
+| Server side | ✅ The admin summary showed 1 USDT account and 1 device; Otium's unMineable balance read (auto pay on); the Pearl fork watcher reported "PIP-3 has no activation height yet". |
+| Invite page | ✅ `https://otium.lol/r/HXKDU49` offers the code with "no Otium fee for 30 days". |
+| Graphics card | ✅ SRBMiner 3.7.6 downloaded and verified, tested, then mined Pearl on `pearlpow.unmineable.com:443` (TLS) at about 90.6 TH/s: 4 shares accepted, 0 rejected in 5.5 minutes. unMineable hadn't listed the worker yet when the test stopped (its worker list lags). |
+| Processor | ⚠️ Windows Defender quarantined `xmrig.exe` about a minute after download, as in earlier runs. The app's antivirus help covers it; code signing won't change this, since Defender flags XMRig itself. |
+| Uninstall | ✅ App and engines removed; the test profile was deleted afterwards. |
