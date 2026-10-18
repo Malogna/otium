@@ -23,6 +23,20 @@ public static class InviteMessages
             "Use my code {code} for {days} days fee-free: {link}"),
     ];
 
+    /// <summary>The site invites lead to when the user has no invite link yet.</summary>
+    public const string HomePage = "https://otium.lol";
+
+    /// <summary>
+    /// A real result to share ("My PC earned $4.21 in October"), with the user's invite when they have one.
+    /// </summary>
+    public static string Earned(string claim, string? code, string? link, TimeSpan friendFeeHoliday)
+    {
+        var brag = $"{claim} with Otium, which mines only while I'm away from the computer.";
+        return string.IsNullOrEmpty(code) || string.IsNullOrEmpty(link)
+            ? $"{brag} Try it: {HomePage}"
+            : $"{brag} Join with my code {code} and get {friendFeeHoliday.TotalDays.ToString("0", CultureInfo.InvariantCulture)} days fee-free: {link}";
+    }
+
     public static string Fill(string template, string code, string link, TimeSpan friendFeeHoliday) => template
         .Replace("{code}", code, StringComparison.Ordinal)
         .Replace("{link}", link, StringComparison.Ordinal)

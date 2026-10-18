@@ -125,6 +125,23 @@ public sealed class AppSettings
         || string.Equals(url.Trim().TrimEnd('/'), DevelopmentServerUrl, StringComparison.OrdinalIgnoreCase)
         || string.Equals(url.Trim().TrimEnd('/'), AppIdentity.DefaultServerUrl.TrimEnd('/'), StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>The last "measure my PC" test, or null until one finished.</summary>
+    public Projections.PcMeasurement? Measurement { get; set; }
+
+    /// <summary>The user skipped the first-run test, so it isn't offered again by itself (it stays in Home's card).</summary>
+    public bool MeasurementSkipped { get; set; }
+
+    /// <summary>The month ("2026-10") whose report the user closed, so it doesn't come back.</summary>
+    public string? MonthlyReportDismissed { get; set; }
+
+    /// <summary>
+    /// Opt-in: send what this computer earns (graphics card model, processor name, hours, amounts; never an address) for
+    /// the real-earnings table on otium.lol. Off until the user ticks it.
+    /// </summary>
+    public bool ShareEarningsStats { get; set; }
+
+    public EarningsReportState EarningsReports { get; set; } = new();
+
     public ReferralState Referral { get; set; } = new();
 
     public AccountState Account { get; set; } = new();
@@ -226,4 +243,18 @@ public sealed class ReferralState
     public string? CodeError { get; set; }
 
     public DateTimeOffset? LastSyncedAt { get; set; }
+}
+
+/// <summary>
+/// Where the opt-in earnings reports left off: each device's running totals at the last report, so the next one sends
+/// only what was earned since. Reset when the user turns sharing on, so nothing from before is sent.
+/// </summary>
+public sealed class EarningsReportState
+{
+    public long Sequence { get; set; }
+
+    public DateTimeOffset? LastAt { get; set; }
+
+    /// <summary>Per device ("cpu", "gpu"): mining seconds, user USD and electricity USD at the last report.</summary>
+    public Dictionary<string, double[]> Baselines { get; set; } = [];
 }

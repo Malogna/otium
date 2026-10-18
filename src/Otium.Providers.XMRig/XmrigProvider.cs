@@ -12,7 +12,7 @@ using Otium.Core.Wallets;
 namespace Otium.Providers.XMRig;
 
 /// <summary>CPU mining with XMRig (RandomX), paid by the pool directly to the user's own XMR address.</summary>
-public sealed class XmrigProvider : IComputeProvider
+public sealed class XmrigProvider : IComputeProvider, IPausableProvider
 {
     /// <summary>Conservative pool fee used in estimates; public sources disagree on MoneroOcean's fee (0–1%).</summary>
     public const double PoolFeePercent = 1.0;
@@ -183,6 +183,33 @@ public sealed class XmrigProvider : IComputeProvider
             // The API isn't up yet during the first seconds after launch.
             var state = DateTimeOffset.UtcNow - _startedAt < TimeSpan.FromMinutes(1) ? ProviderState.Starting : ProviderState.Running;
             return new ProviderStatus(state, 0, "Waiting for the engine to report…");
+        }
+    }
+
+    public Task<bool> PauseAsync(CancellationToken ct) => CallAsync("pause", ct);
+
+    public Task<bool> ResumeAsync(CancellationToken ct) => CallAsync("resume", ct);
+
+    /// <summary>XMRig's JSON-RPC "pause" and "resume", which keep the dataset and the pool connection.</summary>
+    private async Task<bool> CallAsync(string method, CancellationToken ct)
+    {
+        if (_process is not { HasExited: false })
+            return false;
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"http://127.0.0.1:{_httpPort}/json_rpc")
+            {
+                Content = new StringContent($$"""{"method":"{{method}}","id":1,"jsonrpc":"2.0"}""", System.Text.Encoding.UTF8, "application/json"),
+            };
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(TimeSpan.FromSeconds(3));
+            using var response = await _http.SendAsync(request, timeout.Token);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception e) when (e is HttpRequestException or OperationCanceledException && !ct.IsCancellationRequested)
+        {
+            return false;
         }
     }
 

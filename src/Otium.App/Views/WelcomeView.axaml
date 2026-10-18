@@ -184,7 +184,23 @@
                                 <TextBlock Grid.Column="1" Margin="12,0,0,0" TextWrapping="Wrap"
                                            Text="You can pause, change anything or uninstall at any time." />
                             </Grid>
+                            <Grid ColumnDefinitions="Auto,*">
+                                <Path Classes="icon" Data="{StaticResource IconCheck}" VerticalAlignment="Top" Margin="0,2,0,0" />
+                                <TextBlock Grid.Column="1" Margin="12,0,0,0" TextWrapping="Wrap"
+                                           Text="Right after you start, Otium runs a two-minute test while you watch, so you see what this PC really earns. Your fans may speed up for those two minutes." />
+                            </Grid>
                         </StackPanel>
+                    </Border>
+
+                    <!-- Opt-in, off by default: the website's real-earnings table only gets PCs whose owners ticked this. -->
+                    <Border Classes="card delay2" Padding="16">
+                        <CheckBox IsChecked="{Binding ShareEarnings}" AutomationProperties.Name="Help show what PCs earn">
+                            <StackPanel Spacing="2">
+                                <TextBlock FontWeight="SemiBold" Text="Help show what PCs really earn" TextWrapping="Wrap" />
+                                <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap"
+                                           Text="Send Otium this PC's graphics card model, processor name, hours earning and amounts earned, a few times a day. Never your address. otium.lol shows only totals across several PCs. You can turn it off in Settings." />
+                            </StackPanel>
+                        </CheckBox>
                     </Border>
 
                     <StackPanel Spacing="8" HorizontalAlignment="Center">

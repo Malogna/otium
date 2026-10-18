@@ -258,6 +258,9 @@ public partial class WelcomeViewModel : ViewModelBase
 
     [ObservableProperty] public partial string? InviteError { get; set; }
 
+    /// <summary>"Help show what PCs really earn": off until the user ticks it.</summary>
+    [ObservableProperty] public partial bool ShareEarnings { get; set; }
+
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(StartCommand))]
     public partial bool IsStarting { get; set; }
@@ -289,6 +292,6 @@ public partial class WelcomeViewModel : ViewModelBase
     {
         IsStarting = true;
         _started(); // show the home screen right away; it reports progress while the account connects
-        await _host.StartFirstTimeAsync(InviteCode, Payout.Target?.ToString());
+        await _host.StartFirstTimeAsync(InviteCode, Payout.Target?.ToString(), ShareEarnings);
     }
 }

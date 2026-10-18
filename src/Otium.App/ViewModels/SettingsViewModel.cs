@@ -36,6 +36,7 @@ public partial class SettingsViewModel : ViewModelBase
         CpuUsagePercent = s.CpuUsagePercent;
         OnlyWhenIdle = s.OnlyWhenIdle;
         KeepAwakeWhileEarning = s.KeepAwakeWhileEarning;
+        ShareEarningsStats = s.ShareEarningsStats;
         IdleMinutes = s.IdleMinutes;
         ElectricityPrice = (decimal)s.ElectricityPricePerKwh;
         CpuFullLoadWatts = s.CpuFullLoadWatts is { } w ? (decimal)w : null;
@@ -339,6 +340,16 @@ public partial class SettingsViewModel : ViewModelBase
         _host.SaveSettings();
         _host.UpdateKeepAwake();
     }
+
+    /// <summary>The opt-in earnings reports for otium.lol's real-earnings table.</summary>
+    [ObservableProperty] public partial bool ShareEarningsStats { get; set; }
+
+    partial void OnShareEarningsStatsChanged(bool value)
+    {
+        if (!_loading)
+            _host.SetShareEarningsStats(value);
+    }
+
     [ObservableProperty] public partial decimal? IdleMinutes { get; set; }
     [ObservableProperty] public partial decimal? ElectricityPrice { get; set; }
     [ObservableProperty] public partial decimal? CpuFullLoadWatts { get; set; }

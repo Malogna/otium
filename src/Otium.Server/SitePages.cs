@@ -95,6 +95,57 @@ internal static class SitePages
         return $"First payout of 1.5 USDT to your wallet {when}, then daily.";
     }
 
+    /// <summary>
+    /// "Real numbers": what the pools have paid Otium users, and what real computers earned per graphics card (only from
+    /// users who chose to share, and only cards with several computers). Nothing at all until there is something real.
+    /// </summary>
+    internal static string RealSection(RealEarnings.RealEarningsSummary? real)
+    {
+        if (real is null || real.IsEmpty)
+            return "";
+        var stats = new List<string>();
+        if (real.PaidUsd >= 1)
+            stats.Add($"""<div class="real-stat"><span class="real-num">{UsdWhole(real.PaidUsd)}</span><span>paid by the pools straight to {real.PaidUsers.ToString("N0", CultureInfo.InvariantCulture)} Otium {(real.PaidUsers == 1 ? "user's wallet" : "users' wallets")} so far</span></div>""");
+        if (real.Rewarded30dUsd >= 1)
+            stats.Add($"""<div class="real-stat"><span class="real-num">{UsdWhole(real.Rewarded30dUsd)}</span><span>earned by Otium users in the last 30 days</span></div>""");
+        var table = real.Cards.Count == 0 ? "" : $"""
+                      <div class="panel real-cards">
+                        <table>
+                          <caption>Real computers running Otium, last {real.WindowDays} days</caption>
+                          <thead><tr><th scope="col">Graphics card</th><th scope="col">Computers</th><th scope="col">Per day of earning</th><th scope="col">Hours a day</th><th scope="col">Per day</th></tr></thead>
+                          <tbody>{string.Concat(real.Cards.Select(c => $"<tr><th scope=\"row\">{E(CardName(c.Model))}</th><td>{c.Computers}</td><td>{Usd(c.UsdPerEarningDay)}</td><td>{c.HoursPerDay.ToString("0.#", CultureInfo.InvariantCulture)} h</td><td>{Usd(c.UsdPerDay)}</td></tr>"))}</tbody>
+                        </table>
+                        <p class="footnote">Medians across computers whose owners chose to share their numbers. Measured hash rates at each hour's prices, after every fee, before electricity. "Per day" is what they actually earned on an average day, at the hours they were away.</p>
+                      </div>
+            """;
+        return $"""
+                <section id="real" aria-labelledby="real-title">
+                  <div class="wrap">
+                    <div class="section-head reveal">
+                      <div><span class="label">Real numbers</span><h2 id="real-title">Not a calculator. What Otium users actually earn.</h2></div>
+                      <p>Payouts are what unMineable and MoneroOcean report as paid to the addresses of Otium users, counted only where all the mining on an address is Otium's.</p>
+                    </div>
+                    <div class="real reveal">
+                      {(stats.Count == 0 ? "" : $"<div class=\"real-stats\">{string.Concat(stats)}</div>")}
+                      {table}
+                    </div>
+                  </div>
+                </section>
+            """;
+    }
+
+    /// <summary>"rtx4070tisuper" → "RTX 4070 Ti Super", from the card list when it's there.</summary>
+    internal static string CardName(string model)
+    {
+        if (Cards.FirstOrDefault(c => c.Id == model) is { Name: { } name })
+            return name;
+        var m = System.Text.RegularExpressions.Regex.Match(model, @"^(rtx|gtx|rx)(\d{3,4})(tisuper|ti|super|xtx|xt|gre)?(laptop)?$");
+        if (!m.Success)
+            return model;
+        var suffix = m.Groups[3].Value switch { "tisuper" => " Ti Super", "ti" => " Ti", "super" => " Super", "" => "", var s => " " + s.ToUpperInvariant() };
+        return $"{m.Groups[1].Value.ToUpperInvariant()} {m.Groups[2].Value}{suffix}{(m.Groups[4].Success ? " Laptop" : "")}";
+    }
+
     private static string UsdWhole(double value) => "$" + Math.Round(value).ToString("0", CultureInfo.InvariantCulture);
 
     /// <summary>
@@ -219,7 +270,8 @@ internal static class SitePages
     /// <param name="pricesAt">When the GPU prices were last refreshed.</param>
     /// <param name="legalLinks">The legal pages that exist ("privacy", "terms").</param>
     public static string Home(FeePolicy fees, string? downloadUrl, IEnumerable<string> legalLinks,
-        IReadOnlyList<CardEarnings>? earnings = null, DateTimeOffset? pricesAt = null, string? visitorCountry = null)
+        IReadOnlyList<CardEarnings>? earnings = null, DateTimeOffset? pricesAt = null, string? visitorCountry = null,
+        RealEarnings.RealEarningsSummary? real = null)
     {
         earnings ??= [];
         var download = E(downloadUrl ?? "#");
@@ -325,6 +377,7 @@ internal static class SitePages
                     <div class="marquee"><div class="marquee-track">{coins}<span aria-hidden="true" style="display:contents">{coins}</span></div></div>
                   </div>
                 </div>
+            {RealSection(real)}
 
                 <section id="night-shift" aria-labelledby="shift-title">
                   <div class="wrap">
