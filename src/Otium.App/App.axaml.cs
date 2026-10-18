@@ -16,6 +16,7 @@ public partial class App : Application
     private static readonly TimeSpan UpdateCheckInterval = TimeSpan.FromHours(6);
     private AppHost? _host;
     private MainWindow? _window;
+    private EarningsNotifications? _notifications;
     private NativeMenuItem? _toggleItem;
     private bool _quitting;
 
@@ -44,6 +45,7 @@ public partial class App : Application
             CreateTrayIcon(desktop);
 
             _host.StartEngines();
+            _notifications = new EarningsNotifications(_host);
             _host.ApplyDeviceSwitches();
             foreach (var engine in _host.Engines)
                 engine.SnapshotChanged += _ => Dispatcher.UIThread.Post(UpdateTrayMenu);

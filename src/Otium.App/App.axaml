@@ -299,6 +299,15 @@
             <Setter Property="MinHeight" Value="96" />
             <Setter Property="VerticalContentAlignment" Value="Top" />
         </Style>
+        <Style Selector="Button.choice.plain">
+            <Setter Property="Background" Value="{DynamicResource CardBackground}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource CardBorder}" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style Selector="Button.choice.plain:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource CardBackground}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource GoodBrush}" />
+        </Style>
 
         <!-- White button on the gradient hero. -->
         <Style Selector="Button.onHero">

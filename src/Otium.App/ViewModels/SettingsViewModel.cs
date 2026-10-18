@@ -37,6 +37,9 @@ public partial class SettingsViewModel : ViewModelBase
         OnlyWhenIdle = s.OnlyWhenIdle;
         KeepAwakeWhileEarning = s.KeepAwakeWhileEarning;
         ShareEarningsStats = s.ShareEarningsStats;
+        GpuEfficiencyMode = s.GpuEfficiencyMode;
+        EarnWhileBrowsing = s.EarnWhileBrowsing;
+        NotificationsEnabled = s.NotificationsEnabled;
         KeepMinerReadyWhenBack = s.KeepMinerReadyWhenBack;
         IdleMinutes = s.IdleMinutes;
         ElectricityPrice = (decimal)s.ElectricityPricePerKwh;
@@ -347,6 +350,56 @@ public partial class SettingsViewModel : ViewModelBase
     {
         if (!_loading)
             _host.SetShareEarningsStats(value);
+    }
+
+    public bool GpuEfficiencySupported => _host.GpuEfficiencySupported;
+
+    /// <summary>Windows can tell full-screen apps and games apart from ordinary use, which this needs.</summary>
+    public bool BrowsingSupported => OperatingSystem.IsWindows() && _host.GpuEngine is not null;
+
+    [ObservableProperty] public partial bool EarnWhileBrowsing { get; set; }
+
+    [ObservableProperty] public partial bool NotificationsEnabled { get; set; }
+
+    partial void OnNotificationsEnabledChanged(bool value)
+    {
+        if (_loading)
+            return;
+        _host.Settings.NotificationsEnabled = value;
+        _host.SaveSettings();
+    }
+
+    partial void OnEarnWhileBrowsingChanged(bool value)
+    {
+        if (_loading)
+            return;
+        _host.Settings.EarnWhileBrowsing = value;
+        _host.SaveSettings();
+    }
+
+    /// <summary>Efficiency mode: the NVIDIA card mines at a lower power limit (one administrator prompt to set up).</summary>
+    [ObservableProperty] public partial bool GpuEfficiencyMode { get; set; }
+    [ObservableProperty] public partial bool GpuEfficiencyBusy { get; set; }
+    [ObservableProperty] public partial string? GpuEfficiencyMessage { get; set; }
+
+    partial void OnGpuEfficiencyModeChanged(bool value)
+    {
+        if (_loading || value == _host.Settings.GpuEfficiencyMode)
+            return;
+        _ = ApplyGpuEfficiencyAsync(value);
+    }
+
+    private async Task ApplyGpuEfficiencyAsync(bool on)
+    {
+        GpuEfficiencyBusy = true;
+        GpuEfficiencyMessage = await _host.SetGpuEfficiencyAsync(on);
+        GpuEfficiencyBusy = false;
+        if (_host.Settings.GpuEfficiencyMode != on)
+        {
+            _loading = true; // put the switch back without asking again
+            GpuEfficiencyMode = _host.Settings.GpuEfficiencyMode;
+            _loading = false;
+        }
     }
 
     /// <summary>Pause the processor miner instead of stopping it when the user comes back (opt-in).</summary>

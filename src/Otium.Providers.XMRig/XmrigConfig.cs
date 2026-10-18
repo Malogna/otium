@@ -94,4 +94,12 @@ internal static class XmrigConfig
     }
 
     internal static string SanitizeWorker(string worker) => PayoutRouting.SanitizeWorker(worker);
+
+    /// <summary>The pool host and port a built config connects to ("host:port" in its first pool's url).</summary>
+    internal static (string Host, int Port)? PoolAddress(string config)
+    {
+        var url = JsonNode.Parse(config)?["pools"]?[0]?["url"]?.GetValue<string>();
+        var colon = url?.LastIndexOf(':') ?? -1;
+        return colon > 0 && int.TryParse(url![(colon + 1)..], out var port) ? (url[..colon], port) : null;
+    }
 }

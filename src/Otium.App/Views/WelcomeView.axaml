@@ -55,7 +55,7 @@
 
                     <!-- Two ways in: everything on now, or step by step -->
                     <Grid ColumnDefinitions="*,14,*" IsEnabled="{Binding IsSupported}">
-                        <Button Classes="choice accent" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                        <Button Classes="choice accent" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" HorizontalContentAlignment="Stretch"
                                 Command="{Binding QuickStartCommand}" AutomationProperties.Name="Quick start">
                             <StackPanel Spacing="4" Margin="4">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
@@ -66,7 +66,7 @@
                                            Text="Everything on: processor, graphics card and internet sharing. Just tell us where to pay you." />
                             </StackPanel>
                         </Button>
-                        <Button Grid.Column="2" Classes="choice" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                        <Button Grid.Column="2" Classes="choice plain" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" HorizontalContentAlignment="Stretch"
                                 Command="{Binding CustomizeCommand}" AutomationProperties.Name="Customize">
                             <StackPanel Spacing="4" Margin="4">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
@@ -238,8 +238,10 @@
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
-                            <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap"
+                            <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap" IsVisible="{Binding CanShareInternet}"
                                        Text="Pressing Start earning means you agree to all of these, including Proxybase's terms for internet sharing. Turn any of them off in Settings at any time, or go Back and choose Customize." />
+                            <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap" IsVisible="{Binding !CanShareInternet}"
+                                       Text="Pressing Start earning means you agree to all of these. Turn any of them off in Settings at any time, or go Back and choose Customize." />
                             <Button Classes="link" HorizontalAlignment="Left" IsVisible="{Binding CanShareInternet}" Command="{Binding OpenProxybaseTermsCommand}"
                                     AutomationProperties.Name="Read Proxybase's terms">
                                 <TextBlock Text="Read Proxybase's terms" FontSize="12.5" Foreground="{DynamicResource GoodBrush}" />
