@@ -135,6 +135,7 @@ public sealed class GpuPolicyTests
     {
         FreshFeeds();
         _kryptexOptions.Account = null;
+        _kryptexOptions.AddressMining = true; // off by default now (one wallet only), but still works when switched on
 
         var policy = await Service().BuildAsync(CancellationToken.None);
 

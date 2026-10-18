@@ -93,14 +93,10 @@ policy.
   support article), so the policy marks it that way and AMD cards skip it. US users' graphics cards stay on
   MoneroOcean, whose GPU algorithms are "free power only". Without the server's policy, unMineable users' GPUs wait
   (unMineable's prices come from the server) and US Monero users fall back to MoneroOcean's own rates.
-- **Quantus (optional, any payout coin).** Users who add their own Quantus wallet (`qz…`, checked with its SS58
-  checksum) in Settings let the graphics card also mine **Quantus** on Kryptex Pool's address login
-  (`qtc.kryptex.network:8049`, TLS, `--wallet qz… --worker …`), whenever it pays more than the coins paid to the
-  payout address. Kryptex pays the Quantus wallet in QTC every hour from 0.1 QTC (3% pool fee, SRBMiner 2.5%). It is
-  the best coin for most AMD cards and NVIDIA's second best, and the fallback once Pearl's fork drops consumer cards.
-  Fee and referral slices have no Quantus target (Otium's fee address is USDT, and referrers register only their main
-  address), so during them the card mines Pearl to that slice's address instead; a card that can only mine Quantus
-  (most AMD cards) rests for the slice and says so. The overview shows the Kryptex balance too.
+- **One wallet only.** Everything is paid to the single payout address the user gives. Quantus, which Kryptex pays
+  only to a separate Quantus wallet, is no longer mined (the code for Kryptex's address login stays, unused, and
+  `Kryptex:AddressMining` is off by default). AMD cards, which can't mine Pearl, mine unMineable's other coins when
+  they pay more than the power they use.
 - **Pearl fork switch.** Pearl's planned FP8 fork (PIP-3) only accepts NVIDIA Hopper and Blackwell cards. The server
   watches PIP-3 for an activation height and Pearl's chain height on Kryptex; once the chain reaches it, the policy
   limits `pearlhash` to those cards (`GpuPolicy:PearlFork:SupportedGpus`), so every other card moves to its next best

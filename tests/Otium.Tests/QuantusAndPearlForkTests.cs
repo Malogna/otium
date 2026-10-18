@@ -305,7 +305,7 @@ public sealed class QuantusAndPearlForkTests
         feed.Coins[473] = new CoinRevenue(1.6e-9, false, _time.GetUtcNow());
         _policyOptions.PearlFork.Mode = "active";
         var service = new GpuPolicyService(new GpuPolicyTests.FakePool(), feed, _kryptex, Options.Create(_policyOptions),
-            Options.Create(new KryptexOptions()), _time, NullLogger<GpuPolicyService>.Instance,
+            Options.Create(new KryptexOptions { AddressMining = true }), _time, NullLogger<GpuPolicyService>.Instance,
             Options.Create(new UnmineableOptions()), Options.Create(new CustodyOptions()), Watcher());
 
         var policy = await service.BuildAsync(CancellationToken.None);

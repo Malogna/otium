@@ -393,16 +393,17 @@ public sealed class AppHost : IAsyncDisposable
     public string? OwnPayoutTarget => PayoutTarget.ParseOrNull(Settings.PayoutAddress)?.ToString();
 
     /// <summary>
-    /// The user's Quantus wallet ("QTC:qz…") for the graphics card, or null without a valid one (or in balance mode,
-    /// where all mining goes to Otium's pool accounts).
+    /// Always null: everything Otium earns is paid to the user's one payout address, so the graphics card no longer
+    /// mines Quantus (which Kryptex pays only to a separate Quantus wallet). A Quantus wallet saved by an earlier
+    /// version is ignored. The Quantus code stays in the code base, unused.
     /// </summary>
-    public string? QuantusTarget => Settings.PayoutMode == PayoutMode.OwnWallet ? PayoutRouting.QuantusTarget(Settings.QuantusAddress) : null;
+    public string? QuantusTarget => null;
 
     /// <summary>Otium's Quantus fee target from the build ("QTC:qz…"), or null (Quantus mined in the fee slice then stays with the user).</summary>
     public string? QuantusFeeWallet => FeeWallets.Select(PayoutRouting.QuantusTarget).FirstOrDefault(t => t is not null);
 
-    /// <summary>What Kryptex holds for the user's Quantus wallet, refreshed with <see cref="PoolBalance"/>; null without one.</summary>
-    public PayoutBalance? QuantusBalance { get; private set; }
+    /// <summary>Always null now (see <see cref="QuantusTarget"/>).</summary>
+    public PayoutBalance? QuantusBalance => null;
 
     /// <summary>
     /// Whether the server holds balances (custodial). Until it has answered, assume not: the app then offers only
@@ -427,7 +428,6 @@ public sealed class AppHost : IAsyncDisposable
         {
             PoolBalance = null;
             PoolBalanceError = null;
-            QuantusBalance = null;
             return;
         }
         var now = DateTimeOffset.UtcNow;
@@ -438,7 +438,6 @@ public sealed class AppHost : IAsyncDisposable
         if (key != _poolBalanceTarget)
         {
             PoolBalance = null; // a different address: don't show the old one's balance meanwhile
-            QuantusBalance = null;
         }
         _poolBalanceTarget = key;
         try
@@ -449,10 +448,6 @@ public sealed class AppHost : IAsyncDisposable
             // Processor and graphics card share one pool now, so this only applies if they ever mine on different ones.
             GpuPoolBalance = GpuPayoutPool == PayoutPool.Unmineable && PayoutRouting.PoolFor(target, InUnitedStates) != PayoutPool.Unmineable && GpuEngine is not null
                 ? await UnmineableClient.GetPayoutBalanceAsync(new UnmineableClient(_http), PayoutTarget.ParseOrNull(target)!, ct)
-                : null;
-            // Quantus mined by the graphics card is paid by Kryptex, to the user's Quantus wallet.
-            QuantusBalance = QuantusTarget is { } quantus && GpuEngine is not null
-                ? await KryptexAddressClient.GetPayoutBalanceAsync(new KryptexAddressClient(_http), PayoutTarget.ParseAnyOrNull(quantus)!, ct)
                 : null;
         }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException or InvalidOperationException or System.Text.Json.JsonException && !ct.IsCancellationRequested)
@@ -495,7 +490,7 @@ public sealed class AppHost : IAsyncDisposable
     /// The server's GPU policy as it applies to this user. Balance accounts get all of it. Own-wallet users get the
     /// routes of the pool that pays their coin: MoneroOcean for Monero (null until fetched, when the GPU miner falls
     /// back to MoneroOcean's own prices), unMineable for every other coin (nothing until fetched, since unMineable's
-    /// prices come from the server). With a Quantus wallet, Kryptex's Quantus route is added for any payout coin.
+    /// prices come from the server).
     /// </summary>
     public GpuPolicy? EffectiveGpuPolicy
     {

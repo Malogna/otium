@@ -167,14 +167,9 @@ public sealed class NonCustodialServerTests : IDisposable
         // No feed for Xelis or FishHash in this test: they're listed but switched off until their data is back.
         Assert.Equal(GpuTiers.Disabled, policy.For("xelishash")!.Tier);
 
-        // Quantus is offered on Kryptex's address login, for users who add their own Quantus wallet (no feed here either).
-        var quantus = policy.For("quantus")!;
-        var quantusRoute = policy.Route(quantus.Route)!;
-        Assert.Equal(GpuRoutes.KryptexAddress, quantusRoute.Kind);
-        Assert.Equal("qtc.kryptex.network", quantusRoute.Host);
-        Assert.Equal(8049, quantusRoute.Port);
-        Assert.True(quantusRoute.Tls);
-        Assert.Null(quantusRoute.User);
+        // Quantus would need a second (Quantus) wallet; everything is paid to the one payout address, so it isn't offered.
+        Assert.Null(policy.For("quantus"));
+        Assert.DoesNotContain(policy.Routes, r => r.Kind == GpuRoutes.KryptexAddress);
         Assert.Equal(["NVIDIA"], pearl.OnlyGpus); // unMineable's PearlPow is NVIDIA-only; Pearl's fork isn't active
     }
 

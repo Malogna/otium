@@ -366,9 +366,10 @@ public sealed class KryptexOptions
 
     /// <summary>
     /// Coins apps may mine on Kryptex without an account, to the user's own wallet for the coin (Kryptex pays it
-    /// directly). Offered by every server, custodial or not, to apps whose user added an address for the coin.
+    /// directly). Off by default: everything is paid to the user's one payout address, and Quantus would need a
+    /// separate Quantus wallet, so the app no longer mines it.
     /// </summary>
-    public bool AddressMining { get; set; } = true;
+    public bool AddressMining { get; set; }
 
     /// <summary>Quantus: 0.1 QTC minimum, hourly payouts, 3% fee (October 2026). Port 8049 is the TLS port (7049 plain).</summary>
     public Dictionary<string, KryptexCoin> AddressCoins { get; set; } = new(StringComparer.OrdinalIgnoreCase)

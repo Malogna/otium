@@ -54,7 +54,6 @@ public partial class SettingsViewModel : ViewModelBase
         UseCpu = s.CpuEnabled;
         UseGpu = s.GpuEnabled;
         GpuWatts = s.GpuWatts is { } gw ? (decimal)gw : null;
-        QuantusAddress = Core.Wallets.PayoutTarget.ParseAnyOrNull(s.QuantusAddress)?.Address ?? "";
         _loading = false;
         _ = RefreshBenchmarksAsync();
         _ = RefreshLivePriceAsync();
@@ -202,7 +201,6 @@ public partial class SettingsViewModel : ViewModelBase
         if (_loading)
             return;
         _host.Settings.PayoutMode = value ? PayoutMode.Balance : PayoutMode.OwnWallet;
-        OnPropertyChanged(nameof(OffersQuantus));
         _host.SaveSettings();
         _host.ApplyDeviceSwitches();
         _ = _host.SyncAccountAsync(CancellationToken.None);
@@ -429,50 +427,6 @@ public partial class SettingsViewModel : ViewModelBase
             s.ServerUrl = ServerUrl.Trim();
         _host.RefreshPowerModel();
         _host.SaveSettings();
-    }
-
-    /// <summary>Quantus goes to the user's own wallet, so it's offered whenever the pools pay the user directly.</summary>
-    public bool OffersQuantus => !UseBalance;
-
-    public string QuantusNote =>
-        "Your graphics card can also mine Quantus on Kryptex Pool whenever it pays more than the coins paid to your payout address. " +
-        $"Kryptex pays it in Quantus (QTC) to your own Quantus wallet every hour once you have {Format.Coin((double)Core.Wallets.PayoutCoins.Quantus.Threshold, "QTC")}. " +
-        "Kryptex keeps 3% and the mining software 2.5%, and Otium's 2% of mining time applies as usual. On most AMD cards it's the only coin that " +
-        "earns more than its electricity. Few exchanges trade QTC (SafeTrade and BigOne, October 2026), so it can be harder to sell than USDT. " +
-        "Get an address from the Quantus Wallet app or an exchange's QTC deposit page. Leave empty to not mine Quantus.";
-
-    [ObservableProperty] public partial string QuantusAddress { get; set; } = "";
-    [ObservableProperty] public partial string? QuantusError { get; set; }
-    [ObservableProperty] public partial string? QuantusSaved { get; set; }
-
-    [RelayCommand]
-    private async Task SaveQuantus()
-    {
-        QuantusError = null;
-        QuantusSaved = null;
-        var text = QuantusAddress.Trim();
-        if (text.StartsWith("QTC:", StringComparison.OrdinalIgnoreCase))
-            text = text[4..].Trim();
-
-        if (text.Length == 0)
-        {
-            _host.Settings.QuantusAddress = null;
-            QuantusSaved = "Removed. Your graphics card won't mine Quantus.";
-        }
-        else if (Core.Wallets.PayoutTarget.TryCreate(Core.Wallets.PayoutCoins.Quantus, text, out var target, out _))
-        {
-            _host.Settings.QuantusAddress = target.ToString();
-            QuantusAddress = target.Address;
-            QuantusSaved = "Saved. Your graphics card tests Quantus the next time it starts, and mines it whenever it pays best.";
-        }
-        else
-        {
-            QuantusError = "That isn't a Quantus address. They start with \"qz\" and are 49 characters long: copy it from your Quantus wallet's Receive screen.";
-            return;
-        }
-        _host.SaveSettings();
-        OnPropertyChanged(nameof(CostText));
-        await _host.RefreshPoolBalanceAsync(force: true, CancellationToken.None);
     }
 
     private bool CanSavePayout() => Payout.IsValid;
