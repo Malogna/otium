@@ -194,7 +194,7 @@ public sealed class AccountService(
 
         if (deleting)
         {
-            await email.SendAsync(
+            await SendCodeEmailAsync(
                 request.Email.Trim(),
                 $"Your code to delete your Otium account: {code}",
                 $"Your code to permanently delete your Otium account is:\n\n    {code}\n\nIt expires in {CodeLifetime.TotalMinutes:0} minutes. " +
@@ -205,13 +205,31 @@ public sealed class AccountService(
 
         var existing = store.FindAccountByEmail(address);
         var purpose = existing is null || existing.AccountId == session.Account.AccountId
-            ? "secure your Otium balance"
+            ? "add this email to your Otium account"
             : "sign in to your Otium account on this computer";
-        await email.SendAsync(
+        await SendCodeEmailAsync(
             request.Email.Trim(),
             $"Your Otium code: {code}",
             $"Your code to {purpose} is:\n\n    {code}\n\nIt expires in {CodeLifetime.TotalMinutes:0} minutes. If you didn't ask for it, you can ignore this email.",
             ct);
+    }
+
+    /// <summary>
+    /// Sends a code email. When the email service refuses or can't be reached, the app gets a plain message to show
+    /// (and the log the reason) instead of a bare server error.
+    /// </summary>
+    private async Task SendCodeEmailAsync(string to, string subject, string body, CancellationToken ct)
+    {
+        try
+        {
+            await email.SendAsync(to, subject, body, ct);
+        }
+        catch (Exception e) when (e is System.Net.Mail.SmtpException or IOException or InvalidOperationException && !ct.IsCancellationRequested)
+        {
+            logger.LogWarning(e, "Couldn't send a code email");
+            throw new OtiumException(StatusCodes.Status503ServiceUnavailable,
+                "Otium couldn't send the email just now. Check the address and try again in a few minutes.");
+        }
     }
 
     public AccountSummary VerifySignInCode(string deviceId, string secret, EmailVerifyRequest request, string publicBaseUrl)

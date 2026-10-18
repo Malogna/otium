@@ -43,6 +43,9 @@ builder.Services.Configure<KryptexOptions>(builder.Configuration.GetSection(Kryp
 builder.Services.Configure<CpuMiningOptions>(builder.Configuration.GetSection(CpuMiningOptions.Section));
 
 builder.Services.AddSingleton(TimeProvider.System);
+// Every outgoing request says who it is: some APIs (CoinGecko among them) refuse requests without a User-Agent.
+builder.Services.ConfigureHttpClientDefaults(http => http.ConfigureHttpClient(client =>
+    client.DefaultRequestHeaders.UserAgent.ParseAdd($"Otium-Server/{typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "0"} (+https://otium.lol)")));
 builder.Services.AddSingleton(_ => new OtiumStore(builder.Configuration.GetConnectionString("Otium") ?? "Data Source=otium.db"));
 builder.Services.AddHttpClient<IMoneroPoolApi, MoneroOceanClient>();
 builder.Services.AddHttpClient<IUnmineableApi, UnmineableClient>();
