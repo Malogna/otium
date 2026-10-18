@@ -59,6 +59,8 @@ builder.Services.AddSingleton<AccountDataService>();
 builder.Services.AddSingleton<EarningsCreditor>();
 builder.Services.AddHttpClient<IProfitFeed, WhatToMineClient>();
 builder.Services.AddHttpClient<IKryptexApi, KryptexClient>();
+builder.Services.AddHttpClient<IPearlPipFeed, PearlPipClient>();
+builder.Services.AddSingleton<PearlForkWatcher>();
 builder.Services.AddSingleton<GpuPolicyService>();
 builder.Services.AddSingleton<KryptexCreditor>();
 builder.Services.AddSingleton<CpuPoolRouter>();
@@ -254,8 +256,8 @@ var admin = app.MapGroup("/admin").RequireRateLimiting("per-ip").AddEndpointFilt
 
 if (!custodial)
     admin.MapGet("/summary", (OtiumStore store, IUnmineableApi unmineable, IOptions<UnmineableOptions> options, IMystWallet myst,
-            MystSponsorService sponsor, TimeProvider time, ILogger<Program> logger, CancellationToken ct) =>
-        NonCustodialAdmin.SummaryAsync(store, unmineable, options.Value, myst, sponsor.IsAvailable, time, logger, ct));
+            MystSponsorService sponsor, PearlForkWatcher pearlFork, TimeProvider time, ILogger<Program> logger, CancellationToken ct) =>
+        NonCustodialAdmin.SummaryAsync(store, unmineable, options.Value, myst, sponsor.IsAvailable, time, logger, ct, pearlFork));
 else
 {
     admin.MapGet("/summary", async (OtiumStore store, IMoneroPoolApi pool, IBitcoinWallet treasury, IThorchainApi thorchain,

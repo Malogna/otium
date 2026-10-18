@@ -14,7 +14,9 @@ GitHub release. That release is also the auto-update feed: installed copies read
    `http://localhost:5080`.
 3. Optional settings:
    - Variable `OTIUM_FEE_WALLET`: the payout targets that receive the own-wallet mode fee, one per pool, e.g.
-     `USDT:T…;XMR:4…` (unMineable users' fee slices mine to the first, Monero users' to the second). Otium's
+     `USDT:T…;XMR:4…;QTC:qz…` (unMineable users' fee slices mine to the first, Monero users' to the second, and
+     Quantus mined by graphics cards during the fee slice to the third; leave any out and that part stays with the
+     user). Otium's
      unMineable referral code (`ztjq-jr7s`) is built in; `-UnmineableReferral` in `build/package.ps1` changes it.
    - Secret `OTIUM_HONEYGAIN_KEY`: turns on internet sharing (needs the Honeygain SDK libraries next to the app).
 4. **Code signing** (optional but strongly recommended): see [code-signing.md](code-signing.md). Without it, Windows

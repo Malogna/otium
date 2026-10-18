@@ -8,8 +8,8 @@ namespace Otium.Core.Wallets;
 /// <summary>
 /// Checks payout addresses before any money moves, so a typo is caught in the app and refused by the server instead of
 /// being sent somewhere nobody controls. Mainnet only: Bitcoin (bech32 SegWit v0, bech32m Taproot, legacy 1… and 3…),
-/// Ethereum and BNB Smart Chain (0x…, with the EIP-55 checksum when mixed case), Solana (base58 public keys), TRON (T…)
-/// and Litecoin (ltc1…, L…, M… and 3…).
+/// Ethereum and BNB Smart Chain (0x…, with the EIP-55 checksum when mixed case), Solana (base58 public keys), TRON (T…),
+/// Litecoin (ltc1…, L…, M… and 3…) and Quantus (qz…).
 /// </summary>
 public static class CryptoAddresses
 {
@@ -48,6 +48,7 @@ public static class CryptoAddresses
             AddressFormat.Monero => MoneroAddress.TryValidate(value, out _, out error),
             AddressFormat.Tron => IsTron(value),
             AddressFormat.Litecoin => IsLitecoin(value),
+            AddressFormat.Quantus => IsQuantus(value),
             _ => false,
         };
     }
@@ -194,6 +195,27 @@ public static class CryptoAddresses
 
     private static bool IsSolana(string value) => value.Length is >= 32 and <= 44 && DecodeBase58(value) is { Length: 32 };
 
+    // ---------- Quantus ----------
+
+    /// <summary>Quantus's SS58 network prefix, which is why its addresses start with "qz".</summary>
+    public const int QuantusSs58Prefix = 189;
+
+    /// <summary>
+    /// SS58 (Substrate's address format): a two-byte network prefix, the 32-byte account id and the first two bytes of
+    /// BLAKE2b-512("SS58PRE" + prefix + account id) as a checksum, in base58.
+    /// </summary>
+    private static bool IsQuantus(string value)
+    {
+        if (value.Length is < 47 or > 50 || DecodeBase58(value) is not { Length: 36 } bytes)
+            return false;
+        // Prefixes 64–16383 take two bytes: the low six bits of the first byte and the whole second byte, shuffled.
+        var prefix = ((bytes[0] & 0x3F) << 2) | (bytes[1] >> 6) | ((bytes[1] & 0x3F) << 8);
+        if ((bytes[0] & 0xC0) != 0x40 || prefix != QuantusSs58Prefix)
+            return false;
+        var checksum = Blake2b.Hash([.. "SS58PRE"u8, .. bytes.AsSpan(0, 34)]);
+        return checksum.AsSpan(0, 2).SequenceEqual(bytes.AsSpan(34, 2));
+    }
+
     // ---------- shared ----------
 
     private const string Base58Alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
@@ -223,4 +245,7 @@ public enum AddressFormat
     Monero,
     Tron,
     Litecoin,
+
+    /// <summary>Quantus (QTC) on its own chain: SS58 addresses starting with "qz".</summary>
+    Quantus,
 }
