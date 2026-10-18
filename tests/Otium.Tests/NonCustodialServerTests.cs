@@ -280,6 +280,23 @@ public sealed class NonCustodialServerTests : IDisposable
     }
 
     [Fact]
+    public async Task Stopping_earnings_sharing_deletes_what_the_computer_shared()
+    {
+        var (device, secret, _) = await Register(Usdt);
+        var client = new AccountClient(_http);
+        var now = _time.GetUtcNow();
+        await client.ReportEarningsAsync(device, secret,
+            new EarningsReport(1, now - TimeSpan.FromHours(6), now, [new DeviceEarnings("gpu", "rtx4090", 3600 * 5, 0.4, 0.1)]), CancellationToken.None);
+        var store = _factory.Services.GetRequiredService<Otium.Server.Data.OtiumStore>();
+        var accountId = store.FindDevice(device)!.AccountId;
+        Assert.NotEmpty(store.EarningsReportsFor(accountId));
+
+        await client.DeleteEarningsReportsAsync(device, secret, CancellationToken.None);
+        Assert.Empty(store.EarningsReportsFor(accountId));
+        await Assert.ThrowsAsync<AccountRequestException>(() => client.DeleteEarningsReportsAsync(device, "wrong", CancellationToken.None));
+    }
+
+    [Fact]
     public void The_country_list_names_sanctioned_and_mining_ban_countries_only()
     {
         Assert.Contains("sanctions", Otium.Core.Availability.BlockedReason("ru"));

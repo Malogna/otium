@@ -265,13 +265,6 @@
                                     <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap" Text="{Binding SharingChoiceText}" />
                                 </StackPanel>
                             </CheckBox>
-                            <CheckBox IsChecked="{Binding ShareEarnings}" AutomationProperties.Name="Help show what PCs really earn">
-                                <StackPanel Spacing="2">
-                                    <TextBlock FontWeight="SemiBold" Text="Help show what PCs really earn" TextWrapping="Wrap" />
-                                    <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap"
-                                               Text="Sends Otium this PC's graphics card model, processor name, hours earning and amounts earned, a few times a day. Never your address. otium.lol shows only totals across several PCs. Untick it if you'd rather not; you can also turn it off later in Settings." />
-                                </StackPanel>
-                            </CheckBox>
                             <CheckBox IsChecked="{Binding KeepMinerReady}" AutomationProperties.Name="Keep the processor miner ready when I come back">
                                 <StackPanel Spacing="2">
                                     <TextBlock FontWeight="SemiBold" Text="Keep the processor miner ready when I come back" TextWrapping="Wrap" />
@@ -279,6 +272,23 @@
                                                Text="When you return, the miner pauses instead of closing, so it earns again the moment you step away. It stops using the processor at once, but keeps about 2.5 GB of memory reserved for up to 10 minutes." />
                                 </StackPanel>
                             </CheckBox>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Sharing earnings figures: consent, so a plain yes or no with nothing preselected (both setups) -->
+                    <Border Classes="card delay2" Padding="16">
+                        <StackPanel Spacing="10">
+                            <TextBlock FontWeight="SemiBold" Text="Help show what PCs really earn?" TextWrapping="Wrap" />
+                            <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap"
+                                       Text="Otium would send this PC's graphics card model, processor name, hours earning and amounts earned, a few times a day. Never your address. otium.lol shows only figures combined across several PCs, so people can see what Otium really earns. You can change this in Settings at any time; saying no later deletes what was sent." />
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <Button Content="Yes, share" Classes.accent="{Binding ShareEarningsYes}" Command="{Binding AnswerShareEarningsYesCommand}"
+                                        AutomationProperties.Name="Yes, share my earnings figures" />
+                                <Button Content="No thanks" Classes.accent="{Binding ShareEarningsNo}" Command="{Binding AnswerShareEarningsNoCommand}"
+                                        AutomationProperties.Name="No, don't share my earnings figures" />
+                            </StackPanel>
+                            <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap" IsVisible="{Binding ShareEarningsUnanswered}"
+                                       Text="Choose yes or no to start." />
                         </StackPanel>
                     </Border>
 

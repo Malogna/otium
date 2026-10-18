@@ -275,10 +275,33 @@ public sealed class AppHost : IAsyncDisposable
     /// <summary>Turns the opt-in on or off. Turning it on counts from now: nothing earned before is sent.</summary>
     public void SetShareEarningsStats(bool on)
     {
-        if (on && !Settings.ShareEarningsStats)
+        var wasOn = Settings.ShareEarningsStats;
+        if (on && !wasOn)
             EarningsReports.Reset(Settings.EarningsReports, ReportedDevices(), DateTimeOffset.UtcNow);
         Settings.ShareEarningsStats = on;
+        Settings.ShareEarningsAnsweredAt = DateTimeOffset.UtcNow; // when the user said yes or no, for the record
         _settingsStore.Save(Settings);
+        if (wasOn && !on)
+            _ = DeleteSharedEarningsAsync();
+    }
+
+    /// <summary>Withdrawing consent deletes what this computer shared. Without a connection it's retried at the next sync.</summary>
+    private async Task DeleteSharedEarningsAsync()
+    {
+        Settings.DeleteSharedEarnings = true;
+        SaveSettings();
+        if (Settings.Account.WorkerId is null)
+            return;
+        try
+        {
+            await CreateClient().DeleteEarningsReportsAsync(DeviceId, Settings.DeviceSecret, CancellationToken.None);
+            Settings.DeleteSharedEarnings = false;
+            SaveSettings();
+        }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or AccountRequestException or InvalidOperationException)
+        {
+            // Retried after the next successful sync.
+        }
     }
 
     /// <summary>When the user agreed and a report is due, sends what was earned since the last one. Failures retry later.</summary>
@@ -971,6 +994,8 @@ public sealed class AppHost : IAsyncDisposable
             referral.RegisteredPayoutAddress = ownWallet;
             LastServerError = null;
             Settings.UnavailableReason = null;
+            if (Settings.DeleteSharedEarnings && !Settings.ShareEarningsStats)
+                await DeleteSharedEarningsAsync();
             await RefreshGpuPolicyAsync(client, ct);
         }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException or UriFormatException or InvalidOperationException or AccountRequestException)

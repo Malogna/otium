@@ -171,9 +171,16 @@ public sealed class AppSettings
 
     /// <summary>
     /// Send what this computer earns (graphics card model, processor name, hours, amounts; never an address) for the
-    /// real-earnings table on otium.lol. Ticked on the welcome screen, where the user can untick it; Settings turns it off.
+    /// real-earnings table on otium.lol. Asked as a plain yes or no on the welcome screen (nothing preselected: it's
+    /// consent); Settings turns it on or off.
     /// </summary>
     public bool ShareEarningsStats { get; set; }
+
+    /// <summary>When the user last answered "Help show what PCs really earn", as a record of their choice.</summary>
+    public DateTimeOffset? ShareEarningsAnsweredAt { get; set; }
+
+    /// <summary>The user stopped sharing earnings and the server hasn't yet deleted what this computer shared.</summary>
+    public bool DeleteSharedEarnings { get; set; }
 
     /// <summary>
     /// When the user comes back, pause the processor miner instead of stopping it, keeping its memory (about 2.5 GB) for
