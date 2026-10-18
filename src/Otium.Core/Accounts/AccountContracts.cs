@@ -99,8 +99,8 @@ public sealed record BandwidthReport(
     string Provider);
 
 /// <summary>
-/// What this computer earned since its last report, sent only when the user agreed to share it ("Help show what PCs
-/// earn"). It feeds the real-earnings table on otium.lol, where only totals over several computers appear.
+/// What this computer earned since its last report, sent only when the user agreed to share it ("Share
+/// analytics"). It feeds the real-earnings table on otium.lol, where only totals over several computers appear.
 /// <paramref name="Sequence"/> increases by one per report, so a retried report is stored once.
 /// </summary>
 public sealed record EarningsReport(long Sequence, DateTimeOffset PeriodStart, DateTimeOffset PeriodEnd, IReadOnlyList<DeviceEarnings> Devices);

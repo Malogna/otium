@@ -32,7 +32,7 @@ and computers. We treat it with the same care as your email.
 | **Computers:** a device id (a one-way hash of your computer's machine id; the machine id itself never leaves your computer), a hash of the computer's secret key, when it first and last connected | Recognising your computers and keeping others out of your account | Contract; legitimate interest in security (art. 6(1)(f)) |
 | **Invites:** who invited you and whom you invited, and whether their pool shows that they started mining (yes or no, never amounts) | Fee-free periods and the referral share of Otium's fee. If you join with an invite code, the person who invited you can see whether you have started mining | Contract |
 | **What the pools paid your address:** the coin, the total the pool reports as paid to your address and its last 30 days, read about twice a day from the pools' public APIs | Showing on otium.lol the total paid to Otium users (one sum over everyone, never per person) | Legitimate interest in showing what Otium is worth [to confirm]. Source: the pools' public APIs (art. 14) |
-| **Earnings statistics**, only if you answer yes to "Help show what PCs really earn": every few hours, your graphics card model, processor name, how long each mined, what it earned and the electricity it used, linked to your computer's device id. Never your address | Publishing real per-card earnings on otium.lol, only as medians across at least [5] computers | Consent (art. 6(1)(a) and ekomloven § 3-15). You can withdraw it in Settings at any time; we then delete that computer's statistics. The app records when you answered |
+| **Earnings statistics**, only if you answer yes to "Share analytics": every few hours, your graphics card model, processor name, how long each mined, what it earned and the electricity it used, linked to your computer's device id. Never your address | Publishing real per-card earnings on otium.lol, only as medians across at least [5] computers | Consent (art. 6(1)(a) and ekomloven § 3-15). You can withdraw it in Settings at any time; we then delete that computer's statistics. The app records when you answered |
 | **Problem reports**, only when you press "Send a problem report": the app version and operating system, your settings switches, what each miner is doing and its recent messages, your graphics card's test results, internet sharing's status, your pool balance and the name of your antivirus, with payout addresses, keys and the device secret removed, plus any note you write | Finding out why Otium isn't working for you, when you ask for help | Contract (support you asked for) |
 | **Server logs:** IP addresses and request details | Security and troubleshooting | Legitimate interest |
 
@@ -96,7 +96,7 @@ Otium.]
 - **Server logs:** 14 days.
 - **Backups** of the server database are kept for 14 days, encrypted, so deleted data disappears from them within that
   time.
-- **Your answer** to "Help show what PCs really earn" and when you gave it are kept in the app's settings on your
+- **Your answer** to "Share analytics" and when you gave it are kept in the app's settings on your
   computer.
 
 ## 5. Your rights
@@ -111,7 +111,7 @@ You can use these rights at any time, free of charge:
   your pool balance.
 - **Rectification:** change your payout address in Settings, or your email by signing in with the new one. For
   anything else, email us.
-- **Withdrawing consent:** turn off "Help show what PCs really earn" or internet sharing in Settings at any time. It
+- **Withdrawing consent:** turn off "Share analytics" or internet sharing in Settings at any time. It
   takes effect immediately and doesn't affect what happened before.
 - **Objection:** where we rely on legitimate interest (security logs, the site-wide total paid), you can object at
   [privacy email]; we'll stop unless we have compelling reasons.

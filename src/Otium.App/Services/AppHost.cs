@@ -719,7 +719,7 @@ public sealed class AppHost : IAsyncDisposable
     /// earning, then connects to the server (mining begins as soon as the account is ready).
     /// </summary>
     /// <param name="payoutTarget">The address chosen during onboarding ("USDT:T…"), paid by the pool directly.</param>
-    /// <param name="shareEarnings">"Help show what PCs earn" stayed ticked (see <see cref="SetShareEarningsStats"/>).</param>
+    /// <param name="shareEarnings">The user answered yes to "Share analytics" (see <see cref="SetShareEarningsStats"/>).</param>
     /// <param name="keepMinerReady">The user agreed to keep the processor miner paused, not stopped, when they come back.</param>
     /// <param name="shareInternet">The user agreed to internet sharing on the welcome screen (Quick start, or ticked).</param>
     public async Task StartFirstTimeAsync(string? inviteCode, string? payoutTarget = null, bool shareEarnings = false, bool keepMinerReady = false,

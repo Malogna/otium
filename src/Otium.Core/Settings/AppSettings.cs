@@ -176,7 +176,7 @@ public sealed class AppSettings
     /// </summary>
     public bool ShareEarningsStats { get; set; }
 
-    /// <summary>When the user last answered "Help show what PCs really earn", as a record of their choice.</summary>
+    /// <summary>When the user last answered "Share analytics", as a record of their choice.</summary>
     public DateTimeOffset? ShareEarningsAnsweredAt { get; set; }
 
     /// <summary>The user stopped sharing earnings and the server hasn't yet deleted what this computer shared.</summary>

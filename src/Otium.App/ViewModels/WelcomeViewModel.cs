@@ -342,7 +342,7 @@ public partial class WelcomeViewModel : ViewModelBase
 
     [ObservableProperty] public partial string? InviteError { get; set; }
 
-    /// <summary>"Help show what PCs really earn": null until the user answers yes or no; Start waits for an answer.</summary>
+    /// <summary>"Share analytics": null until the user answers yes or no; Start waits for an answer.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShareEarningsYes), nameof(ShareEarningsNo), nameof(ShareEarningsUnanswered))]
     [NotifyCanExecuteChangedFor(nameof(StartCommand))]
