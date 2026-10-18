@@ -115,9 +115,9 @@
     const clock = $("#dial-clock"), amount = $("#dial-amount"), state = $("#dial-state"), log = $("#log");
     const states = {
       mining: "Away: mining Pearl at 101.4 TH/s",
-      fee: "Fee slice: these 29 minutes mine for Otium",
-      paused: "Away, but power costs more than it earns: waiting",
-      using: "You're at the computer: Otium stays out of the way",
+      fee: "Fee slice: mining for Otium",
+      paused: "Power too expensive: waiting",
+      using: "You're at the computer: paused",
     };
     const DAY_MS = 24000; // one simulated day every 24 seconds
     const startHour = still ? 3 : 23.1;
