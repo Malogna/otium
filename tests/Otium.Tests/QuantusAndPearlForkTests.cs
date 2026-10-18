@@ -156,6 +156,18 @@ public sealed class QuantusAndPearlForkTests
     }
 
     [Fact]
+    public async Task Amd_cards_mine_pearl_to_the_payout_address_when_the_policy_allows_every_card()
+    {
+        // The server's default now: Pearl for every card (SRBMiner mines it on AMD), no Quantus without a Quantus wallet.
+        var policy = Policy(pearlOnly: []) with { Algorithms = [new GpuAlgorithmPolicy("pearlhash", GpuTiers.Primary, "unmineable-pearlhash", 3.4e-14, 0.75)] };
+        var amd = Gpu(policy, Rx6700);
+        Assert.Equal(["pearlhash"], (await amd.QuotesAsync(CancellationToken.None)).Select(q => q.Algorithm.PoolName));
+
+        var options = new ProviderRunOptions(new MiningTarget(Usdt, PayoutRole.User), "ot1234abcdg", 100);
+        Assert.Equal($"{Usdt}.ot1234abcdg#ztjq-jr7s", amd.LoginFor(GpuAlgorithms.Find("pearlhash")!, options).Wallet);
+    }
+
+    [Fact]
     public async Task After_pearls_fork_only_whitelisted_cards_are_offered_pearl()
     {
         string[] blackwellAndHopper = [@"\bRTX 50\d0\b", @"\bG?H(100|200|800)\b"];
@@ -305,7 +317,7 @@ public sealed class QuantusAndPearlForkTests
         feed.Coins[473] = new CoinRevenue(1.6e-9, false, _time.GetUtcNow());
         _policyOptions.PearlFork.Mode = "active";
         var service = new GpuPolicyService(new GpuPolicyTests.FakePool(), feed, _kryptex, Options.Create(_policyOptions),
-            Options.Create(new KryptexOptions()), _time, NullLogger<GpuPolicyService>.Instance,
+            Options.Create(new KryptexOptions { AddressMining = true }), _time, NullLogger<GpuPolicyService>.Instance,
             Options.Create(new UnmineableOptions()), Options.Create(new CustodyOptions()), Watcher());
 
         var policy = await service.BuildAsync(CancellationToken.None);

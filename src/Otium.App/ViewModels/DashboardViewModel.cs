@@ -196,9 +196,6 @@ public partial class DashboardViewModel : ViewModelBase
             PoolNote += $" Your graphics card mines on {gpu.PoolName}, which pays the same address separately: " +
                         $"{Format.Coin(gpu.Pending, gpu.Coin)} there now, paid out at {Format.Coin(gpu.MinimumPayout, gpu.Coin)}" +
                         (gpu.AutoPay ? "." : $" (auto pay is off at {gpu.PoolName}: turn it on there).");
-        if (_host.QuantusBalance is { } quantus)
-            PoolNote += $" Quantus mined by your graphics card goes to your Quantus wallet: {Format.Coin(quantus.Pending, quantus.Coin)} at " +
-                        $"{quantus.PoolName} now, {Format.Coin(quantus.Paid, quantus.Coin)} paid so far, paid out hourly from {Format.Coin(quantus.MinimumPayout, quantus.Coin)}.";
     }
 
     private void RefreshUpdate()
