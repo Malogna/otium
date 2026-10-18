@@ -42,10 +42,12 @@ Otium never holds your money. There's no balance to cash out and no account you 
 
 ## What you get
 
-- **Never costs you money.** Otium pauses whenever electricity would cost more than it earns. The price is estimated
-  for your country, or follows live hourly prices in Norway, Sweden, Denmark and Finland.
-- **Never in your way.** Mining runs at the lowest priority, only while you're away. It keeps the computer awake while
-  it earns (the screen still turns off), and never keeps a laptop on battery awake.
+- **Watches the price of power.** Otium pauses when electricity would likely cost more than it earns. The price is
+  estimated for your country (or enter your own), or follows live hourly prices in Norway, Sweden, Denmark and
+  Finland. Grid fees and taxes may not be included, so treat it as an estimate.
+- **Steps aside for you.** Mining runs at the lowest priority, only while you're away. It keeps the computer awake
+  while it earns (the screen still turns off), never keeps a laptop on battery awake, and makes the computer warmer
+  and its fans louder.
 - **The best coin for your card.** The graphics card mines whichever coin pays most for it right now, and moves on if
   the pool stops crediting one.
 - **Internet sharing (optional).** Earn from internet you're not using through [Proxybase](https://proxybase.xyz),
@@ -97,4 +99,4 @@ dotnet run --project src/Otium.App       # the app on its own
 The app is .NET 10 with Avalonia, and the server is ASP.NET Core with SQLite. How everything works, the server's
 settings, building installers and releasing are in [docs/technical.md](docs/technical.md). Also:
 [deploying](docs/deploying.md), [releasing](docs/releasing.md), [release candidates](docs/release-candidate.md),
-[privacy policy draft](docs/privacy.md).
+[privacy policy draft](docs/privacy.md), [terms of use draft](docs/terms.md), [legal review](docs/legal-review.md).
