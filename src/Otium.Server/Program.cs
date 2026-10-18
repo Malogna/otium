@@ -273,7 +273,7 @@ api.MapPost("/devices/{deviceId}/earnings", (string deviceId, EarningsReport bod
     return Results.NoContent();
 });
 
-// The user turned "Help show what PCs really earn" off: what this computer shared is deleted.
+// The user turned "Share analytics" off: what this computer shared is deleted.
 api.MapPost("/devices/{deviceId}/earnings/delete", (string deviceId, HttpRequest request, AccountService accounts, OtiumStore store) =>
 {
     var session = accounts.Authenticate(deviceId, Secret(request));
