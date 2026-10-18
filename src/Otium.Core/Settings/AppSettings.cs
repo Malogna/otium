@@ -90,8 +90,8 @@ public sealed class AppSettings
     public double BandwidthDailyLimitGb { get; set; } = 2;
 
     /// <summary>
-    /// The user's own Polygon (0x…) address that Mysterium settles internet sharing earnings to, when their payout
-    /// address isn't already an 0x address (which works on Polygon too).
+    /// The user's own 0x address that internet sharing earnings are paid to (Proxybase: USDC on Tempo), when their
+    /// payout address isn't already an 0x address (the same key works on every EVM network).
     /// </summary>
     public string? BandwidthPayoutAddress { get; set; }
 
@@ -124,6 +124,29 @@ public sealed class AppSettings
         string.IsNullOrWhiteSpace(url)
         || string.Equals(url.Trim().TrimEnd('/'), DevelopmentServerUrl, StringComparison.OrdinalIgnoreCase)
         || string.Equals(url.Trim().TrimEnd('/'), AppIdentity.DefaultServerUrl.TrimEnd('/'), StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The last "measure my PC" test, or null until one finished.</summary>
+    public Projections.PcMeasurement? Measurement { get; set; }
+
+    /// <summary>The user skipped the first-run test, so it isn't offered again by itself (it stays in Home's card).</summary>
+    public bool MeasurementSkipped { get; set; }
+
+    /// <summary>The month ("2026-10") whose report the user closed, so it doesn't come back.</summary>
+    public string? MonthlyReportDismissed { get; set; }
+
+    /// <summary>
+    /// Send what this computer earns (graphics card model, processor name, hours, amounts; never an address) for the
+    /// real-earnings table on otium.lol. Ticked on the welcome screen, where the user can untick it; Settings turns it off.
+    /// </summary>
+    public bool ShareEarningsStats { get; set; }
+
+    /// <summary>
+    /// When the user comes back, pause the processor miner instead of stopping it, keeping its memory (about 2.5 GB) for
+    /// up to 10 minutes so earning resumes at once when they leave again. Off unless the user agrees.
+    /// </summary>
+    public bool KeepMinerReadyWhenBack { get; set; }
+
+    public EarningsReportState EarningsReports { get; set; } = new();
 
     public ReferralState Referral { get; set; } = new();
 
@@ -180,6 +203,9 @@ public sealed class AccountState
     /// <summary>The server pays new Mysterium nodes' registration fee, so internet sharing can be offered.</summary>
     public bool MysteriumSponsored { get; set; }
 
+    /// <summary>The operator switched internet sharing through Proxybase off.</summary>
+    public bool ProxybaseDisabled { get; set; }
+
     /// <summary>The fee and invite terms the server last announced; null until it has.</summary>
     public Accounts.FeeTerms? Fees { get; set; }
 
@@ -226,4 +252,18 @@ public sealed class ReferralState
     public string? CodeError { get; set; }
 
     public DateTimeOffset? LastSyncedAt { get; set; }
+}
+
+/// <summary>
+/// Where the opt-in earnings reports left off: each device's running totals at the last report, so the next one sends
+/// only what was earned since. Reset when the user turns sharing on, so nothing from before is sent.
+/// </summary>
+public sealed class EarningsReportState
+{
+    public long Sequence { get; set; }
+
+    public DateTimeOffset? LastAt { get; set; }
+
+    /// <summary>Per device ("cpu", "gpu"): mining seconds, user USD and electricity USD at the last report.</summary>
+    public Dictionary<string, double[]> Baselines { get; set; } = [];
 }

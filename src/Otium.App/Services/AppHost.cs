@@ -16,6 +16,7 @@ using Otium.Core.Switching;
 using Otium.Core.Wallets;
 using Otium.Providers.Honeygain;
 using Otium.Providers.Mysterium;
+using Otium.Providers.Proxybase;
 using Otium.Providers.SrbMiner;
 using Otium.Providers.XMRig;
 
@@ -96,23 +97,198 @@ public sealed class AppHost : IAsyncDisposable
             GpuEngine = new EarningsEngine(gpuProvider, GpuPowerMeter, idle, () => _gpuConfig, gpuLedger.Load(), gpuLedger.Save);
         }
 
-        // Internet sharing (opt-in). A Mysterium node pays the user's own Polygon address directly; builds with a
-        // Honeygain publisher key (custodial operators) report usage to the Otium server, which credits the balance.
+        // Internet sharing (opt-in). Proxybase's client earns per GB; the server routes each payout through a conversion
+        // to the user's own payout address and coin;
+        // builds with a Honeygain publisher key (custodial operators) report usage to the Otium server, which credits
+        // the balance. (Mysterium's node, the earlier choice, stays in the code base but isn't offered.)
         var bandwidthLedger = new JsonFileStore<BandwidthLedger>(Paths.BandwidthLedgerFile);
         IBandwidthProvider bandwidthProvider = IsSimulated
             ? new SimulatedBandwidthProvider()
             : AppIdentity.ResolveHoneygainApiKey() is { } honeygainKey
                 ? new HoneygainBandwidthProvider(AppContext.BaseDirectory, honeygainKey)
-                : new MysteriumBandwidthProvider(_http, Paths.EnginesDir, () => MysteriumBeneficiary,
-                    (request, ct) => CreateClient().SponsorMysteriumAsync(DeviceId, Settings.DeviceSecret, request, ct));
-        UsesMysterium = bandwidthProvider is MysteriumBandwidthProvider;
+                : new ProxybaseBandwidthProvider(_http, Paths.EnginesDir,
+                    (request, ct) => CreateClient().GetSharingRouteAsync(DeviceId, Settings.DeviceSecret, request, ct));
+        UsesProxybase = bandwidthProvider is ProxybaseBandwidthProvider;
         _bandwidthConfig = BuildBandwidthConfig();
         Bandwidth = new BandwidthSharer(bandwidthProvider, idle, () => _bandwidthConfig,
-            UsesMysterium ? null : (report, ct) => CreateClient().ReportBandwidthAsync(DeviceId, Settings.DeviceSecret, report, ct),
+            UsesProxybase ? null : (report, ct) => CreateClient().ReportBandwidthAsync(DeviceId, Settings.DeviceSecret, report, ct),
             bandwidthLedger.Load(), bandwidthLedger.Save);
 
         foreach (var engine in Engines)
-            engine.SnapshotChanged += _ => UpdateKeepAwake();
+        {
+            engine.SnapshotChanged += _ =>
+            {
+                UpdateKeepAwake();
+                ObserveAway();
+                ObserveMeasurement();
+            };
+        }
+    }
+
+    // ---------- "While you were away" ----------
+
+    private readonly object _sessionLock = new();
+    private readonly AwaySessionTracker _away = new();
+
+    /// <summary>The last stretch of earning that ended, until the user closes its card; null when there's none.</summary>
+    public AwaySummary? LastAway { get; private set; }
+
+    public event Action? AwayChanged;
+
+    public void DismissAway()
+    {
+        LastAway = null;
+        AwayChanged?.Invoke();
+    }
+
+    /// <summary>
+    /// Watches the engines for a stretch of earning ending (the user came back) and keeps its summary. The "measure my
+    /// PC" test isn't time away, so it doesn't count.
+    /// </summary>
+    private void ObserveAway()
+    {
+        AwaySummary? ended;
+        lock (_sessionLock)
+        {
+            var engines = Engines.ToList();
+            var active = engines.Any(e => e.Snapshot.State is EngineState.Earning or EngineState.Starting) && !engines.Any(e => e.IsRunningNow);
+            var totals = engines.Select(e => e.Totals).ToList();
+            ended = _away.Observe(DateTimeOffset.Now, active, totals.Sum(t => t.UserUsd), totals.Sum(t => t.ElectricityUsd));
+            if (ended is not null)
+                LastAway = ended;
+        }
+        if (ended is not null)
+            AwayChanged?.Invoke();
+    }
+
+    // ---------- "Measure my PC" ----------
+
+    /// <summary>The test under way or just finished; null before the first one this session.</summary>
+    public PcMeasurementRun? MeasurementRun { get; private set; }
+
+    public event Action? MeasurementChanged;
+
+    /// <summary>Why the test can't run now, or null when it can.</summary>
+    public string? MeasurementBlocker =>
+        !Settings.OnboardingComplete ? "Finish setting up Otium first."
+        : !Settings.EarningEnabled ? "Press Start first: the test earns for real, to your address."
+        : MiningBlocker is { } blocker ? blocker
+        : !Engines.Any(e => e.Enabled) ? "Turn on the processor or the graphics card in Settings first."
+        : null;
+
+    public bool IsMeasuring => MeasurementRun is { Phase: not MeasurementPhase.Done };
+
+    /// <summary>
+    /// Starts the two-minute test: the miners earn now (to the user's address, fee slices as usual) even though the user
+    /// is at the computer, and their measured rates replace the hardware estimate. Returns why it can't, or null.
+    /// </summary>
+    public string? StartMeasurement()
+    {
+        lock (_sessionLock)
+        {
+            if (IsMeasuring)
+                return null;
+            if (MeasurementBlocker is { } blocker)
+                return blocker;
+            MeasurementRun = new PcMeasurementRun(DateTimeOffset.UtcNow);
+            foreach (var engine in Engines.Where(e => e.Enabled))
+                engine.RunNow(PcMeasurementRun.RunNowWindow);
+        }
+        MeasurementChanged?.Invoke();
+        return null;
+    }
+
+    /// <summary>Ends the test now, keeping whatever it measured.</summary>
+    public void StopMeasurement()
+    {
+        lock (_sessionLock)
+        {
+            if (MeasurementRun is not { Phase: not MeasurementPhase.Done } run)
+                return;
+            run.Stop();
+            FinishMeasurement(run);
+        }
+        MeasurementChanged?.Invoke();
+    }
+
+    /// <summary>Feeds the test the engines' latest numbers; ends it when it has enough.</summary>
+    public void ObserveMeasurement()
+    {
+        lock (_sessionLock)
+        {
+            if (MeasurementRun is not { Phase: not MeasurementPhase.Done } run)
+                return;
+            var devices = new List<MeasuredDevice> { new(DeviceKind.Cpu, CpuInfo.Name, Engine.Snapshot, "rx/0") };
+            if (GpuEngine is not null && GpuEngine.Enabled)
+                devices.Add(new MeasuredDevice(DeviceKind.Gpu, GpuProvider?.Gpus.FirstOrDefault()?.Name ?? "Graphics card", GpuEngine.Snapshot));
+            if (!Engine.Enabled)
+                devices.RemoveAt(0);
+            run.Observe(DateTimeOffset.UtcNow, devices);
+            if (run.Phase == MeasurementPhase.Done)
+                FinishMeasurement(run);
+        }
+        MeasurementChanged?.Invoke();
+    }
+
+    private void FinishMeasurement(PcMeasurementRun run)
+    {
+        foreach (var engine in Engines)
+            engine.EndRunNow(); // back to earning only while the user is away
+        if (run.Result() is { } result)
+        {
+            Settings.Measurement = result;
+            _settingsStore.Save(Settings);
+        }
+    }
+
+    // ---------- Opt-in earnings reports for otium.lol ----------
+
+    private int _reporting;
+
+    /// <summary>The devices the reports cover, with their models and running totals.</summary>
+    private List<ReportedDevice> ReportedDevices()
+    {
+        var devices = new List<ReportedDevice> { new("cpu", CpuInfo.Name, Engine.Totals) };
+        if (GpuEngine is not null)
+            devices.Add(new ReportedDevice("gpu", CardIds.FromName(GpuProvider?.Gpus.FirstOrDefault()?.Name) ?? GpuProvider?.Gpus.FirstOrDefault()?.Name, GpuEngine.Totals));
+        return devices;
+    }
+
+    /// <summary>Turns the opt-in on or off. Turning it on counts from now: nothing earned before is sent.</summary>
+    public void SetShareEarningsStats(bool on)
+    {
+        if (on && !Settings.ShareEarningsStats)
+            EarningsReports.Reset(Settings.EarningsReports, ReportedDevices(), DateTimeOffset.UtcNow);
+        Settings.ShareEarningsStats = on;
+        _settingsStore.Save(Settings);
+    }
+
+    /// <summary>When the user agreed and a report is due, sends what was earned since the last one. Failures retry later.</summary>
+    public async Task ReportEarningsAsync(CancellationToken ct)
+    {
+        if (!Settings.ShareEarningsStats || !Settings.OnboardingComplete || Settings.Account.WorkerId is null)
+            return;
+        if (Interlocked.Exchange(ref _reporting, 1) == 1)
+            return;
+        try
+        {
+            if (EarningsReports.Next(Settings.EarningsReports, ReportedDevices(), DateTimeOffset.UtcNow) is not { } pending)
+            {
+                _settingsStore.Save(Settings); // the first call sets the baselines
+                return;
+            }
+            await CreateClient().ReportEarningsAsync(DeviceId, Settings.DeviceSecret, pending.Report, ct);
+            EarningsReports.Commit(Settings.EarningsReports, pending);
+            _settingsStore.Save(Settings);
+        }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or AccountRequestException or UriFormatException)
+        {
+            // Not important enough to bother the user: the same period goes out with the next attempt.
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _reporting, 0);
+        }
     }
 
     private readonly ISleepInhibitor _sleep = SleepInhibitor.ForThisPlatform();
@@ -348,18 +524,18 @@ public sealed class AppHost : IAsyncDisposable
     public BandwidthSharer Bandwidth { get; }
 
     /// <summary>The server pays for sharing and this computer can run the partner's component.</summary>
-    public bool BandwidthOffered => UsesMysterium
-        ? Settings.Account.MysteriumSponsored && MystRelease.ForCurrentPlatform() is not null
+    public bool BandwidthOffered => UsesProxybase
+        ? Settings.PayoutMode == PayoutMode.OwnWallet && !Settings.Account.ProxybaseDisabled && ProxybaseRelease.ForCurrentPlatform() is not null
         : Settings.PayoutMode == PayoutMode.Balance && Settings.Account.BandwidthAvailable && Bandwidth.Provider.UnavailableReason is null;
 
     /// <summary>Internet sharing runs a Mysterium node that pays the user directly (not a partner paying Otium).</summary>
-    public bool UsesMysterium { get; }
+    public bool UsesProxybase { get; }
 
     /// <summary>
-    /// The Polygon address Mysterium pays: the one the user gave for sharing, or their payout address when it's an 0x
-    /// address (the same wallet works on Polygon). Null until there is one.
+    /// The 0x address internet sharing pays (Proxybase: USDC on Tempo): the one the user gave for sharing, or their
+    /// payout address when it's an 0x address (the same key works on every EVM network). Null until there is one.
     /// </summary>
-    public string? MysteriumBeneficiary =>
+    public string? BandwidthBeneficiary =>
         CryptoAddresses.TryValidate(AddressFormat.Evm, Settings.BandwidthPayoutAddress, out _)
             ? Settings.BandwidthPayoutAddress!.Trim().ToLowerInvariant()
             : PayoutTarget.ParseOrNull(Settings.PayoutAddress) is { Coin.Format: AddressFormat.Evm } evm ? evm.Address : null;
@@ -429,8 +605,14 @@ public sealed class AppHost : IAsyncDisposable
     /// earning, then connects to the server (mining begins as soon as the account is ready).
     /// </summary>
     /// <param name="payoutTarget">The address chosen during onboarding ("USDT:T…"), paid by the pool directly.</param>
-    public async Task StartFirstTimeAsync(string? inviteCode, string? payoutTarget = null)
+    /// <param name="shareEarnings">"Help show what PCs earn" stayed ticked (see <see cref="SetShareEarningsStats"/>).</param>
+    /// <param name="keepMinerReady">The user agreed to keep the processor miner paused, not stopped, when they come back.</param>
+    /// <param name="shareInternet">The user agreed to internet sharing on the welcome screen (Quick start, or ticked).</param>
+    public async Task StartFirstTimeAsync(string? inviteCode, string? payoutTarget = null, bool shareEarnings = false, bool keepMinerReady = false,
+        bool shareInternet = false)
     {
+        SetShareEarningsStats(shareEarnings);
+        Settings.KeepMinerReadyWhenBack = keepMinerReady;
         if (PayoutTarget.ParseOrNull(payoutTarget) is { } target)
         {
             Settings.PayoutMode = PayoutMode.OwnWallet;
@@ -449,6 +631,27 @@ public sealed class AppHost : IAsyncDisposable
         }
         SetEarning(true);
         await SyncAccountAsync(CancellationToken.None);
+        // Internet sharing, agreed to on the welcome screen. It starts once the account (and the server's switch) allows it.
+        if (shareInternet && Bandwidth.Provider.UnavailableReason is null)
+        {
+            try
+            {
+                await SetBandwidthSharingAsync(true);
+            }
+            catch (InvalidOperationException)
+            {
+                // Not fatal: Settings can turn it on later.
+            }
+        }
+        else if (shareInternet)
+        {
+            // Not possible yet (e.g. no address it can pay): remember the agreement so the overview can finish it.
+            Settings.BandwidthPromptDismissed = false;
+        }
+
+        // Measure this PC right away (the user is watching), so the overview shows its own numbers, not a table's.
+        if (Settings.Measurement is null && !Settings.MeasurementSkipped)
+            StartMeasurement();
     }
 
     /// <summary>Re-applies the per-device toggles after the main switch or settings change.</summary>
@@ -608,7 +811,8 @@ public sealed class AppHost : IAsyncDisposable
                 // CPU and GPU share one worker id so the pool reports their combined work for this account.
                 Settings.Account.WorkerId ?? "",
                 // The CPU mines wherever the server routes this account (MoneroOcean or Kryptex XMR).
-                cpu ? Settings.Account.CpuPool : null);
+                cpu ? Settings.Account.CpuPool : null,
+                cpu && Settings.KeepMinerReadyWhenBack);
         }
 
         // Fee and referral slices mine on the user's own pool, so a referrer paid on the other pool gets no slice.
@@ -625,7 +829,8 @@ public sealed class AppHost : IAsyncDisposable
             EffectivePricePerKwh(),
             // Only the graphics card mines Quantus, so only its slices carry the Quantus targets.
             new FeeSchedule(Fees, user, FeeWallet, standing, cpu ? null : QuantusTarget, QuantusFeeWallet),
-            $"ot{DeviceId[..8]}{workerSuffix}");
+            $"ot{DeviceId[..8]}{workerSuffix}",
+            PauseWhenBack: cpu && Settings.KeepMinerReadyWhenBack);
     }
 
     private BandwidthConfig BuildBandwidthConfig()
@@ -643,8 +848,8 @@ public sealed class AppHost : IAsyncDisposable
             account.WorkerId ?? "");
 
         // Bandwidth isn't constructed yet on the first call, so check the provider separately in BandwidthOffered.
-        bool BandwidthOfferedBySettings() => UsesMysterium
-            ? account.MysteriumSponsored
+        bool BandwidthOfferedBySettings() => UsesProxybase
+            ? Settings.PayoutMode == PayoutMode.OwnWallet && !account.ProxybaseDisabled
             : Settings.PayoutMode == PayoutMode.Balance && account.BandwidthAvailable && account.WorkerId is not null;
     }
 
@@ -850,6 +1055,7 @@ public sealed class AppHost : IAsyncDisposable
         account.FeePercent = summary.Balance.FeePercent;
         account.BandwidthAvailable = summary.Bandwidth?.Available ?? false;
         account.MysteriumSponsored = summary.MysteriumSponsored;
+        account.ProxybaseDisabled = summary.ProxybaseDisabled;
         if (summary.Fees is not null && summary.Fees != account.Fees)
         {
             account.Fees = summary.Fees;

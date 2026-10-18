@@ -58,7 +58,12 @@ public sealed class AccountDataService(OtiumStore store, AccountService accounts
                 .Select(r => new ExportedBandwidthReport(r.DeviceId, r.Seq, r.Ip, r.PeriodStart, r.PeriodEnd, r.Bytes, r.Seconds,
                     r.CreditedBytes, ExactUsd(r.CreditedMicros), r.Status, r.CreatedAt))
                 .ToList(),
-            merged.Select(a => new ExportedMergedAccount(a.AccountId, a.WorkerId, a.Code, a.CreatedAt)).ToList());
+            merged.Select(a => new ExportedMergedAccount(a.AccountId, a.WorkerId, a.Code, a.CreatedAt)).ToList(),
+            new[] { account }.Concat(merged)
+                .SelectMany(a => store.EarningsReportsFor(a.AccountId))
+                .OrderBy(r => r.PeriodStart)
+                .Select(r => new ExportedEarningsReport(r.Kind, r.Model, r.PeriodStart, r.PeriodEnd, r.Seconds, r.UserUsd, r.ElectricityUsd))
+                .ToList());
     }
 
     public static byte[] Serialize(AccountExport export) => JsonSerializer.SerializeToUtf8Bytes(export, JsonOptions);
@@ -139,7 +144,18 @@ public sealed record AccountExport(
     IReadOnlyList<ExportedCashout> Cashouts,
     ExportedReferrals Referrals,
     IReadOnlyList<ExportedBandwidthReport> BandwidthReports,
-    IReadOnlyList<ExportedMergedAccount> MergedAccounts);
+    IReadOnlyList<ExportedMergedAccount> MergedAccounts,
+    IReadOnlyList<ExportedEarningsReport>? EarningsReports = null);
+
+/// <summary>An earnings report this account's computers sent because the user chose to share them.</summary>
+public sealed record ExportedEarningsReport(
+    string Kind,
+    string? Model,
+    DateTimeOffset PeriodStart,
+    DateTimeOffset PeriodEnd,
+    double EarningSeconds,
+    double UserUsd,
+    double ElectricityUsd);
 
 public sealed record ExportedAccount(
     string AccountId,

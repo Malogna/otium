@@ -13,6 +13,7 @@ using Otium.Server.Data;
 using Otium.Server.Earnings;
 using Otium.Server.Gpu;
 using Otium.Server.Payouts;
+using Otium.Server.RealEarnings;
 
 var builder = WebApplication.CreateBuilder(args);
 // No "Server: Kestrel" header: it only tells scanners what to look for.
@@ -23,6 +24,7 @@ var custodial = builder.Configuration.GetValue<bool>($"{CustodyOptions.Section}:
 builder.Services.Configure<CustodyOptions>(builder.Configuration.GetSection(CustodyOptions.Section));
 builder.Services.Configure<UnmineableOptions>(builder.Configuration.GetSection(UnmineableOptions.Section));
 builder.Services.Configure<MysteriumOptions>(builder.Configuration.GetSection(MysteriumOptions.Section));
+builder.Services.Configure<ProxybaseOptions>(builder.Configuration.GetSection(ProxybaseOptions.Section));
 builder.Services.Configure<FeeOptions>(builder.Configuration.GetSection(FeeOptions.Section));
 
 builder.Services.Configure<ReferralOptions>(builder.Configuration.GetSection(ReferralOptions.Section));
@@ -90,6 +92,22 @@ else
     builder.Services.AddSingleton<IPayoutProvider>(sp => sp.GetRequiredService<PayPalPayoutProvider>());
     builder.Services.AddSingleton<IPayoutProvider, MoneroPayoutProvider>();
 }
+// Internet sharing payouts: a one-time conversion per payout from Proxybase's Tempo USDC to the user's own coin.
+builder.Services.Configure<Otium.Server.Sharing.SharingOptions>(builder.Configuration.GetSection(Otium.Server.Sharing.SharingOptions.Section));
+builder.Services.AddHttpClient<Otium.Server.Sharing.IRelayApi, Otium.Server.Sharing.RelayClient>();
+builder.Services.AddHttpClient<Otium.Server.Sharing.SideShiftLitecoin>();
+builder.Services.AddHttpClient<Otium.Server.Sharing.ChangeNowMonero>();
+builder.Services.AddSingleton<Otium.Server.Sharing.SharingRouteService>();
+
+// The website's real numbers: opt-in earnings reports, and what the pools paid users' own addresses.
+builder.Services.Configure<RealEarningsOptions>(builder.Configuration.GetSection(RealEarningsOptions.Section));
+builder.Services.AddSingleton<EarningsReportService>();
+builder.Services.AddHttpClient<ICoinPrices, CoinGeckoPrices>();
+builder.Services.AddSingleton<PoolPayoutChecker>();
+builder.Services.AddSingleton<RealEarningsService>();
+if (!builder.Configuration.GetValue<bool>("DisableBackgroundJobs") && builder.Configuration.GetValue($"{RealEarningsOptions.Section}:CheckPools", true))
+    builder.Services.AddHostedService<PoolPayoutService>();
+
 builder.Services.AddSingleton<CashoutMethodCatalog>();
 builder.Services.AddSingleton<CashoutService>();
 builder.Services.AddSingleton<CashoutReceipts>();
@@ -218,6 +236,22 @@ if (custodial)
     });
 }
 
+// Where to have Proxybase pay a user's sharing earnings so they arrive in the user's own coin (never via Otium).
+api.MapPost("/devices/{deviceId}/sharing/route", async (string deviceId, SharingRouteRequest body, HttpContext context, AccountService accounts,
+    Otium.Server.Sharing.SharingRouteService routes, CancellationToken ct) =>
+{
+    var session = accounts.Authenticate(deviceId, Secret(context.Request));
+    var ip = context.Connection.RemoteIpAddress?.MapToIPv4().ToString() ?? "unknown";
+    return Results.Ok(await routes.RouteAsync(session, body, ip, ct));
+});
+
+// Opt-in earnings reports for the website's real-earnings table (custodial or not).
+api.MapPost("/devices/{deviceId}/earnings", (string deviceId, EarningsReport body, HttpRequest request, AccountService accounts, EarningsReportService reports) =>
+{
+    reports.Report(accounts.Authenticate(deviceId, Secret(request)), body);
+    return Results.NoContent();
+});
+
 // Mysterium internet sharing: Otium pays a new node's one-time registration fee (custodial or not; it's Otium's money).
 api.MapPost("/devices/{deviceId}/mysterium/sponsor", async (string deviceId, MystSponsorRequest body, HttpContext context, AccountService accounts,
     MystSponsorService sponsor, CancellationToken ct) =>
@@ -250,7 +284,7 @@ app.MapGet("/r/{code}", (string code, OtiumStore store, IOptions<ReferralOptions
 // The public website: the front page (with today's per-card earnings from the GPU policy), the operator's legal pages
 // once their reviewed files are in place, and the site's own embedded files.
 app.MapGet("/", async (HttpRequest request, IOptions<FeeOptions> fees, IOptions<SiteOptions> site,
-    GpuPolicyService gpuPolicy, ILogger<Program> logger, CancellationToken ct) =>
+    GpuPolicyService gpuPolicy, RealEarningsService realEarnings, ILogger<Program> logger, CancellationToken ct) =>
 {
     var policy = Otium.Core.Fees.FeePolicy.FromTerms(fees.Value.ToTerms());
     Otium.Core.Switching.GpuPolicy? gpu = null;
@@ -266,7 +300,8 @@ app.MapGet("/", async (HttpRequest request, IOptions<FeeOptions> fees, IOptions<
         SitePages.Earnings(gpu, policy), gpu?.GeneratedAt,
         // Cloudflare's visitor country, for the local electricity price. Only Cloudflare reaches the server in production;
         // anyone sending it themselves only changes their own estimate.
-        request.Headers["CF-IPCountry"].ToString());
+        request.Headers["CF-IPCountry"].ToString(),
+        realEarnings.Get());
     return Results.Content(html, "text/html; charset=utf-8");
 }).RequireRateLimiting("per-ip");
 

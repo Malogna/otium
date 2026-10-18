@@ -12,15 +12,38 @@ public sealed class HourBucket
     public double EarningSeconds { get; set; }
 }
 
+/// <summary>One calendar month (local time): what was earned and how long Otium was earning.</summary>
+public sealed class MonthBucket
+{
+    /// <summary>"2026-10".</summary>
+    public string Month { get; set; } = "";
+
+    public double EarnedUsd { get; set; }
+
+    public double ElectricityUsd { get; set; }
+
+    public double EarningSeconds { get; set; }
+
+    public static string KeyFor(DateTimeOffset localTime) =>
+        localTime.ToString("yyyy-MM", System.Globalization.CultureInfo.InvariantCulture);
+}
+
 /// <summary>
-/// Local hour-by-hour record of earnings and active time (kept 14 days). Powers the 24-hour chart and the
-/// projections, which use how many hours a day this computer actually earns, not a guess.
+/// Local hour-by-hour record of earnings and active time (kept 14 days), and month-by-month totals (kept two years).
+/// Powers the 24-hour chart, the monthly report and the projections, which use how many hours a day this computer
+/// actually earns, not a guess.
 /// </summary>
 public sealed class EarningsHistory
 {
     public static readonly TimeSpan Retention = TimeSpan.FromDays(14);
 
+    public const int MonthsKept = 24;
+
     public List<HourBucket> Hours { get; set; } = [];
+
+    public List<MonthBucket> Months { get; set; } = [];
+
+    public MonthBucket? Month(string key) => Months.FirstOrDefault(m => m.Month == key);
 
     /// <summary>Last cumulative totals seen, so each sample adds only what changed.</summary>
     public double LastCumulativeEarnedUsd { get; set; } = -1;
@@ -52,7 +75,21 @@ public sealed class EarningsHistory
         bucket.ElectricityUsd += electricity;
         bucket.EarningSeconds += Math.Max(0, earningFor.TotalSeconds);
 
+        var key = MonthBucket.KeyFor(now);
+        var month = Month(key);
+        if (month is null)
+        {
+            month = new MonthBucket { Month = key };
+            Months.Add(month);
+            Months.Sort((a, b) => string.CompareOrdinal(a.Month, b.Month));
+        }
+        month.EarnedUsd += earned;
+        month.ElectricityUsd += electricity;
+        month.EarningSeconds += Math.Max(0, earningFor.TotalSeconds);
+
         Hours.RemoveAll(h => h.Hour < now - Retention);
+        if (Months.Count > MonthsKept)
+            Months.RemoveRange(0, Months.Count - MonthsKept);
     }
 
     /// <summary>Earnings for each of the last <paramref name="count"/> hours, oldest first (zeros for empty hours).</summary>
