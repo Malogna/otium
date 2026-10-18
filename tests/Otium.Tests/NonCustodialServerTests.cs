@@ -206,6 +206,51 @@ public sealed class NonCustodialServerTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task Problem_reports_are_stored_with_a_reference_and_limited_per_day()
+    {
+        var (device, secret, response) = await Register(Usdt);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var client = new AccountClient(_http);
+
+        var sent = await client.SendProblemReportAsync(device, secret, new ProblemReport("0.1.0-rc.1", "Windows 11 X64", "GPU never starts", "XMRig: mining"), CancellationToken.None);
+        Assert.Matches("^[A-HJKMNP-Z2-9]{8}$", sent.Reference);
+
+        var admin = new HttpRequestMessage(HttpMethod.Get, $"/admin/problem-reports/{sent.Reference.ToLowerInvariant()}");
+        admin.Headers.Add("X-Admin-Token", AdminToken);
+        var stored = await _http.SendAsync(admin);
+        Assert.Equal(HttpStatusCode.OK, stored.StatusCode);
+        var json = await stored.Content.ReadAsStringAsync();
+        Assert.Contains("GPU never starts", json);
+        Assert.Contains("XMRig: mining", json);
+
+        for (var i = 1; i < ProblemReportServiceLimit; i++)
+            await client.SendProblemReportAsync(device, secret, new ProblemReport("0.1.0", "Windows", null, "again"), CancellationToken.None);
+        var tooMany = await Assert.ThrowsAsync<AccountRequestException>(() =>
+            client.SendProblemReportAsync(device, secret, new ProblemReport("0.1.0", "Windows", null, "again"), CancellationToken.None));
+        Assert.Equal(429, tooMany.StatusCode);
+
+        _time.Advance(TimeSpan.FromDays(1.1));
+        await client.SendProblemReportAsync(device, secret, new ProblemReport("0.1.0", "Windows", null, "next day"), CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Problem_reports_need_the_device_secret_and_a_sane_size()
+    {
+        var (device, secret, _) = await Register(Usdt);
+        var client = new AccountClient(_http);
+
+        var wrongSecret = await Assert.ThrowsAsync<AccountRequestException>(() => client.SendProblemReportAsync(device,
+            Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32)), new ProblemReport("0.1.0", "Windows", null, "x"), CancellationToken.None));
+        Assert.Equal(401, wrongSecret.StatusCode);
+
+        var tooLong = await Assert.ThrowsAsync<AccountRequestException>(() => client.SendProblemReportAsync(device, secret,
+            new ProblemReport("0.1.0", "Windows", null, new string('x', Otium.Server.Support.ProblemReportService.MaxDetailsLength + 1)), CancellationToken.None));
+        Assert.Equal(400, tooLong.StatusCode);
+    }
+
+    private const int ProblemReportServiceLimit = Otium.Server.Support.ProblemReportService.MaxPerDevicePerDay;
+
     /// <summary>unMineable as seen through its API: every address has an account, rewarded as set per target.</summary>
     private sealed class FakeUnmineable : IUnmineableApi
     {

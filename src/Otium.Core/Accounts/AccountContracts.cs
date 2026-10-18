@@ -150,6 +150,16 @@ public static class SharingRouteDecisions
     public const string Unsupported = "unsupported";
 }
 
+/// <summary>
+/// "Send a problem report": what the app knows about why it isn't earning (engine states and problems, the miners'
+/// recent output, settings switches, the antivirus in use), with payout addresses and keys taken out before sending.
+/// </summary>
+/// <param name="Note">What the user wrote about the problem, if anything.</param>
+public sealed record ProblemReport(string AppVersion, string Platform, string? Note, string Details);
+
+/// <param name="Reference">A short code the user can quote when asking for help, e.g. "K7Q2M9XA".</param>
+public sealed record ProblemReportResult(string Reference);
+
 public static class BandwidthReportStatuses
 {
     public const string Credited = "credited";

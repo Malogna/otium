@@ -193,10 +193,13 @@ jobs:
           $v = '${{ github.event.inputs.version }}'
           if (-not $v) { $v = '${{ github.ref_name }}'.TrimStart('v') }
           dotnet tool restore
+          # "0.1.0-rc.1" and the like are pre-releases: on GitHub but not "latest", so the website's Download button and
+          # installed apps on stable versions don't pick them up.
+          $pre = if ($v.Contains('-')) { @('--pre') } else { @() }
           foreach ($rid in 'win-x64', 'linux-x64', 'osx-arm64', 'osx-x64') {
             $dir = "artifacts/releases/otium-$rid"
             if (-not (Test-Path $dir)) { Write-Warning "No packages for $rid"; continue }
             dotnet vpk upload github --repoUrl "${{ github.server_url }}/${{ github.repository }}" --token $env:GITHUB_TOKEN `
-              --outputDir $dir --channel $rid --tag "v$v" --releaseName "Otium $v" --merge --publish
+              --outputDir $dir --channel $rid --tag "v$v" --releaseName "Otium $v" --merge --publish @pre
             if ($LASTEXITCODE) { throw "upload failed for $rid" }
           }

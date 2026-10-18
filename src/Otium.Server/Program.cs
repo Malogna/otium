@@ -102,6 +102,7 @@ builder.Services.AddSingleton<Otium.Server.Sharing.SharingRouteService>();
 // The website's real numbers: opt-in earnings reports, and what the pools paid users' own addresses.
 builder.Services.Configure<RealEarningsOptions>(builder.Configuration.GetSection(RealEarningsOptions.Section));
 builder.Services.AddSingleton<EarningsReportService>();
+builder.Services.AddSingleton<Otium.Server.Support.ProblemReportService>();
 builder.Services.AddHttpClient<ICoinPrices, CoinGeckoPrices>();
 builder.Services.AddSingleton<PoolPayoutChecker>();
 builder.Services.AddSingleton<RealEarningsService>();
@@ -244,6 +245,11 @@ api.MapPost("/devices/{deviceId}/sharing/route", async (string deviceId, Sharing
     var ip = context.Connection.RemoteIpAddress?.MapToIPv4().ToString() ?? "unknown";
     return Results.Ok(await routes.RouteAsync(session, body, ip, ct));
 });
+
+// Problem reports users send from the app ("Send a problem report"), answered with a reference to quote.
+api.MapPost("/devices/{deviceId}/problem-report", (string deviceId, ProblemReport body, HttpRequest request, AccountService accounts,
+    Otium.Server.Support.ProblemReportService reports) =>
+    Results.Ok(reports.Report(accounts.Authenticate(deviceId, Secret(request)), body)));
 
 // Opt-in earnings reports for the website's real-earnings table (custodial or not).
 api.MapPost("/devices/{deviceId}/earnings", (string deviceId, EarningsReport body, HttpRequest request, AccountService accounts, EarningsReportService reports) =>
@@ -448,6 +454,11 @@ else
         });
     });
 }
+
+// Problem reports: the newest first, and one in full by the reference the user quotes.
+admin.MapGet("/problem-reports", (OtiumStore store) => Results.Ok(store.ProblemReports()));
+admin.MapGet("/problem-reports/{reference}", (string reference, OtiumStore store) =>
+    store.FindProblemReport(reference.Trim().ToUpperInvariant()) is { } report ? Results.Ok(report) : Results.NotFound());
 
 if (custodial)
 {

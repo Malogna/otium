@@ -1,7 +1,7 @@
 # Real mining run: i7-8700K + RTX 3080, 16 October 2026
 
 A short run of the real engines (`pwsh build/dev.ps1 -RealMiners`) on the developer's PC, to check the "Real-machine
-run" item under **Before launch** in the README. XMRig 6.26.0 and SRBMiner-Multi 3.7.6 mined on the real MoneroOcean
+run" item under **Before launch** in [technical.md](technical.md). XMRig 6.26.0 and SRBMiner-Multi 3.7.6 mined on the real MoneroOcean
 pool into the developer's own Monero address (not recorded here).
 
 - **Hardware:** Intel i7-8700K (6 cores / 12 threads), NVIDIA RTX 3080 12 GB, driver 616.92, Windows 11 22621.

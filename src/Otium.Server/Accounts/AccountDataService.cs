@@ -63,6 +63,10 @@ public sealed class AccountDataService(OtiumStore store, AccountService accounts
                 .SelectMany(a => store.EarningsReportsFor(a.AccountId))
                 .OrderBy(r => r.PeriodStart)
                 .Select(r => new ExportedEarningsReport(r.Kind, r.Model, r.PeriodStart, r.PeriodEnd, r.Seconds, r.UserUsd, r.ElectricityUsd))
+                .ToList(),
+            new[] { account }.Concat(merged)
+                .SelectMany(a => store.ProblemReportsFor(a.AccountId))
+                .Select(r => new ExportedProblemReport(r.Reference, r.CreatedAt, r.AppVersion, r.Note, r.Details))
                 .ToList());
     }
 
@@ -145,7 +149,11 @@ public sealed record AccountExport(
     ExportedReferrals Referrals,
     IReadOnlyList<ExportedBandwidthReport> BandwidthReports,
     IReadOnlyList<ExportedMergedAccount> MergedAccounts,
-    IReadOnlyList<ExportedEarningsReport>? EarningsReports = null);
+    IReadOnlyList<ExportedEarningsReport>? EarningsReports = null,
+    IReadOnlyList<ExportedProblemReport>? ProblemReports = null);
+
+/// <summary>A problem report the user sent from the app.</summary>
+public sealed record ExportedProblemReport(string Reference, DateTimeOffset SentAt, string AppVersion, string? Note, string Details);
 
 /// <summary>An earnings report this account's computers sent because the user chose to share them.</summary>
 public sealed record ExportedEarningsReport(

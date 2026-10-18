@@ -283,6 +283,24 @@
                     <TextBlock Classes="muted" VerticalAlignment="Center" Text="{Binding DataFolder}" />
                     <Button Content="Open data folder" Command="{Binding OpenDataFolderCommand}" />
                 </StackPanel>
+
+                <!-- Help: a problem report with what Otium knows (no addresses or keys), and where to ask -->
+                <StackPanel Spacing="8" Margin="0,8,0,0">
+                    <TextBlock Classes="h2" Text="Something not working?" />
+                    <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap"
+                               Text="Send a problem report: Otium sends what it knows about why it isn't earning (what each miner is doing, their recent messages, your settings switches and antivirus), with payout addresses and keys taken out. You get a reference to mention when you ask for help." />
+                    <TextBox Text="{Binding ProblemNote}" PlaceholderText="What happened? (optional)" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="60" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button Classes="accent" Content="Send a problem report" Command="{Binding SendProblemReportCommand}" IsEnabled="{Binding !IsSendingReport}" />
+                        <Button Content="Get help" Command="{Binding OpenHelpCommand}" ToolTip.Tip="Opens Otium's help page in your browser" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="8"
+                                IsVisible="{Binding ProblemReportResult, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                        <TextBlock FontSize="13" TextWrapping="Wrap" VerticalAlignment="Center" Text="{Binding ProblemReportResult}" />
+                        <Button Classes="link" Content="Copy" Command="{Binding CopyProblemReferenceCommand}"
+                                IsVisible="{Binding ProblemReportReference, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                    </StackPanel>
+                </StackPanel>
             </StackPanel>
         </Border>
     </StackPanel>
