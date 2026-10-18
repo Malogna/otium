@@ -29,7 +29,19 @@
                     <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap"
                                Text="Otherwise Windows puts it to sleep a little while after you leave, and earning stops for the night. The screen still turns off, and a laptop on battery is never kept awake." />
                 </StackPanel>
+                <StackPanel Spacing="2" IsVisible="{Binding OnlyWhenIdle}">
+                    <ToggleSwitch IsChecked="{Binding KeepMinerReadyWhenBack}"
+                                  OnContent="Keep the processor miner ready when I come back" OffContent="Keep the processor miner ready when I come back" />
+                    <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap"
+                               Text="The miner pauses instead of closing, so it earns again the moment you step away. It stops using the processor at once, but keeps about 2.5 GB of memory reserved for up to 10 minutes." />
+                </StackPanel>
                 <ToggleSwitch IsChecked="{Binding StartWithSystem}" OnContent="Start Otium when I sign in" OffContent="Start Otium when I sign in" />
+                <StackPanel Spacing="2">
+                    <ToggleSwitch IsChecked="{Binding ShareEarningsStats}"
+                                  OnContent="Help show what PCs really earn" OffContent="Help show what PCs really earn" />
+                    <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap"
+                               Text="Sends Otium this PC's graphics card model, processor name, hours earning and amounts earned, a few times a day; never your address. otium.lol shows only totals across several PCs." />
+                </StackPanel>
             </StackPanel>
         </Border>
 
@@ -111,7 +123,7 @@
                     <TextBlock TextWrapping="Wrap" Text="{Binding StatusText}" />
                     <ToggleSwitch IsChecked="{Binding OnlyWhenAway}"
                                   OnContent="Only share while I'm away from the computer" OffContent="Only share while I'm away from the computer" />
-                    <StackPanel Orientation="Horizontal" Spacing="8">
+                    <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding SupportsDailyLimit}">
                         <NumericUpDown Value="{Binding DailyLimitGb}" Minimum="0.1" Maximum="100" Increment="0.5" FormatString="0.#" Width="140" />
                         <TextBlock VerticalAlignment="Center" Text="GB a day at most" />
                     </StackPanel>
@@ -128,7 +140,7 @@
                     <views:InternetSharingConsentView />
                 </StackPanel>
 
-                <!-- Off, with Mysterium's network service still installed -->
+                <!-- Off, with Mysterium's network service (from an earlier version) still installed -->
                 <StackPanel Spacing="6" IsVisible="{Binding CanRemoveService}">
                     <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap"
                                Text="Mysterium's network service, which internet sharing installed, is still on this computer. It does nothing while sharing is off; uninstalling Otium removes it too." />

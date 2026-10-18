@@ -430,6 +430,17 @@ public sealed class UnmineableAlgorithm
 /// Mysterium internet sharing: Otium pays each new node's one-time registration fee (about 0.13 MYST in October 2026)
 /// from a small wallet of its own on Polygon, so users' nodes register automatically and settle to their own address.
 /// </summary>
+/// <summary>
+/// Internet sharing through Proxybase: the app runs Proxybase's client and has its earnings paid to the user's own 0x
+/// address, so the server has nothing to do but say whether it's offered. On unless the operator turns it off.
+/// </summary>
+public sealed class ProxybaseOptions
+{
+    public const string Section = "Proxybase";
+
+    public bool Enabled { get; set; } = true;
+}
+
 public sealed class MysteriumOptions
 {
     public const string Section = "Mysterium";

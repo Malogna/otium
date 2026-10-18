@@ -11,6 +11,10 @@ public sealed record RegisterDeviceRequest(string DeviceId, string DeviceSecret,
 /// <param name="PoolWallet">Operator wallet balance accounts mine to (with <paramref name="WorkerId"/> as the worker name).</param>
 /// <param name="ReferrerWallet">The referrer's payout target, which own-wallet apps mine the referral slice to.</param>
 /// <param name="MysteriumSponsored">Otium pays new Mysterium nodes' registration, so the app can offer internet sharing.</param>
+/// <param name="ProxybaseDisabled">
+/// The operator switched internet sharing through Proxybase off (it's on unless they do, so servers that don't send this
+/// field leave it on).
+/// </param>
 /// <param name="Fees">The server's current fee and invite terms; null from servers that don't send them.</param>
 /// <param name="Custodial">
 /// False when the server holds no balances (non-custodial): the app then offers only own-address payouts, and
@@ -34,7 +38,8 @@ public sealed record AccountSummary(
     CpuPoolRoute? CpuPool = null,
     bool Custodial = true,
     bool MysteriumSponsored = false,
-    FeeTerms? Fees = null);
+    FeeTerms? Fees = null,
+    bool ProxybaseDisabled = false);
 
 /// <summary>
 /// The disclosed fee and invite terms, set by the server so they can change without an app release. Apps clamp them
@@ -92,6 +97,58 @@ public sealed record BandwidthReport(
     long Bytes,
     double SharingSeconds,
     string Provider);
+
+/// <summary>
+/// What this computer earned since its last report, sent only when the user agreed to share it ("Help show what PCs
+/// earn"). It feeds the real-earnings table on otium.lol, where only totals over several computers appear.
+/// <paramref name="Sequence"/> increases by one per report, so a retried report is stored once.
+/// </summary>
+public sealed record EarningsReport(long Sequence, DateTimeOffset PeriodStart, DateTimeOffset PeriodEnd, IReadOnlyList<DeviceEarnings> Devices);
+
+/// <param name="Kind">"cpu" or "gpu".</param>
+/// <param name="Model">The graphics card's id ("rtx4090", see <see cref="Gpu.CardIds"/>) or the processor's name.</param>
+/// <param name="EarningSeconds">Time spent mining in the period, fee slices included.</param>
+/// <param name="UserUsd">The user's share earned in the period (measured hash rate at that hour's prices, after Otium's fee).</param>
+/// <param name="ElectricityUsd">The extra power used, at the user's electricity price.</param>
+public sealed record DeviceEarnings(string Kind, string? Model, double EarningSeconds, double UserUsd, double ElectricityUsd);
+
+/// <summary>
+/// The app has internet sharing earnings waiting at Proxybase (paid only in USDC on the Tempo network) and asks where
+/// to send them so they reach the user's own payout address in the coin they chose.
+/// </summary>
+/// <param name="AvailableMicrocredits">What's waiting (1,000,000 = $1).</param>
+/// <param name="RefundAddress">
+/// The sharing client's own wallet address on this computer (0x…), where a conversion that fails is refunded. The user's
+/// money either way; never Otium's.
+/// </param>
+public sealed record SharingRouteRequest(long AvailableMicrocredits, string? RefundAddress);
+
+/// <summary>Where to have Proxybase pay, or why to wait.</summary>
+/// <param name="Decision">One of <see cref="SharingRouteDecisions"/>.</param>
+/// <param name="DepositAddress">With "pay": the Tempo address of a one-time conversion to the user's coin and address.</param>
+/// <param name="AmountMicrocredits">With "pay": how much to send there (all that's waiting).</param>
+/// <param name="ExpectedOutput">With "pay": what the user should receive, e.g. "4.23 USDT (TRON)".</param>
+/// <param name="CostPercent">Conversion, network and Otium's fees together, as a share of the amount.</param>
+/// <param name="Message">With "wait" or "unsupported": why, in plain words.</param>
+public sealed record SharingRoute(
+    string Decision,
+    string? DepositAddress = null,
+    long AmountMicrocredits = 0,
+    string? ExpectedOutput = null,
+    double CostPercent = 0,
+    string? Message = null,
+    string? RequestId = null);
+
+public static class SharingRouteDecisions
+{
+    public const string Pay = "pay";
+
+    /// <summary>Not enough waiting yet for the conversion's fixed costs to be small; ask again later.</summary>
+    public const string Wait = "wait";
+
+    /// <summary>The user's payout coin can't be reached from Proxybase's network (yet).</summary>
+    public const string Unsupported = "unsupported";
+}
 
 public static class BandwidthReportStatuses
 {

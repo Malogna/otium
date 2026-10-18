@@ -27,7 +27,7 @@ public class XmrigTests
         Assert.Equal(0, root.GetProperty("cpu").GetProperty("priority").GetInt32());
         Assert.Equal("127.0.0.1", root.GetProperty("http").GetProperty("host").GetString());
         Assert.Equal(45678, root.GetProperty("http").GetProperty("port").GetInt32());
-        Assert.True(root.GetProperty("http").GetProperty("restricted").GetBoolean());
+        Assert.False(root.GetProperty("http").GetProperty("restricted").GetBoolean()); // pause and resume need it; loopback and token-only
         Assert.Equal(1, root.GetProperty("donate-level").GetInt32());
         Assert.False(root.GetProperty("opencl").GetBoolean());
     }

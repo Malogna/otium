@@ -423,6 +423,19 @@ footer a:hover { color: var(--ink); }
 
 /* ---------- Smaller screens ---------- */
 
+/* Real numbers: payouts and per-card medians from real computers. */
+.real { display: grid; gap: 24px; }
+.real-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 24px; }
+.real-stat { display: grid; gap: 6px; padding: 28px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--night-2); color: color-mix(in oklab, var(--ink) 80%, var(--mist)); }
+.real-num { font: 700 var(--step-3)/1 var(--display); letter-spacing: -0.03em; color: var(--emerald); font-variant-numeric: tabular-nums; }
+.real-cards { padding: 24px; overflow-x: auto; }
+.real-cards table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.real-cards caption { text-align: left; font: 600 var(--step-0) var(--display); margin-bottom: 12px; }
+.real-cards th, .real-cards td { padding: 10px 12px; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.real-cards th:first-child { text-align: left; }
+.real-cards thead th { font: 600 var(--step--1) var(--body); color: var(--mist); }
+.real-cards .footnote { margin-top: 14px; font-size: 0.78rem; line-height: 1.5; color: var(--mist); }
+
 @media (max-width: 960px) {
   .hero .wrap, .section-head, .power, .fees, .invite, .night { grid-template-columns: minmax(0, 1fr); }
   .hero { padding-block: 36px 40px; }

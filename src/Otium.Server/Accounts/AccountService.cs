@@ -41,7 +41,8 @@ public sealed class AccountService(
     ILogger<AccountService> logger,
     IOptions<CustodyOptions> custodyOptions,
     MystSponsorService mystSponsor,
-    IOptions<FeeOptions> feeOptions)
+    IOptions<FeeOptions> feeOptions,
+    IOptions<ProxybaseOptions> proxybaseOptions)
 {
     public static readonly TimeSpan CodeLifetime = TimeSpan.FromMinutes(15);
     public const int MaxCodeAttempts = 5;
@@ -404,7 +405,8 @@ public sealed class AccountService(
             _custodial ? cpuRouter.For(account) : null,
             _custodial,
             mystSponsor.IsAvailable,
-            Policy.ToTerms());
+            Policy.ToTerms(),
+            !proxybaseOptions.Value.Enabled);
     }
 
     public static CashoutInfo ToInfo(CashoutRecord c) => new(
