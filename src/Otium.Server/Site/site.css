@@ -229,6 +229,18 @@ p { margin: 0; text-wrap: pretty; }
 .chip[aria-pressed="true"] { border-color: var(--emerald); background: color-mix(in oklab, var(--emerald) 14%, var(--night-3)); box-shadow: 0 0 0 1px var(--emerald) inset; }
 .est-sliders { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px 16px; margin-top: 4px; }
 .est-sliders label { font-size: 0.92rem; color: var(--mist); }
+.est-sliders label small { display: block; font: 400 0.72rem var(--mono); color: color-mix(in oklab, var(--mist) 80%, transparent); }
+.card-pick { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 10px 16px; font-size: 0.92rem; color: var(--mist); }
+.card-pick select {
+  width: 100%; min-width: 0; padding: 10px 36px 10px 12px; border-radius: 10px; cursor: pointer;
+  font: 600 0.95rem var(--body); color: var(--ink); background-color: var(--night-3);
+  border: 1px solid var(--line); appearance: none; -webkit-appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--mist) 50%), linear-gradient(135deg, var(--mist) 50%, transparent 50%);
+  background-position: calc(100% - 18px) 50%, calc(100% - 13px) 50%;
+  background-size: 5px 5px, 5px 5px; background-repeat: no-repeat;
+}
+.card-pick select:hover { border-color: var(--mist); }
+.card-pick option, .card-pick optgroup { background: var(--night-2); color: var(--ink); }
 .est-sliders output { font: 600 0.9rem var(--mono); color: var(--amber); text-align: right; min-width: 7.2em; font-variant-numeric: tabular-nums; }
 input[type="range"] { width: 100%; min-width: 0; accent-color: var(--amber); }
 .estimator .footnote { margin-top: 2px; font-size: 0.78rem; line-height: 1.5; }
@@ -434,6 +446,8 @@ footer a:hover { color: var(--ink); }
   .moment::before { display: none; }
   .moment time { position: static; display: block; margin-bottom: 6px; color: var(--emerald); }
   .estimator { padding: 22px; }
+  .card-pick { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .grid { width: 28%; gap: 4px; }
   .est-sliders { grid-template-columns: minmax(0, 1fr) auto; grid-auto-flow: row dense; gap: 4px 12px; }
   .est-sliders input { grid-column: 1 / -1; margin-bottom: 8px; }
   .est-sliders output { grid-column: 2; }
@@ -451,3 +465,23 @@ footer a:hover { color: var(--ink); }
   .reveal.pending { opacity: 1; transform: none; }
   .marquee-track { animation: none; flex-wrap: wrap; width: auto; }
 }
+
+/* Proof of useful work: A × B = C, tile by tile. A's rows take turns, B's columns sweep within each row, and C's
+   cell (r, c) lights when its row and column meet. */
+.matmul { display: grid; gap: 18px; }
+.mm { display: flex; align-items: center; justify-content: center; gap: 14px; padding-block: 18px; }
+.mm .op { font: 400 1.6rem var(--mono); color: var(--mist); }
+.grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; width: min(26%, 132px); }
+.grid span { aspect-ratio: 1; border-radius: 5px; background: var(--night-3); border: 1px solid var(--line); }
+.grid.a span { animation: lit-row 4.8s linear infinite; animation-delay: calc(var(--r) * 1.2s); }
+.grid.b span { animation: lit-col 1.2s linear infinite; animation-delay: calc(var(--c) * 0.3s); }
+.grid.c span { animation: lit-cell 4.8s ease-out infinite; animation-delay: calc(var(--r) * 1.2s + var(--c) * 0.3s); }
+@keyframes lit-row { 0%, 24.9% { background: color-mix(in oklab, var(--emerald) 45%, var(--night-3)); border-color: var(--emerald); } 25%, 100% { background: var(--night-3); } }
+@keyframes lit-col { 0%, 24.9% { background: color-mix(in oklab, var(--amber) 45%, var(--night-3)); border-color: var(--amber); } 25%, 100% { background: var(--night-3); } }
+@keyframes lit-cell {
+  0% { background: var(--emerald); border-color: var(--emerald); box-shadow: 0 0 14px var(--emerald); }
+  12% { background: color-mix(in oklab, var(--emerald) 40%, var(--night-3)); box-shadow: none; }
+  100% { background: color-mix(in oklab, var(--emerald) 14%, var(--night-3)); border-color: var(--line); }
+}
+.facts a { color: inherit; text-decoration: none; border-bottom: 1px dashed color-mix(in oklab, var(--mist) 60%, transparent); }
+.facts a:hover { color: var(--ink); }

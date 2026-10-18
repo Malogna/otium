@@ -76,22 +76,100 @@ public sealed class SitePagesTests : IDisposable
     }
 
     [Fact]
-    public async Task The_first_thing_on_the_page_is_what_a_typical_pc_earns_a_month()
+    public async Task The_first_thing_on_the_page_is_what_an_rtx_4090_earns_a_month_left_alone_16_hours_a_day()
     {
         var html = (await Get("/")).Html;
 
-        // RTX 3060, the typical gaming PC: Pearl 41 TH/s × 3.4e-14 $/H/s/day = $1.39, less SRBMiner 2%, unMineable 0.75%
-        // and Otium 3% = $1.32, less 100 W for 24 h at $0.15/kWh ($0.36) = $0.96 a day of mining; left alone 12 hours a
-        // day, $0.48 a day and $14 a month. 1.5 USDT takes a little over 3 days.
-        Assert.Contains("""<span class="est-amount" id="est-month">$14</span>""", html);
-        Assert.Contains("$0.48 a day with an RTX 3060, mining Pearl (paid in your coin)", html);
-        Assert.Contains("First payout of 1.5 USDT to your wallet in about 4 days, then daily.", html);
+        // RTX 4090: Pearl 310 TH/s × 3.4e-14 $/H/s/day = $10.54, less SRBMiner 2%, unMineable 0.75% and Otium 3% = $9.94,
+        // less 400 W for 24 h at $0.15/kWh ($1.44) = $8.50 a day of mining; left alone 16 hours a day, $5.67 a day and
+        // $170 a month. Without a visitor country the price is $0.15/kWh.
+        Assert.Contains("""<span class="est-amount" id="est-month">$170</span>""", html);
+        Assert.Contains("$5.67 a day with an RTX 4090, mining Pearl (paid in your coin)", html);
+        Assert.Contains("First payout of 1.5 USDT to your wallet within a day, then daily.", html);
+        Assert.Contains("""<input id="hours" type="range" min="2" max="24" step="1" value="16">""", html);
+        Assert.Contains("""<input id="price" type="range" min="0" max="0.60" step="0.01" value="0.15">""", html);
+        Assert.DoesNotContain("typical in", html);
         Assert.True(html.IndexOf("est-month", StringComparison.Ordinal) < html.IndexOf("id=\"night-shift\"", StringComparison.Ordinal));
-        Assert.Contains("""data-card="rtx3060" aria-pressed="true">""", html);
-        Assert.Contains("""data-card="rx6700xt" aria-pressed="false">""", html);
-        Assert.Contains("""<script type="application/json" id="otium-data">{"cards":[{"id":"rtx3060","name":"RTX 3060",""", html);
+        // Quick chips for popular cards, and every card in the list grouped by series.
+        Assert.Contains("""data-card="rtx4090" aria-pressed="true">""", html);
+        Assert.Contains("""data-card="rtx3060" aria-pressed="false">""", html);
+        Assert.Contains("""<optgroup label="RTX 50 series"><option value="rtx5090">RTX 5090 · NVIDIA &#183; 32 GB</option>""", html);
+        Assert.Contains("""<option value="rtx4090" selected>RTX 4090 · NVIDIA &#183; 24 GB</option>""", html);
+        Assert.Contains("""<optgroup label="AMD Radeon"><option value="rx6700xt">""", html);
+        Assert.Equal(32, System.Text.RegularExpressions.Regex.Matches(html, "<option value=").Count);
+        Assert.Contains("""<script type="application/json" id="otium-data">{"cards":[{"id":"rtx5090","name":"RTX 5090",""", html);
         Assert.Contains("\"payoutUsdt\":1.5", html);
         Assert.Contains("Today's coin prices from WhatToMine (18 October 2026, 15:00 UTC)", html);
+    }
+
+    [Fact]
+    public async Task Pearls_useful_work_is_explained_without_claiming_to_run_ai_models()
+    {
+        var html = (await Get("/")).Html;
+        Assert.Contains("Pearl mining runs the math AI runs on.", html);
+        Assert.Contains("It doesn't run anyone's AI model or see their data.", html);
+        Assert.Contains("""<a href="#useful-work">Mines Pearl, built on AI's matrix math</a>""", html);
+        Assert.Equal(48, System.Text.RegularExpressions.Regex.Matches(html, "<span style=\"--r:").Count); // three 4×4 grids
+    }
+
+    [Fact]
+    public async Task Six_gigabyte_cards_only_get_quantus_because_pearl_needs_eight()
+    {
+        var html = (await Get("/")).Html;
+        var data = html[html.IndexOf("""id="otium-data">""", StringComparison.Ordinal)..];
+        var rtx2060 = data[data.IndexOf("\"id\":\"rtx2060\"", StringComparison.Ordinal)..];
+        rtx2060 = rtx2060[..rtx2060.IndexOf("]}", StringComparison.Ordinal)];
+        Assert.Contains("\"coin\":\"Quantus\"", rtx2060);
+        Assert.DoesNotContain("Pearl", rtx2060);
+    }
+
+    [Theory]
+    [InlineData("DE", "0.40", "Germany")]
+    [InlineData("no", "0.15", "Norway")]
+    [InlineData("US", "0.18", "United States")]
+    public async Task The_electricity_price_starts_at_the_visitors_country(string country, string price, string name)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/");
+        request.Headers.Add("CF-IPCountry", country);
+        using var response = await _http.SendAsync(request);
+        var html = await response.Content.ReadAsStringAsync();
+        Assert.Contains($"""<input id="price" type="range" min="0" max="0.60" step="0.01" value="{price}">""", html);
+        Assert.Contains($"<small>typical in {name}</small>", html);
+    }
+
+    [Theory]
+    [InlineData("XX")]
+    [InlineData("T1")]
+    [InlineData("")]
+    public void Unknown_or_tor_visitors_get_the_default_price(string country) =>
+        Assert.Equal((0.15, (string?)null), Otium.Server.SitePages.PriceFor(country));
+
+    [Fact]
+    public async Task Every_response_carries_the_browser_hardening_headers()
+    {
+        foreach (var path in new[] { "/", "/api/v1/gpu-policy", "/site/site.css" })
+        {
+            using var response = await _http.GetAsync(path);
+            Assert.Equal("nosniff", response.Headers.GetValues("X-Content-Type-Options").Single());
+            Assert.Equal("strict-origin-when-cross-origin", response.Headers.GetValues("Referrer-Policy").Single());
+            Assert.Equal("DENY", response.Headers.GetValues("X-Frame-Options").Single());
+            Assert.Contains("script-src 'self';", response.Headers.GetValues("Content-Security-Policy").Single());
+            Assert.Contains("frame-ancestors 'none'", response.Headers.GetValues("Content-Security-Policy").Single());
+        }
+        // No inline scripts on the site, so script-src 'self' blocks nothing it needs (the JSON data block doesn't run).
+        var html = (await Get("/")).Html;
+        Assert.DoesNotMatch("<script>", html);
+        Assert.DoesNotMatch("<script(?![^>]*(src=|type=\"application/json\"))", html);
+    }
+
+    [Fact]
+    public async Task Security_txt_points_researchers_to_private_reporting()
+    {
+        var (status, text) = await Get("/.well-known/security.txt");
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.Contains("Contact: https://github.com/Malogna/otium/security/advisories/new\n", text);
+        Assert.Contains("Expires: 2027-04-16T00:00:00Z\n", text); // 180 days from the test clock
+        Assert.Contains("/.well-known/security.txt\n", text);
     }
 
     [Fact]

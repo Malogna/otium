@@ -207,8 +207,14 @@
     const data = JSON.parse($("#otium-data")?.textContent || "{}");
     const hours = $("#hours"), price = $("#price"), month = $("#est-month");
     if (!hours || !price || !month || !data.cards?.length) return;
-    const chips = $$(".chip[data-card]");
-    let cardId = chips.find(c => c.getAttribute("aria-pressed") === "true")?.dataset.card ?? data.cards[0].id;
+    const chips = $$(".chip[data-card]"), select = $("#card");
+    let cardId = select?.value ?? chips.find(c => c.getAttribute("aria-pressed") === "true")?.dataset.card ?? data.cards[0].id;
+    function choose(id) {
+      cardId = id;
+      if (select) select.value = id;
+      for (const c of chips) c.setAttribute("aria-pressed", String(c.dataset.card === id));
+      render();
+    }
     let shown = Number(month.textContent.replace(/[^0-9.]/g, "")) || 0;
     let tween = 0;
 
@@ -239,13 +245,8 @@
       $("#est-payout").textContent = day <= 0 ? ""
         : `First payout of 1.5 USDT to your wallet ${raw < 1 ? "within a day" : `in about ${days} day${days === 1 ? "" : "s"}`}, then daily.`;
     }
-    for (const chip of chips) {
-      chip.addEventListener("click", () => {
-        cardId = chip.dataset.card;
-        for (const c of chips) c.setAttribute("aria-pressed", String(c === chip));
-        render();
-      });
-    }
+    for (const chip of chips) chip.addEventListener("click", () => choose(chip.dataset.card));
+    select?.addEventListener("change", () => choose(select.value));
     hours.addEventListener("input", render);
     price.addEventListener("input", render);
   }
