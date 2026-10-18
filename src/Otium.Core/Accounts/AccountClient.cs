@@ -25,6 +25,9 @@ public interface IAccountClient
     /// <summary>Sends what this computer earned since the last report (only for users who agreed to share it).</summary>
     Task ReportEarningsAsync(string deviceId, string deviceSecret, EarningsReport report, CancellationToken ct);
 
+    /// <summary>Deletes what this computer shared for the real-earnings figures, when the user stops sharing.</summary>
+    Task DeleteEarningsReportsAsync(string deviceId, string deviceSecret, CancellationToken ct);
+
     /// <summary>Asks Otium to pay a new Mysterium node's one-time registration fee.</summary>
     Task<MystSponsorResult> SponsorMysteriumAsync(string deviceId, string deviceSecret, MystSponsorRequest request, CancellationToken ct);
 
@@ -121,6 +124,13 @@ public sealed class AccountClient(HttpClient http) : IAccountClient
     public async Task ReportEarningsAsync(string deviceId, string deviceSecret, EarningsReport report, CancellationToken ct)
     {
         using var response = await PostAsync(deviceId, deviceSecret, "earnings", report, ct);
+        if (!response.IsSuccessStatusCode)
+            throw new AccountRequestException(await ReadProblemDetailAsync(response, ct), (int)response.StatusCode);
+    }
+
+    public async Task DeleteEarningsReportsAsync(string deviceId, string deviceSecret, CancellationToken ct)
+    {
+        using var response = await PostAsync(deviceId, deviceSecret, "earnings/delete", new { }, ct);
         if (!response.IsSuccessStatusCode)
             throw new AccountRequestException(await ReadProblemDetailAsync(response, ct), (int)response.StatusCode);
     }

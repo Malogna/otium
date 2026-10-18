@@ -29,8 +29,8 @@ building, dev mode and releasing. The short version for users is the [README](..
 
 When you come back after a stretch of earning, the overview says what it brought in ("While you were away: $0.84 in
 7 h 40 min of earning"), and in the first days of a month it sums up the last one. Each can be copied as a message
-with your invite code or saved as a picture to post. Unless you untick "Help show what PCs really earn" on the
-welcome screen (or turn it off later in Settings), the app sends a few times a day what each device earned, with the card model and processor name and never your
+with your invite code or saved as a picture to post. If you answer yes to "Share analytics" at the end
+of the welcome screens (or turn it on later in Settings), the app sends a few times a day what each device earned, with the card model and processor name and never your
 address; otium.lol then shows real per-card medians from at least three computers, next to the total the pools have paid
 Otium users (read from unMineable's and MoneroOcean's public APIs, counting only addresses mined by Otium alone).
 
@@ -294,7 +294,7 @@ Users can also opt in to sharing unused internet bandwidth. Non-custodial, this 
 SOCKS5 access, mostly to AI agents and scraping/ad-verification jobs, and pays sellers per GB. It needs no account:
 the client makes a wallet key on the computer and signs in with it. Proxybase pays only USDC on the Tempo network, so
 each payout goes **through a one-time conversion to the user's own payout address and coin** (USDT on TRON, BTC, SOL…),
-and users never see Tempo. Otium's cut is the conversion's app fee. (The earlier
+and users never see Tempo. Otium's cut is paid separately, never from the conversion. (The earlier
 Mysterium node, `src/Otium.Providers.Mysterium`, stays in the code base but isn't offered; its "remove the network
 service" button in Advanced remains for computers that installed it.)
 
@@ -318,9 +318,11 @@ service" button in Advanced remains for computers that installed it.)
   XMR goes Relay → USDC on Base → a ChangeNOW exchange (minimum about 12 USDC). Payouts wait while the network part of
   the cost is above `Sharing:MaxNetworkCostPercent` (5%), up to `Sharing:PayAnywayUsd` ($25): TRON's delivery fee
   (about $0.75 in October 2026) means USDT-on-TRON payouts of about $16.
-- **Otium's cut:** Relay's app fee, `Sharing:FeeBps` (default: the mining fee, 2% = 200), credited by Relay to
-  `Sharing:FeeRecipient` (Otium's 0x address; claim it in Relay's dashboard). SideShift's own commission is set to 0 so
-  the fee isn't taken twice; ChangeNOW's partner commission (from 0.4%) applies on XMR.
+- **Otium's cut:** `Sharing:FeeBps` (default: the mining fee, 2% = 200) of each payout, kept back at Proxybase and,
+  once $1 of it has built up, paid by the app from the user's sharing earnings to `Sharing:FeeRecipient` (Otium's 0x
+  address, on Tempo). Only the rest is converted, with no app fee at Relay and SideShift's commission set to 0, so
+  Otium earns nothing from exchanging coins (docs/legal-review.md, D1). ChangeNOW's partner commission (from 0.4%)
+  still applies on XMR.
 - **Server secrets:** `Sharing:RelayApiKey` (Relay requires one for quotes from October 2026), `Sharing:SideShiftSecret`
   and `Sharing:SideShiftAffiliateId` for LTC, `Sharing:ChangeNowApiKey` for XMR. Without the last two, LTC and XMR users
   are told to pick another coin for sharing.

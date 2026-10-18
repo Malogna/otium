@@ -178,6 +178,12 @@ public static partial class ProxybaseOutput
             ? v.GetString()
             : null;
 
+    /// <summary>A 0x address (Tempo is EVM-compatible), checked before Otium pays anything to one.</summary>
+    public static bool IsEvmAddress(string? value) => value is not null && EvmAddress().IsMatch(value);
+
     [GeneratedRegex(@"Address:\s*(0x[0-9a-fA-F]{40})\b")]
     private static partial Regex AddressLine();
+
+    [GeneratedRegex(@"^0x[0-9a-fA-F]{40}$")]
+    private static partial Regex EvmAddress();
 }

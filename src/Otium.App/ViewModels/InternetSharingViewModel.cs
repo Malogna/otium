@@ -129,13 +129,17 @@ public partial class InternetSharingViewModel : ViewModelBase
         ? "Otium runs Proxybase's open-source client on this computer. Proxybase's customers, mostly AI agents and " +
           "businesses that collect public web pages or check ads, send some of their web traffic through your unused " +
           "internet connection. Websites they visit see your internet address, so sites may sometimes show you more " +
-          "CAPTCHAs. Nothing on your computer is accessed: not your files, passwords or browsing.\n\n" +
+          "CAPTCHAs. The client only passes their connections on; it doesn't read your files, passwords or browsing. " +
+          "Otium can't see or control this traffic, and Proxybase doesn't check who its customers are, so if someone " +
+          "misuses it, it shows your internet address. Some internet providers don't allow sharing a connection: " +
+          "check yours if you're not sure.\n\n" +
           "Proxybase pays per GB. When enough has built up, Otium has it converted and paid straight to your payout " +
-          "address, in the coin you chose, like your mining earnings. The conversion's network costs and Otium's fee (the " +
-          "same share as for mining) come off each payout. Turning this on means you agree to Proxybase's terms."
+          "address, in the coin you chose, like your mining earnings. Otium keeps the same share as for mining, paid to " +
+          "Otium from your sharing earnings, and the conversion's network costs come off each payout. Turning this on " +
+          "means you agree to Proxybase's terms."
         : $"{PartnerName} uses a small part of your unused internet connection to load public web pages for its business " +
         "customers, for things like price comparison, ad checks and market research. Websites they visit see your " +
-        "internet address. Nothing on your computer is accessed: not your files, passwords or browsing.";
+        "internet address. The client only passes their connections on; it doesn't read your files, passwords or browsing.";
 
     public string LimitsText => IsProxybase
         ? "There's no daily data cap: your connection is used whenever Proxybase's customers need an address like yours" +

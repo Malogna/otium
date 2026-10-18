@@ -6,21 +6,54 @@ namespace Otium.App.ViewModels;
 
 /// <summary>
 /// Choosing where the pool pays: a coin and the user's own address for it, checked as it's typed. Used by onboarding
-/// and Settings. US users only get Monero, since unMineable (which pays every other coin) doesn't serve them.
+/// and Settings. US persons only get Monero, since unMineable (which pays every other coin) doesn't serve them: computers
+/// in the US region, and anyone who ticks that they're a US citizen or resident.
 /// </summary>
 public partial class PayoutTargetEditor : ObservableObject
 {
-    public PayoutTargetEditor(string? current)
+    private readonly Action<bool>? _setUsPerson;
+
+    /// <param name="setUsPerson">Records the "US citizen or resident" answer; null hides the question.</param>
+    public PayoutTargetEditor(string? current, bool usPerson = false, Action<bool>? setUsPerson = null)
     {
+        _setUsPerson = setUsPerson;
+        UsPerson = usPerson;
         Coins = AppHost.InUnitedStates ? [PayoutCoins.Monero] : PayoutCoins.All;
         var existing = PayoutTarget.ParseOrNull(current);
         SelectedCoin = existing is not null && Coins.Contains(existing.Coin) ? existing.Coin : Coins.Contains(PayoutCoins.Default) ? PayoutCoins.Default : Coins[0];
         Address = existing is not null && existing.Coin == SelectedCoin ? existing.Address : "";
     }
 
-    public IReadOnlyList<PayoutCoin> Coins { get; }
+    [ObservableProperty] public partial IReadOnlyList<PayoutCoin> Coins { get; private set; }
 
     public bool IsUnitedStates => AppHost.InUnitedStates;
+
+    /// <summary>The question shows unless the computer is set to the US region (which already counts).</summary>
+    public bool AskUsPerson => _setUsPerson is not null && (UsPerson || !AppHost.InUnitedStates);
+
+    /// <summary>"I'm a US citizen or live in the US": unMineable's terms exclude US persons wherever they are.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsUnitedStates), nameof(PoolNote))]
+    public partial bool UsPerson { get; set; }
+
+    partial void OnUsPersonChanged(bool value)
+    {
+        if (_setUsPerson is null)
+            return;
+        _setUsPerson(value);
+        var current = Address;
+        Coins = AppHost.InUnitedStates ? [PayoutCoins.Monero] : PayoutCoins.All;
+        if (!Coins.Contains(SelectedCoin))
+        {
+            SelectedCoin = Coins[0];
+            Address = "";
+        }
+        else
+        {
+            Address = current;
+        }
+        Validate();
+    }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(Placeholder), nameof(Hint), nameof(PoolNote))]

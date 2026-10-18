@@ -18,7 +18,10 @@ namespace Otium.Server.Sharing;
 /// <item>LTC: Relay to USDC on Base, into a SideShift shift that settles in LTC to the user.</item>
 /// <item>XMR: Relay to USDC on Base, into a ChangeNOW exchange that pays XMR to the user.</item>
 /// </list>
-/// Otium's cut is Relay's app fee on the conversion (<see cref="FeeBps"/>), paid to <see cref="FeeRecipient"/> by Relay.
+/// Otium's cut is not part of the conversion: of each payout the app keeps back Otium's share (<see cref="FeeBps"/>, the
+/// mining fee by default) and pays it from the user's Proxybase earnings straight to <see cref="FeeRecipient"/> on Tempo,
+/// the way mining pays Otium a slice of mining time. The conversion carries no Otium fee, so Otium earns nothing from
+/// exchanging anyone's coins (docs/legal-review.md, D1).
 /// </summary>
 public sealed class SharingOptions
 {
@@ -29,10 +32,10 @@ public sealed class SharingOptions
 
     public string RelayApi { get; set; } = "https://api.relay.link/";
 
-    /// <summary>Otium's 0x address that Relay credits the app fee to (claimed in Relay's dashboard). No fee without one.</summary>
+    /// <summary>Otium's own 0x address, which the app pays Otium's sharing fee to on Tempo. No fee without one.</summary>
     public string? FeeRecipient { get; set; }
 
-    /// <summary>Otium's cut of each conversion, in basis points (100 = 1%). Defaults to the mining fee.</summary>
+    /// <summary>Otium's share of each sharing payout, in basis points (100 = 1%). Defaults to the mining fee.</summary>
     public int? FeeBps { get; set; }
 
     /// <summary>Wait for more to build up while the conversion's own network costs are above this share.</summary>
@@ -254,34 +257,15 @@ public sealed class SharingRouteService(
 
         var refund = request.RefundAddress!.Trim();
         var o = options.Value;
-        var feeRecipient = CryptoAddresses.TryValidate(AddressFormat.Evm, o.FeeRecipient, out _) ? o.FeeRecipient!.Trim() : null;
-        var usd = request.AvailableMicrocredits / 1_000_000d;
+        var feeRecipient = CryptoAddresses.TryValidate(AddressFormat.Evm, o.FeeRecipient, out _) ? o.FeeRecipient!.Trim().ToLowerInvariant() : null;
+        // Otium's share stays at Proxybase for the app to pay Otium directly; only the user's part is converted, fee-free.
+        var fee = feeRecipient is null ? 0 : (long)Math.Round(request.AvailableMicrocredits * Math.Clamp(FeeBps, 0, 1000) / 10_000d);
+        var amount = request.AvailableMicrocredits - fee;
+        var usd = amount / 1_000_000d;
         try
         {
-            if (RelayClient.DirectFor(target.Coin) is { } destination)
-            {
-                var quote = await relay.QuoteDepositAddressAsync(destination, target.Address, request.AvailableMicrocredits, refund, feeRecipient, FeeBps, ct);
-                return Decide(quote, usd, $"{quote.OutAmount} {destination.Label}", request.AvailableMicrocredits);
-            }
-
-            ISwapToCoinApi? hop = target.Coin == PayoutCoins.Litecoin && litecoin.IsConfigured ? litecoin
-                : target.Coin == PayoutCoins.Monero && monero.IsConfigured ? monero
-                : null;
-            if (hop is null)
-                return new SharingRoute(SharingRouteDecisions.Unsupported,
-                    Message: $"Internet sharing can't pay {target.Coin.Ticker} yet. Choose another payout coin in Settings to get its earnings.");
-
-            // First what Relay would deliver as USDC on Base, then a conversion of that to the user's coin, then the Relay
-            // address that delivers into it.
-            var estimate = await relay.QuoteDepositAddressAsync(RelayClient.BaseUsdc, refund, request.AvailableMicrocredits, refund, feeRecipient, FeeBps, ct);
-            var usdcOut = (decimal)estimate.OutUsd;
-            var minimum = hop == monero ? ChangeNowMonero.MinimumUsdc : 3.5m;
-            if (usdcOut < minimum)
-                return new SharingRoute(SharingRouteDecisions.Wait,
-                    Message: FormattableString.Invariant($"Waiting until about ${minimum + 1:0} has built up: converting to {target.Coin.Ticker} needs at least that."));
-            var (swapDeposit, _) = await hop.CreateAsync(target.Address, Math.Round(usdcOut, 2), refund, userIp, ct);
-            var quote2 = await relay.QuoteDepositAddressAsync(RelayClient.BaseUsdc, swapDeposit, request.AvailableMicrocredits, refund, feeRecipient, FeeBps, ct);
-            return Decide(quote2, usd, $"about {usdcOut:0.00} USDC worth of {target.Coin.Ticker}", request.AvailableMicrocredits);
+            var route = await ConvertAsync(target, amount, usd, refund, userIp, ct);
+            return route.Decision == SharingRouteDecisions.Pay && fee > 0 ? route with { FeeAddress = feeRecipient, FeeMicrocredits = fee } : route;
         }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException or InvalidOperationException or JsonException or KeyNotFoundException
                                     && !ct.IsCancellationRequested)
@@ -289,6 +273,35 @@ public sealed class SharingRouteService(
             logger.LogWarning(e, "Sharing payout route failed for {Coin}", target.Coin.Symbol);
             return new SharingRoute(SharingRouteDecisions.Wait, Message: "The conversion service didn't answer. Otium tries again in a few minutes.");
         }
+    }
+
+    /// <summary>The one-time conversion of <paramref name="amount"/> to the user's coin and address, with no Otium fee in it.</summary>
+    private async Task<SharingRoute> ConvertAsync(PayoutTarget target, long amount, double usd, string refund, string userIp, CancellationToken ct)
+    {
+        if (RelayClient.DirectFor(target.Coin) is { } destination)
+        {
+            var quote = await relay.QuoteDepositAddressAsync(destination, target.Address, amount, refund, null, 0, ct);
+            return Decide(quote, usd, $"{quote.OutAmount} {destination.Label}", amount);
+        }
+
+        ISwapToCoinApi? hop = target.Coin == PayoutCoins.Litecoin && litecoin.IsConfigured ? litecoin
+            : target.Coin == PayoutCoins.Monero && monero.IsConfigured ? monero
+            : null;
+        if (hop is null)
+            return new SharingRoute(SharingRouteDecisions.Unsupported,
+                Message: $"Internet sharing can't pay {target.Coin.Ticker} yet. Choose another payout coin in Settings to get its earnings.");
+
+        // First what Relay would deliver as USDC on Base, then a conversion of that to the user's coin, then the Relay
+        // address that delivers into it.
+        var estimate = await relay.QuoteDepositAddressAsync(RelayClient.BaseUsdc, refund, amount, refund, null, 0, ct);
+        var usdcOut = (decimal)estimate.OutUsd;
+        var minimum = hop == monero ? ChangeNowMonero.MinimumUsdc : 3.5m;
+        if (usdcOut < minimum)
+            return new SharingRoute(SharingRouteDecisions.Wait,
+                Message: FormattableString.Invariant($"Waiting until about ${minimum + 1:0} has built up: converting to {target.Coin.Ticker} needs at least that."));
+        var (swapDeposit, _) = await hop.CreateAsync(target.Address, Math.Round(usdcOut, 2), refund, userIp, ct);
+        var quote2 = await relay.QuoteDepositAddressAsync(RelayClient.BaseUsdc, swapDeposit, amount, refund, null, 0, ct);
+        return Decide(quote2, usd, $"about {usdcOut:0.00} USDC worth of {target.Coin.Ticker}", amount);
     }
 
     /// <summary>Pays when the conversion's own network costs are small for this amount, or once enough has waited.</summary>
