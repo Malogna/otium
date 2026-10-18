@@ -226,7 +226,8 @@ Configure `src/Otium.Server/appsettings.json` (or environment variables such as 
 | `Admin:Token` | Enables `/admin/*`; send it as `X-Admin-Token` |
 | `ReverseProxy:Enabled`, `KnownProxies`, `KnownNetworks` | Behind an HTTPS proxy: take client IPs from `X-Forwarded-For`, trusted only from these proxy addresses or CIDR networks (localhost if neither is set) |
 | `Email:SmtpHost`, `Port`, `Username`, `Password`, `From` | SMTP service for sign-in codes and cash-out receipts (Postmark, SES, Mailgun, ...) |
-| `Referral:PublicBaseUrl`, `DownloadUrl` | Invite links and the landing page |
+| `Referral:PublicBaseUrl`, `DownloadUrl` | Invite links, and where the website's Download buttons go |
+| `Site:PagesDirectory` | Folder with the reviewed `privacy.html` and `terms.html`, served at `/privacy` and `/terms` once present (default `/data/site`) |
 | `Kryptex:Enabled`, `Account` | Custodial: GPU coins on Kryptex Pool (off by default). Set up auto-exchange on that Kryptex account. |
 | `Kryptex:Coins:{algorithm}` | Kryptex coin slug, WhatToMine id and stratum host per algorithm (defaults for `pearlhash` and `quantus`) |
 | `Kryptex:Cpu:Coin`, `Host`, `Port`, `Tls` | Kryptex's Monero pool for CPUs (default `xmr.kryptex.network:8029`, TLS) |

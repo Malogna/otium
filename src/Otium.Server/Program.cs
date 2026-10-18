@@ -15,6 +15,8 @@ using Otium.Server.Gpu;
 using Otium.Server.Payouts;
 
 var builder = WebApplication.CreateBuilder(args);
+// No "Server: Kestrel" header: it only tells scanners what to look for.
+builder.WebHost.ConfigureKestrel(kestrel => kestrel.AddServerHeader = false);
 
 // Non-custodial unless the operator turns custody on: see CustodyOptions.
 var custodial = builder.Configuration.GetValue<bool>($"{CustodyOptions.Section}:Enabled");
@@ -24,6 +26,7 @@ builder.Services.Configure<MysteriumOptions>(builder.Configuration.GetSection(My
 builder.Services.Configure<FeeOptions>(builder.Configuration.GetSection(FeeOptions.Section));
 
 builder.Services.Configure<ReferralOptions>(builder.Configuration.GetSection(ReferralOptions.Section));
+builder.Services.Configure<SiteOptions>(builder.Configuration.GetSection(SiteOptions.Section));
 builder.Services.Configure<EarningsOptions>(builder.Configuration.GetSection(EarningsOptions.Section));
 builder.Services.Configure<CashoutOptions>(builder.Configuration.GetSection(CashoutOptions.Section));
 builder.Services.Configure<PayPalOptions>(builder.Configuration.GetSection(PayPalOptions.Section));
@@ -61,6 +64,8 @@ builder.Services.AddHttpClient<IProfitFeed, WhatToMineClient>();
 builder.Services.AddHttpClient<IKryptexApi, KryptexClient>();
 builder.Services.AddHttpClient<IPearlPipFeed, PearlPipClient>();
 builder.Services.AddSingleton<PearlForkWatcher>();
+builder.Services.AddHttpClient<IReleaseFeed, GitHubReleaseFeed>();
+builder.Services.AddSingleton<ReleaseDownloads>();
 builder.Services.AddSingleton<GpuPolicyService>();
 builder.Services.AddSingleton<KryptexCreditor>();
 builder.Services.AddSingleton<CpuPoolRouter>();
@@ -133,6 +138,24 @@ var app = builder.Build();
 if (reverseProxy.Enabled)
     app.UseForwardedHeaders();
 app.UseRateLimiter();
+
+// Browser hardening for every response (from a website scan): no MIME sniffing, no framing, no referrer beyond the
+// site's own origin, no device APIs, and pages may only load the site's own files (inline styles are used for bar
+// widths and the like; the site has no inline scripts). The per-response nonce is for Cloudflare: its bot detection
+// injects an inline script, and Cloudflare stamps that script with the nonce it reads from this header, so it runs
+// without allowing inline scripts in general.
+app.Use(async (context, next) =>
+{
+    var headers = context.Response.Headers;
+    var nonce = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(16));
+    headers["X-Content-Type-Options"] = "nosniff";
+    headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
+    headers["X-Frame-Options"] = "DENY";
+    headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=(), usb=()";
+    headers["Content-Security-Policy"] = $"default-src 'self'; script-src 'self' 'nonce-{nonce}'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+        + "font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
+    await next();
+});
 
 // Errors meant for users travel as problem details; the app shows their "detail" text.
 app.Use(async (context, next) =>
@@ -216,11 +239,72 @@ api.MapPost("/devices/{deviceId}/email/verify", (string deviceId, EmailVerifyReq
 // Which GPU algorithms to mine and where; the same for every app, rebuilt from live feeds every few minutes.
 api.MapGet("/gpu-policy", async (GpuPolicyService policy, CancellationToken ct) => Results.Ok(await policy.GetAsync(ct)));
 
-app.MapGet("/r/{code}", (string code, OtiumStore store, IOptions<ReferralOptions> options) =>
+app.MapGet("/r/{code}", (string code, OtiumStore store, IOptions<ReferralOptions> options, IOptions<SiteOptions> site) =>
 {
     var normalized = ReferralCodes.Normalize(code);
     var exists = ReferralCodes.IsWellFormed(normalized) && store.CodeExists(normalized);
-    return Results.Content(LandingPage.Render(normalized, options.Value.DownloadUrl, exists), "text/html; charset=utf-8");
+    return Results.Content(LandingPage.Render(normalized, "/download", exists, SitePages.AvailableLegalPages(site.Value.PagesDirectory)),
+        "text/html; charset=utf-8");
+}).RequireRateLimiting("per-ip");
+
+// The public website: the front page (with today's per-card earnings from the GPU policy), the operator's legal pages
+// once their reviewed files are in place, and the site's own embedded files.
+app.MapGet("/", async (HttpRequest request, IOptions<FeeOptions> fees, IOptions<SiteOptions> site,
+    GpuPolicyService gpuPolicy, ILogger<Program> logger, CancellationToken ct) =>
+{
+    var policy = Otium.Core.Fees.FeePolicy.FromTerms(fees.Value.ToTerms());
+    Otium.Core.Switching.GpuPolicy? gpu = null;
+    try
+    {
+        gpu = await gpuPolicy.GetAsync(ct);
+    }
+    catch (Exception e) when (e is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException && !ct.IsCancellationRequested)
+    {
+        logger.LogWarning(e, "GPU policy unavailable for the front page");
+    }
+    var html = SitePages.Home(policy, "/download", SitePages.AvailableLegalPages(site.Value.PagesDirectory),
+        SitePages.Earnings(gpu, policy), gpu?.GeneratedAt,
+        // Cloudflare's visitor country, for the local electricity price. Only Cloudflare reaches the server in production;
+        // anyone sending it themselves only changes their own estimate.
+        request.Headers["CF-IPCountry"].ToString());
+    return Results.Content(html, "text/html; charset=utf-8");
+}).RequireRateLimiting("per-ip");
+
+app.MapGet("/{page:regex(^(privacy|terms)$)}", (string page, IOptions<SiteOptions> site, IOptions<ReferralOptions> referral) =>
+{
+    var directory = site.Value.PagesDirectory;
+    var file = Path.Combine(directory, $"{page}.html");
+    return File.Exists(file)
+        ? Results.Content(SitePages.Legal(page, File.ReadAllText(file), SitePages.AvailableLegalPages(directory), "/download"),
+            "text/html; charset=utf-8")
+        : Results.NotFound();
+}).RequireRateLimiting("per-ip");
+
+app.MapGet("/site/{**path}", (string path, HttpContext context) =>
+{
+    if (SiteAssets.Find(path) is not { } asset)
+        return Results.NotFound();
+    // Versioned links (?v=<hash>) never change content, so they can be cached for a year; the fonts' plain links for a day.
+    context.Response.Headers.CacheControl = context.Request.Query.ContainsKey("v") ? "public, max-age=31536000, immutable" : "public, max-age=86400";
+    return Results.Bytes(asset.Content, asset.ContentType);
+});
+app.MapGet("/favicon.ico", () => Results.Redirect(SiteAssets.Url("otium.svg")));
+
+// RFC 9116: where to report security problems (GitHub's private vulnerability reporting, so no address is published).
+app.MapGet("/.well-known/security.txt", (HttpRequest request, IOptions<ReferralOptions> referral, TimeProvider time) =>
+    Results.Text(
+        "Contact: https://github.com/Malogna/otium/security/advisories/new\n"
+        + $"Expires: {time.GetUtcNow().AddDays(180).ToString("yyyy-MM-dd'T'00:00:00'Z'", System.Globalization.CultureInfo.InvariantCulture)}\n"
+        + "Preferred-Languages: en\n"
+        + $"Canonical: {PublicBase(request, referral)}/.well-known/security.txt\n",
+        "text/plain; charset=utf-8"));
+
+// Every Download button: straight to the latest installer for the visitor's system (or ?os=windows|macos|macos-intel|linux),
+// else the releases page (phones, unknown systems, or before the first release).
+app.MapGet("/download", async (string? os, HttpRequest request, ReleaseDownloads downloads, IOptions<ReferralOptions> referral, CancellationToken ct) =>
+{
+    var target = await downloads.InstallerUrlAsync(os ?? ReleaseDownloads.DetectOs(request.Headers.UserAgent), ct);
+    return Results.Redirect(target ?? referral.Value.DownloadUrl);
 }).RequireRateLimiting("per-ip");
 
 app.MapGet("/healthz", () => Results.Ok("ok"));
