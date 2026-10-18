@@ -245,12 +245,16 @@ public sealed class ProofOfEarningsTests
         public EarningsLedger Ledger { get; } = new();
         public EarningsEngine Engine { get; }
 
+        /// <summary>Whether the user agreed to keep the miner ready when they come back.</summary>
+        public bool PauseWhenBack { get; set; } = true;
+
         public Rig()
         {
             var user = TestAddresses.Generate();
             Engine = new EarningsEngine(Provider, new EstimatedCpuPowerMeter(new CpuPowerModel(100, 10)), Idle,
                 () => new EngineConfig(user, 50, OnlyWhenIdle: true, TimeSpan.FromMinutes(3), NeverRunAtLoss: false, 0.15,
-                    new FeeSchedule(FeePolicy.Default with { FeePercent = 0 }, user, null, new ReferralStanding(null, null, null)), "test"),
+                    new FeeSchedule(FeePolicy.Default with { FeePercent = 0 }, user, null, new ReferralStanding(null, null, null)), "test",
+                    PauseWhenBack: PauseWhenBack),
                 Ledger, _ => { }, Time);
         }
 
@@ -290,6 +294,35 @@ public sealed class ProofOfEarningsTests
         Assert.False(rig.Engine.IsSuspended);
         // The paused minutes aren't counted as mining.
         Assert.InRange((rig.Ledger.MiningTime - minedBefore).TotalMinutes, 0.5, 1.5);
+    }
+
+    [Fact]
+    public async Task Without_the_users_agreement_the_miner_stops_as_before()
+    {
+        var rig = new Rig { PauseWhenBack = false };
+        rig.Engine.Enable();
+        await rig.Run(TimeSpan.FromMinutes(5));
+
+        rig.Idle.Value = TimeSpan.Zero;
+        await rig.Engine.TickAsync(CancellationToken.None);
+        Assert.Equal(0, rig.Provider.Pauses);
+        Assert.Equal(1, rig.Provider.Stops);
+    }
+
+    [Fact]
+    public async Task Turning_the_option_off_stops_a_paused_miner()
+    {
+        var rig = new Rig();
+        rig.Engine.Enable();
+        await rig.Run(TimeSpan.FromMinutes(5));
+        rig.Idle.Value = TimeSpan.Zero;
+        await rig.Engine.TickAsync(CancellationToken.None);
+        Assert.True(rig.Engine.IsSuspended);
+
+        rig.PauseWhenBack = false;
+        await rig.Run(TimeSpan.FromSeconds(5), () => rig.Idle.Value = TimeSpan.Zero);
+        Assert.False(rig.Engine.IsSuspended);
+        Assert.Equal(1, rig.Provider.Stops);
     }
 
     [Fact]

@@ -258,8 +258,11 @@ public partial class WelcomeViewModel : ViewModelBase
 
     [ObservableProperty] public partial string? InviteError { get; set; }
 
-    /// <summary>"Help show what PCs really earn": off until the user ticks it.</summary>
-    [ObservableProperty] public partial bool ShareEarnings { get; set; }
+    /// <summary>"Help show what PCs really earn": ticked, and the user can untick it here or later in Settings.</summary>
+    [ObservableProperty] public partial bool ShareEarnings { get; set; } = true;
+
+    /// <summary>Pause the processor miner instead of stopping it when the user comes back: only if they tick it.</summary>
+    [ObservableProperty] public partial bool KeepMinerReady { get; set; }
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(StartCommand))]
@@ -292,6 +295,6 @@ public partial class WelcomeViewModel : ViewModelBase
     {
         IsStarting = true;
         _started(); // show the home screen right away; it reports progress while the account connects
-        await _host.StartFirstTimeAsync(InviteCode, Payout.Target?.ToString(), ShareEarnings);
+        await _host.StartFirstTimeAsync(InviteCode, Payout.Target?.ToString(), ShareEarnings, KeepMinerReady);
     }
 }

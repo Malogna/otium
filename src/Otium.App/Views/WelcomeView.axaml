@@ -192,15 +192,24 @@
                         </StackPanel>
                     </Border>
 
-                    <!-- Opt-in, off by default: the website's real-earnings table only gets PCs whose owners ticked this. -->
+                    <!-- Two choices before Start: sharing earnings (ticked, can be unticked) and keeping the miner ready (unticked). -->
                     <Border Classes="card delay2" Padding="16">
-                        <CheckBox IsChecked="{Binding ShareEarnings}" AutomationProperties.Name="Help show what PCs earn">
-                            <StackPanel Spacing="2">
-                                <TextBlock FontWeight="SemiBold" Text="Help show what PCs really earn" TextWrapping="Wrap" />
-                                <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap"
-                                           Text="Send Otium this PC's graphics card model, processor name, hours earning and amounts earned, a few times a day. Never your address. otium.lol shows only totals across several PCs. You can turn it off in Settings." />
-                            </StackPanel>
-                        </CheckBox>
+                        <StackPanel Spacing="14">
+                            <CheckBox IsChecked="{Binding ShareEarnings}" AutomationProperties.Name="Help show what PCs really earn">
+                                <StackPanel Spacing="2">
+                                    <TextBlock FontWeight="SemiBold" Text="Help show what PCs really earn" TextWrapping="Wrap" />
+                                    <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap"
+                                               Text="Sends Otium this PC's graphics card model, processor name, hours earning and amounts earned, a few times a day. Never your address. otium.lol shows only totals across several PCs. Untick it if you'd rather not; you can also turn it off later in Settings." />
+                                </StackPanel>
+                            </CheckBox>
+                            <CheckBox IsChecked="{Binding KeepMinerReady}" AutomationProperties.Name="Keep the processor miner ready when I come back">
+                                <StackPanel Spacing="2">
+                                    <TextBlock FontWeight="SemiBold" Text="Keep the processor miner ready when I come back" TextWrapping="Wrap" />
+                                    <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap"
+                                               Text="When you return, the miner pauses instead of closing, so it earns again the moment you step away. It stops using the processor at once, but keeps about 2.5 GB of memory reserved for up to 10 minutes." />
+                                </StackPanel>
+                            </CheckBox>
+                        </StackPanel>
                     </Border>
 
                     <StackPanel Spacing="8" HorizontalAlignment="Center">

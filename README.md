@@ -37,13 +37,14 @@ never holds anyone's money.
 
 When you come back after a stretch of earning, the overview says what it brought in ("While you were away: $0.84 in
 7 h 40 min of earning"), and in the first days of a month it sums up the last one. Each can be copied as a message
-with your invite code or saved as a picture to post. Optionally ("Help show what PCs really earn", off until you tick
-it), the app sends a few times a day what each device earned, with the card model and processor name and never your
+with your invite code or saved as a picture to post. Unless you untick "Help show what PCs really earn" on the
+welcome screen (or turn it off later in Settings), the app sends a few times a day what each device earned, with the card model and processor name and never your
 address; otium.lol then shows real per-card medians from at least three computers, next to the total the pools have paid
 Otium users (read from unMineable's and MoneroOcean's public APIs, counting only addresses mined by Otium alone).
 
-When you come back for a moment, the processor miner is paused rather than stopped, keeping its 2 GB dataset and pool
-connection for up to 10 minutes, so earning resumes the instant you leave again instead of after another warm-up.
+If you tick "Keep the processor miner ready when I come back" (welcome screen or Settings; off by default), the
+processor miner pauses rather than stops when you come back, keeping its 2 GB dataset and pool connection for up to 10
+minutes, so earning resumes the instant you leave again instead of after another warm-up.
 
 The overview shows, at a glance: what you've earned and progress to the pool's next payout (with an ETA), what each device is
 doing right now in plain words ("Mining Monero", "Waiting for you to step away · starts in 1:42"), what you can expect

@@ -29,6 +29,12 @@
                     <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap"
                                Text="Otherwise Windows puts it to sleep a little while after you leave, and earning stops for the night. The screen still turns off, and a laptop on battery is never kept awake." />
                 </StackPanel>
+                <StackPanel Spacing="2" IsVisible="{Binding OnlyWhenIdle}">
+                    <ToggleSwitch IsChecked="{Binding KeepMinerReadyWhenBack}"
+                                  OnContent="Keep the processor miner ready when I come back" OffContent="Keep the processor miner ready when I come back" />
+                    <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap"
+                               Text="The miner pauses instead of closing, so it earns again the moment you step away. It stops using the processor at once, but keeps about 2.5 GB of memory reserved for up to 10 minutes." />
+                </StackPanel>
                 <ToggleSwitch IsChecked="{Binding StartWithSystem}" OnContent="Start Otium when I sign in" OffContent="Start Otium when I sign in" />
                 <StackPanel Spacing="2">
                     <ToggleSwitch IsChecked="{Binding ShareEarningsStats}"

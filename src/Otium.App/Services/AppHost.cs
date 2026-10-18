@@ -602,11 +602,12 @@ public sealed class AppHost : IAsyncDisposable
     /// earning, then connects to the server (mining begins as soon as the account is ready).
     /// </summary>
     /// <param name="payoutTarget">The address chosen during onboarding ("USDT:T…"), paid by the pool directly.</param>
-    /// <param name="shareEarnings">The user ticked "Help show what PCs earn" (see <see cref="SetShareEarningsStats"/>).</param>
-    public async Task StartFirstTimeAsync(string? inviteCode, string? payoutTarget = null, bool shareEarnings = false)
+    /// <param name="shareEarnings">"Help show what PCs earn" stayed ticked (see <see cref="SetShareEarningsStats"/>).</param>
+    /// <param name="keepMinerReady">The user agreed to keep the processor miner paused, not stopped, when they come back.</param>
+    public async Task StartFirstTimeAsync(string? inviteCode, string? payoutTarget = null, bool shareEarnings = false, bool keepMinerReady = false)
     {
-        if (shareEarnings)
-            SetShareEarningsStats(true);
+        SetShareEarningsStats(shareEarnings);
+        Settings.KeepMinerReadyWhenBack = keepMinerReady;
         if (PayoutTarget.ParseOrNull(payoutTarget) is { } target)
         {
             Settings.PayoutMode = PayoutMode.OwnWallet;
@@ -787,7 +788,8 @@ public sealed class AppHost : IAsyncDisposable
                 // CPU and GPU share one worker id so the pool reports their combined work for this account.
                 Settings.Account.WorkerId ?? "",
                 // The CPU mines wherever the server routes this account (MoneroOcean or Kryptex XMR).
-                cpu ? Settings.Account.CpuPool : null);
+                cpu ? Settings.Account.CpuPool : null,
+                cpu && Settings.KeepMinerReadyWhenBack);
         }
 
         // Fee and referral slices mine on the user's own pool, so a referrer paid on the other pool gets no slice.
@@ -804,7 +806,8 @@ public sealed class AppHost : IAsyncDisposable
             EffectivePricePerKwh(),
             // Only the graphics card mines Quantus, so only its slices carry the Quantus targets.
             new FeeSchedule(Fees, user, FeeWallet, standing, cpu ? null : QuantusTarget, QuantusFeeWallet),
-            $"ot{DeviceId[..8]}{workerSuffix}");
+            $"ot{DeviceId[..8]}{workerSuffix}",
+            PauseWhenBack: cpu && Settings.KeepMinerReadyWhenBack);
     }
 
     private BandwidthConfig BuildBandwidthConfig()

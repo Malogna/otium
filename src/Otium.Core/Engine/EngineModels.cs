@@ -24,7 +24,8 @@ public sealed record EngineConfig(
     double PricePerKwh,
     FeeSchedule FeeSchedule,
     string WorkerName,
-    Accounts.CpuPoolRoute? CpuPool = null);
+    Accounts.CpuPoolRoute? CpuPool = null,
+    bool PauseWhenBack = false);
 
 public sealed record EngineSnapshot
 {
