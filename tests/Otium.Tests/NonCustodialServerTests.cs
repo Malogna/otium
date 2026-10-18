@@ -170,7 +170,7 @@ public sealed class NonCustodialServerTests : IDisposable
         // Quantus would need a second (Quantus) wallet; everything is paid to the one payout address, so it isn't offered.
         Assert.Null(policy.For("quantus"));
         Assert.DoesNotContain(policy.Routes, r => r.Kind == GpuRoutes.KryptexAddress);
-        Assert.Equal(["NVIDIA"], pearl.OnlyGpus); // unMineable's PearlPow is NVIDIA-only; Pearl's fork isn't active
+        Assert.Null(pearl.OnlyGpus); // AMD cards try Pearl too (failover if unMineable rejects them); the fork isn't active
     }
 
     [Fact]
