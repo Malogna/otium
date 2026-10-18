@@ -7,7 +7,7 @@ GitHub release. That release is also the auto-update feed: installed copies read
 
 ## Before the first release (v0.1.0)
 
-1. **Deploy the server** behind HTTPS (see "Running the server" and "Before launch" in the README) and check
+1. **Deploy the server** behind HTTPS (see "Running the server" and "Before launch" in [technical.md](technical.md)) and check
    `https://<server>/healthz` answers `ok`.
 2. **Set the repository variable `OTIUM_SERVER_URL`** to that URL. It's baked into the app at build time
    (`-p:OtiumServerUrl`). The workflow refuses to release without it, because a build without it talks to

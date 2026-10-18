@@ -44,7 +44,7 @@ foreach (var variant in new[] { ThemeVariant.Light, ThemeVariant.Dark })
     welcome.QuickStartCommand.Execute(null);
     Pump();
     welcome.Step = WelcomeViewModel.LastStep;
-    Shoot(new WelcomeView { DataContext = welcome }, $"welcome-quick-summary-{theme}", 900, 1500);
+    Shoot(new WelcomeView { DataContext = welcome }, $"welcome-quick-summary-{theme}", 900, 1450);
     welcome.IsQuick = false;
     Shoot(new WelcomeView { DataContext = welcome }, $"welcome-custom-summary-{theme}", 900, 1500);
 
@@ -70,11 +70,11 @@ foreach (var variant in new[] { ThemeVariant.Light, ThemeVariant.Dark })
     results.ShareStatus = "Copied, with your invite code. Paste it anywhere.";
     homeVm.InternetSharing.ShowSuggestion = true;
     homeVm.InternetSharing.ShowConsent = true;
-    Shoot(new HomeView { DataContext = homeVm }, $"home-{theme}", 900, 4200);
+    Shoot(new HomeView { DataContext = homeVm }, $"home-{theme}", 900, 2800);
 
     // Settings.
     var settings = new SettingsViewModel(host);
-    Shoot(new SettingsView { DataContext = settings }, $"settings-{theme}", 900, 4200);
+    Shoot(new SettingsView { DataContext = settings }, $"settings-{theme}", 900, 2650);
 }
 
 // The picture "Save picture" makes.

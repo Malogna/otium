@@ -296,7 +296,8 @@
     const ua = navigator.userAgent;
     const os = /Windows/i.test(ua) ? "Windows" : /Mac OS X|Macintosh/i.test(ua) && !/iPhone|iPad/i.test(ua) ? "macOS" : /Linux/i.test(ua) && !/Android/i.test(ua) ? "Linux" : null;
     if (!os) return;
-    for (const label of $$("[data-download-label]")) label.textContent = `Download for ${os}`;
+    // Windows is the tested platform; the Mac and Linux builds are beta for the first release.
+    for (const label of $$("[data-download-label]")) label.textContent = os === "Windows" ? "Download for Windows" : `Download for ${os} (beta)`;
   }
 
   sky(); dial(); earnings(); reveal(); shiftLine(); spotlights(); platform();

@@ -76,7 +76,7 @@ Edit `.env`. Each setting has a comment; the essentials:
 | `MoneroWallet__*` | Custodial, and only with a wallet RPC for pool addresses (see [Monero wallet](#monero-wallet)) |
 
 Leave optional settings commented out rather than empty: an empty value overrides the default. Values containing `$`
-must be wrapped in single quotes. The README's [Running the server](../README.md#running-the-server) table describes
+must be wrapped in single quotes. The [Running the server](technical.md#running-the-server) table describes
 every setting.
 
 `docker-compose.yml` sets `ReverseProxy__Enabled=true` and `ReverseProxy__KnownProxies__0=172.30.0.10` (Caddy's fixed
