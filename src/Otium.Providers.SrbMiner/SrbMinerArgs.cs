@@ -15,7 +15,8 @@ public sealed record GpuPoolEndpoint(string Host, int Port, bool Tls = false)
 }
 
 /// <summary>How the miner logs in to a pool.</summary>
-public sealed record PoolLogin(GpuPoolEndpoint Pool, string Wallet, string Password)
+/// <param name="Worker">Sent as SRBMiner's --worker when the pool takes the worker name separately (Kryptex's address login).</param>
+public sealed record PoolLogin(GpuPoolEndpoint Pool, string Wallet, string Password, string? Worker = null)
 {
     /// <summary>MoneroOcean: the account's wallet, with the worker and algorithm pinned in the password.</summary>
     public static PoolLogin MoneroOcean(GpuPoolEndpoint pool, string wallet, string worker, GpuAlgorithm algorithm) =>
@@ -24,6 +25,13 @@ public sealed record PoolLogin(GpuPoolEndpoint Pool, string Wallet, string Passw
     /// <summary>Kryptex: "account.worker", so the pool reports this worker's hashrate separately for crediting.</summary>
     public static PoolLogin Kryptex(GpuPoolEndpoint pool, string account, string worker) =>
         new(pool, $"{account}.{SrbMinerArgs.SanitizeWorker(worker)}", "x");
+
+    /// <summary>
+    /// Kryptex without an account: the user's own coin address as the wallet and the worker passed separately, as
+    /// Kryptex's Quantus guide shows ("--wallet qz… --worker …"). Kryptex pays the address in the coin itself.
+    /// </summary>
+    public static PoolLogin KryptexAddress(GpuPoolEndpoint pool, string address, string worker) =>
+        new(pool, address, "x", SrbMinerArgs.SanitizeWorker(worker));
 
     /// <summary>unMineable: "COIN:address.worker#referral", paid to the slice's own target in its coin.</summary>
     public static PoolLogin Unmineable(GpuPoolEndpoint pool, string target, string worker, string? referralCode) =>
@@ -51,6 +59,8 @@ internal static class SrbMinerArgs
         };
         if (login.Pool.Tls)
             args.AddRange(["--tls", "true"]);
+        if (login.Worker is { Length: > 0 } worker)
+            args.AddRange(["--worker", worker]);
 
         if (gpus.All(g => g.Vendor != GpuVendor.Nvidia))
             args.Add("--disable-gpu-nvidia");

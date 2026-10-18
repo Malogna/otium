@@ -12,14 +12,26 @@ public sealed record ReferralStanding(
 /// Decides whose wallet the hardware mines for at a given point in accumulated mining time.
 /// Each cycle is laid out as [user ... | referrer slice | app slice].
 /// </summary>
-public sealed class FeeSchedule(FeePolicy policy, string userWallet, string? appWallet, ReferralStanding standing)
+/// <param name="userQuantus">The user's Quantus target, mined by the graphics card when Quantus pays best; null without one.</param>
+/// <param name="appQuantus">
+/// Otium's Quantus target for its slice. Without one (or in the referrer's slice: referrers register only their main
+/// address), Quantus mined during the slice stays with the user.
+/// </param>
+public sealed class FeeSchedule(
+    FeePolicy policy,
+    string userWallet,
+    string? appWallet,
+    ReferralStanding standing,
+    string? userQuantus = null,
+    string? appQuantus = null)
 {
     public FeePolicy Policy { get; } = policy;
 
     public MiningTarget TargetAt(TimeSpan totalMiningTime, DateTimeOffset now)
     {
         var role = RoleAt(totalMiningTime, now);
-        return new MiningTarget(WalletFor(role), role);
+        var quantus = userQuantus is null ? null : role == PayoutRole.App && appQuantus is not null ? appQuantus : userQuantus;
+        return new MiningTarget(WalletFor(role), role, quantus);
     }
 
     public PayoutRole RoleAt(TimeSpan totalMiningTime, DateTimeOffset now)

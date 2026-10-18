@@ -294,6 +294,48 @@ public sealed class GpuPolicyOptions
 
     /// <summary>Per-algorithm tier overrides ("primary", "free-power-only", "disabled").</summary>
     public Dictionary<string, string> Tiers { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    public PearlForkOptions PearlFork { get; set; } = new();
+}
+
+/// <summary>
+/// Pearl's planned FP8 hard fork (PIP-3, a draft with no activation height in October 2026) whitelists only NVIDIA's
+/// Hopper and Blackwell cards: from its activation height, RTX 20/30/40 and AMD cards can't produce valid work. Once the
+/// fork is active the policy limits pearlhash to <see cref="SupportedGpus"/>, so every other card moves to its next best
+/// coin at the next policy refresh (apps also drop a coin whose shares the pool rejects).
+/// </summary>
+public sealed class PearlForkOptions
+{
+    /// <summary>
+    /// "auto": active once Pearl's chain (as Kryptex Pool reports it) reaches the activation height, taken from
+    /// <see cref="ActivationHeight"/> or else read from PIP-3 as soon as it names one. "active": active now (use when
+    /// the fork is announced without a height, or to test). "off": never.
+    /// </summary>
+    public string Mode { get; set; } = "auto";
+
+    /// <summary>The fork's block height, once announced. Overrides the height read from PIP-3.</summary>
+    public long? ActivationHeight { get; set; }
+
+    /// <summary>PIP-3's source; the watcher looks for an activation height in it.</summary>
+    public string PipUrl { get; set; } = "https://raw.githubusercontent.com/pearl-research-labs/pips/main/PIPS/pip-0003.md";
+
+    /// <summary>How often PIP-3 and Pearl's chain height are checked.</summary>
+    public TimeSpan CheckInterval { get; set; } = TimeSpan.FromHours(1);
+
+    /// <summary>
+    /// Card names (case-insensitive regular expressions) that keep mining Pearl after the fork: Blackwell (RTX 50xx,
+    /// RTX PRO Blackwell, B100/B200/B300, GB10/GB200) and Hopper (H100, H200, H800, GH200). The founders confirmed the
+    /// RTX 5090 and RTX PRO 6000 (Kryptex, 7 October 2026).
+    /// </summary>
+    public string[] SupportedGpus { get; set; } =
+    [
+        @"\bRTX 50\d0\b",
+        @"\bRTX PRO \d{4}\b.*Blackwell",
+        @"\bRTX PRO 6000\b",
+        @"\bG?H(100|200|800)\b",
+        @"\bG?B(100|200|300)\b",
+        @"\bGB10\b",
+    ];
 }
 
 /// <summary>
@@ -320,6 +362,18 @@ public sealed class KryptexOptions
     {
         ["pearlhash"] = new() { Coin = "prl", WhatToMineId = 469, Host = "prl.kryptex.network", Port = 7048 },
         ["quantus"] = new() { Coin = "qtc", WhatToMineId = 473, Host = "qtc.kryptex.network", Port = 7049 },
+    };
+
+    /// <summary>
+    /// Coins apps may mine on Kryptex without an account, to the user's own wallet for the coin (Kryptex pays it
+    /// directly). Offered by every server, custodial or not, to apps whose user added an address for the coin.
+    /// </summary>
+    public bool AddressMining { get; set; } = true;
+
+    /// <summary>Quantus: 0.1 QTC minimum, hourly payouts, 3% fee (October 2026). Port 8049 is the TLS port (7049 plain).</summary>
+    public Dictionary<string, KryptexCoin> AddressCoins { get; set; } = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["quantus"] = new() { Coin = "qtc", WhatToMineId = 473, Host = "qtc.kryptex.network", Port = 8049, Tls = true },
     };
 
     /// <summary>

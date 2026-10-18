@@ -286,3 +286,21 @@ free), with the operator's own Monero address as the payout target (`XMR:42zZ…
 | unMineable | ✅ The XMR address has a `pearlpow` worker with `"referral":"ztjq-jr7s"`, the 0.75% fee, a balance building up (0.00000081 XMR after 5 minutes), threshold 0.03 XMR. Auto-pay is off, as for every new address. |
 | App | ✅ "0.00000302 XMR at MoneroOcean · paid out at 0.003 XMR · plus 0 XMR at unMineable from the graphics card, paid out at 0.03 XMR" (the unMineable figure refreshes every 5 minutes), the warning that auto-pay is off at unMineable for the graphics card's earnings, and "Mining Pearl" at 100.35 TH/s, $3.13/day. |
 | Fixed after the run | The warning's "Open my address page" opened MoneroOcean's page; it now opens the page of the pool the warning is about. |
+
+## Uninstalling with Mysterium's service installed (18 October 2026, 15:10–15:40)
+
+The Windows installer built by `build/package.ps1` from branch `claude/otium-launch-features` (Velopack 1.2.161,
+unsigned, version 0.1.0), installed by double-clicking `Otium.Desktop-win-x64-Setup.exe`, then uninstalled from
+Settings → Apps → Installed apps, as a user would.
+
+| Check | Result |
+|---|---|
+| Service before | ✅ Mysterium 1.39.7 put into the real engines folder and `myst_supervisor.exe -install` run with administrator rights, as internet sharing does: `MysteriumVPNSupervisor` running, `BINARY_PATH_NAME` = `%LOCALAPPDATA%\Otium\engines\myst-1.39.7\myst_supervisor.exe -winservice`. |
+| Admin prompt | ✅ Uninstalling showed Windows' administrator prompt from Otium's uninstall step; approved within the 20 seconds it waits. |
+| Service after | ✅ `sc query MysteriumVPNSupervisor` → 1060 (doesn't exist); its event log source is gone too. |
+| Files | ✅ `%LOCALAPPDATA%\Otium.Desktop` (the app) and `%LOCALAPPDATA%\Otium\engines` (miners and Mysterium) are deleted. Settings, history and logs in `%LOCALAPPDATA%\Otium` stay, by design. No autostart entry is left. |
+| Other Mysterium apps | ✅ The MystNodes Launcher from the Microsoft Store (`MystLauncherHelper2`, already on this PC) kept running: Otium only removes a supervisor service that runs from its own engines folder. |
+
+Testing from an app inside a Windows package container (such as an automation tool installed from the Store) doesn't
+work: its writes to `%LOCALAPPDATA%` go to the container's private copy, which elevated processes and Windows' own
+uninstall list can't see. Install and uninstall by hand from Explorer and Settings instead.

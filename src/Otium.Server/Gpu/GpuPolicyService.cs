@@ -7,10 +7,12 @@ namespace Otium.Server.Gpu;
 /// <summary>
 /// Builds the GPU policy apps follow: every algorithm with its live USD rate, pool route and tier. MoneroOcean's
 /// legacy algorithms default to "free power only" because they lose money at normal electricity prices (Oct 2026);
-/// Kryptex coins (custodial servers only) and unMineable coins are primary while their feed is fresh. Each algorithm
-/// has one route: Kryptex wins over unMineable for the same algorithm, since apps of a custodial server mine Kryptex
-/// for balance accounts. An algorithm whose feed fails or goes stale is disabled automatically, and the operator can
-/// disable any algorithm with <see cref="GpuPolicyOptions.Disabled"/>.
+/// Kryptex account coins (custodial servers only), unMineable coins and Kryptex address-login coins (Quantus, paid to
+/// the user's own Quantus wallet) are primary while their feed is fresh. Each algorithm has one route: Kryptex's account
+/// wins over unMineable and the address login for the same algorithm, since apps of a custodial server mine Kryptex for
+/// balance accounts. An algorithm whose feed fails or goes stale is disabled automatically, the operator can disable
+/// any algorithm with <see cref="GpuPolicyOptions.Disabled"/>, and Pearl is limited to the cards its fork keeps once
+/// <see cref="PearlForkWatcher"/> sees the fork activate.
 /// </summary>
 public sealed class GpuPolicyService(
     IMoneroPoolApi pool,
@@ -21,7 +23,8 @@ public sealed class GpuPolicyService(
     TimeProvider time,
     ILogger<GpuPolicyService> logger,
     IOptions<UnmineableOptions>? unmineableOptions = null,
-    IOptions<CustodyOptions>? custodyOptions = null)
+    IOptions<CustodyOptions>? custodyOptions = null,
+    PearlForkWatcher? pearlFork = null)
 {
     /// <summary>Feed data older than this can't be trusted to price a fast-moving coin.</summary>
     public static readonly TimeSpan MaxFeedAge = TimeSpan.FromHours(2);
@@ -105,6 +108,34 @@ public sealed class GpuPolicyService(
                 routes.Add(new GpuPoolRoute(route, GpuRoutes.Unmineable, coin.Host, coin.Port, null, Tls: true));
                 algorithms.Add(await FeedAlgorithmAsync(algo, coin.WhatToMineId, route, um.FeePercent,
                     coin.Tier == GpuTiers.FreePowerOnly ? GpuTiers.FreePowerOnly : GpuTiers.Primary, now, ct));
+            }
+        }
+
+        // Kryptex's address login: the coin goes to the user's own wallet for it (Quantus), so any server offers it.
+        // Apps only use these routes when their user has added an address for the coin.
+        if (kx.AddressMining)
+        {
+            foreach (var (algo, coin) in kx.AddressCoins)
+            {
+                if (algorithms.Any(a => string.Equals(a.Algorithm, algo, StringComparison.OrdinalIgnoreCase)))
+                    continue;
+                var route = $"{GpuRoutes.KryptexAddress}-{coin.Coin}";
+                routes.Add(new GpuPoolRoute(route, GpuRoutes.KryptexAddress, coin.Host, coin.Port, null, coin.Tls));
+                algorithms.Add(await KryptexAlgorithmAsync(algo, coin, route, now, ct));
+            }
+        }
+
+        // Pearl's FP8 fork: once active, only Hopper and Blackwell cards may mine pearlhash.
+        if (pearlFork is not null)
+        {
+            var fork = await pearlFork.GetAsync(ct);
+            if (fork.Active)
+            {
+                for (var i = 0; i < algorithms.Count; i++)
+                {
+                    if (string.Equals(algorithms[i].Algorithm, "pearlhash", StringComparison.OrdinalIgnoreCase))
+                        algorithms[i] = algorithms[i] with { OnlyGpus = policyOptions.Value.PearlFork.SupportedGpus, Note = $"{fork.Reason}: only Hopper and Blackwell cards can mine it" };
+                }
             }
         }
 

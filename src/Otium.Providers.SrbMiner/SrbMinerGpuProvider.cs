@@ -21,6 +21,8 @@ namespace Otium.Providers.SrbMiner;
 /// A miner that runs but doesn't hash for <see cref="StallTimeout"/> (or exits) has failed: that algorithm is set
 /// aside for a while (longer each time it fails again) and the next best one is tried, so a card that can't mine a
 /// coin, for example because another app holds its memory, doesn't sit at "Starting…" or retry the same coin in a loop.
+/// So has one whose shares the pool mostly rejects (<see cref="RejectedSharesToFail"/>): after a coin's fork (Pearl's
+/// PIP-3 drops consumer cards) the card hashes fine, but none of its work counts.
 /// </summary>
 public sealed class SrbMinerGpuProvider : IComputeProvider
 {
@@ -49,6 +51,14 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
     /// <summary>Set aside for less time when another app holds graphics memory: that usually ends when the app closes.</summary>
     public static readonly TimeSpan LowMemoryCooldown = TimeSpan.FromMinutes(10);
 
+    /// <summary>
+    /// This many rejected shares, with at least <see cref="RejectedShareFraction"/> of all shares rejected, means the
+    /// pool isn't counting the card's work: that algorithm fails over like a stalled one.
+    /// </summary>
+    public const int RejectedSharesToFail = 5;
+
+    public const double RejectedShareFraction = 0.8;
+
     private readonly IMoneroPoolApi _pool;
     private readonly IReadOnlyList<GpuInfo> _gpus;
     private readonly IPowerMeter _meter;
@@ -57,6 +67,7 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
     private readonly TimeProvider _time;
     private readonly GpuPoolEndpoint _endpoint;
     private readonly IUnmineableApi _unmineable;
+    private readonly IKryptexAddressApi _kryptex;
     private readonly string? _referralCode;
     private readonly ProfitSwitcher _switcher;
     private readonly BenchmarkStore _store;
@@ -102,10 +113,12 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         Func<GpuPolicy?>? policy = null,
         Func<GpuInfo, double?>? freeMemoryGb = null,
         IUnmineableApi? unmineable = null,
-        string? referralCode = null)
+        string? referralCode = null,
+        IKryptexAddressApi? kryptex = null)
     {
         _policy = policy ?? (() => null);
         _unmineable = unmineable ?? new UnmineableClient(http);
+        _kryptex = kryptex ?? new KryptexAddressClient(http);
         _referralCode = referralCode;
         _freeMemoryGb = freeMemoryGb ?? (_ => null);
         _pool = pool;
@@ -245,6 +258,13 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
             return new ProviderStatus(hashrate > 0 ? ProviderState.Running : ProviderState.Starting, hashrate, testing + "…", testing, IsCalibrating: true, Problem: _notice);
         }
 
+        if (_process.Shares is { } shares && shares.Rejected >= RejectedSharesToFail && shares.Rejected >= shares.Total * RejectedShareFraction)
+        {
+            return await FailOverAsync(
+                $"the pool rejected {shares.Rejected} of its {shares.Total} shares, so its work wasn't being paid "
+                + "(a change to the coin's rules, such as a fork, can cause this)", ct);
+        }
+
         if (now - _lastHashingAt >= StallTimeout)
         {
             var reason = SrbMinerStats.DescribeProblem(_process.RecentLog)
@@ -345,9 +365,12 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         if (_policy() is { } policy)
         {
             var list = new List<(GpuAlgorithm, AlgorithmQuote)>();
+            var names = _gpus.Select(g => g.Name).ToList();
             foreach (var a in supported)
             {
-                if (policy.For(a.PoolName) is { UsdPerHashPerSecondDay: > 0 } p && Usable(p.Tier, freePower) && policy.Route(p.Route) is not null)
+                // A card the coin no longer accepts (OnlyGpus, e.g. after Pearl's fork) skips it.
+                if (policy.For(a.PoolName) is { UsdPerHashPerSecondDay: > 0 } p && Usable(p.Tier, freePower) && policy.Route(p.Route) is not null
+                    && p.Allows(names))
                     list.Add((a, new AlgorithmQuote(a.PoolName, p.UsdPerHashPerSecondDay, a.DevFeePercent, p.PoolFeePercent)));
             }
             return list;
@@ -367,6 +390,8 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
     {
         if (PayoutRouting.PoolFor(walletAddress) == PayoutPool.Unmineable)
             return await UnmineableClient.GetPayoutBalanceAsync(_unmineable, PayoutTarget.ParseOrNull(walletAddress)!, ct);
+        if (PayoutRouting.PoolFor(walletAddress) == PayoutPool.Kryptex)
+            return await KryptexAddressClient.GetPayoutBalanceAsync(_kryptex, PayoutTarget.ParseAnyOrNull(walletAddress)!, ct);
 
         walletAddress = PayoutRouting.MoneroOceanWallet(walletAddress);
         var stats = await _pool.GetMinerStatsAsync(walletAddress, ct);
@@ -530,8 +555,9 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
     }
 
     /// <summary>
-    /// Kryptex coins log in to the operator's account as "account.worker"; unMineable logs in with the slice's payout
-    /// target and Otium's referral code; MoneroOcean uses the bare Monero wallet.
+    /// Kryptex coins log in to the operator's account as "account.worker", or with the slice's own Quantus wallet;
+    /// unMineable logs in with the slice's payout target and Otium's referral code; MoneroOcean uses the bare Monero
+    /// wallet.
     /// </summary>
     internal PoolLogin LoginFor(GpuAlgorithm algorithm, ProviderRunOptions options)
     {
@@ -539,6 +565,12 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         var route = policy?.For(algorithm.PoolName) is { } p ? policy.Route(p.Route) : null;
         if (route is { Kind: GpuRoutes.Kryptex, User.Length: > 0 })
             return PoolLogin.Kryptex(new GpuPoolEndpoint(route.Host, route.Port, route.Tls), route.User!, options.WorkerName);
+        if (route is { Kind: GpuRoutes.KryptexAddress })
+        {
+            if (PayoutTarget.ParseAnyOrNull(options.Target.QuantusTarget) is not { Coin.Symbol: "QTC" } quantus)
+                throw new InvalidOperationException($"{algorithm.PoolName} is paid to your own Quantus wallet, and there's no Quantus address in Settings.");
+            return PoolLogin.KryptexAddress(new GpuPoolEndpoint(route.Host, route.Port, route.Tls), quantus.Address, options.WorkerName);
+        }
         if (route is { Kind: GpuRoutes.Unmineable })
         {
             // Any payout coin works there, Monero included (the app keeps US users off these routes).
