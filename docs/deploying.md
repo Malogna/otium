@@ -39,6 +39,14 @@ Don't add an **AAAA record** unless you also enable IPv6 on the compose network.
 visitors reach Caddy through Docker's userland proxy and all appear to come from one internal address, which breaks
 per-IP rate limits and the "one paid sharer per internet connection" rule for internet sharing.
 
+**Behind Cloudflare (proxied, orange cloud).** This works too, and hides the server's address. Set
+`CADDYFILE=Caddyfile.cloudflare` in `.env` (step 3) and Cloudflare's SSL/TLS mode to **Full (strict)**. Caddy still gets
+its own Let's Encrypt certificate, because Cloudflare passes `/.well-known/acme-challenge/` through to port 80. It takes
+each visitor's address from Cloudflare's `CF-Connecting-IP` header, trusted only from Cloudflare's published ranges
+(listed in that file; update them if Cloudflare adds any). `ACME_EMAIL` isn't needed. That file also redirects
+`www.<domain>` to the bare domain, so point both at the server. Cloudflare's own AAAA records are fine: Cloudflare
+reaches the server over IPv4.
+
 ## 3. Get the code and configure it
 
 ```bash
