@@ -50,7 +50,12 @@ public partial class InternetSharingViewModel : ViewModelBase
     [ObservableProperty] public partial bool ShowSuggestion { get; set; }
     [ObservableProperty] public partial bool ShowConsent { get; set; }
     [ObservableProperty] public partial bool IsBusy { get; set; }
-    [ObservableProperty] public partial string EstimateText { get; set; } = "";
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(EstimateSentence))]
+    public partial string EstimateText { get; set; } = "";
+
+    /// <summary>"Typically …." for the suggestion card, or nothing when there's no estimate.</summary>
+    public string EstimateSentence => EstimateText.Length > 0 ? $"Typically {EstimateText}." : "";
     [ObservableProperty] public partial string StatusText { get; set; } = "";
     [ObservableProperty] public partial string? Error { get; set; }
     [ObservableProperty] public partial bool OnlyWhenAway { get; set; }

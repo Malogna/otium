@@ -64,6 +64,32 @@ public sealed class AppSettings
     /// </summary>
     public bool KeepAwakeWhileEarning { get; set; } = true;
 
+    /// <summary>
+    /// NVIDIA cards mine with their power limit lowered (see <see cref="Gpu.GpuEfficiency"/>). Off until the user turns it
+    /// on in Settings, which asks Windows for administrator permission once.
+    /// </summary>
+    public bool GpuEfficiencyMode { get; set; }
+
+    /// <summary>
+    /// "Earn while I browse": the graphics card also mines while the user is at the computer doing ordinary things
+    /// (never during full-screen apps or games, or on battery). Off unless the user turns it on.
+    /// </summary>
+    public bool EarnWhileBrowsing { get; set; }
+
+    /// <summary>Desktop notifications for earnings, payouts and problems. On by default; one switch in Settings.</summary>
+    public bool NotificationsEnabled { get; set; } = true;
+
+    /// <summary>The pool's "paid" total last seen, per pool and coin, so a new payout is noticed once.</summary>
+    public Dictionary<string, double> NotifiedPaid { get; set; } = [];
+
+    /// <summary>How many internet sharing payouts were already announced.</summary>
+    public int NotifiedSharingPayouts { get; set; }
+
+    /// <summary>The month ("2026-10") whose report was already announced.</summary>
+    public string? MonthlyNotified { get; set; }
+
+    public DateTimeOffset? ProblemNotifiedAt { get; set; }
+
     public int IdleMinutes { get; set; } = 3;
 
     /// <summary>Stop automatically when estimated earnings don't cover the electricity.</summary>

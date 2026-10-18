@@ -34,6 +34,11 @@ public sealed class XmrigProvider : IComputeProvider, IPausableProvider
     private int _httpPort;
     private string _accessToken = "";
     private DateTimeOffset _startedAt;
+    private (string Host, int Port)? _poolAddress;
+    private readonly Func<string, int, CancellationToken, Task<string?>> _poolBlocked;
+
+    /// <summary>How long the miner may stay unconnected before Otium checks whether something blocks the pool.</summary>
+    public static readonly TimeSpan ConnectGrace = TimeSpan.FromMinutes(2);
 
     /// <param name="referralCode">Otium's unMineable referral code, added to unMineable logins.</param>
     public XmrigProvider(
@@ -43,8 +48,10 @@ public sealed class XmrigProvider : IComputeProvider, IPausableProvider
         PoolEndpoint? endpoint = null,
         IUnmineableApi? unmineable = null,
         string? referralCode = null,
-        bool unitedStates = false)
+        bool unitedStates = false,
+        Func<string, int, CancellationToken, Task<string?>>? poolBlocked = null)
     {
+        _poolBlocked = poolBlocked ?? ((_, _, _) => Task.FromResult<string?>(null));
         _unitedStates = unitedStates;
         _http = http;
         _pool = pool;
@@ -97,7 +104,9 @@ public sealed class XmrigProvider : IComputeProvider, IPausableProvider
 
         _httpPort = FreeLoopbackPort();
         _accessToken = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(16));
-        await File.WriteAllTextAsync(ConfigPath, XmrigConfig.Build(options, _endpoint, _httpPort, _accessToken, _referralCode, unitedStates: _unitedStates), ct);
+        var config = XmrigConfig.Build(options, _endpoint, _httpPort, _accessToken, _referralCode, unitedStates: _unitedStates);
+        _poolAddress = XmrigConfig.PoolAddress(config);
+        await File.WriteAllTextAsync(ConfigPath, config, ct);
 
         var startInfo = new ProcessStartInfo(binary)
         {
@@ -176,6 +185,12 @@ public sealed class XmrigProvider : IComputeProvider, IPausableProvider
             response.EnsureSuccessStatusCode();
             var summary = XmrigSummary.Parse(await response.Content.ReadAsStringAsync(ct));
             var message = summary.PoolConnected ? null : "Connecting to the pool…";
+            if (!summary.PoolConnected && DateTimeOffset.UtcNow - _startedAt >= ConnectGrace && _poolAddress is { } pool
+                && await _poolBlocked(pool.Host, pool.Port, ct) is { } blocked)
+            {
+                var problem = $"Processor isn't mining: {blocked}.";
+                return new ProviderStatus(ProviderState.Starting, 0, problem, Problem: problem);
+            }
             return new ProviderStatus(summary.HashrateHps > 0 ? ProviderState.Running : ProviderState.Starting, summary.HashrateHps, message);
         }
         catch (Exception e) when (e is HttpRequestException or OperationCanceledException or System.Text.Json.JsonException && !ct.IsCancellationRequested)

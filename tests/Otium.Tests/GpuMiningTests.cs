@@ -269,10 +269,86 @@ public sealed class SrbMinerProviderTests : IDisposable
         _provider = CreateProvider(policy: null, pricePerKwh: 0, benchmarks: "bench.json");
     }
 
-    private SrbMinerGpuProvider CreateProvider(Func<GpuPolicy?>? policy, double pricePerKwh, string? benchmarks = null, Func<GpuInfo, double?>? freeMemoryGb = null) =>
+    private SrbMinerGpuProvider CreateProvider(Func<GpuPolicy?>? policy, double pricePerKwh, string? benchmarks = null, Func<GpuInfo, double?>? freeMemoryGb = null,
+        IUnmineableApi? unmineable = null, Func<string, int, CancellationToken, Task<string?>>? poolBlocked = null) =>
         new(new HttpClient(), _pool, Path.Combine(_dir, "engines"), Path.Combine(_dir, benchmarks ?? $"bench-{Guid.NewGuid():N}.json"),
             [Rtx3080], _meter, () => pricePerKwh, _factory, _time,
-            asset: SrbMinerRelease.For(OSPlatform.Windows, Architecture.X64), policy: policy, freeMemoryGb: freeMemoryGb);
+            asset: SrbMinerRelease.For(OSPlatform.Windows, Architecture.X64), policy: policy, freeMemoryGb: freeMemoryGb, unmineable: unmineable,
+            poolBlocked: poolBlocked);
+
+    [Fact]
+    public async Task A_pool_blocked_on_this_computer_is_explained_instead_of_failing_the_coin()
+    {
+        string? blocked = null;
+        var provider = CreateProvider(() => UnmineablePearlPolicy(), pricePerKwh: 0,
+            poolBlocked: (host, port, _) => Task.FromResult(host == "pearlpow.unmineable.com" ? blocked : null));
+        var options = new ProviderRunOptions(new MiningTarget(TestAddresses.Usdt(8), PayoutRole.User), "ot1234abcdg", 100);
+        await provider.StartAsync(options, CancellationToken.None);
+        await RunForProvider(provider, SrbMinerGpuProvider.BenchmarkDuration * 2 + TimeSpan.FromSeconds(10));
+        Assert.Equal("pearlhash", provider.CurrentAlgorithm);
+
+        // The miner can't reach unMineable: Malwarebytes is blocking it.
+        blocked = "something on this computer blocks the mining pool (unmineable.com)";
+        _factory.Launches[^1].Process.Hashrate = 0;
+        var status = await RunForProvider(provider, SrbMinerGpuProvider.StallTimeout + TimeSpan.FromSeconds(10));
+        Assert.Equal("Graphics card isn't mining: something on this computer blocks the mining pool (unmineable.com).", status.Problem);
+        Assert.Equal("pearlhash", provider.CurrentAlgorithm); // not failed over: Pearl isn't the problem
+        Assert.Null(provider.SetAsideReason("pearlhash"));
+    }
+
+    /// <summary>unMineable's view of the address: one account, and whatever workers the test says.</summary>
+    private sealed class CreditingUnmineable : IUnmineableApi
+    {
+        public List<UnmineableWorker> Workers { get; } = [];
+
+        public Task<UnmineableAddress> GetAddressAsync(Otium.Core.Wallets.PayoutTarget target, CancellationToken ct) =>
+            Task.FromResult(new UnmineableAddress("uuid-1", 0, 0, 1.5m, true, true, "TRX", [], null));
+
+        public Task<UnmineableStats> GetStatsAsync(string uuid, CancellationToken ct) => throw new NotSupportedException();
+
+        public Task<IReadOnlyList<UnmineableWorker>> GetWorkersAsync(string uuid, CancellationToken ct) =>
+            Task.FromResult<IReadOnlyList<UnmineableWorker>>(Workers.ToList());
+
+        public Task<IReadOnlyList<UnmineablePayment>> GetPaymentsAsync(string uuid, CancellationToken ct) => throw new NotSupportedException();
+
+        public Task<UnmineableReferrals> GetReferralsAsync(string uuid, CancellationToken ct) => throw new NotSupportedException();
+    }
+
+    private static GpuPolicy UnmineablePearlPolicy() => new(
+        DateTimeOffset.UtcNow,
+        [
+            new GpuAlgorithmPolicy("pearlhash", GpuTiers.Primary, "unmineable-pearl", 3.4e-14, 0.75),
+            new GpuAlgorithmPolicy("autolykos2", GpuTiers.FreePowerOnly, GpuRoutes.MoneroOcean, 2.43e-12 * 545, 1),
+        ],
+        [
+            new GpuPoolRoute("unmineable-pearl", GpuRoutes.Unmineable, "pearlpow.unmineable.com", 443, null, Tls: true),
+            new GpuPoolRoute(GpuRoutes.MoneroOcean, GpuRoutes.MoneroOcean, "gulf.moneroocean.stream", 10128, null),
+        ]);
+
+    [Fact]
+    public async Task Work_the_pool_doesnt_credit_is_noticed_and_the_card_moves_on()
+    {
+        var unmineable = new CreditingUnmineable();
+        var provider = CreateProvider(() => UnmineablePearlPolicy(), pricePerKwh: 0, unmineable: unmineable);
+        var options = new ProviderRunOptions(new MiningTarget(TestAddresses.Usdt(7), PayoutRole.User), "ot1234abcdg", 100);
+        await provider.StartAsync(options, CancellationToken.None);
+        await RunForProvider(provider, SrbMinerGpuProvider.BenchmarkDuration * 2 + TimeSpan.FromSeconds(10)); // both tested
+        Assert.Equal("pearlhash", provider.CurrentAlgorithm);
+
+        // Credited: the worker shows a calculated hashrate, so mining carries on past the check.
+        unmineable.Workers.Add(new UnmineableWorker("pearlpow", "ot1234abcdg", true, 9.5e13, 1.04e14));
+        var status = await RunForProvider(provider, SrbMinerGpuProvider.CreditGrace + TimeSpan.FromMinutes(1));
+        Assert.Equal("pearlhash", provider.CurrentAlgorithm);
+        Assert.Null(status.Problem);
+
+        // Not credited (the worker is listed but nothing is counted): set aside, next coin, and the app says why.
+        unmineable.Workers.Clear();
+        unmineable.Workers.Add(new UnmineableWorker("pearlpow", "ot1234abcdg", true, 0, 1.04e14));
+        status = await RunForProvider(provider, SrbMinerGpuProvider.CreditCheckEvery + TimeSpan.FromMinutes(1));
+        Assert.Equal("autolykos2", provider.CurrentAlgorithm);
+        Assert.NotNull(provider.SetAsideReason("pearlhash"));
+        Assert.Contains("unMineable hasn't counted any of its work", provider.SetAsideReason("pearlhash"));
+    }
 
     /// <summary>SRBMiner 3.7.6's own output from the real run (docs/real-mining-run.md) when kawpow's dataset didn't fit.</summary>
     private static readonly string[] RealDevFeeThenEpochFailure =

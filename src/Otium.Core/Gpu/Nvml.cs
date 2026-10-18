@@ -19,6 +19,9 @@ public sealed class Nvml : IDisposable
     private readonly GetNameDelegate _getName;
     private readonly GetMemoryDelegate _getMemory;
     private readonly GetPowerDelegate _getPower;
+    private readonly GetPowerDelegate? _getDefaultLimit;
+    private readonly GetConstraintsDelegate? _getConstraints;
+    private readonly SetLimitDelegate? _setLimit;
     private readonly Lock _lock = new();
     private bool _disposed;
 
@@ -29,6 +32,8 @@ public sealed class Nvml : IDisposable
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetNameDelegate(IntPtr device, byte[] name, uint length);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetMemoryDelegate(IntPtr device, out MemoryInfo memory);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetPowerDelegate(IntPtr device, out uint milliwatts);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetConstraintsDelegate(IntPtr device, out uint minMilliwatts, out uint maxMilliwatts);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int SetLimitDelegate(IntPtr device, uint milliwatts);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct MemoryInfo
@@ -48,6 +53,10 @@ public sealed class Nvml : IDisposable
         _getName = Load<GetNameDelegate>("nvmlDeviceGetName");
         _getMemory = Load<GetMemoryDelegate>("nvmlDeviceGetMemoryInfo");
         _getPower = Load<GetPowerDelegate>("nvmlDeviceGetPowerUsage");
+        // Power limits: in every current driver, but optional so an old one still gives names and power.
+        _getDefaultLimit = TryLoad<GetPowerDelegate>("nvmlDeviceGetPowerManagementDefaultLimit");
+        _getConstraints = TryLoad<GetConstraintsDelegate>("nvmlDeviceGetPowerManagementLimitConstraints");
+        _setLimit = TryLoad<SetLimitDelegate>("nvmlDeviceSetPowerManagementLimit");
         if (_init() != Success)
             throw new InvalidOperationException("nvmlInit failed");
     }
@@ -132,6 +141,34 @@ public sealed class Nvml : IDisposable
             return any ? total : null;
         }
     }
+
+    /// <summary>
+    /// Sets every NVIDIA card's power limit to <paramref name="percent"/>% of its default (never below the card's own
+    /// minimum), or back to the default with 100. Needs administrator rights. Returns how many cards were set.
+    /// </summary>
+    public int SetPowerLimitPercent(int percent)
+    {
+        lock (_lock)
+        {
+            if (_disposed || _getDefaultLimit is null || _setLimit is null || _getCount(out var count) != Success)
+                return 0;
+            var set = 0;
+            for (uint i = 0; i < count; i++)
+            {
+                if (_getHandle(i, out var device) != Success || _getDefaultLimit(device, out var defaultMw) != Success)
+                    continue;
+                var target = (uint)(defaultMw * Math.Clamp(percent, 1, 100) / 100.0);
+                if (_getConstraints is not null && _getConstraints(device, out var min, out var max) == Success)
+                    target = Math.Clamp(target, min, max);
+                if (_setLimit(device, target) == Success)
+                    set++;
+            }
+            return set;
+        }
+    }
+
+    private T? TryLoad<T>(string export) where T : Delegate =>
+        NativeLibrary.TryGetExport(_library, export, out var address) ? Marshal.GetDelegateForFunctionPointer<T>(address) : null;
 
     private T Load<T>(string export) where T : Delegate =>
         Marshal.GetDelegateForFunctionPointer<T>(NativeLibrary.GetExport(_library, export));

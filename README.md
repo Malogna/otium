@@ -54,6 +54,15 @@ this computer actually earns once there is a day of history.
 Everything technical lives under **Advanced**:
 - Details per device, including GPU algorithm and speed, power draw, and profit per day.
 - CPU usage, the idle delay, your electricity price, and switching devices on or off.
+- "Efficiency mode for my graphics card" (Windows, NVIDIA): while the card mines, its power limit drops to 70% of the
+  default (NVML), and it's back at full power the moment mining stops, so games aren't affected. One administrator
+  prompt creates two scheduled tasks (`\Otium\GPU power cap` / `restore`, run with highest privileges, never on a
+  schedule) that Otium starts without further prompts; uninstalling removes them.
+- "Let my graphics card earn while I browse" (Windows, opt-in): the card also mines while the user does ordinary
+  things at the computer. Windows' own full-screen signal (SHQueryUserNotificationState) stops it the moment a game or
+  full-screen app starts, and it never runs on battery. The processor isn't affected.
+- Desktop notifications (on by default, one switch): "While you were away: $0.84", a payout the pool sent, internet
+  sharing paid out, last month's report, and a pool that something on the computer blocks (at most twice a day).
 - "Speed up processor mining" (Windows): one administrator prompt gives your account the "Lock pages in memory" right,
   so XMRig can use large memory pages (XMRig reports up to 50% faster RandomX, depending on the processor). It applies
   from your next sign-in.
@@ -412,6 +421,15 @@ bandwidth partner see what they need to do their part; [docs/privacy.md](docs/pr
 - The app then stops earning and internet sharing, forgets the account, invite and device secret, turns off
   start-at-sign-in and shows the welcome screen. Starting again creates a new, empty account.
 
+**Is the work paid?** After 90 minutes on a coin, the graphics card asks unMineable's public API whether its worker
+has a counted ("calculated") hashrate; if not, the coin is set aside like any failure and the card mines the next one.
+This is what confirms AMD cards on Pearl on real hardware.
+
+**Blocked pools.** When a miner can't reach its pool for a couple of minutes, Otium opens a TCP connection to the pool
+and to api.github.com. Pool unreachable but the internet fine means something on the computer blocks the pool (antivirus
+web protection: Malwarebytes flags unmineable.com and moneroocean.stream), so the app names the active antivirus
+(Windows Security Center) and says to allow the pool's site, instead of failing the coin over.
+
 ## Building the desktop app
 
 You need the .NET 10 SDK. On this machine it's installed per-user, so add it to `PATH` for the session first:
@@ -455,6 +473,12 @@ Sign-in codes are printed in the console. Closing the app window stops everythin
 Operator dashboard while it runs: http://localhost:5080/admin (token `dev`). Or the raw summary:
 `curl -H "X-Admin-Token: dev" http://localhost:5080/admin/summary`. Custodial, it compares what users were credited
 against what the simulated pool paid, which is a quick check that crediting is right.
+
+### Screenshots without opening a window
+
+`dotnet run --project tools/Otium.Screenshots -- <folder>` draws the welcome steps, Home (with every result card) and
+Settings in light and dark, plus the share picture, into PNGs (Avalonia headless with Skia). It uses a temporary data
+folder (`OTIUM_HOME`) and simulated miners, so it never touches a real install.
 
 ### Running the app on its own
 

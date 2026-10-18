@@ -36,6 +36,8 @@
                                Text="The miner pauses instead of closing, so it earns again the moment you step away. It stops using the processor at once, but keeps about 2.5 GB of memory reserved for up to 10 minutes." />
                 </StackPanel>
                 <ToggleSwitch IsChecked="{Binding StartWithSystem}" OnContent="Start Otium when I sign in" OffContent="Start Otium when I sign in" />
+                <ToggleSwitch IsChecked="{Binding NotificationsEnabled}"
+                              OnContent="Notify me about earnings, payouts and problems" OffContent="Notify me about earnings, payouts and problems" />
                 <StackPanel Spacing="2">
                     <ToggleSwitch IsChecked="{Binding ShareEarningsStats}"
                                   OnContent="Help show what PCs really earn" OffContent="Help show what PCs really earn" />
@@ -57,6 +59,20 @@
                 </StackPanel>
                 <ToggleSwitch IsVisible="{Binding HasGpu}" IsChecked="{Binding UseGpu}"
                               OnContent="Earn with my graphics card" OffContent="Earn with my graphics card" />
+                <StackPanel Spacing="2" IsVisible="{Binding BrowsingSupported}">
+                    <ToggleSwitch IsChecked="{Binding EarnWhileBrowsing}"
+                                  OnContent="Let my graphics card earn while I browse" OffContent="Let my graphics card earn while I browse" />
+                    <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap"
+                               Text="The graphics card also mines while you're at the computer doing ordinary things like browsing, documents or videos in a window. It stops the moment a game or any full-screen app starts, and never on battery. You may notice the computer is a little less smooth, and the fans may run." />
+                </StackPanel>
+                <StackPanel Spacing="2" IsVisible="{Binding GpuEfficiencySupported}">
+                    <ToggleSwitch IsChecked="{Binding GpuEfficiencyMode}" IsEnabled="{Binding !GpuEfficiencyBusy}"
+                                  OnContent="Efficiency mode for my graphics card" OffContent="Efficiency mode for my graphics card" />
+                    <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap"
+                               Text="While it mines, the card runs at 70% of its usual power limit: it mines a little slower but uses much less electricity, so you keep more. Back to full power the moment mining stops, so games aren't affected. Windows asks for permission once." />
+                    <TextBlock Classes="good" FontSize="12.5" TextWrapping="Wrap" Text="{Binding GpuEfficiencyMessage}"
+                               IsVisible="{Binding GpuEfficiencyMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                </StackPanel>
                 <TextBlock Classes="muted" Text="{Binding GpuSummary}" TextWrapping="Wrap" />
 
                 <StackPanel Spacing="10" IsVisible="{Binding HasGpu}">
