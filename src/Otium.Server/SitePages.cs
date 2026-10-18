@@ -27,7 +27,8 @@ public sealed class SiteOptions
 /// <param name="UsdPerDay">Gross from the live GPU policy, less the miner's, the pool's and Otium's fees.</param>
 public sealed record CardCoin(string Coin, double UsdPerDay, double Watts, string? Note);
 
-public sealed record CardEarnings(string Id, string Name, string Detail, IReadOnlyList<CardCoin> Coins);
+/// <param name="Group">The card's series, for grouping the list ("RTX 40 series").</param>
+public sealed record CardEarnings(string Id, string Name, string Detail, IReadOnlyList<CardCoin> Coins, string Group = "");
 
 /// <summary>
 /// The public website: the front page that ads and invite links lead to, and the operator's legal pages. The front page
@@ -42,11 +43,35 @@ internal static class SitePages
     /// <summary>The electricity price the page opens with, in $/kWh (the slider changes it).</summary>
     public const double DefaultPricePerKwh = 0.15;
 
-    /// <summary>Hours a day the estimate assumes the computer is left alone (nights plus some of the day).</summary>
-    public const int DefaultHoursAway = 12;
+    /// <summary>Hours a day the estimate assumes the computer is left alone: nights and a working day.</summary>
+    public const int DefaultHoursAway = 16;
 
-    /// <summary>The card the estimate opens with: a typical gaming PC's.</summary>
-    public const string TypicalCard = "rtx3060";
+    /// <summary>The card the estimate opens with.</summary>
+    public const string TypicalCard = "rtx4090";
+
+    /// <summary>Cards offered as one-click chips above the full list.</summary>
+    public static readonly string[] QuickCards = ["rtx4090", "rtx5090", "rtx4070", "rtx3080", "rtx3060"];
+
+    /// <summary>
+    /// The electricity price the page opens with for a visitor: the typical household price in their country (the same
+    /// table the app starts from), from Cloudflare's CF-IPCountry header, or <see cref="DefaultPricePerKwh"/> without one.
+    /// </summary>
+    public static (double PricePerKwh, string? Country) PriceFor(string? countryCode)
+    {
+        var code = countryCode?.Trim().ToUpperInvariant();
+        if (code is not { Length: 2 } || code is "XX" or "T1")
+            return (DefaultPricePerKwh, null);
+        string name;
+        try
+        {
+            name = new RegionInfo(code).EnglishName;
+        }
+        catch (ArgumentException)
+        {
+            name = code;
+        }
+        return (Core.Power.ElectricityPrices.ForCountry(code), name);
+    }
 
     /// <summary>A card's best coin at a price and hours away: per day and per 30-day month, after fees and electricity.</summary>
     public readonly record struct CardEstimate(string Card, string Coin, string? Note, double Day, double Month);
@@ -73,18 +98,49 @@ internal static class SitePages
     private static string UsdWhole(double value) => "$" + Math.Round(value).ToString("0", CultureInfo.InvariantCulture);
 
     /// <summary>
-    /// Typical tuned speeds and power from WhatToMine's card pages (October 2026): Pearl in TH/s, Quantus in MH/s, watts.
-    /// AMD cards can't mine Pearl on unMineable, and sources disagree by about 2× on AMD's Quantus speed, so it takes a
-    /// middle figure.
+    /// Typical tuned speeds and power from WhatToMine's card pages (18 October 2026): Pearl in TH/s and Quantus in MH/s,
+    /// each with its watts; 0 where WhatToMine lists none. Pearl needs 8 GB of graphics memory in SRBMiner, so 6 GB cards
+    /// mine only Quantus. AMD cards can't mine Pearl on unMineable and WhatToMine lists no Quantus speed for them; the
+    /// RX 6700 XT takes the middle of Kryptex's and hashrate.no's figures, which differ by about 2×.
     /// </summary>
-    private static readonly (string Id, string Name, string Detail, double PearlTh, double PearlW, double QuantusMh, double QuantusW)[] Cards =
+    private static readonly (string Id, string Name, string Group, int MemoryGb, double PearlTh, double PearlW, double QuantusMh, double QuantusW)[] Cards =
     [
-        ("rtx3060", "RTX 3060", "NVIDIA · 12 GB", 41, 100, 155, 70),
-        ("rtx3080", "RTX 3080", "NVIDIA · 10 GB", 100, 240, 380, 160),
-        ("rtx4070", "RTX 4070", "NVIDIA · 12 GB", 97, 150, 410, 140),
-        ("rtx4090", "RTX 4090", "NVIDIA · 24 GB", 310, 400, 880, 270),
-        ("rx6700xt", "RX 6700 XT", "AMD · 12 GB", 0, 0, 130, 90),
+        ("rtx5090", "RTX 5090", "RTX 50 series", 32, 370, 520, 0, 0),
+        ("rtx5080", "RTX 5080", "RTX 50 series", 16, 195, 250, 760, 230),
+        ("rtx5070ti", "RTX 5070 Ti", "RTX 50 series", 16, 165, 220, 615, 200),
+        ("rtx5070", "RTX 5070", "RTX 50 series", 12, 110, 160, 430, 150),
+        ("rtx5060ti", "RTX 5060 Ti", "RTX 50 series", 16, 90, 130, 300, 120),
+        ("rtx5060", "RTX 5060", "RTX 50 series", 8, 66, 100, 230, 110),
+        ("rtx4090", "RTX 4090", "RTX 40 series", 24, 310, 400, 880, 270),
+        ("rtx4080super", "RTX 4080 Super", "RTX 40 series", 16, 175, 270, 715, 260),
+        ("rtx4080", "RTX 4080", "RTX 40 series", 16, 168, 260, 690, 250),
+        ("rtx4070tisuper", "RTX 4070 Ti Super", "RTX 40 series", 16, 144, 220, 590, 220),
+        ("rtx4070ti", "RTX 4070 Ti", "RTX 40 series", 12, 124, 210, 540, 190),
+        ("rtx4070super", "RTX 4070 Super", "RTX 40 series", 12, 122, 200, 450, 180),
+        ("rtx4070", "RTX 4070", "RTX 40 series", 12, 97, 150, 410, 140),
+        ("rtx4060ti", "RTX 4060 Ti", "RTX 40 series", 8, 74, 110, 300, 100),
+        ("rtx4060", "RTX 4060", "RTX 40 series", 8, 52, 100, 210, 80),
+        ("rtx3090ti", "RTX 3090 Ti", "RTX 30 series", 24, 135, 330, 0, 0),
+        ("rtx3090", "RTX 3090", "RTX 30 series", 24, 130, 320, 460, 220),
+        ("rtx3080ti", "RTX 3080 Ti", "RTX 30 series", 12, 119, 300, 450, 210),
+        ("rtx3080", "RTX 3080", "RTX 30 series", 10, 100, 240, 380, 160),
+        ("rtx3070ti", "RTX 3070 Ti", "RTX 30 series", 8, 76, 200, 260, 120),
+        ("rtx3070", "RTX 3070", "RTX 30 series", 8, 68, 150, 255, 110),
+        ("rtx3060ti", "RTX 3060 Ti", "RTX 30 series", 8, 59, 140, 190, 80),
+        ("rtx3060", "RTX 3060", "RTX 30 series", 12, 41, 100, 155, 70),
+        ("rtx3050", "RTX 3050", "RTX 30 series", 8, 22, 90, 95, 60),
+        ("rtx2080ti", "RTX 2080 Ti", "RTX 20 series", 11, 90, 220, 340, 170),
+        ("rtx2080super", "RTX 2080 Super", "RTX 20 series", 8, 70, 200, 230, 100),
+        ("rtx2080", "RTX 2080", "RTX 20 series", 8, 65, 190, 230, 90),
+        ("rtx2070super", "RTX 2070 Super", "RTX 20 series", 8, 60, 160, 0, 0),
+        ("rtx2070", "RTX 2070", "RTX 20 series", 8, 51, 150, 180, 90),
+        ("rtx2060super", "RTX 2060 Super", "RTX 20 series", 8, 38, 100, 170, 90),
+        ("rtx2060", "RTX 2060", "RTX 20 series", 6, 37, 100, 140, 80),
+        ("rx6700xt", "RX 6700 XT", "AMD Radeon", 12, 0, 0, 130, 90),
     ];
+
+    /// <summary>SRBMiner's graphics memory floor for Pearl (GpuAlgorithms in the app).</summary>
+    private const int PearlMinMemoryGb = 8;
 
     /// <summary>What each example card earns per coin today, from the live policy; empty when prices are unavailable.</summary>
     public static IReadOnlyList<CardEarnings> Earnings(GpuPolicy? policy, FeePolicy fees)
@@ -98,12 +154,12 @@ internal static class SitePages
         foreach (var c in Cards)
         {
             var coins = new List<CardCoin>();
-            if (pearl is { } p && c.PearlTh > 0 && p.Allows([$"NVIDIA GeForce {c.Name}"]))
+            if (pearl is { } p && c.PearlTh > 0 && c.MemoryGb >= PearlMinMemoryGb && p.Allows([$"NVIDIA GeForce {c.Name}"]))
                 coins.Add(new("Pearl", c.PearlTh * 1e12 * p.UsdPerHashPerSecondDay * 0.98 * (1 - p.PoolFeePercent / 100) * otium, c.PearlW, "paid in your coin"));
             if (quantus is { } q && c.QuantusMh > 0)
                 coins.Add(new("Quantus", c.QuantusMh * 1e6 * q.UsdPerHashPerSecondDay * 0.975 * (1 - q.PoolFeePercent / 100) * otium, c.QuantusW, "with a Quantus wallet"));
             if (coins.Count > 0)
-                list.Add(new(c.Id, c.Name, c.Detail, coins));
+                list.Add(new(c.Id, c.Name, $"{(c.Id.StartsWith("rx", StringComparison.Ordinal) ? "AMD" : "NVIDIA")} · {c.MemoryGb} GB", coins, c.Group));
         }
         return list;
 
@@ -163,7 +219,7 @@ internal static class SitePages
     /// <param name="pricesAt">When the GPU prices were last refreshed.</param>
     /// <param name="legalLinks">The legal pages that exist ("privacy", "terms").</param>
     public static string Home(FeePolicy fees, string? downloadUrl, IEnumerable<string> legalLinks,
-        IReadOnlyList<CardEarnings>? earnings = null, DateTimeOffset? pricesAt = null)
+        IReadOnlyList<CardEarnings>? earnings = null, DateTimeOffset? pricesAt = null, string? visitorCountry = null)
     {
         earnings ??= [];
         var download = E(downloadUrl ?? "#");
@@ -198,9 +254,13 @@ internal static class SitePages
         }).Replace("</", "<\\/", StringComparison.Ordinal);
         var asOf = pricesAt is { } at ? at.UtcDateTime.ToString("d MMMM yyyy, HH:mm 'UTC'", CultureInfo.InvariantCulture) : null;
         var typical = earnings.FirstOrDefault(c => c.Id == TypicalCard) ?? earnings.FirstOrDefault();
-        var estimate = typical is null ? null : Estimate(typical, DefaultHoursAway, DefaultPricePerKwh);
-        var chips = string.Concat(earnings.Select(c =>
+        var (price, country) = PriceFor(visitorCountry);
+        var priceText = price.ToString("0.00", CultureInfo.InvariantCulture);
+        var estimate = typical is null ? null : Estimate(typical, DefaultHoursAway, price);
+        var chips = string.Concat(QuickCards.Select(id => earnings.FirstOrDefault(c => c.Id == id)).OfType<CardEarnings>().Select(c =>
             $"""<button type="button" class="chip" data-card="{c.Id}" aria-pressed="{(c == typical ? "true" : "false")}">{E(c.Name)}<small>{E(c.Detail)}</small></button>"""));
+        var options = string.Concat(earnings.GroupBy(c => c.Group).Select(g =>
+            $"""<optgroup label="{E(g.Key)}">{string.Concat(g.Select(c => $"""<option value="{c.Id}"{(c == typical ? " selected" : "")}>{E(c.Name)} · {E(c.Detail)}</option>"""))}</optgroup>"""));
         var estimator = typical is null || estimate is null
             ? """
                       <div class="est-head"><span class="label">What your PC could earn</span></div>
@@ -211,14 +271,15 @@ internal static class SitePages
                       <div class="est-figure"><span class="est-amount" id="est-month">{UsdWhole(estimate.Value.Month)}</span><span class="est-per">a month</span></div>
                       <p class="est-sub" id="est-sub">{EstimateLine(estimate.Value)}</p>
                       <p class="est-payout" id="est-payout">{PayoutLine(estimate.Value.Day)}</p>
-                      <div class="chips" role="group" aria-label="Graphics card">{chips}</div>
+                      <div class="chips" role="group" aria-label="Popular graphics cards">{chips}</div>
+                      <label class="card-pick"><span>Your graphics card</span><select id="card">{options}</select></label>
                       <div class="est-sliders">
                         <label for="hours">Away from the computer</label>
                         <input id="hours" type="range" min="2" max="24" step="1" value="{DefaultHoursAway}">
                         <output id="hours-out" for="hours">{DefaultHoursAway} h a day</output>
-                        <label for="price">Electricity price</label>
-                        <input id="price" type="range" min="0" max="0.40" step="0.01" value="{DefaultPricePerKwh.ToString("0.00", CultureInfo.InvariantCulture)}">
-                        <output id="price-out" for="price">${DefaultPricePerKwh.ToString("0.00", CultureInfo.InvariantCulture)} / kWh</output>
+                        <label for="price">Electricity price{(country is null ? "" : $"<small>typical in {E(country)}</small>")}</label>
+                        <input id="price" type="range" min="0" max="0.60" step="0.01" value="{priceText}">
+                        <output id="price-out" for="price">${priceText} / kWh</output>
                       </div>
                       <p class="footnote">Today's coin prices from WhatToMine{(asOf is null ? "" : $" ({asOf})")} and typical card speeds. They change daily; the app measures your own computer before you start. The processor adds a few cents a day.</p>
                       <script type="application/json" id="otium-data">{data}</script>
@@ -229,6 +290,8 @@ internal static class SitePages
         const double breakEven = 0.16, top = 0.3;
         var priceBars = string.Concat(day.Select((p, i) =>
             $"""<span class="{(p > breakEven ? "off" : "")}" style="height:{(p / top * 100).ToString("0.#", CultureInfo.InvariantCulture)}%;--i:{i}" title="{i:00}:00 · ${p.ToString("0.000", CultureInfo.InvariantCulture)}/kWh · {(p > breakEven ? "waits" : "mines")}"></span>"""));
+
+        static string Grid(string cls) => $"""<div class="grid {cls}">{string.Concat(Enumerable.Range(0, 16).Select(i => $"""<span style="--r:{i / 4};--c:{i % 4}"></span>"""))}</div>""";
 
         string Seg(string cls, double pct) => $"""<span class="{cls}" style="width:{pct.ToString("0.##", CultureInfo.InvariantCulture)}%"></span>""";
 
@@ -245,6 +308,7 @@ internal static class SitePages
                       </div>
                       <ul class="facts">
                         <li>Pays your wallet, never holds your money</li>
+                        <li><a href="#useful-work">Mines Pearl, built on AI's matrix math</a></li>
                         <li>Open source</li>
                         <li>Windows, macOS and Linux</li>
                       </ul>
@@ -295,6 +359,21 @@ internal static class SitePages
                       <div class="moment"><time>18:00</time><h3>Choose where to be paid</h3><p>Pick a coin and paste your wallet address. The default is USDT on TRON, which is worth a dollar and pays out from <span class="mono">1.5 USDT</span>.</p></div>
                       <div class="moment"><time>23:00</time><h3>Walk away</h3><p>A few minutes after you leave the keyboard, your processor and graphics card start mining at the lowest priority. Touch the mouse and they stop.</p></div>
                       <div class="moment"><time>09:00</time><h3>The pool pays you</h3><p>unMineable sends your earnings straight to your address once a day after the minimum. Otium never holds your money and can't touch it.</p></div>
+                    </div>
+                  </div>
+                </section>
+
+                <section id="useful-work" aria-labelledby="ai-title">
+                  <div class="wrap power">
+                    <div class="reveal">
+                      <span class="label">Proof of useful work</span>
+                      <h2 id="ai-title" style="margin-top:18px">Pearl mining runs the math AI runs on.</h2>
+                      <p style="margin-top:20px" class="muted">Most coins burn power on hashes nobody needs. Pearl is a proof-of-useful-work coin: mining a block means multiplying large matrices, the same operation every AI model is built from, and its protocol lets that work be real AI computation, down to the mixture-of-experts layers of today's language models. That's why NVIDIA cards with tensor cores mine it best, and why it pays more than any other coin a gaming card can mine today.</p>
+                      <p style="margin-top:14px" class="fine">Through a pool, your card multiplies the matrices the network hands it. It doesn't run anyone's AI model or see their data.</p>
+                    </div>
+                    <div class="panel matmul reveal" aria-hidden="true">
+                      <div class="mm">{Grid("a")}<span class="op">×</span>{Grid("b")}<span class="op">=</span>{Grid("c")}</div>
+                      <div class="threshold"><span>noised matrix product · a winning tile is a share</span><span>INT8 today, FP8 next</span></div>
                     </div>
                   </div>
                 </section>

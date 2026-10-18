@@ -15,6 +15,8 @@ using Otium.Server.Gpu;
 using Otium.Server.Payouts;
 
 var builder = WebApplication.CreateBuilder(args);
+// No "Server: Kestrel" header: it only tells scanners what to look for.
+builder.WebHost.ConfigureKestrel(kestrel => kestrel.AddServerHeader = false);
 
 // Non-custodial unless the operator turns custody on: see CustodyOptions.
 var custodial = builder.Configuration.GetValue<bool>($"{CustodyOptions.Section}:Enabled");
@@ -137,6 +139,21 @@ if (reverseProxy.Enabled)
     app.UseForwardedHeaders();
 app.UseRateLimiter();
 
+// Browser hardening for every response (from a website scan): no MIME sniffing, no framing, no referrer beyond the
+// site's own origin, no device APIs, and pages may only load the site's own files (inline styles are used for bar
+// widths and the like; there are no inline scripts).
+app.Use(async (context, next) =>
+{
+    var headers = context.Response.Headers;
+    headers["X-Content-Type-Options"] = "nosniff";
+    headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
+    headers["X-Frame-Options"] = "DENY";
+    headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=(), usb=()";
+    headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+        + "font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
+    await next();
+});
+
 // Errors meant for users travel as problem details; the app shows their "detail" text.
 app.Use(async (context, next) =>
 {
@@ -229,7 +246,7 @@ app.MapGet("/r/{code}", (string code, OtiumStore store, IOptions<ReferralOptions
 
 // The public website: the front page (with today's per-card earnings from the GPU policy), the operator's legal pages
 // once their reviewed files are in place, and the site's own embedded files.
-app.MapGet("/", async (IOptions<FeeOptions> fees, IOptions<ReferralOptions> referral, IOptions<SiteOptions> site,
+app.MapGet("/", async (HttpRequest request, IOptions<FeeOptions> fees, IOptions<SiteOptions> site,
     GpuPolicyService gpuPolicy, ILogger<Program> logger, CancellationToken ct) =>
 {
     var policy = Otium.Core.Fees.FeePolicy.FromTerms(fees.Value.ToTerms());
@@ -243,7 +260,10 @@ app.MapGet("/", async (IOptions<FeeOptions> fees, IOptions<ReferralOptions> refe
         logger.LogWarning(e, "GPU policy unavailable for the front page");
     }
     var html = SitePages.Home(policy, "/download", SitePages.AvailableLegalPages(site.Value.PagesDirectory),
-        SitePages.Earnings(gpu, policy), gpu?.GeneratedAt);
+        SitePages.Earnings(gpu, policy), gpu?.GeneratedAt,
+        // Cloudflare's visitor country, for the local electricity price. Only Cloudflare reaches the server in production;
+        // anyone sending it themselves only changes their own estimate.
+        request.Headers["CF-IPCountry"].ToString());
     return Results.Content(html, "text/html; charset=utf-8");
 }).RequireRateLimiting("per-ip");
 
@@ -266,6 +286,15 @@ app.MapGet("/site/{**path}", (string path, HttpContext context) =>
     return Results.Bytes(asset.Content, asset.ContentType);
 });
 app.MapGet("/favicon.ico", () => Results.Redirect(SiteAssets.Url("otium.svg")));
+
+// RFC 9116: where to report security problems (GitHub's private vulnerability reporting, so no address is published).
+app.MapGet("/.well-known/security.txt", (HttpRequest request, IOptions<ReferralOptions> referral, TimeProvider time) =>
+    Results.Text(
+        "Contact: https://github.com/Malogna/otium/security/advisories/new\n"
+        + $"Expires: {time.GetUtcNow().AddDays(180).ToString("yyyy-MM-dd'T'00:00:00'Z'", System.Globalization.CultureInfo.InvariantCulture)}\n"
+        + "Preferred-Languages: en\n"
+        + $"Canonical: {PublicBase(request, referral)}/.well-known/security.txt\n",
+        "text/plain; charset=utf-8"));
 
 // Every Download button: straight to the latest installer for the visitor's system (or ?os=windows|macos|macos-intel|linux),
 // else the releases page (phones, unknown systems, or before the first release).
