@@ -6,6 +6,13 @@
 
 name: otium
 
+# Container logs (with visitors' IP addresses) rotate at 5 x 10 MB instead of growing forever; see docs/privacy.md.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   otium:
     build:
@@ -13,6 +20,7 @@ services:
       dockerfile: src/Otium.Server/Dockerfile
     image: otium-server:local
     restart: unless-stopped
+    logging: *logging
     env_file: .env
     environment:
       # Tied to this file's network layout: trust X-Forwarded-For only from Caddy's fixed address below.
@@ -28,6 +36,7 @@ services:
   caddy:
     image: caddy:2.10
     restart: unless-stopped
+    logging: *logging
     depends_on:
       - otium
     ports:
@@ -51,6 +60,7 @@ services:
     build: ./backup
     image: otium-backup:local
     restart: unless-stopped
+    logging: *logging
     # Same user as the server, so SQLite's -wal/-shm files keep the server's ownership.
     user: "1654:1654"
     environment:

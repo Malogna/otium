@@ -30,14 +30,14 @@
                                 <Border Classes="iconBadge"><Path Classes="icon" Data="{StaticResource IconMoon}" /></Border>
                                 <StackPanel Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center">
                                     <TextBlock FontWeight="SemiBold" Text="Only while you're away" />
-                                    <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Text="It never slows you down: touch the mouse and it steps aside. While it earns it keeps the computer awake; the screen still turns off." />
+                                    <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Text="Touch the mouse and it steps aside. While it earns it keeps the computer awake (the screen still turns off), and it makes the computer warmer." />
                                 </StackPanel>
                             </Grid>
                             <Grid ColumnDefinitions="Auto,*">
                                 <Border Classes="iconBadge"><Path Classes="icon" Data="{StaticResource IconLeaf}" /></Border>
                                 <StackPanel Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center">
-                                    <TextBlock FontWeight="SemiBold" Text="Never costs you money" />
-                                    <TextBlock Classes="muted" FontSize="13" Text="It pauses whenever electricity would cost more than it earns." />
+                                    <TextBlock FontWeight="SemiBold" Text="Watches the price of power" />
+                                    <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Text="It pauses when electricity would likely cost more than it earns, based on your electricity price." />
                                 </StackPanel>
                             </Grid>
                             <Grid ColumnDefinitions="Auto,*">
