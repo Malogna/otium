@@ -32,14 +32,20 @@ public partial class InternetSharingViewModel : ViewModelBase
     }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CanTurnOn))]
+    [NotifyPropertyChangedFor(nameof(CanTurnOn), nameof(ShowInSettings))]
     public partial bool IsOffered { get; set; }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CanTurnOn), nameof(CanRemoveService))]
+    [NotifyPropertyChangedFor(nameof(CanTurnOn), nameof(CanRemoveService), nameof(ShowInSettings))]
     public partial bool IsOn { get; set; }
 
     public bool CanTurnOn => IsOffered && !IsOn;
+
+    /// <summary>
+    /// Settings shows internet sharing only when the server offers it, it's on, or its Windows service is still installed:
+    /// it's off for launch (it earns little), so most people never see it.
+    /// </summary>
+    public bool ShowInSettings => IsOffered || IsOn || CanRemoveService;
 
     [ObservableProperty] public partial bool ShowSuggestion { get; set; }
     [ObservableProperty] public partial bool ShowConsent { get; set; }
@@ -65,7 +71,7 @@ public partial class InternetSharingViewModel : ViewModelBase
 
     /// <summary>Mysterium's network service, installed by Otium, is still there while sharing is off.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CanRemoveService))]
+    [NotifyPropertyChangedFor(nameof(CanRemoveService), nameof(ShowInSettings))]
     public partial bool ServiceInstalled { get; set; }
 
     [ObservableProperty] public partial string? ServiceMessage { get; set; }

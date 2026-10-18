@@ -14,8 +14,9 @@ public sealed record ReferralStanding(
 /// </summary>
 /// <param name="userQuantus">The user's Quantus target, mined by the graphics card when Quantus pays best; null without one.</param>
 /// <param name="appQuantus">
-/// Otium's Quantus target for its slice. Without one (or in the referrer's slice: referrers register only their main
-/// address), Quantus mined during the slice stays with the user.
+/// Otium's Quantus target for its slice, usually none: Otium's fee address is USDT. A slice without a Quantus target
+/// (Otium's without one, and the referrer's, since referrers register only their main address) doesn't mine Quantus;
+/// the graphics card mines the slice's main target instead (Pearl on unMineable).
 /// </param>
 public sealed class FeeSchedule(
     FeePolicy policy,
@@ -30,7 +31,12 @@ public sealed class FeeSchedule(
     public MiningTarget TargetAt(TimeSpan totalMiningTime, DateTimeOffset now)
     {
         var role = RoleAt(totalMiningTime, now);
-        var quantus = userQuantus is null ? null : role == PayoutRole.App && appQuantus is not null ? appQuantus : userQuantus;
+        var quantus = userQuantus is null ? null : role switch
+        {
+            PayoutRole.User => userQuantus,
+            PayoutRole.App => appQuantus,
+            _ => null,
+        };
         return new MiningTarget(WalletFor(role), role, quantus);
     }
 

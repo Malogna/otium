@@ -402,7 +402,8 @@ public sealed class UnmineableOptions
     /// <summary>GPU algorithms mined there (SRBMiner names), with their WhatToMine id and stratum endpoint.</summary>
     public Dictionary<string, UnmineableAlgorithm> Algorithms { get; set; } = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["pearlhash"] = new() { WhatToMineId = 469, Host = "pearlpow.unmineable.com" },
+        // unMineable's PearlPow doesn't work on AMD cards (its support article, October 2026).
+        ["pearlhash"] = new() { WhatToMineId = 469, Host = "pearlpow.unmineable.com", OnlyGpus = ["NVIDIA"] },
         // Loses money at $0.15/kWh on every card checked (October 2026).
         ["xelishash"] = new() { WhatToMineId = 459, Host = "xelishash.unmineable.com", Tier = "free-power-only" },
         ["fishhash"] = new() { WhatToMineId = 411, Host = "fishhash.unmineable.com", Tier = "free-power-only" },
@@ -420,6 +421,9 @@ public sealed class UnmineableAlgorithm
 
     /// <summary>"primary" or "free-power-only" while the feed is fresh.</summary>
     public string Tier { get; set; } = "primary";
+
+    /// <summary>Card names (regular expressions) that can mine it there; empty for every card.</summary>
+    public string[] OnlyGpus { get; set; } = [];
 }
 
 /// <summary>

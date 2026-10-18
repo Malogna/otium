@@ -18,7 +18,8 @@ public sealed class SimulatedProvider(
     double fullSpeedHps,
     double normalizedPerHash,
     TimeProvider? time = null,
-    Func<GpuPolicy?>? policy = null) : IComputeProvider
+    Func<GpuPolicy?>? policy = null,
+    bool unitedStates = false) : IComputeProvider
 {
     public static bool IsEnabled => Environment.GetEnvironmentVariable("OTIUM_SIMULATE") is "1" or "true";
 
@@ -88,7 +89,7 @@ public sealed class SimulatedProvider(
             // Monero is credited to the bare address, as MoneroOcean does; other coins under their "COIN:address".
             _ => new
             {
-                wallet = PayoutRouting.PoolFor(options.Target.WalletAddress) == PayoutPool.Unmineable
+                wallet = PayoutRouting.PoolFor(options.Target.WalletAddress, unitedStates) == PayoutPool.Unmineable
                     ? options.Target.WalletAddress
                     : PayoutRouting.MoneroOceanWallet(options.Target.WalletAddress),
                 worker = options.WorkerName, algo, hashrate, normalizedHashrate = hashrate * normalizedPerHash, rig = _rig,
@@ -140,7 +141,7 @@ public sealed class SimulatedProvider(
     public async Task<PayoutBalance?> GetPayoutBalanceAsync(string walletAddress, CancellationToken ct)
     {
         // The dev pool also answers unMineable's API (OTIUM_UNMINEABLE_API), for coins other than Monero.
-        if (PayoutRouting.PoolFor(walletAddress) == PayoutPool.Unmineable)
+        if (PayoutRouting.PoolFor(walletAddress, unitedStates) == PayoutPool.Unmineable)
             return await UnmineableClient.GetPayoutBalanceAsync(new UnmineableClient(http), PayoutTarget.ParseOrNull(walletAddress)!, ct);
 
         walletAddress = PayoutRouting.MoneroOceanWallet(walletAddress);

@@ -13,10 +13,9 @@ GitHub release. That release is also the auto-update feed: installed copies read
    (`-p:OtiumServerUrl`). The workflow refuses to release without it, because a build without it talks to
    `http://localhost:5080`.
 3. Optional settings:
-   - Variable `OTIUM_FEE_WALLET`: the payout targets that receive the own-wallet mode fee, one per pool, e.g.
-     `USDT:T…;XMR:4…;QTC:qz…` (unMineable users' fee slices mine to the first, Monero users' to the second, and
-     Quantus mined by graphics cards during the fee slice to the third; leave any out and that part stays with the
-     user). Otium's
+   - Variable `OTIUM_FEE_WALLET`: Otium's fee address, `USDT:T…`. Everyone outside the US mines on unMineable
+     (Monero users too), so this one address receives the whole fee. Optionally add `;XMR:4…` for US users, whose
+     Monero mines on MoneroOcean; without it their fee slice stays with them. Otium's
      unMineable referral code (`ztjq-jr7s`) is built in; `-UnmineableReferral` in `build/package.ps1` changes it.
    - Secret `OTIUM_HONEYGAIN_KEY`: turns on internet sharing (needs the Honeygain SDK libraries next to the app).
 4. **Code signing** (optional but strongly recommended): see [code-signing.md](code-signing.md). Without it, Windows
