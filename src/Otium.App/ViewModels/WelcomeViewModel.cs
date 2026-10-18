@@ -15,9 +15,10 @@ namespace Otium.App.ViewModels;
 public sealed record EstimateRow(Geometry? Icon, string Name, string What, string PerDay);
 
 /// <summary>
-/// First launch. The first screen offers two ways in: <b>Quick start</b> turns everything on (processor, graphics card,
-/// internet sharing, keeping the miner ready, sharing earnings figures) and asks only where to pay, then shows exactly
-/// what's on before Start; <b>Customize</b> walks through what this PC could earn, where to be paid, and each choice.
+/// First launch. The first screen offers two ways in: <b>Quick start</b> turns mining on (processor, graphics card,
+/// keeping the miner ready, sharing earnings figures) and asks only where to pay, then shows exactly what's on before
+/// Start, with internet sharing as its own tick box (it uses the user's internet address, so it's never agreed to in
+/// passing); <b>Customize</b> walks through what this PC could earn, where to be paid, and each choice.
 /// </summary>
 public partial class WelcomeViewModel : ViewModelBase
 {
@@ -35,7 +36,7 @@ public partial class WelcomeViewModel : ViewModelBase
         PayForElectricity = host.Settings.PayForElectricity;
         _ready = true;
         SignIn = new EmailSignInViewModel(host, OnSignedIn);
-        Payout = new PayoutTargetEditor(host.Settings.PayoutAddress);
+        Payout = new PayoutTargetEditor(host.Settings.PayoutAddress, host.Settings.UsPerson, host.SetUsPerson);
         Payout.Changed += () =>
         {
             NextCommand.NotifyCanExecuteChanged();
@@ -69,6 +70,12 @@ public partial class WelcomeViewModel : ViewModelBase
     public string GpuName => _host.GpuProvider?.Gpus.FirstOrDefault()?.Name ?? (_host.IsSimulated ? "simulated graphics card" : "graphics card");
 
     public bool IsSimulated => _host.IsSimulated;
+
+    /// <summary>Why Otium can't run in this computer's country (sanctions, mining bans), or null.</summary>
+    public string? UnavailableHere => _host.UnavailableHere;
+
+    /// <summary>Quick start and Customize work: a supported computer in a country Otium runs in.</summary>
+    public bool CanBegin => IsSupported && UnavailableHere is null;
 
     public string CountryName
     {
@@ -140,7 +147,7 @@ public partial class WelcomeViewModel : ViewModelBase
     /// <summary>Internet sharing can run on this computer (Proxybase has a client for it).</summary>
     public bool CanShareInternet => _host.UsesProxybase ? Otium.Providers.Proxybase.ProxybaseRelease.ForCurrentPlatform() is not null : false;
 
-    /// <summary>Everything on, then straight to where to be paid.</summary>
+    /// <summary>Mining on, then straight to where to be paid. Internet sharing waits for its own tick on the summary.</summary>
     [RelayCommand]
     private void QuickStart()
     {
@@ -148,7 +155,7 @@ public partial class WelcomeViewModel : ViewModelBase
         UseCpu = true;
         if (HasGpu)
             UseGpu = true;
-        ShareInternet = CanShareInternet;
+        ShareInternet = false;
         KeepMinerReady = true;
         ShareEarnings = true;
         GoTo(PayoutStep);
@@ -174,8 +181,15 @@ public partial class WelcomeViewModel : ViewModelBase
         _host.SaveSettings();
     }
 
-    /// <summary>Share unused internet through Proxybase: on with Quick start, a choice with Customize.</summary>
+    /// <summary>Share unused internet through Proxybase: always the user's own tick, in Quick start and Customize.</summary>
     [ObservableProperty] public partial bool ShareInternet { get; set; }
+
+    /// <summary>What ticking internet sharing means, in both setups.</summary>
+    public string SharingChoiceText =>
+        "Proxybase's customers, mostly AI agents and businesses collecting public web pages, use some of your unused internet " +
+        "connection. Websites they visit see your internet address. Otium can't see or control this traffic, and if someone " +
+        "misuses it, it shows your address; some internet providers don't allow sharing a connection. It's paid to your " +
+        "address in your coin, like mining. Ticking it means you agree to Proxybase's terms.";
 
     /// <summary>What Quick start turns on, one line each, so the user sees it all before pressing Start.</summary>
     public IReadOnlyList<string> QuickList
@@ -185,8 +199,6 @@ public partial class WelcomeViewModel : ViewModelBase
             var list = new List<string> { "Your processor mines while you're away." };
             if (HasGpu)
                 list.Add($"Your {GpuName} mines the best-paying coin while you're away.");
-            if (CanShareInternet)
-                list.Add("Internet sharing: Proxybase's customers, mostly AI agents and businesses collecting public web pages, use some of your unused internet connection. Websites they visit see your internet address. It's paid to your address in your coin, like mining; Proxybase's terms apply.");
             list.Add("The processor miner pauses instead of closing when you come back, so it earns again the moment you leave (it keeps about 2.5 GB of memory for up to 10 minutes).");
             list.Add("This PC's hardware model and earnings (never your address) go into the real-earnings figures on otium.lol.");
             return list;
@@ -361,7 +373,7 @@ public partial class WelcomeViewModel : ViewModelBase
         Step = 1;
     }
 
-    private bool CanStart() => IsSupported && !IsStarting && InviteError is null && Payout.IsValid && (UseCpu || (HasGpu && UseGpu));
+    private bool CanStart() => CanBegin && !IsStarting && InviteError is null && Payout.IsValid && (UseCpu || (HasGpu && UseGpu));
 
     [RelayCommand(CanExecute = nameof(CanStart))]
     private async Task Start()

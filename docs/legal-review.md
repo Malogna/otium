@@ -19,11 +19,11 @@ financial service under MiCA (EEA) or FinCEN guidance (US), because Otium never 
 
 | # | Issue | Risk | Status |
 |---|---|---|---|
-| 1 | **The 2% fee on converting internet-sharing earnings.** Otium's server picks the route, asks Relay (or SideShift/ChangeNOW) for the deposit address and earns a fee on each swap, with no confirmation by the user. That fits MiCA's "reception and transmission of orders", a licensed service. Unlicensed activity is a crime in Norway (kryptoeiendelsloven § 18, up to 3 years), and the transition period ended 30 June 2026. | **High** | Your decision (D1), then counsel |
+| 1 | **The 2% fee on converting internet-sharing earnings.** Otium's server picked the route, asked Relay (or SideShift/ChangeNOW) for the deposit address and earned a fee on each swap, with no confirmation by the user. That fits MiCA's "reception and transmission of orders", a licensed service. Unlicensed activity is a crime in Norway (kryptoeiendelsloven § 18, up to 3 years), and the transition period ended 30 June 2026. | **High → medium** | **Changed in this branch:** Otium keeps its 2%, but no longer from the swap. The app pays Otium's share from the user's sharing earnings straight to Otium's address, like the mining fee, and the conversion carries no Otium fee. Still open for counsel: the server still requests the conversion quote |
 | 2 | **"Help show what PCs really earn" is ticked by default.** Reading data on the user's PC and sending it for a purpose the service doesn't need requires consent (ekomloven § 3-15, ePrivacy art. 5(3)); a pre-ticked box is not consent (*Planet49*). | **High** | Your decision (D2): make it opt-in |
 | 3 | **No terms, no trader details, no withdrawal information.** Required for consumers (ehandelsloven § 8, angrerettloven § 8, markedsføringsloven § 10 a). Because users "pay" with mining time, Norway's digital-content law (digitalytelsesloven) applies in full. | **High** | Drafts added: [terms.md](terms.md), [privacy.md](privacy.md). You fill in the company details |
 | 4 | **Absolute claims.** "Never costs you money", "Never at a loss" and "Nothing on your computer is accessed" can't be proved in every case; under digitalytelsesloven § 8 marketing claims become contract terms, so a user whose bill went up could claim damages. | **High** | **Fixed in this branch** |
-| 5 | **Internet sharing's risk to users.** Proxybase's buyers aren't identity-checked and it keeps no buyer records, so misuse traces back only to the user's internet address. Telia, Telenor, Ice and Comcast forbid sharing or reselling the connection. Google and the FBI acted against "earn from your bandwidth" networks in 2026. | **High** for users' trust | Consent text **fixed in this branch**; quick start bundling is decision D3 |
+| 5 | **Internet sharing's risk to users.** Proxybase's buyers aren't identity-checked and it keeps no buyer records, so misuse traces back only to the user's internet address. Telia, Telenor, Ice and Comcast forbid sharing or reselling the connection. Google and the FBI acted against "earn from your bandwidth" networks in 2026. | **High** for users' trust | **Fixed in this branch:** plain risk text, and Quick start asks with its own tick box |
 
 The rest is medium or low and mostly paperwork or partner permissions (below).
 
@@ -40,10 +40,29 @@ The rest is medium or low and mostly paperwork or partner permissions (below).
   periods proposed, transfers outside the EEA listed, minimum age 18.
 - **Terms of use** ([terms.md](terms.md)): a first draft in plain language, following Norwegian consumer law.
 - **Server logs** now rotate (`deploy/docker-compose.yml`), so IP addresses aren't kept indefinitely.
+- **Internet-sharing fee (D1):** Otium's 2% is kept back from each sharing payout at Proxybase and, once $1 of it has
+  built up, the app pays it to Otium's own address on Tempo (`Sharing:FeeRecipient`). Only the user's 98% goes into
+  the conversion, which has no app fee, so Otium earns nothing from exchanging coins.
+- **Quick start (D3):** internet sharing is its own tick box with the risk text, unticked; mining stays one click.
+- **Countries (D4):** the app won't run, and the server won't register or serve accounts, in sanctioned countries
+  (Cuba, Iran, North Korea, Syria, Russia, Belarus) or where mining is banned (China, Algeria, Nepal, Egypt,
+  Bangladesh, Iraq, Morocco, Qatar, Tunisia, Angola, Kuwait). The app checks the Windows region and the server
+  Cloudflare's visitor country; data export and deletion stay open everywhere. The payout step asks "I'm a US citizen
+  or live in the US", which routes the user to MoneroOcean like a US computer. Not covered: Crimea and the occupied
+  regions of Ukraine (no country code of their own; needs region-level IP data).
+
+## On being an open-source project
+
+Publishing the code is protected and carries little risk. Running the service is different: whoever runs otium.lol,
+publishes the builds and receives the fees is the operator in the eyes of regulators, consumer authorities and courts,
+company or not. Without a company that's a private person, personally liable, and consumer law still requires a name
+and contact address on the site. The safest small step is an AS (D5); the fee redesign above lowers the main risk
+either way.
 
 ## Decisions for you
 
-**D1. The fee on converting internet-sharing earnings.** Options:
+**D1. The fee on converting internet-sharing earnings.** *Decided: keep 2%, paid directly instead of from the swap
+(done in this branch).* The options were:
 - **(a) Recommended for v0.1.0: no Otium fee on conversions.** Set `Sharing__FeeBps=0` on the server; conversion keeps
   working, and users still get paid in their own coin. Then, with counsel, move the quote request into the app (the
   user's computer asks Relay directly, so Otium's server can never set where money goes) before adding any fee back.
@@ -57,17 +76,15 @@ the EEA as far as found, ChangeNOW bans UK, US, Indian and Russian users and can
 users, and Otium's server sends them the user's IP address outside the EEA without safeguards. Recommendation: for
 LTC and XMR users, either don't offer internet sharing payouts yet, or ask them to give a USDT or BTC address for it.
 
-**D2. Earnings statistics opt-in.** You asked for this to be on by default. Norwegian law requires an active choice,
-and Datatilsynet enforces it. Recommendation: an unticked box on the welcome screen (and in Quick start's summary)
-with what's sent, how often and that only medians are shown; a record of the consent; turning it off deletes that
-computer's raw statistics. Also publish medians only from 5 or more computers, not 3.
+**D2. Earnings statistics opt-in.** *Open.* You asked for this to be on by default. Norwegian law requires an active
+choice, and a ticked box shown during onboarding is exactly what the *Planet49* ruling rejected. What does work: ask
+with two equal buttons ("Yes, share" / "No thanks"), neither preselected, before Start; most people say yes when asked
+plainly. Keep a record of the answer; turning it off deletes that computer's raw statistics. Also publish medians
+only from 5 or more computers, not 3.
 
-**D3. Quick start turning on internet sharing.** One "Start earning" press currently agrees to mining, internet
-sharing and statistics together. Consent must be specific, and consumer regulators treat bundled defaults as a dark
-pattern. Recommendation: Quick start keeps mining on, but shows internet sharing as its own tick box with the plain
-risk text (unticked or ticked: counsel; unticked is safe).
+**D3. Quick start turning on internet sharing.** *Decided and done:* its own tick box, unticked.
 
-**D4. Countries.** The app only checks the Windows region for the US today. Recommendation:
+**D4. Countries.** *Decided and done* (see above). The list as researched:
 - **Block entirely:** Cuba, Iran, North Korea, Syria, Russia, Belarus, Crimea and the occupied regions of Ukraine
   (sanctions; EU/Norway ban crypto services to Russians since the 19th package).
 - **Block for mining bans:** China, Algeria (now a crime), Nepal, Egypt, Bangladesh, Iraq, Morocco, Qatar, Tunisia,
@@ -90,6 +107,8 @@ need a legal name, organisation number and address.
 - **Proxybase:** ask whether its servers block connections into sellers' home networks (private IP ranges) and port
   25, and whether they have seller terms. Their published terms only cover buyers.
 - **Relay:** its terms forbid activity that needs a licence, which ties back to D1.
+- **ChangeNOW:** its partner commission on XMR conversions (from 0.4%) is a payment for routing swaps; set it to 0 in
+  ChangeNOW's partner dashboard, so Otium's only sharing income is its direct 2%.
 
 ## Data protection: remaining paperwork
 

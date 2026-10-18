@@ -103,6 +103,15 @@ public sealed class AppSettings
 
     public bool AcceptedTerms { get; set; }
 
+    /// <summary>
+    /// The user said they're a US citizen or resident: unMineable doesn't serve US persons anywhere, so they're paid in
+    /// Monero by MoneroOcean, like computers in the US region.
+    /// </summary>
+    public bool UsPerson { get; set; }
+
+    /// <summary>Why the Otium server says Otium isn't available where this computer is (sanctions, mining bans), or null.</summary>
+    public string? UnavailableReason { get; set; }
+
     /// <summary>Share unused internet bandwidth through Otium's partner. Off until the user opts in.</summary>
     public bool BandwidthEnabled { get; set; }
 

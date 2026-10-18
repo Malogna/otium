@@ -10,6 +10,12 @@ namespace Otium.Providers.Proxybase;
 /// <param name="ExpectedOutput">What the conversion said the user receives, e.g. "4.23 USDT (TRON)".</param>
 public sealed record ProxybasePayout(DateTimeOffset At, long Microcredits, string PayoutId, string? ExpectedOutput = null);
 
+/// <summary>
+/// Otium's fee on sharing payouts: kept back at Proxybase (<paramref name="Reserved"/>) until it reaches Proxybase's $1
+/// minimum, then paid to Otium's own address. <paramref name="Paid"/> is what has gone to Otium so far.
+/// </summary>
+public sealed record ProxybaseFee(long Reserved = 0, string? Address = null, long Paid = 0);
+
 /// <summary>Asks the Otium server where to send a payout so it reaches the user's own address in their coin.</summary>
 public delegate Task<SharingRoute> SharingRouter(SharingRouteRequest request, CancellationToken ct);
 
@@ -20,8 +26,9 @@ public delegate Task<SharingRoute> SharingRouter(SharingRouteRequest request, Ca
 ///
 /// Proxybase pays only in USDC on the Tempo network, which users shouldn't have to deal with. So when enough has built
 /// up, the Otium server opens a one-time conversion (Relay) from Tempo USDC to the coin and address the user chose, and
-/// Proxybase pays straight into it: the user receives their own coin, and Otium never holds the money (its fee is taken
-/// by the conversion). A failed conversion refunds to this computer's own Proxybase wallet. Only direct mode runs (this
+/// Proxybase pays straight into it: the user receives their own coin, and Otium never holds the money. Otium's fee isn't
+/// part of the conversion: its share of each payout stays at Proxybase and, from $1, is paid to Otium's own address.
+/// A failed conversion refunds to this computer's own Proxybase wallet. Only direct mode runs (this
 /// computer's own connection, no resold proxies). The wallet key stays in Otium's data folder on this computer; only
 /// unpaid credits depend on it.
 /// </summary>
@@ -85,6 +92,11 @@ public sealed class ProxybaseBandwidthProvider : IBandwidthProvider
     public IReadOnlyList<ProxybasePayout> Payouts => LoadPayouts();
 
     private string PayoutsFile => Path.Combine(_dataDir, "otium-payouts.json");
+
+    private string FeeFile => Path.Combine(_dataDir, "otium-fee.json");
+
+    /// <summary>Otium's fee: what's kept back for it and what it has been paid.</summary>
+    public ProxybaseFee Fee => LoadFee();
 
     public Task InstallAsync(IProgress<InstallProgress>? progress, CancellationToken ct) =>
         _asset is null
@@ -150,15 +162,18 @@ public sealed class ProxybaseBandwidthProvider : IBandwidthProvider
 
     /// <summary>
     /// Reads what's waiting at Proxybase and, from $1, asks the server where to send it; pays it there when the server
-    /// says the conversion's costs are reasonable for the amount, otherwise lets it build up.
+    /// says the conversion's costs are reasonable for the amount, otherwise lets it build up. Otium's fee on it is kept
+    /// back and paid to Otium's address once it reaches Proxybase's $1 minimum.
     /// </summary>
     internal async Task CheckBalanceAndPayAsync(CancellationToken ct)
     {
         var balance = await _cli.RunAsync(["buyer", "balance"], ct);
         if (ProxybaseOutput.SellerAvailable(balance.Output) is not { } available)
             return; // the backend didn't answer; try again next time
+        available = await PayFeeIfDueAsync(available, ct);
         _available = available;
-        if (available < MinimumPayoutMicrocredits)
+        var free = available - LoadFee().Reserved; // the user's part; Otium's kept-back fee isn't theirs to convert
+        if (free < MinimumPayoutMicrocredits)
         {
             _payoutProblem = null;
             return;
@@ -167,7 +182,7 @@ public sealed class ProxybaseBandwidthProvider : IBandwidthProvider
         SharingRoute route;
         try
         {
-            route = await _route(new SharingRouteRequest(available, NodeAddress), ct);
+            route = await _route(new SharingRouteRequest(free, NodeAddress), ct);
         }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException or AccountRequestException or InvalidOperationException && !ct.IsCancellationRequested)
         {
@@ -181,14 +196,20 @@ public sealed class ProxybaseBandwidthProvider : IBandwidthProvider
             return;
         }
 
-        var amount = Math.Min(route.AmountMicrocredits, available);
+        var fee = route.FeeAddress is { } feeAddress && ProxybaseOutput.IsEvmAddress(feeAddress) ? Math.Clamp(route.FeeMicrocredits, 0, free / 10) : 0;
+        var amount = Math.Min(route.AmountMicrocredits, free - fee);
         var payout = await _cli.RunAsync(["seller", "payout", "create", "--amount", amount.ToString(CultureInfo.InvariantCulture), "--tempo-address", depositAddress], ct);
         if (ProxybaseOutput.PayoutId(payout.Output) is { } id)
         {
             var payouts = LoadPayouts().ToList();
             payouts.Add(new ProxybasePayout(_time.GetUtcNow(), amount, id, route.ExpectedOutput));
             await File.WriteAllTextAsync(PayoutsFile, JsonSerializer.Serialize(payouts), ct);
-            _available = available - amount;
+            if (fee > 0)
+            {
+                var kept = LoadFee();
+                await SaveFeeAsync(kept with { Reserved = kept.Reserved + fee, Address = route.FeeAddress!.ToLowerInvariant() }, ct);
+            }
+            _available = await PayFeeIfDueAsync(available - amount, ct);
             _payoutProblem = null;
         }
         else
@@ -196,6 +217,33 @@ public sealed class ProxybaseBandwidthProvider : IBandwidthProvider
             _payoutProblem = "Proxybase didn't accept the payout request yet. Otium tries again in a few minutes.";
         }
     }
+
+    /// <summary>Pays Otium's kept-back fee to Otium's address once it reaches Proxybase's minimum; returns what's left waiting.</summary>
+    private async Task<long> PayFeeIfDueAsync(long available, CancellationToken ct)
+    {
+        var fee = LoadFee();
+        if (fee.Reserved < MinimumPayoutMicrocredits || fee.Address is not { } address || available < fee.Reserved)
+            return available;
+        var payout = await _cli.RunAsync(["seller", "payout", "create", "--amount", fee.Reserved.ToString(CultureInfo.InvariantCulture), "--tempo-address", address], ct);
+        if (ProxybaseOutput.PayoutId(payout.Output) is null)
+            return available; // tried again next time
+        await SaveFeeAsync(fee with { Reserved = 0, Paid = fee.Paid + fee.Reserved }, ct);
+        return available - fee.Reserved;
+    }
+
+    private ProxybaseFee LoadFee()
+    {
+        try
+        {
+            return File.Exists(FeeFile) ? JsonSerializer.Deserialize<ProxybaseFee>(File.ReadAllText(FeeFile)) ?? new() : new();
+        }
+        catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException)
+        {
+            return new();
+        }
+    }
+
+    private Task SaveFeeAsync(ProxybaseFee fee, CancellationToken ct) => File.WriteAllTextAsync(FeeFile, JsonSerializer.Serialize(fee), ct);
 
     /// <summary>"$0.42 waiting at Proxybase; $3.00 paid out so far, last: 4.23 USDT (TRON) on its way to your wallet".</summary>
     internal string? EarningsText()

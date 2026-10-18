@@ -294,7 +294,7 @@ Users can also opt in to sharing unused internet bandwidth. Non-custodial, this 
 SOCKS5 access, mostly to AI agents and scraping/ad-verification jobs, and pays sellers per GB. It needs no account:
 the client makes a wallet key on the computer and signs in with it. Proxybase pays only USDC on the Tempo network, so
 each payout goes **through a one-time conversion to the user's own payout address and coin** (USDT on TRON, BTC, SOL…),
-and users never see Tempo. Otium's cut is the conversion's app fee. (The earlier
+and users never see Tempo. Otium's cut is paid separately, never from the conversion. (The earlier
 Mysterium node, `src/Otium.Providers.Mysterium`, stays in the code base but isn't offered; its "remove the network
 service" button in Advanced remains for computers that installed it.)
 
@@ -318,9 +318,11 @@ service" button in Advanced remains for computers that installed it.)
   XMR goes Relay → USDC on Base → a ChangeNOW exchange (minimum about 12 USDC). Payouts wait while the network part of
   the cost is above `Sharing:MaxNetworkCostPercent` (5%), up to `Sharing:PayAnywayUsd` ($25): TRON's delivery fee
   (about $0.75 in October 2026) means USDT-on-TRON payouts of about $16.
-- **Otium's cut:** Relay's app fee, `Sharing:FeeBps` (default: the mining fee, 2% = 200), credited by Relay to
-  `Sharing:FeeRecipient` (Otium's 0x address; claim it in Relay's dashboard). SideShift's own commission is set to 0 so
-  the fee isn't taken twice; ChangeNOW's partner commission (from 0.4%) applies on XMR.
+- **Otium's cut:** `Sharing:FeeBps` (default: the mining fee, 2% = 200) of each payout, kept back at Proxybase and,
+  once $1 of it has built up, paid by the app from the user's sharing earnings to `Sharing:FeeRecipient` (Otium's 0x
+  address, on Tempo). Only the rest is converted, with no app fee at Relay and SideShift's commission set to 0, so
+  Otium earns nothing from exchanging coins (docs/legal-review.md, D1). ChangeNOW's partner commission (from 0.4%)
+  still applies on XMR.
 - **Server secrets:** `Sharing:RelayApiKey` (Relay requires one for quotes from October 2026), `Sharing:SideShiftSecret`
   and `Sharing:SideShiftAffiliateId` for LTC, `Sharing:ChangeNowApiKey` for XMR. Without the last two, LTC and XMR users
   are told to pick another coin for sharing.
