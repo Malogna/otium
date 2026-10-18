@@ -35,6 +35,7 @@ public partial class SettingsViewModel : ViewModelBase
         var s = host.Settings;
         CpuUsagePercent = s.CpuUsagePercent;
         OnlyWhenIdle = s.OnlyWhenIdle;
+        KeepAwakeWhileEarning = s.KeepAwakeWhileEarning;
         IdleMinutes = s.IdleMinutes;
         ElectricityPrice = (decimal)s.ElectricityPricePerKwh;
         CpuFullLoadWatts = s.CpuFullLoadWatts is { } w ? (decimal)w : null;
@@ -279,6 +280,25 @@ public partial class SettingsViewModel : ViewModelBase
 
     public string DataFolder => _host.Paths.Root;
 
+    public bool LargePagesSupported => LargePages.IsSupported;
+
+    /// <summary>Offered until the right is in effect, and not again while it waits for the next sign-in.</summary>
+    public bool CanSpeedUpProcessor => LargePages.IsSupported && !LargePages.InEffect() && LargePagesMessage is null;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(LargePagesText), nameof(CanSpeedUpProcessor))]
+    public partial string? LargePagesMessage { get; set; }
+
+    public string LargePagesText => LargePagesMessage ?? (LargePages.InEffect()
+        ? "Processor mining uses large memory pages, its fastest setting."
+        : "Processor mining can run noticeably faster with large memory pages (XMRig, the miner, reports up to 50% depending on the processor). Windows needs your permission once.");
+
+    [RelayCommand]
+    private async Task SpeedUpProcessor()
+    {
+        LargePagesMessage = await _host.GrantLargePagesAsync();
+    }
+
     public string EngineInfo =>
         $"CPU: XMRig {XmrigRelease.Version} → unMineable ({PoolEndpoint.Unmineable}, TLS) for your chosen coin, or MoneroOcean " +
         $"({PoolEndpoint.MoneroOcean}) for Monero. GPU: SRBMiner-Multi {SrbMinerRelease.Version} → the pool Otium's GPU policy names " +
@@ -294,7 +314,7 @@ public partial class SettingsViewModel : ViewModelBase
     {
         get
         {
-            var pool = Core.Pools.PayoutRouting.PoolFor(_host.OwnPayoutTarget) ?? Core.Pools.PayoutPool.Unmineable;
+            var pool = Core.Pools.PayoutRouting.PoolFor(_host.OwnPayoutTarget, AppHost.InUnitedStates) ?? Core.Pools.PayoutPool.Unmineable;
             var gpuPool = _host.GpuEngine is not null && UseGpu ? _host.GpuPayoutPool ?? pool : (Core.Pools.PayoutPool?)null;
             var lines = Core.Fees.CostBreakdown.For(_host.Fees, pool, gpuPool, _host.ReferralCode is not null, _host.QuantusTarget is not null);
             return Core.Fees.CostBreakdown.Text(lines);
@@ -309,6 +329,16 @@ public partial class SettingsViewModel : ViewModelBase
 
     [ObservableProperty] public partial double CpuUsagePercent { get; set; }
     [ObservableProperty] public partial bool OnlyWhenIdle { get; set; }
+    [ObservableProperty] public partial bool KeepAwakeWhileEarning { get; set; }
+
+    partial void OnKeepAwakeWhileEarningChanged(bool value)
+    {
+        if (_loading)
+            return;
+        _host.Settings.KeepAwakeWhileEarning = value;
+        _host.SaveSettings();
+        _host.UpdateKeepAwake();
+    }
     [ObservableProperty] public partial decimal? IdleMinutes { get; set; }
     [ObservableProperty] public partial decimal? ElectricityPrice { get; set; }
     [ObservableProperty] public partial decimal? CpuFullLoadWatts { get; set; }

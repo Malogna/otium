@@ -1,7 +1,7 @@
 # Otium
 
 *Latin for "idle time".* Otium is a desktop app for Windows, macOS and Linux that brings the different ways a computer can earn
-while nobody is using it (CPU and GPU mining, internet sharing, and more to come) into one place, set up and switched
+while nobody is using it (processor and graphics card mining, and more to come) into one place, set up and switched
 automatically, as close to one click as possible. It's for people with some tech knowledge: the pools pay each user
 directly to their own wallet, in the coin they choose (USDT on TRON, BTC, LTC, BNB, SOL, TRX, ETH or Monero). Otium
 never holds anyone's money.
@@ -21,7 +21,7 @@ never holds anyone's money.
    you type, including the network, and the screen says which network to pick in your wallet and when the pool pays
    (unMineable: daily once you reach its minimum, e.g. 1.5 USDT). US users are paid in Monero by MoneroOcean, because
    unMineable doesn't serve US residents.
-3. Press **Start earning**. Otium starts when you sign in and earns only while you're away from the computer, after 3 minutes without keyboard or mouse input. It pauses the moment you come back, and also when electricity would cost more than it earns (the price is estimated from your country; in Norway, Sweden, Denmark and Finland it follows live hourly spot prices, from hvakosterstrommen.no, elprisetjustnu.se, elprisenligenu.dk and sahkotin.fi).
+3. Press **Start earning**. Otium starts when you sign in and earns only while you're away from the computer, after 3 minutes without keyboard or mouse input. While it earns on mains power it keeps the computer awake, so Windows' usual sleep timer doesn't stop it for the night; the screen still turns off, and laptops on battery are left alone (Settings can turn this off). It pauses the moment you come back, and also when electricity would cost more than it earns (the price is estimated from your country; in Norway, Sweden, Denmark and Finland it follows live hourly spot prices, from hvakosterstrommen.no, elprisetjustnu.se, elprisenligenu.dk and sahkotin.fi).
 4. The pool pays your address by itself. The overview shows how far you are from its next payout ("0.84 USDT at
    unMineable · paid out at 1.5 USDT", with an estimate of when) and warns you if the pool won't pay on its own, for
    example when unMineable's "Auto pay" switch is off for your address (new TRC-20 addresses start with it off), with a
@@ -41,7 +41,10 @@ this computer actually earns once there is a day of history.
 Everything technical lives under **Advanced**:
 - Details per device, including GPU algorithm and speed, power draw, and profit per day.
 - CPU usage, the idle delay, your electricity price, and switching devices on or off.
-- Internet sharing: on or off, only while away, and a daily data limit.
+- "Speed up processor mining" (Windows): one administrator prompt gives your account the "Lock pages in memory" right,
+  so XMRig can use large memory pages (XMRig reports up to 50% faster RandomX, depending on the processor). It applies
+  from your next sign-in.
+- Internet sharing (Mysterium), only if the server offers it; it's off for the first release.
 - Your payout coin and address.
 - Updates.
 
@@ -64,26 +67,27 @@ treasury or cash-out queue to run. The server only keeps accounts, invite codes 
 policy.
 
 **Mining**
-- The **payout coin decides the pool.** Monero mines on MoneroOcean to the bare address (worker name as password).
-  Every other coin mines on **unMineable**, which mines and converts, and pays the address in its own coin once a day
-  after it reaches the coin's minimum. The login is `COIN:address.worker#ztjq-jr7s`, and unMineable picks the network
+- **Everything mines on unMineable**, which mines and converts, and pays the address in its own coin once a day after
+  it reaches the coin's minimum; Monero too (paid in XMR from 0.03 XMR). Processor, graphics card and every fee slice
+  then share one pool, so Otium needs a single fee address (USDT). Only US users' Monero mines on MoneroOcean, to the
+  bare address with the worker name as password, because unMineable's terms exclude US persons. The login is `COIN:address.worker#ztjq-jr7s`, and unMineable picks the network
   from the address (a TRON address gets USDT on TRC-20). `ztjq-jr7s` is Otium's unMineable referral code: users pay
   unMineable 0.75% instead of 1%, and unMineable pays Otium 0.25–0.50% of their rewards.
 - CPU: XMRig on `rx.unmineable.com:443` with TLS (unMineable's only RandomX port that works). GPU: SRBMiner on the
   routes in the server's GPU policy: unMineable for **Pearl** (the best-paying coin for NVIDIA cards in October 2026),
   plus Xelis (`xelishashv3`) and FishHash, which only run on free power since they lose money at normal prices; all
-  with `--tls true`, priced from WhatToMine minus unMineable's 0.75%. **Monero users outside the US** get the same
-  unMineable routes for their graphics card, paid in XMR to their address (unMineable pays daily from 0.03 XMR, and the
-  overview shows that balance next to MoneroOcean's), alongside MoneroOcean's GPU algorithms, which are "free power
-  only". US users' graphics cards stay on MoneroOcean. Without the server's policy, unMineable users' GPUs wait
-  (unMineable's prices come from the server) and Monero users fall back to MoneroOcean's own rates.
+  with `--tls true`, priced from WhatToMine minus unMineable's 0.75%. unMineable's Pearl is NVIDIA-only (its own
+  support article), so the policy marks it that way and AMD cards skip it. US users' graphics cards stay on
+  MoneroOcean, whose GPU algorithms are "free power only". Without the server's policy, unMineable users' GPUs wait
+  (unMineable's prices come from the server) and US Monero users fall back to MoneroOcean's own rates.
 - **Quantus (optional, any payout coin).** Users who add their own Quantus wallet (`qz…`, checked with its SS58
   checksum) in Settings let the graphics card also mine **Quantus** on Kryptex Pool's address login
   (`qtc.kryptex.network:8049`, TLS, `--wallet qz… --worker …`), whenever it pays more than the coins paid to the
   payout address. Kryptex pays the Quantus wallet in QTC every hour from 0.1 QTC (3% pool fee, SRBMiner 2.5%). It is
   the best coin for most AMD cards and NVIDIA's second best, and the fallback once Pearl's fork drops consumer cards.
-  Otium's fee slice mines Quantus to Otium's own Quantus address when the build has one (`-FeeWallet '…;QTC:qz…'`);
-  without one, Quantus mined in that slice stays with the user. The overview shows the Kryptex balance too.
+  Fee and referral slices have no Quantus target (Otium's fee address is USDT, and referrers register only their main
+  address), so during them the card mines Pearl to that slice's address instead; a card that can only mine Quantus
+  (most AMD cards) rests for the slice and says so. The overview shows the Kryptex balance too.
 - **Pearl fork switch.** Pearl's planned FP8 fork (PIP-3) only accepts NVIDIA Hopper and Blackwell cards. The server
   watches PIP-3 for an activation height and Pearl's chain height on Kryptex; once the chain reaches it, the policy
   limits `pearlhash` to those cards (`GpuPolicy:PearlFork:SupportedGpus`), so every other card moves to its next best
@@ -95,8 +99,9 @@ policy.
   each verified friend gives the referrer another 30 (capped at 90). The server sends these terms with every account
   summary (`Fees:*`), so they change without an app release; apps cap the fee at 10% and use the built-in defaults
   until a server answers. The miner keeps its pool and algorithm; only the login
-  changes for a slice. Builds set Otium's fee targets with `-FeeWallet 'USDT:T…;XMR:4…'` (one per pool); without one,
-  the slice is mined for the user.
+  changes for a slice. Builds set Otium's fee address with `-FeeWallet 'USDT:T…'`: one USDT address covers every user
+  outside the US. Adding `;XMR:4…` also takes the fee from US users, whose Monero mines on MoneroOcean; without a fee
+  address for a pool, the slice is mined for the user.
 - **Referral checks.** An invited friend counts as verified once their pool shows real mining: MoneroOcean hashes for
   Monero addresses, or unMineable having rewarded or paid their address. The same address typed differently (case,
   with or without the coin) can't invite itself.

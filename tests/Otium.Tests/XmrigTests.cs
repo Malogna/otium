@@ -10,10 +10,11 @@ public class XmrigTests
     [Fact]
     public void Config_points_the_pool_at_the_target_wallet_with_low_priority()
     {
+        // A US user's Monero: MoneroOcean, the bare address, the worker as password.
         var wallet = TestAddresses.Generate();
         var json = XmrigConfig.Build(
             new ProviderRunOptions(new MiningTarget(wallet, PayoutRole.User), "sc 1234/abcd", 40),
-            PoolEndpoint.MoneroOcean, httpPort: 45678, accessToken: "secret");
+            PoolEndpoint.MoneroOcean, httpPort: 45678, accessToken: "secret", unitedStates: true);
 
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;

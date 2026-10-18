@@ -65,6 +65,7 @@ public partial class App : Application
             historyTimer.Tick += (_, _) =>
             {
                 _host.RecordHistory();
+                _host.UpdateKeepAwake(); // also notices a laptop's charger being unplugged
                 _ = _host.RefreshElectricityAsync(CancellationToken.None);
             };
             historyTimer.Start();

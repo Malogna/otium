@@ -42,8 +42,10 @@ public sealed class XmrigProvider : IComputeProvider
         string enginesRoot,
         PoolEndpoint? endpoint = null,
         IUnmineableApi? unmineable = null,
-        string? referralCode = null)
+        string? referralCode = null,
+        bool unitedStates = false)
     {
+        _unitedStates = unitedStates;
         _http = http;
         _pool = pool;
         _unmineable = unmineable ?? new UnmineableClient(http);
@@ -53,6 +55,9 @@ public sealed class XmrigProvider : IComputeProvider
         _asset = XmrigRelease.ForCurrentPlatform();
         _installer = new EngineInstaller(http, _engineDir, XmrigRelease.BinaryName);
     }
+
+    /// <summary>The user is in the US, where Monero mines on MoneroOcean instead of unMineable.</summary>
+    private readonly bool _unitedStates;
 
     public string Id => "xmrig-cpu";
 
@@ -92,7 +97,7 @@ public sealed class XmrigProvider : IComputeProvider
 
         _httpPort = FreeLoopbackPort();
         _accessToken = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(16));
-        await File.WriteAllTextAsync(ConfigPath, XmrigConfig.Build(options, _endpoint, _httpPort, _accessToken, _referralCode), ct);
+        await File.WriteAllTextAsync(ConfigPath, XmrigConfig.Build(options, _endpoint, _httpPort, _accessToken, _referralCode, unitedStates: _unitedStates), ct);
 
         var startInfo = new ProcessStartInfo(binary)
         {
@@ -195,7 +200,7 @@ public sealed class XmrigProvider : IComputeProvider
 
     public async Task<PayoutBalance?> GetPayoutBalanceAsync(string walletAddress, CancellationToken ct)
     {
-        if (PayoutRouting.PoolFor(walletAddress) == PayoutPool.Unmineable)
+        if (PayoutRouting.PoolFor(walletAddress, _unitedStates) == PayoutPool.Unmineable)
             return await UnmineableClient.GetPayoutBalanceAsync(_unmineable, PayoutTarget.ParseOrNull(walletAddress)!, ct);
 
         walletAddress = PayoutRouting.MoneroOceanWallet(walletAddress);
