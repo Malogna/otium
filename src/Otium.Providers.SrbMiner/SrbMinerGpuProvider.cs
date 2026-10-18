@@ -59,6 +59,15 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
 
     public const double RejectedShareFraction = 0.8;
 
+    /// <summary>
+    /// How long a coin mines on unMineable before Otium asks unMineable whether it credited the work. unMineable's
+    /// "calculated" hashrate is an hour's average of accepted shares, so this leaves it time to fill.
+    /// </summary>
+    public static readonly TimeSpan CreditGrace = TimeSpan.FromMinutes(90);
+
+    /// <summary>How often the credit is checked after <see cref="CreditGrace"/>.</summary>
+    public static readonly TimeSpan CreditCheckEvery = TimeSpan.FromMinutes(20);
+
     private readonly IMoneroPoolApi _pool;
     private readonly IReadOnlyList<GpuInfo> _gpus;
     private readonly IPowerMeter _meter;
@@ -78,17 +87,20 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
     private readonly SrbMinerAsset? _asset;
     private readonly Func<GpuPolicy?> _policy;
     private readonly Func<GpuInfo, double?> _freeMemoryGb;
+    private readonly Func<string, int, CancellationToken, Task<string?>> _poolBlocked;
     private readonly List<(double Hashrate, double? Watts)> _samples = [];
     private readonly Dictionary<string, SetAside> _setAside = new(StringComparer.OrdinalIgnoreCase);
 
     private IMinerProcess? _process;
     private ProviderRunOptions? _options;
     private GpuAlgorithm? _current;
+    private GpuPoolEndpoint? _currentPool;
     private DateTimeOffset _currentSince;
     private DateTimeOffset _launchedAt;
     private DateTimeOffset _lastHashingAt;
     private DateTimeOffset? _devFeeSeenAt;
     private DateTimeOffset _lastEvaluation;
+    private DateTimeOffset _nextCreditCheck;
     private bool _benchmarking;
     private int _benchmarkIndex;
     private int _benchmarkTotal;
@@ -118,8 +130,10 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         IUnmineableApi? unmineable = null,
         string? referralCode = null,
         IKryptexAddressApi? kryptex = null,
-        bool unitedStates = false)
+        bool unitedStates = false,
+        Func<string, int, CancellationToken, Task<string?>>? poolBlocked = null)
     {
+        _poolBlocked = poolBlocked ?? ((_, _, _) => Task.FromResult<string?>(null));
         _unitedStates = unitedStates;
         _policy = policy ?? (() => null);
         _unmineable = unmineable ?? new UnmineableClient(http);
@@ -272,8 +286,25 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
                 + "(a change to the coin's rules, such as a fork, can cause this)", ct);
         }
 
+        // The card hashes and the pool takes the shares, but is anything credited? (A pool can accept a card's shares
+        // and still not count them, e.g. a coin it doesn't support on that card.) Asked once mining has settled.
+        if (now >= _nextCreditCheck)
+        {
+            _nextCreditCheck = now + CreditCheckEvery;
+            if (await UncreditedReasonAsync(ct) is { } uncredited)
+                return await FailOverAsync(uncredited, ct);
+        }
+
         if (now - _lastHashingAt >= StallTimeout)
         {
+            // A pool something on this computer blocks (antivirus web protection) isn't the coin's fault: say so and
+            // keep the miner trying, so it carries on by itself once the user allows the pool.
+            if (_currentPool is { } pool && await _poolBlocked(pool.Host, pool.Port, ct) is { } blocked)
+            {
+                _notice = $"Graphics card isn't mining: {blocked}.";
+                return new ProviderStatus(ProviderState.Starting, 0, _notice, _current.PoolName, Problem: _notice);
+            }
+
             var reason = SrbMinerStats.DescribeProblem(_process.RecentLog)
                          ?? $"it showed no hashing for {StallTimeout.TotalMinutes:0} minutes";
             return await FailOverAsync(reason, ct);
@@ -431,6 +462,38 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
             .ToList();
     }
 
+    /// <summary>
+    /// For a coin mined on unMineable for the user: why unMineable isn't crediting this card's work (no hashrate
+    /// counted for its worker over the last hour), or null when it is, when it can't tell, or for other pools.
+    /// </summary>
+    internal async Task<string?> UncreditedReasonAsync(CancellationToken ct)
+    {
+        if (_current is null || _options is not { Target.Role: PayoutRole.User } options || _benchmarking)
+            return null;
+        var policy = _policy();
+        var route = policy?.For(_current.PoolName) is { } p ? policy.Route(p.Route) : null;
+        if (route is not { Kind: GpuRoutes.Unmineable } || PayoutTarget.ParseOrNull(options.Target.WalletAddress) is not { } target)
+            return null;
+        // unMineable groups workers by its own algorithm name, which is its stratum host's first label ("pearlpow").
+        var unmineableAlgorithm = route.Host.Split('.')[0];
+        var worker = PayoutRouting.SanitizeWorker(options.WorkerName);
+        try
+        {
+            var address = await _unmineable.GetAddressAsync(target, ct);
+            if (address.Uuid is not { } uuid)
+                return $"unMineable hasn't counted any of its work after {CreditGrace.TotalMinutes:0} minutes";
+            var workers = await _unmineable.GetWorkersAsync(uuid, ct);
+            var mine = workers.Where(w => string.Equals(w.Algorithm, unmineableAlgorithm, StringComparison.OrdinalIgnoreCase)).ToList();
+            if (mine.Any(w => w.CalculatedHps > 0 && (string.Equals(w.Name, worker, StringComparison.OrdinalIgnoreCase) || mine.Count == 1)))
+                return null;
+            return $"unMineable hasn't counted any of its work after {CreditGrace.TotalMinutes:0} minutes, although the card was hashing";
+        }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or InvalidOperationException or System.Text.Json.JsonException && !ct.IsCancellationRequested)
+        {
+            return null; // can't tell right now; ask again later
+        }
+    }
+
     /// <summary>The current algorithm failed: set it aside and try the next best, or report plainly that the card isn't mining.</summary>
     private async Task<ProviderStatus> FailOverAsync(string reason, CancellationToken ct)
     {
@@ -555,10 +618,13 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         _lastHashingAt = now;
         _devFeeSeenAt = null;
         _lastEvaluation = now;
+        _nextCreditCheck = now + CreditGrace;
         _samples.Clear();
 
         var apiPort = SrbMinerProcessFactory.FreeLoopbackPort();
-        var args = SrbMinerArgs.Build(algorithm, LoginFor(algorithm, options), apiPort, _gpus);
+        var login = LoginFor(algorithm, options);
+        _currentPool = login.Pool;
+        var args = SrbMinerArgs.Build(algorithm, login, apiPort, _gpus);
         ct.ThrowIfCancellationRequested();
         _process = _factory.Start(binary, args, apiPort);
     }
