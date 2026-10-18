@@ -18,6 +18,9 @@ public sealed class SiteOptions
     /// Put only reviewed legal text here (docs/privacy.md is a draft that must not be published as it is).
     /// </summary>
     public string PagesDirectory { get; set; } = "/data/site";
+
+    /// <summary>GitHub's "latest release" API for the app, whose files the Download buttons link to directly.</summary>
+    public string LatestReleaseApi { get; set; } = "https://api.github.com/repos/Malogna/otium/releases/latest";
 }
 
 /// <summary>One graphics card's earnings with one coin today, after every fee but before electricity.</summary>
@@ -38,6 +41,36 @@ internal static class SitePages
 
     /// <summary>The electricity price the page opens with, in $/kWh (the slider changes it).</summary>
     public const double DefaultPricePerKwh = 0.15;
+
+    /// <summary>Hours a day the estimate assumes the computer is left alone (nights plus some of the day).</summary>
+    public const int DefaultHoursAway = 12;
+
+    /// <summary>The card the estimate opens with: a typical gaming PC's.</summary>
+    public const string TypicalCard = "rtx3060";
+
+    /// <summary>A card's best coin at a price and hours away: per day and per 30-day month, after fees and electricity.</summary>
+    public readonly record struct CardEstimate(string Card, string Coin, string? Note, double Day, double Month);
+
+    public static CardEstimate? Estimate(CardEarnings card, double hoursAway, double pricePerKwh)
+    {
+        var best = card.Coins.Select(c => (c, Net: (c.UsdPerDay - c.Watts * 24 / 1000 * pricePerKwh) * hoursAway / 24)).MaxBy(x => x.Net);
+        return best.c is null ? null : new CardEstimate(card.Name, best.c.Coin, best.c.Note, Math.Max(0, best.Net), Math.Max(0, best.Net) * 30);
+    }
+
+    private static string EstimateLine(CardEstimate e) => e.Day <= 0
+        ? $"At this electricity price an {e.Card} would cost more than it earns, so Otium would wait."
+        : $"{Usd(e.Day)} a day with an {e.Card}, mining {e.Coin} ({e.Note}), after every fee and the power it uses.";
+
+    private static string PayoutLine(double perDay)
+    {
+        if (perDay <= 0)
+            return "";
+        var days = (double)Core.Wallets.PayoutCoins.Usdt.Threshold / perDay;
+        var when = days < 1 ? "within a day" : $"in about {Math.Ceiling(days):0} day{(Math.Ceiling(days) == 1 ? "" : "s")}";
+        return $"First payout of 1.5 USDT to your wallet {when}, then daily.";
+    }
+
+    private static string UsdWhole(double value) => "$" + Math.Round(value).ToString("0", CultureInfo.InvariantCulture);
 
     /// <summary>
     /// Typical tuned speeds and power from WhatToMine's card pages (October 2026): Pearl in TH/s, Quantus in MH/s, watts.
@@ -153,41 +186,43 @@ internal static class SitePages
             ("TRX", "TRON"), ("ETH", "Ethereum"), ("XMR", "Monero"), ("QTC", "graphics card"),
         }.Select(c => $"""<span class="coin">{c.Item1} <small>{c.Item2}</small></span>"""));
 
-        var cardRows = string.Concat(earnings.Select(card =>
-        {
-            var best = card.Coins.Select(c => (c, Net: c.UsdPerDay - c.Watts * 24 / 1000 * DefaultPricePerKwh)).MaxBy(x => x.Net);
-            var max = earnings.Max(x => x.Coins.Max(c => c.UsdPerDay - c.Watts * 24 / 1000 * DefaultPricePerKwh));
-            var width = best.Net <= 0 ? 4 : Math.Max(3, best.Net / Math.Max(max, 0.01) * 100);
-            return $"""
-                      <div class="card-row" data-card="{card.Id}">
-                        <div class="name">{E(card.Name)}<small>{E(card.Detail)}</small></div>
-                        <div class="bar{(best.Net <= 0 ? " loss" : "")}" role="img" aria-label="{E(card.Name)} earnings bar"><span style="width:{width.ToString("0.#", CultureInfo.InvariantCulture)}%"></span></div>
-                        <div class="net"><span class="amount">{(best.Net <= 0 ? "$0.00" : Usd(best.Net))}</span><small class="coin-used">{(best.Net <= 0 ? "stays paused" : $"{best.c.Coin} · {best.c.Note}")}</small></div>
-                      </div>
-            """;
-        }));
         var data = JsonSerializer.Serialize(new
         {
             cards = earnings.Select(c => new
             {
                 id = c.Id,
+                name = c.Name,
                 coins = c.Coins.Select(x => new { coin = x.Coin, usdPerDay = Math.Round(x.UsdPerDay, 4), watts = x.Watts, note = x.Note }),
             }),
+            payoutUsdt = (double)Core.Wallets.PayoutCoins.Usdt.Threshold,
         }).Replace("</", "<\\/", StringComparison.Ordinal);
         var asOf = pricesAt is { } at ? at.UtcDateTime.ToString("d MMMM yyyy, HH:mm 'UTC'", CultureInfo.InvariantCulture) : null;
-        var earningsBody = earnings.Count == 0
-            ? """<p class="muted">Today's coin prices aren't available right now. The app always shows your own card's estimate before you start.</p>"""
+        var typical = earnings.FirstOrDefault(c => c.Id == TypicalCard) ?? earnings.FirstOrDefault();
+        var estimate = typical is null ? null : Estimate(typical, DefaultHoursAway, DefaultPricePerKwh);
+        var chips = string.Concat(earnings.Select(c =>
+            $"""<button type="button" class="chip" data-card="{c.Id}" aria-pressed="{(c == typical ? "true" : "false")}">{E(c.Name)}<small>{E(c.Detail)}</small></button>"""));
+        var estimator = typical is null || estimate is null
+            ? """
+                      <div class="est-head"><span class="label">What your PC could earn</span></div>
+                      <p class="est-sub">Today's coin prices aren't available right now. The app always shows your own computer's estimate before you start.</p>
+              """
             : $"""
-                  <div class="earnings-controls">
-                    <label for="price">Your electricity</label>
-                    <div class="slider"><input id="price" type="range" min="0" max="0.40" step="0.01" value="{DefaultPricePerKwh.ToString("0.00", CultureInfo.InvariantCulture)}"><output id="price-out" for="price">${DefaultPricePerKwh.ToString("0.00", CultureInfo.InvariantCulture)} / kWh</output></div>
-                  </div>
-                  <div class="cards" id="cards">
-            {cardRows}
-                  </div>
-                  <p class="footnote">Per day of mining, after the miner's, the pool's and Otium's {fee}, minus electricity. Coin prices from WhatToMine via Otium's server{(asOf is null ? "" : $", {asOf}")}; speeds and power are typical tuned figures from WhatToMine's card pages (October 2026). Each card mines whichever coin pays it more. A processor alone earns a few cents a day.</p>
-                  <script type="application/json" id="otium-data">{data}</script>
-            """;
+                      <div class="est-head"><span class="label">What your PC could earn</span><span class="live"><i></i>Today's prices</span></div>
+                      <div class="est-figure"><span class="est-amount" id="est-month">{UsdWhole(estimate.Value.Month)}</span><span class="est-per">a month</span></div>
+                      <p class="est-sub" id="est-sub">{EstimateLine(estimate.Value)}</p>
+                      <p class="est-payout" id="est-payout">{PayoutLine(estimate.Value.Day)}</p>
+                      <div class="chips" role="group" aria-label="Graphics card">{chips}</div>
+                      <div class="est-sliders">
+                        <label for="hours">Away from the computer</label>
+                        <input id="hours" type="range" min="2" max="24" step="1" value="{DefaultHoursAway}">
+                        <output id="hours-out" for="hours">{DefaultHoursAway} h a day</output>
+                        <label for="price">Electricity price</label>
+                        <input id="price" type="range" min="0" max="0.40" step="0.01" value="{DefaultPricePerKwh.ToString("0.00", CultureInfo.InvariantCulture)}">
+                        <output id="price-out" for="price">${DefaultPricePerKwh.ToString("0.00", CultureInfo.InvariantCulture)} / kWh</output>
+                      </div>
+                      <p class="footnote">Today's coin prices from WhatToMine{(asOf is null ? "" : $" ({asOf})")} and typical card speeds. They change daily; the app measures your own computer before you start. The processor adds a few cents a day.</p>
+                      <script type="application/json" id="otium-data">{data}</script>
+              """;
 
         // An example day of hourly prices (southern Norway in autumn): Otium mines below break-even, waits above it.
         double[] day = [0.07, 0.065, 0.06, 0.06, 0.062, 0.07, 0.11, 0.19, 0.24, 0.2, 0.15, 0.13, 0.12, 0.12, 0.13, 0.15, 0.2, 0.27, 0.29, 0.23, 0.17, 0.12, 0.09, 0.075];
@@ -201,12 +236,12 @@ internal static class SitePages
                 <div class="glow" aria-hidden="true"></div>
                 <section class="hero" aria-labelledby="hero-title">
                   <div class="wrap">
-                    <div>
+                    <div class="hero-copy">
                       <h1 id="hero-title">Your computer works the night shift. <span class="shift">You get paid.</span></h1>
                       <p class="lede">Otium mines with your idle processor and graphics card while you're away, and the pool pays your own wallet directly. It stops the moment you're back, and waits when electricity costs more than it earns.</p>
                       <div class="actions">
                         <a class="button" href="{download}"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M11 3h2v10.2l3.6-3.6 1.4 1.4-6 6-6-6 1.4-1.4 3.6 3.6z"/><path fill="currentColor" d="M5 19h14v2H5z"/></svg><span data-download-label>Download Otium</span></a>
-                        <a class="button ghost" href="#earnings">See today's numbers</a>
+                        <a class="button ghost" href="#night-shift">How it works</a>
                       </div>
                       <ul class="facts">
                         <li>Pays your wallet, never holds your money</li>
@@ -214,23 +249,8 @@ internal static class SitePages
                         <li>Windows, macOS and Linux</li>
                       </ul>
                     </div>
-                    <div class="instrument" aria-label="An example day: the computer mines from 23:00 to 08:30 while you're away">
-                      <div class="dial-box">
-                        <svg id="dial" class="dial" viewBox="-30 -30 460 460" aria-hidden="true"></svg>
-                        <div class="dial-center">
-                          <div class="clock mono" id="dial-clock">03:00</div>
-                          <div class="amount" id="dial-amount">1.1043</div>
-                          <div class="unit">USDT earned tonight</div>
-                          <div class="state" id="dial-state">Away: mining Pearl at 101.4 TH/s</div>
-                        </div>
-                      </div>
-                      <ul class="legend">
-                        <li class="mining"><i></i>Away: mining</li>
-                        <li class="using"><i></i>You're using it</li>
-                        <li class="paused"><i></i>Power too expensive</li>
-                        <li class="fee"><i></i>Otium's {feeMinutes} min</li>
-                      </ul>
-                      <div class="log" id="log" aria-hidden="true"></div>
+                    <div class="panel estimator" id="earnings" aria-label="Earnings estimate">
+            {estimator}
                     </div>
                   </div>
                 </section>
@@ -248,22 +268,33 @@ internal static class SitePages
                       <div><span class="label">How it works</span><h2 id="shift-title">Set it up once. It works while you rest.</h2></div>
                       <p>Otium tests your hardware, picks the coin that pays your card the most, and switches as prices change. You don't touch it again.</p>
                     </div>
+                    <div class="night reveal">
+                      <div class="instrument" aria-label="An example day: the computer mines from 23:00 to 08:30 while you're away">
+                        <div class="dial-box">
+                          <svg id="dial" class="dial" viewBox="-30 -30 460 460" aria-hidden="true"></svg>
+                          <div class="dial-center">
+                            <div class="clock mono" id="dial-clock">03:00</div>
+                            <div class="amount" id="dial-amount">1.1043</div>
+                            <div class="unit">USDT earned tonight</div>
+                            <div class="state" id="dial-state">Away: mining Pearl at 101.4 TH/s</div>
+                          </div>
+                        </div>
+                        <ul class="legend">
+                          <li class="mining"><i></i>Away: mining</li>
+                          <li class="using"><i></i>You're using it</li>
+                          <li class="paused"><i></i>Power too expensive</li>
+                          <li class="fee"><i></i>Otium's {feeMinutes} min</li>
+                        </ul>
+                      </div>
+                      <div class="terminal" aria-label="What the miners report during the example night">
+                        <div class="terminal-bar"><i></i><i></i><i></i><span>otium · miner log · RTX 3080</span></div>
+                        <div class="log" id="log"></div>
+                      </div>
+                    </div>
                     <div class="shift-line reveal">
                       <div class="moment"><time>18:00</time><h3>Choose where to be paid</h3><p>Pick a coin and paste your wallet address. The default is USDT on TRON, which is worth a dollar and pays out from <span class="mono">1.5 USDT</span>.</p></div>
                       <div class="moment"><time>23:00</time><h3>Walk away</h3><p>A few minutes after you leave the keyboard, your processor and graphics card start mining at the lowest priority. Touch the mouse and they stop.</p></div>
                       <div class="moment"><time>09:00</time><h3>The pool pays you</h3><p>unMineable sends your earnings straight to your address once a day after the minimum. Otium never holds your money and can't touch it.</p></div>
-                    </div>
-                  </div>
-                </section>
-
-                <section id="earnings" aria-labelledby="earnings-title">
-                  <div class="wrap">
-                    <div class="section-head reveal">
-                      <div><span class="label">Live numbers</span><h2 id="earnings-title">What a graphics card earns today</h2></div>
-                      <p>Mining income follows coin prices, so these change daily. Move the slider to your electricity price; the app measures your own computer before you start.</p>
-                    </div>
-                    <div class="panel reveal">
-            {earningsBody}
                     </div>
                   </div>
                 </section>
@@ -327,6 +358,7 @@ internal static class SitePages
                       <details><summary>Will it slow my computer down?</summary><p>By default it only runs while you're away, at the lowest priority, and you choose how much of the processor it may use. Games and work always come first.</p></details>
                       <details><summary>I live in the United States</summary><p>unMineable doesn't serve US residents, so Otium pays you in Monero through MoneroOcean instead.</p></details>
                       <details><summary>What about AMD graphics cards?</summary><p>They can't mine Pearl, the best coin for NVIDIA cards. Add a free Quantus wallet in Settings and your card mines Quantus, paid hourly by Kryptex Pool.</p></details>
+                      <details><summary>Which download do I need?</summary><p>The Download button picks the installer for the computer you're on. To choose one yourself: <a href="/download?os=windows">Windows</a>, <a href="/download?os=macos">Mac with Apple silicon</a>, <a href="/download?os=macos-intel">Mac with Intel</a> or <a href="/download?os=linux">Linux (AppImage)</a>.</p></details>
                       <details><summary>Can I also share my internet connection?</summary><p>On Windows, optionally. A Mysterium node shares a little of your unused bandwidth with businesses and pays you in MYST at your own Polygon address. It's off unless you turn it on.</p></details>
                     </div>
                   </div>

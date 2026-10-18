@@ -165,6 +165,7 @@
         if (kind === "fee") logLine(hour, "fee slice: the next 29 min mine to Otium's address", "warn");
         else if (kind === "paused") logLine(hour, "power 0.27 $/kWh is above break-even: paused", "warn");
         else if (kind === "using") logLine(hour, "you're back: miners stopped");
+        else if (lastKind === "fee") logLine(hour, "fee slice done: mining to your address again", "ok");
         else if (lastKind) logLine(hour, "away: SRBMiner pearlhash → pearlpow.unmineable.com:443 (TLS)", "ok");
       }
       if ((kind === "mining" || kind === "fee") && now > nextLog) {
@@ -184,33 +185,54 @@
     requestAnimationFrame(tick);
   }
 
-  // ---------- Live earnings per graphics card ----------
+  // ---------- What your PC could earn (the hero estimate) ----------
+  // Same formula as the server's first render: the card's best coin after fees, less its electricity, for the hours
+  // the computer is left alone, over a 30-day month.
   function earnings() {
     const data = JSON.parse($("#otium-data")?.textContent || "{}");
-    const rows = $("#cards"), slider = $("#price"), out = $("#price-out");
-    if (!rows || !slider || !data.cards?.length) return;
-    function render() {
-      const price = Number(slider.value);
-      out.textContent = `$${price.toFixed(2)} / kWh`;
-      const results = data.cards.map(card => {
-        const best = card.coins
-          .map(c => ({ ...c, net: c.usdPerDay - c.watts * 24 / 1000 * price }))
-          .sort((a, b) => b.net - a.net)[0];
-        return { card, best };
-      });
-      const max = Math.max(0.01, ...results.map(r => r.best.net));
-      for (const { card, best } of results) {
-        const row = rows.querySelector(`[data-card="${card.id}"]`);
-        if (!row) continue;
-        const loses = best.net <= 0;
-        row.querySelector(".coin-used").textContent = loses ? "stays paused: power costs more" : `${best.coin}${best.note ? ` · ${best.note}` : ""}`;
-        row.querySelector(".bar").classList.toggle("loss", loses);
-        row.querySelector(".bar span").style.width = `${loses ? 4 : Math.max(3, best.net / max * 100)}%`;
-        row.querySelector(".amount").textContent = loses ? "$0.00" : `$${best.net.toFixed(2)}`;
-      }
+    const hours = $("#hours"), price = $("#price"), month = $("#est-month");
+    if (!hours || !price || !month || !data.cards?.length) return;
+    const chips = $$(".chip[data-card]");
+    let cardId = chips.find(c => c.getAttribute("aria-pressed") === "true")?.dataset.card ?? data.cards[0].id;
+    let shown = Number(month.textContent.replace(/[^0-9.]/g, "")) || 0;
+    let tween = 0;
+
+    function animateTo(value) {
+      const from = shown, start = performance.now(), length = still ? 0 : 650;
+      cancelAnimationFrame(tween);
+      (function step(now) {
+        const t = length ? Math.min(1, (now - start) / length) : 1;
+        shown = from + (value - from) * (1 - Math.pow(1 - t, 3));
+        month.textContent = `$${Math.round(shown)}`;
+        if (t < 1) tween = requestAnimationFrame(step);
+      })(start);
     }
-    slider.addEventListener("input", render);
-    render();
+    function render() {
+      const h = Number(hours.value), p = Number(price.value);
+      $("#hours-out").textContent = `${h} h a day`;
+      $("#price-out").textContent = `$${p.toFixed(2)} / kWh`;
+      const card = data.cards.find(c => c.id === cardId) ?? data.cards[0];
+      const best = card.coins
+        .map(c => ({ ...c, day: (c.usdPerDay - c.watts * 24 / 1000 * p) * h / 24 }))
+        .sort((a, b) => b.day - a.day)[0];
+      const day = Math.max(0, best.day);
+      animateTo(day * 30);
+      $("#est-sub").textContent = day <= 0
+        ? `At this electricity price an ${card.name} would cost more than it earns, so Otium would wait.`
+        : `$${day.toFixed(2)} a day with an ${card.name}, mining ${best.coin} (${best.note}), after every fee and the power it uses.`;
+      const raw = (data.payoutUsdt || 1.5) / day, days = Math.ceil(raw);
+      $("#est-payout").textContent = day <= 0 ? ""
+        : `First payout of 1.5 USDT to your wallet ${raw < 1 ? "within a day" : `in about ${days} day${days === 1 ? "" : "s"}`}, then daily.`;
+    }
+    for (const chip of chips) {
+      chip.addEventListener("click", () => {
+        cardId = chip.dataset.card;
+        for (const c of chips) c.setAttribute("aria-pressed", String(c === chip));
+        render();
+      });
+    }
+    hours.addEventListener("input", render);
+    price.addEventListener("input", render);
   }
 
   // ---------- Scroll details ----------

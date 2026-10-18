@@ -62,6 +62,8 @@ builder.Services.AddHttpClient<IProfitFeed, WhatToMineClient>();
 builder.Services.AddHttpClient<IKryptexApi, KryptexClient>();
 builder.Services.AddHttpClient<IPearlPipFeed, PearlPipClient>();
 builder.Services.AddSingleton<PearlForkWatcher>();
+builder.Services.AddHttpClient<IReleaseFeed, GitHubReleaseFeed>();
+builder.Services.AddSingleton<ReleaseDownloads>();
 builder.Services.AddSingleton<GpuPolicyService>();
 builder.Services.AddSingleton<KryptexCreditor>();
 builder.Services.AddSingleton<CpuPoolRouter>();
@@ -221,7 +223,7 @@ app.MapGet("/r/{code}", (string code, OtiumStore store, IOptions<ReferralOptions
 {
     var normalized = ReferralCodes.Normalize(code);
     var exists = ReferralCodes.IsWellFormed(normalized) && store.CodeExists(normalized);
-    return Results.Content(LandingPage.Render(normalized, options.Value.DownloadUrl, exists, SitePages.AvailableLegalPages(site.Value.PagesDirectory)),
+    return Results.Content(LandingPage.Render(normalized, "/download", exists, SitePages.AvailableLegalPages(site.Value.PagesDirectory)),
         "text/html; charset=utf-8");
 }).RequireRateLimiting("per-ip");
 
@@ -240,7 +242,7 @@ app.MapGet("/", async (IOptions<FeeOptions> fees, IOptions<ReferralOptions> refe
     {
         logger.LogWarning(e, "GPU policy unavailable for the front page");
     }
-    var html = SitePages.Home(policy, referral.Value.DownloadUrl, SitePages.AvailableLegalPages(site.Value.PagesDirectory),
+    var html = SitePages.Home(policy, "/download", SitePages.AvailableLegalPages(site.Value.PagesDirectory),
         SitePages.Earnings(gpu, policy), gpu?.GeneratedAt);
     return Results.Content(html, "text/html; charset=utf-8");
 }).RequireRateLimiting("per-ip");
@@ -250,7 +252,7 @@ app.MapGet("/{page:regex(^(privacy|terms)$)}", (string page, IOptions<SiteOption
     var directory = site.Value.PagesDirectory;
     var file = Path.Combine(directory, $"{page}.html");
     return File.Exists(file)
-        ? Results.Content(SitePages.Legal(page, File.ReadAllText(file), SitePages.AvailableLegalPages(directory), referral.Value.DownloadUrl),
+        ? Results.Content(SitePages.Legal(page, File.ReadAllText(file), SitePages.AvailableLegalPages(directory), "/download"),
             "text/html; charset=utf-8")
         : Results.NotFound();
 }).RequireRateLimiting("per-ip");
@@ -264,6 +266,14 @@ app.MapGet("/site/{**path}", (string path, HttpContext context) =>
     return Results.Bytes(asset.Content, asset.ContentType);
 });
 app.MapGet("/favicon.ico", () => Results.Redirect(SiteAssets.Url("otium.svg")));
+
+// Every Download button: straight to the latest installer for the visitor's system (or ?os=windows|macos|macos-intel|linux),
+// else the releases page (phones, unknown systems, or before the first release).
+app.MapGet("/download", async (string? os, HttpRequest request, ReleaseDownloads downloads, IOptions<ReferralOptions> referral, CancellationToken ct) =>
+{
+    var target = await downloads.InstallerUrlAsync(os ?? ReleaseDownloads.DetectOs(request.Headers.UserAgent), ct);
+    return Results.Redirect(target ?? referral.Value.DownloadUrl);
+}).RequireRateLimiting("per-ip");
 
 app.MapGet("/healthz", () => Results.Ok("ok"));
 
