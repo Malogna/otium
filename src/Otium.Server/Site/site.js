@@ -122,7 +122,7 @@
     const DAY_MS = 24000; // one simulated day every 24 seconds
     const startHour = still ? 3 : 23.1;
     let start = performance.now() - startHour * DAY_MS / 24;
-    let earned = still ? 1.1043 : 0.0274, lastHour = null, lastKind = kindAt(startHour), nextLog = 0, shareCount = 1;
+    let earned = still ? 1.1043 : 0.0274, lastHour = null, lastKind = kindAt(startHour), nextLog = 0, shareCount = 2;
 
     function logLine(hour, html, cls) {
       if (!log) return;
@@ -130,7 +130,8 @@
       if (cls) line.className = cls;
       line.innerHTML = `<span class="t">[${clockText(hour)}]</span> ${html}`;
       log.appendChild(line);
-      while (log.children.length > 9) log.firstElementChild.remove();
+      // More lines than fit: the oldest slide out of view under the fade, so the window is always full.
+      while (log.children.length > 18) log.firstElementChild.remove();
     }
     function spark(hour) {
       const [x, y] = point(hour, R);
@@ -181,7 +182,21 @@
       if (!still) requestAnimationFrame(tick);
     }
     // Seed the log so it reads like a running miner from the first frame.
-    for (const [h, text, cls] of [[22.9, "Otium 0.1.0 · away for 3 min · starting the miners", ""], [23.0, "away: SRBMiner pearlhash → pearlpow.unmineable.com:443 (TLS)", "ok"], [23.02, "login USDT:T9yD…kM2x.ot1a2b3c4dg#ztjq-jr7s", ""], [23.05, "share accepted · 1/1 · 0.9 s", "ok"]]) logLine(h, text, cls);
+    // The evening so far, so the window opens full.
+    for (const [h, text, cls] of [
+      [8.5, "you're back: miners stopped", ""],
+      [17.0, "power 0.27 $/kWh is above break-even: paused", "warn"],
+      [18.5, "you're back: miners stopped", ""],
+      [22.9, "Otium 0.1.0 · away for 3 min · starting the miners", ""],
+      [22.92, "away: XMRig rx/0 → rx.unmineable.com:443 (TLS)", ""],
+      [23.0, "away: SRBMiner pearlhash → pearlpow.unmineable.com:443 (TLS)", "ok"],
+      [23.02, "login USDT:T9yD…kM2x.ot1a2b3c4dg#ztjq-jr7s", ""],
+      [23.04, "GPU0 RTX 3080 · 101.2 TH/s · 238 W · 60°C", ""],
+      [23.05, "share accepted · 1/1 · 0.9 s", "ok"],
+      [23.07, "XMRig rx/0 · 2.41 kH/s · 6 threads", ""],
+      [23.09, "share accepted · 2/2 · 1.3 s", "ok"],
+      [23.1, "new job from pool · diff 2.07M", ""],
+    ]) logLine(h, text, cls);
     requestAnimationFrame(tick);
   }
 
