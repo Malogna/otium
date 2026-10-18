@@ -225,19 +225,45 @@ app.MapGet("/r/{code}", (string code, OtiumStore store, IOptions<ReferralOptions
         "text/html; charset=utf-8");
 }).RequireRateLimiting("per-ip");
 
-// The public website: the front page, and the operator's legal pages once their reviewed files are in place.
-app.MapGet("/", (IOptions<FeeOptions> fees, IOptions<ReferralOptions> referral, IOptions<SiteOptions> site) =>
-    Results.Content(SitePages.Home(Otium.Core.Fees.FeePolicy.FromTerms(fees.Value.ToTerms()), referral.Value.DownloadUrl,
-        SitePages.AvailableLegalPages(site.Value.PagesDirectory)), "text/html; charset=utf-8")).RequireRateLimiting("per-ip");
+// The public website: the front page (with today's per-card earnings from the GPU policy), the operator's legal pages
+// once their reviewed files are in place, and the site's own embedded files.
+app.MapGet("/", async (IOptions<FeeOptions> fees, IOptions<ReferralOptions> referral, IOptions<SiteOptions> site,
+    GpuPolicyService gpuPolicy, ILogger<Program> logger, CancellationToken ct) =>
+{
+    var policy = Otium.Core.Fees.FeePolicy.FromTerms(fees.Value.ToTerms());
+    Otium.Core.Switching.GpuPolicy? gpu = null;
+    try
+    {
+        gpu = await gpuPolicy.GetAsync(ct);
+    }
+    catch (Exception e) when (e is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException && !ct.IsCancellationRequested)
+    {
+        logger.LogWarning(e, "GPU policy unavailable for the front page");
+    }
+    var html = SitePages.Home(policy, referral.Value.DownloadUrl, SitePages.AvailableLegalPages(site.Value.PagesDirectory),
+        SitePages.Earnings(gpu, policy), gpu?.GeneratedAt);
+    return Results.Content(html, "text/html; charset=utf-8");
+}).RequireRateLimiting("per-ip");
 
-app.MapGet("/{page:regex(^(privacy|terms)$)}", (string page, IOptions<SiteOptions> site) =>
+app.MapGet("/{page:regex(^(privacy|terms)$)}", (string page, IOptions<SiteOptions> site, IOptions<ReferralOptions> referral) =>
 {
     var directory = site.Value.PagesDirectory;
     var file = Path.Combine(directory, $"{page}.html");
     return File.Exists(file)
-        ? Results.Content(SitePages.Legal(page, File.ReadAllText(file), SitePages.AvailableLegalPages(directory)), "text/html; charset=utf-8")
+        ? Results.Content(SitePages.Legal(page, File.ReadAllText(file), SitePages.AvailableLegalPages(directory), referral.Value.DownloadUrl),
+            "text/html; charset=utf-8")
         : Results.NotFound();
 }).RequireRateLimiting("per-ip");
+
+app.MapGet("/site/{**path}", (string path, HttpContext context) =>
+{
+    if (SiteAssets.Find(path) is not { } asset)
+        return Results.NotFound();
+    // Versioned links (?v=<hash>) never change content, so they can be cached for a year; the fonts' plain links for a day.
+    context.Response.Headers.CacheControl = context.Request.Query.ContainsKey("v") ? "public, max-age=31536000, immutable" : "public, max-age=86400";
+    return Results.Bytes(asset.Content, asset.ContentType);
+});
+app.MapGet("/favicon.ico", () => Results.Redirect(SiteAssets.Url("otium.svg")));
 
 app.MapGet("/healthz", () => Results.Ok("ok"));
 
