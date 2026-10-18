@@ -16,6 +16,9 @@ public interface IAccountClient
 
     Task<BandwidthReportResult> ReportBandwidthAsync(string deviceId, string deviceSecret, BandwidthReport report, CancellationToken ct);
 
+    /// <summary>Where to have internet sharing earnings paid so they reach the user's own address in their coin.</summary>
+    Task<SharingRoute> GetSharingRouteAsync(string deviceId, string deviceSecret, SharingRouteRequest request, CancellationToken ct);
+
     /// <summary>Sends what this computer earned since the last report (only for users who agreed to share it).</summary>
     Task ReportEarningsAsync(string deviceId, string deviceSecret, EarningsReport report, CancellationToken ct);
 
@@ -98,6 +101,12 @@ public sealed class AccountClient(HttpClient http) : IAccountClient
     {
         using var response = await PostAsync(deviceId, deviceSecret, "bandwidth", report, ct);
         return await ReadAsync<BandwidthReportResult>(response, ct);
+    }
+
+    public async Task<SharingRoute> GetSharingRouteAsync(string deviceId, string deviceSecret, SharingRouteRequest request, CancellationToken ct)
+    {
+        using var response = await PostAsync(deviceId, deviceSecret, "sharing/route", request, ct);
+        return await ReadAsync<SharingRoute>(response, ct);
     }
 
     public async Task ReportEarningsAsync(string deviceId, string deviceSecret, EarningsReport report, CancellationToken ct)

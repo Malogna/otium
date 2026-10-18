@@ -53,6 +53,32 @@
                     <TextBlock Classes="error" HorizontalAlignment="Center" IsVisible="{Binding !IsSupported}"
                                Text="Sorry, Otium doesn't support this type of computer yet." />
 
+                    <!-- Two ways in: everything on now, or step by step -->
+                    <Grid ColumnDefinitions="*,14,*" IsEnabled="{Binding IsSupported}">
+                        <Button Classes="choice accent" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                                Command="{Binding QuickStartCommand}" AutomationProperties.Name="Quick start">
+                            <StackPanel Spacing="4" Margin="4">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Path Classes="icon filled" Data="{StaticResource IconPlay}" Width="14" Height="14" Stroke="White" Fill="White" />
+                                    <TextBlock Text="Quick start" FontWeight="Bold" FontSize="16" />
+                                </StackPanel>
+                                <TextBlock FontSize="12.5" TextWrapping="Wrap" Opacity="0.9"
+                                           Text="Everything on: processor, graphics card and internet sharing. Just tell us where to pay you." />
+                            </StackPanel>
+                        </Button>
+                        <Button Grid.Column="2" Classes="choice" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                                Command="{Binding CustomizeCommand}" AutomationProperties.Name="Customize">
+                            <StackPanel Spacing="4" Margin="4">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Path Classes="icon" Data="{StaticResource IconSliders}" Width="16" Height="16" />
+                                    <TextBlock Text="Customize" FontWeight="Bold" FontSize="16" />
+                                </StackPanel>
+                                <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap"
+                                           Text="See what this PC could earn and choose each part yourself." />
+                            </StackPanel>
+                        </Button>
+                    </Grid>
+
                     <StackPanel Spacing="8" HorizontalAlignment="Center">
                         <Button Classes="link" HorizontalAlignment="Center" AutomationProperties.Name="Sign in" Command="{Binding ToggleSignInCommand}">
                             <TextBlock Text="Already use Otium on another computer? Sign in" Foreground="{DynamicResource GoodBrush}" />
@@ -110,6 +136,9 @@
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
                             <Separator Background="{DynamicResource CardBorder}" Margin="0,2" />
+                            <CheckBox IsChecked="{Binding UseCpu}">
+                                <TextBlock Text="Use my processor" TextWrapping="Wrap" />
+                            </CheckBox>
                             <CheckBox IsVisible="{Binding HasGpu}" IsChecked="{Binding UseGpu}">
                                 <TextBlock Text="{Binding GpuName, StringFormat='Also use my {0}'}" TextWrapping="Wrap" />
                             </CheckBox>
@@ -192,9 +221,42 @@
                         </StackPanel>
                     </Border>
 
-                    <!-- Two choices before Start: sharing earnings (ticked, can be unticked) and keeping the miner ready (unticked). -->
-                    <Border Classes="card delay2" Padding="16">
+                    <!-- Quick start: what's turned on, all of it, before Start -->
+                    <Border Classes="card delay2" Padding="16" IsVisible="{Binding IsQuick}">
+                        <StackPanel Spacing="10">
+                            <TextBlock FontWeight="SemiBold" Text="Quick start turns on" />
+                            <ItemsControl ItemsSource="{Binding QuickList}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="x:String">
+                                        <Grid ColumnDefinitions="Auto,*">
+                                            <Path Classes="icon" Data="{StaticResource IconCheck}" VerticalAlignment="Top" Margin="0,2,0,0" Width="14" Height="14" />
+                                            <TextBlock Grid.Column="1" Margin="10,0,0,0" FontSize="13" TextWrapping="Wrap" Text="{Binding}" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap"
+                                       Text="Pressing Start earning means you agree to all of these, including Proxybase's terms for internet sharing. Turn any of them off in Settings at any time, or go Back and choose Customize." />
+                            <Button Classes="link" HorizontalAlignment="Left" IsVisible="{Binding CanShareInternet}" Command="{Binding OpenProxybaseTermsCommand}"
+                                    AutomationProperties.Name="Read Proxybase's terms">
+                                <TextBlock Text="Read Proxybase's terms" FontSize="12.5" Foreground="{DynamicResource GoodBrush}" />
+                            </Button>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Customize: the choices, each with its own explanation -->
+                    <Border Classes="card delay2" Padding="16" IsVisible="{Binding IsCustom}">
                         <StackPanel Spacing="14">
+                            <CheckBox IsChecked="{Binding ShareInternet}" IsVisible="{Binding CanShareInternet}" AutomationProperties.Name="Share my unused internet too">
+                                <StackPanel Spacing="2">
+                                    <TextBlock FontWeight="SemiBold" Text="Share my unused internet too" TextWrapping="Wrap" />
+                                    <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap"
+                                               Text="Proxybase's customers, mostly AI agents and businesses collecting public web pages, use some of your unused internet connection. Websites they visit see your internet address. It's paid to your address in your coin, like mining. Ticking it means you agree to Proxybase's terms." />
+                                </StackPanel>
+                            </CheckBox>
                             <CheckBox IsChecked="{Binding ShareEarnings}" AutomationProperties.Name="Help show what PCs really earn">
                                 <StackPanel Spacing="2">
                                     <TextBlock FontWeight="SemiBold" Text="Help show what PCs really earn" TextWrapping="Wrap" />
@@ -245,7 +307,7 @@
                 <Border Classes="stepDot" Classes.active="{Binding IsStep2}" />
                 <Border Classes="stepDot" Classes.active="{Binding IsStep3}" />
             </StackPanel>
-            <Button Grid.Column="2" Classes="accent big" HorizontalAlignment="Right" IsVisible="{Binding !IsStep3}" AutomationProperties.Name="Next" Command="{Binding NextCommand}">
+            <Button Grid.Column="2" Classes="accent big" HorizontalAlignment="Right" IsVisible="{Binding ShowNext}" AutomationProperties.Name="Next" Command="{Binding NextCommand}">
                 <StackPanel Orientation="Horizontal" Spacing="8">
                     <TextBlock Text="Next" />
                     <Path Classes="icon" Data="{StaticResource IconArrowRight}" Width="16" Height="16" Stroke="White" />

@@ -92,6 +92,13 @@ else
     builder.Services.AddSingleton<IPayoutProvider>(sp => sp.GetRequiredService<PayPalPayoutProvider>());
     builder.Services.AddSingleton<IPayoutProvider, MoneroPayoutProvider>();
 }
+// Internet sharing payouts: a one-time conversion per payout from Proxybase's Tempo USDC to the user's own coin.
+builder.Services.Configure<Otium.Server.Sharing.SharingOptions>(builder.Configuration.GetSection(Otium.Server.Sharing.SharingOptions.Section));
+builder.Services.AddHttpClient<Otium.Server.Sharing.IRelayApi, Otium.Server.Sharing.RelayClient>();
+builder.Services.AddHttpClient<Otium.Server.Sharing.SideShiftLitecoin>();
+builder.Services.AddHttpClient<Otium.Server.Sharing.ChangeNowMonero>();
+builder.Services.AddSingleton<Otium.Server.Sharing.SharingRouteService>();
+
 // The website's real numbers: opt-in earnings reports, and what the pools paid users' own addresses.
 builder.Services.Configure<RealEarningsOptions>(builder.Configuration.GetSection(RealEarningsOptions.Section));
 builder.Services.AddSingleton<EarningsReportService>();
@@ -228,6 +235,15 @@ if (custodial)
         return Results.Ok(bandwidth.Report(session, body, ip));
     });
 }
+
+// Where to have Proxybase pay a user's sharing earnings so they arrive in the user's own coin (never via Otium).
+api.MapPost("/devices/{deviceId}/sharing/route", async (string deviceId, SharingRouteRequest body, HttpContext context, AccountService accounts,
+    Otium.Server.Sharing.SharingRouteService routes, CancellationToken ct) =>
+{
+    var session = accounts.Authenticate(deviceId, Secret(context.Request));
+    var ip = context.Connection.RemoteIpAddress?.MapToIPv4().ToString() ?? "unknown";
+    return Results.Ok(await routes.RouteAsync(session, body, ip, ct));
+});
 
 // Opt-in earnings reports for the website's real-earnings table (custodial or not).
 api.MapPost("/devices/{deviceId}/earnings", (string deviceId, EarningsReport body, HttpRequest request, AccountService accounts, EarningsReportService reports) =>

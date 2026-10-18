@@ -97,7 +97,8 @@ public sealed class AppHost : IAsyncDisposable
             GpuEngine = new EarningsEngine(gpuProvider, GpuPowerMeter, idle, () => _gpuConfig, gpuLedger.Load(), gpuLedger.Save);
         }
 
-        // Internet sharing (opt-in). Proxybase's client earns per GB and Otium has it paid to the user's own 0x address;
+        // Internet sharing (opt-in). Proxybase's client earns per GB; the server routes each payout through a conversion
+        // to the user's own payout address and coin;
         // builds with a Honeygain publisher key (custodial operators) report usage to the Otium server, which credits
         // the balance. (Mysterium's node, the earlier choice, stays in the code base but isn't offered.)
         var bandwidthLedger = new JsonFileStore<BandwidthLedger>(Paths.BandwidthLedgerFile);
@@ -105,7 +106,8 @@ public sealed class AppHost : IAsyncDisposable
             ? new SimulatedBandwidthProvider()
             : AppIdentity.ResolveHoneygainApiKey() is { } honeygainKey
                 ? new HoneygainBandwidthProvider(AppContext.BaseDirectory, honeygainKey)
-                : new ProxybaseBandwidthProvider(_http, Paths.EnginesDir, () => BandwidthBeneficiary);
+                : new ProxybaseBandwidthProvider(_http, Paths.EnginesDir,
+                    (request, ct) => CreateClient().GetSharingRouteAsync(DeviceId, Settings.DeviceSecret, request, ct));
         UsesProxybase = bandwidthProvider is ProxybaseBandwidthProvider;
         _bandwidthConfig = BuildBandwidthConfig();
         Bandwidth = new BandwidthSharer(bandwidthProvider, idle, () => _bandwidthConfig,
@@ -605,7 +607,9 @@ public sealed class AppHost : IAsyncDisposable
     /// <param name="payoutTarget">The address chosen during onboarding ("USDT:T…"), paid by the pool directly.</param>
     /// <param name="shareEarnings">"Help show what PCs earn" stayed ticked (see <see cref="SetShareEarningsStats"/>).</param>
     /// <param name="keepMinerReady">The user agreed to keep the processor miner paused, not stopped, when they come back.</param>
-    public async Task StartFirstTimeAsync(string? inviteCode, string? payoutTarget = null, bool shareEarnings = false, bool keepMinerReady = false)
+    /// <param name="shareInternet">The user agreed to internet sharing on the welcome screen (Quick start, or ticked).</param>
+    public async Task StartFirstTimeAsync(string? inviteCode, string? payoutTarget = null, bool shareEarnings = false, bool keepMinerReady = false,
+        bool shareInternet = false)
     {
         SetShareEarningsStats(shareEarnings);
         Settings.KeepMinerReadyWhenBack = keepMinerReady;
@@ -627,6 +631,24 @@ public sealed class AppHost : IAsyncDisposable
         }
         SetEarning(true);
         await SyncAccountAsync(CancellationToken.None);
+        // Internet sharing, agreed to on the welcome screen. It starts once the account (and the server's switch) allows it.
+        if (shareInternet && Bandwidth.Provider.UnavailableReason is null)
+        {
+            try
+            {
+                await SetBandwidthSharingAsync(true);
+            }
+            catch (InvalidOperationException)
+            {
+                // Not fatal: Settings can turn it on later.
+            }
+        }
+        else if (shareInternet)
+        {
+            // Not possible yet (e.g. no address it can pay): remember the agreement so the overview can finish it.
+            Settings.BandwidthPromptDismissed = false;
+        }
+
         // Measure this PC right away (the user is watching), so the overview shows its own numbers, not a table's.
         if (Settings.Measurement is null && !Settings.MeasurementSkipped)
             StartMeasurement();
