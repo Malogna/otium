@@ -153,9 +153,16 @@ public sealed class SitePagesTests : IDisposable
             Assert.Equal("nosniff", response.Headers.GetValues("X-Content-Type-Options").Single());
             Assert.Equal("strict-origin-when-cross-origin", response.Headers.GetValues("Referrer-Policy").Single());
             Assert.Equal("DENY", response.Headers.GetValues("X-Frame-Options").Single());
-            Assert.Contains("script-src 'self';", response.Headers.GetValues("Content-Security-Policy").Single());
+            // Only the site's own scripts, plus Cloudflare's injected one through a fresh nonce.
+            Assert.Matches("script-src 'self' 'nonce-[A-Za-z0-9+/]{22}==';", response.Headers.GetValues("Content-Security-Policy").Single());
+            Assert.DoesNotContain("unsafe-inline';", response.Headers.GetValues("Content-Security-Policy").Single().Split("style-src")[0]);
             Assert.Contains("frame-ancestors 'none'", response.Headers.GetValues("Content-Security-Policy").Single());
         }
+        // A new nonce on every response, or it would be no protection.
+        using var first = await _http.GetAsync("/");
+        using var second = await _http.GetAsync("/");
+        Assert.NotEqual(first.Headers.GetValues("Content-Security-Policy").Single(), second.Headers.GetValues("Content-Security-Policy").Single());
+
         // No inline scripts on the site, so script-src 'self' blocks nothing it needs (the JSON data block doesn't run).
         var html = (await Get("/")).Html;
         Assert.DoesNotMatch("<script>", html);
