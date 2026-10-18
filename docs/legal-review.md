@@ -173,5 +173,5 @@ need a legal name, organisation number and address.
 
 ## Also found
 
-- **Email sign-in doesn't work on the live server:** no SMTP provider is configured, so "Email me a code" can't send.
-  Pick a provider (with a processor agreement) before v0.1.0, or hide the email option.
+- **Email sign-in** now sends through Amazon SES in London (the same AWS account and agreement as the server). Until AWS
+  grants SES production access, codes only reach addresses verified in SES.

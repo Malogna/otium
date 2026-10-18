@@ -296,6 +296,39 @@ public sealed class NonCustodialServerTests : IDisposable
         await Assert.ThrowsAsync<AccountRequestException>(() => client.DeleteEarningsReportsAsync(device, "wrong", CancellationToken.None));
     }
 
+    private sealed class RefusingEmail : Otium.Server.Accounts.IEmailSender
+    {
+        public Task SendAsync(string to, string subject, string body, CancellationToken ct) =>
+            throw new System.Net.Mail.SmtpException("Message rejected: Email address is not verified.");
+    }
+
+    [Fact]
+    public async Task A_refused_email_gets_a_plain_message_not_a_bare_server_error()
+    {
+        using var factory = _factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        {
+            services.RemoveAll<Otium.Server.Accounts.IEmailSender>();
+            services.AddSingleton<Otium.Server.Accounts.IEmailSender>(new RefusingEmail());
+        }));
+        var http = factory.CreateClient();
+        var device = Guid.NewGuid().ToString("N");
+        var secret = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32));
+        (await http.PostAsJsonAsync("/api/v1/devices", new RegisterDeviceRequest(device, secret, Usdt, null))).EnsureSuccessStatusCode();
+
+        var e = await Assert.ThrowsAsync<AccountRequestException>(() =>
+            new AccountClient(http).SendEmailCodeAsync(device, secret, new EmailCodeRequest("someone@example.com"), CancellationToken.None));
+        Assert.Equal(503, e.StatusCode);
+        Assert.Contains("couldn't send the email", e.Message);
+    }
+
+    [Fact]
+    public void Outgoing_requests_say_who_they_are()
+    {
+        // CoinGecko (coin prices for the site's totals) refuses requests without a User-Agent.
+        var client = _factory.Services.GetRequiredService<IHttpClientFactory>().CreateClient();
+        Assert.StartsWith("Otium-Server/", client.DefaultRequestHeaders.UserAgent.ToString());
+    }
+
     [Fact]
     public void The_country_list_names_sanctioned_and_mining_ban_countries_only()
     {
