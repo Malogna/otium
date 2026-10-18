@@ -78,6 +78,8 @@ if ($FeeWallet) { $releaseProps += "-p:OtiumFeeWallet=$($FeeWallet.Trim().Replac
 if ($UnmineableReferral) { $releaseProps += "-p:OtiumUnmineableReferral=$($UnmineableReferral.Trim())" }
 if ($HoneygainKey) { $releaseProps += "-p:OtiumHoneygainKey=$($HoneygainKey.Trim())" }
 $releaseNotes = Join-Path $root "docs/release-notes/$Version.md"
+# A release candidate ("0.1.0-rc.1") ships the notes of the version it leads to.
+if (-not (Test-Path $releaseNotes)) { $releaseNotes = Join-Path $root "docs/release-notes/$($Version.Split('-')[0]).md" }
 
 Push-Location $root
 try {

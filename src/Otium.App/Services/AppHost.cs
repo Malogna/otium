@@ -1092,6 +1092,19 @@ public sealed class AppHost : IAsyncDisposable
             ? DeviceIdentity.FromSeed(devSeed)
             : DeviceIdentity.Compute(Settings.DeviceSeed);
 
+    /// <summary>
+    /// Sends a problem report (see <see cref="ProblemReportBuilder"/>). Returns the reference to quote; throws
+    /// <see cref="AccountRequestException"/> or a network error with the reason when it can't be sent.
+    /// </summary>
+    public async Task<string> SendProblemReportAsync(string? note)
+    {
+        if (Settings.Account.WorkerId is null)
+            await SyncAccountAsync(CancellationToken.None); // the server only takes reports from computers it knows
+        var report = ProblemReportBuilder.Build(this, note);
+        var result = await CreateClient().SendProblemReportAsync(DeviceId, Settings.DeviceSecret, report, CancellationToken.None);
+        return result.Reference;
+    }
+
     private AccountClient CreateClient() =>
         new(new HttpClient
         {

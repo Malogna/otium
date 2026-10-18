@@ -3,6 +3,7 @@ using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Otium.App.Services;
+using Otium.Core.Accounts;
 using Otium.Core.Fees;
 using Otium.Core.Gpu;
 using Otium.Core.Platform;
@@ -504,6 +505,42 @@ public partial class SettingsViewModel : ViewModelBase
 
     [RelayCommand]
     private void OpenDataFolder() => Launch.Open(DataFolder);
+
+    // ---------- help and problem reports ----------
+
+    [ObservableProperty] public partial string ProblemNote { get; set; } = "";
+    [ObservableProperty] public partial bool IsSendingReport { get; set; }
+    [ObservableProperty] public partial string? ProblemReportResult { get; set; }
+    [ObservableProperty] public partial string? ProblemReportReference { get; set; }
+
+    [RelayCommand]
+    private void OpenHelp() => Launch.Open(Core.AppIdentity.HelpUrl);
+
+    [RelayCommand]
+    private async Task SendProblemReport()
+    {
+        IsSendingReport = true;
+        ProblemReportResult = null;
+        ProblemReportReference = null;
+        try
+        {
+            var reference = await _host.SendProblemReportAsync(ProblemNote);
+            ProblemReportReference = reference;
+            ProblemReportResult = $"Sent. Your reference is {reference}: mention it when you ask for help.";
+            ProblemNote = "";
+        }
+        catch (Exception e) when (e is AccountRequestException or HttpRequestException or TaskCanceledException or InvalidOperationException)
+        {
+            ProblemReportResult = e is AccountRequestException rejected ? rejected.Message : "Couldn't reach Otium to send it. Check your internet connection and try again.";
+        }
+        finally
+        {
+            IsSendingReport = false;
+        }
+    }
+
+    [RelayCommand]
+    private Task CopyProblemReference() => ProblemReportReference is { } reference ? ClipboardService.CopyAsync(reference) : Task.CompletedTask;
 }
 
 public sealed record BenchmarkRow(string Algorithm, string Speed, string Power, string Earns, string Net, string Note);

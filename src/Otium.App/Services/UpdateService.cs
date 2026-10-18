@@ -28,8 +28,12 @@ public sealed class UpdateService
         if (url is null)
             return new UpdateService(null, "Automatic updates aren't configured in this build.");
 
+        // A release candidate ("0.1.0-rc.1") follows the pre-releases, so testers get rc.2 and then the release; stable
+        // installs only ever see stable releases.
+        var version = typeof(UpdateService).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "";
+        var followPrereleases = version.Split('+')[0].Contains('-');
         var manager = Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase)
-            ? new UpdateManager(new GithubSource(url, null, false))
+            ? new UpdateManager(new GithubSource(url, null, followPrereleases))
             : new UpdateManager(url);
 
         return manager.IsInstalled
