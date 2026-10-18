@@ -25,7 +25,10 @@
             <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap" Text="{Binding Hint}" />
         </StackPanel>
         <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap" Text="{Binding PoolNote}" />
+        <CheckBox IsChecked="{Binding UsPerson}" IsVisible="{Binding AskUsPerson}" AutomationProperties.Name="I'm a US citizen or live in the US">
+            <TextBlock FontSize="13" TextWrapping="Wrap" Text="I'm a US citizen or live in the US" />
+        </CheckBox>
         <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap" IsVisible="{Binding IsUnitedStates}"
-                   Text="In the US you're paid in Monero by MoneroOcean: unMineable, which pays other coins, doesn't serve US residents." />
+                   Text="US citizens and residents are paid in Monero by MoneroOcean: unMineable, which pays other coins, doesn't serve them." />
     </StackPanel>
 </UserControl>

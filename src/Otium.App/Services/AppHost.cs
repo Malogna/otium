@@ -46,6 +46,7 @@ public sealed class AppHost : IAsyncDisposable
         MinerLifetime.StopOrphans(Paths.EnginesDir, Path.Combine(Paths.Root, "otium.lock"));
         _settingsStore = new JsonFileStore<AppSettings>(Paths.SettingsFile);
         Settings = _settingsStore.Load();
+        UsPersonDeclared = Settings.UsPerson;
         EnsureDeviceSecrets();
 
         DeviceId = ComputeDeviceId();
@@ -274,10 +275,33 @@ public sealed class AppHost : IAsyncDisposable
     /// <summary>Turns the opt-in on or off. Turning it on counts from now: nothing earned before is sent.</summary>
     public void SetShareEarningsStats(bool on)
     {
-        if (on && !Settings.ShareEarningsStats)
+        var wasOn = Settings.ShareEarningsStats;
+        if (on && !wasOn)
             EarningsReports.Reset(Settings.EarningsReports, ReportedDevices(), DateTimeOffset.UtcNow);
         Settings.ShareEarningsStats = on;
+        Settings.ShareEarningsAnsweredAt = DateTimeOffset.UtcNow; // when the user said yes or no, for the record
         _settingsStore.Save(Settings);
+        if (wasOn && !on)
+            _ = DeleteSharedEarningsAsync();
+    }
+
+    /// <summary>Withdrawing consent deletes what this computer shared. Without a connection it's retried at the next sync.</summary>
+    private async Task DeleteSharedEarningsAsync()
+    {
+        Settings.DeleteSharedEarnings = true;
+        SaveSettings();
+        if (Settings.Account.WorkerId is null)
+            return;
+        try
+        {
+            await CreateClient().DeleteEarningsReportsAsync(DeviceId, Settings.DeviceSecret, CancellationToken.None);
+            Settings.DeleteSharedEarnings = false;
+            SaveSettings();
+        }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or AccountRequestException or InvalidOperationException)
+        {
+            // Retried after the next successful sync.
+        }
     }
 
     /// <summary>When the user agreed and a report is due, sends what was earned since the last one. Failures retry later.</summary>
@@ -542,7 +566,21 @@ public sealed class AppHost : IAsyncDisposable
     public FeePolicy Fees => FeePolicy.FromTerms(Settings.Account.Fees);
 
     /// <summary>unMineable's terms exclude US persons, so US users are paid in Monero by MoneroOcean instead.</summary>
-    public static bool InUnitedStates => System.Globalization.RegionInfo.CurrentRegion.TwoLetterISORegionName == "US";
+    public static bool InUnitedStates => UsPersonDeclared || System.Globalization.RegionInfo.CurrentRegion.TwoLetterISORegionName == "US";
+
+    /// <summary>The user said they're a US citizen or resident (onboarding or Settings); see <see cref="SetUsPerson"/>.</summary>
+    private static bool UsPersonDeclared { get; set; }
+
+    /// <summary>Records whether the user is a US citizen or resident, which decides their pool and payout coin.</summary>
+    public void SetUsPerson(bool usPerson)
+    {
+        Settings.UsPerson = usPerson;
+        UsPersonDeclared = usPerson;
+        SaveSettings();
+    }
+
+    /// <summary>Why Otium can't run here: the Windows region, or the server's check of where the computer connects from.</summary>
+    public string? UnavailableHere => Core.Availability.BlockedHere() ?? Settings.UnavailableReason;
 
     public IMoneroPoolApi Pool { get; }
 
@@ -631,7 +669,7 @@ public sealed class AppHost : IAsyncDisposable
     public event Action? AccountChanged;
 
     /// <summary>Why mining can't start yet, or null when it can.</summary>
-    public string? MiningBlocker => Settings.PayoutMode switch
+    public string? MiningBlocker => UnavailableHere ?? Settings.PayoutMode switch
     {
         PayoutMode.OwnWallet when OwnPayoutTarget is null =>
             "Add the address you want to be paid at in Advanced settings.",
@@ -681,7 +719,7 @@ public sealed class AppHost : IAsyncDisposable
     /// earning, then connects to the server (mining begins as soon as the account is ready).
     /// </summary>
     /// <param name="payoutTarget">The address chosen during onboarding ("USDT:T…"), paid by the pool directly.</param>
-    /// <param name="shareEarnings">"Help show what PCs earn" stayed ticked (see <see cref="SetShareEarningsStats"/>).</param>
+    /// <param name="shareEarnings">The user answered yes to "Share analytics" (see <see cref="SetShareEarningsStats"/>).</param>
     /// <param name="keepMinerReady">The user agreed to keep the processor miner paused, not stopped, when they come back.</param>
     /// <param name="shareInternet">The user agreed to internet sharing on the welcome screen (Quick start, or ticked).</param>
     public async Task StartFirstTimeAsync(string? inviteCode, string? payoutTarget = null, bool shareEarnings = false, bool keepMinerReady = false,
@@ -955,11 +993,16 @@ public sealed class AppHost : IAsyncDisposable
             Apply(summary);
             referral.RegisteredPayoutAddress = ownWallet;
             LastServerError = null;
+            Settings.UnavailableReason = null;
+            if (Settings.DeleteSharedEarnings && !Settings.ShareEarningsStats)
+                await DeleteSharedEarningsAsync();
             await RefreshGpuPolicyAsync(client, ct);
         }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException or UriFormatException or InvalidOperationException or AccountRequestException)
         {
             LastServerError = e is AccountRequestException rejected ? rejected.Message : "Can't reach Otium right now.";
+            if (e is AccountRequestException { StatusCode: 451 } unavailable)
+                Settings.UnavailableReason = unavailable.Message; // stops mining and sharing until a check from elsewhere passes
         }
 
         SaveSettings();

@@ -434,7 +434,7 @@ internal static class SitePages
                 <section aria-labelledby="power-title">
                   <div class="wrap power">
                     <div class="reveal">
-                      <span class="label">Never at a loss</span>
+                      <span class="label">Watches the power price</span>
                       <h2 id="power-title" style="margin-top:18px">It watches the price of power by the hour.</h2>
                       <p style="margin-top:20px" class="muted">When electricity would cost more than mining earns, Otium waits. In Norway, Sweden, Denmark and Finland it follows the live hourly price for your area, so it mines through the cheap night hours and sits out the evening peak.</p>
                     </div>

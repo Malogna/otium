@@ -251,6 +251,60 @@ public sealed class NonCustodialServerTests : IDisposable
 
     private const int ProblemReportServiceLimit = Otium.Server.Support.ProblemReportService.MaxPerDevicePerDay;
 
+    [Theory]
+    [InlineData("IR", "sanctions")]
+    [InlineData("CN", "mining")]
+    public async Task Countries_otium_doesnt_run_in_get_no_account_but_keep_their_data_rights(string country, string why)
+    {
+        var (device, secret, ok) = await Register(Usdt);
+        Assert.Equal(HttpStatusCode.OK, ok.StatusCode);
+
+        var register = new HttpRequestMessage(HttpMethod.Post, "/api/v1/devices")
+        {
+            Content = JsonContent.Create(new RegisterDeviceRequest(Guid.NewGuid().ToString("N"), Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32)), Usdt, null)),
+        };
+        register.Headers.Add("CF-IPCountry", country);
+        var refused = await _http.SendAsync(register);
+        Assert.Equal(HttpStatusCode.UnavailableForLegalReasons, refused.StatusCode);
+        Assert.Contains(why, await refused.Content.ReadAsStringAsync());
+
+        // An existing account seen from there: no summary (the app stops earning), but export still works.
+        var summary = new HttpRequestMessage(HttpMethod.Get, $"/api/v1/devices/{device}/account");
+        summary.Headers.Add(AccountClient.SecretHeader, secret);
+        summary.Headers.Add("CF-IPCountry", country);
+        Assert.Equal(HttpStatusCode.UnavailableForLegalReasons, (await _http.SendAsync(summary)).StatusCode);
+        var export = new HttpRequestMessage(HttpMethod.Get, $"/api/v1/devices/{device}/account/export");
+        export.Headers.Add(AccountClient.SecretHeader, secret);
+        export.Headers.Add("CF-IPCountry", country);
+        Assert.Equal(HttpStatusCode.OK, (await _http.SendAsync(export)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Stopping_earnings_sharing_deletes_what_the_computer_shared()
+    {
+        var (device, secret, _) = await Register(Usdt);
+        var client = new AccountClient(_http);
+        var now = _time.GetUtcNow();
+        await client.ReportEarningsAsync(device, secret,
+            new EarningsReport(1, now - TimeSpan.FromHours(6), now, [new DeviceEarnings("gpu", "rtx4090", 3600 * 5, 0.4, 0.1)]), CancellationToken.None);
+        var store = _factory.Services.GetRequiredService<Otium.Server.Data.OtiumStore>();
+        var accountId = store.FindDevice(device)!.AccountId;
+        Assert.NotEmpty(store.EarningsReportsFor(accountId));
+
+        await client.DeleteEarningsReportsAsync(device, secret, CancellationToken.None);
+        Assert.Empty(store.EarningsReportsFor(accountId));
+        await Assert.ThrowsAsync<AccountRequestException>(() => client.DeleteEarningsReportsAsync(device, "wrong", CancellationToken.None));
+    }
+
+    [Fact]
+    public void The_country_list_names_sanctioned_and_mining_ban_countries_only()
+    {
+        Assert.Contains("sanctions", Otium.Core.Availability.BlockedReason("ru"));
+        Assert.Contains("mining", Otium.Core.Availability.BlockedReason("DZ"));
+        foreach (var open in new[] { "NO", "SE", "US", "GB", "DE", "", null, "XX" })
+            Assert.Null(Otium.Core.Availability.BlockedReason(open));
+    }
+
     /// <summary>unMineable as seen through its API: every address has an account, rewarded as set per target.</summary>
     private sealed class FakeUnmineable : IUnmineableApi
     {

@@ -42,10 +42,12 @@ Otium never holds your money. There's no balance to cash out and no account you 
 
 ## What you get
 
-- **Never costs you money.** Otium pauses whenever electricity would cost more than it earns. The price is estimated
-  for your country, or follows live hourly prices in Norway, Sweden, Denmark and Finland.
-- **Never in your way.** Mining runs at the lowest priority, only while you're away. It keeps the computer awake while
-  it earns (the screen still turns off), and never keeps a laptop on battery awake.
+- **Watches the price of power.** Otium pauses when electricity would likely cost more than it earns. The price is
+  estimated for your country (or enter your own), or follows live hourly prices in Norway, Sweden, Denmark and
+  Finland. Grid fees and taxes may not be included, so treat it as an estimate.
+- **Steps aside for you.** Mining runs at the lowest priority, only while you're away. It keeps the computer awake
+  while it earns (the screen still turns off), never keeps a laptop on battery awake, and makes the computer warmer
+  and its fans louder.
 - **The best coin for your card.** The graphics card mines whichever coin pays most for it right now, and moves on if
   the pool stops crediting one.
 - **Internet sharing (optional).** Earn from internet you're not using through [Proxybase](https://proxybase.xyz),
@@ -63,7 +65,7 @@ Otium never holds your money. There's no balance to cash out and no account you 
 | Otium | 2% of mining time (about 29 minutes per day of mining), mined to Otium's address. Nothing while paused. |
 | Mining software | XMRig 1% (processor), SRBMiner 0.85–2% (graphics card, depending on the coin) |
 | Pool | unMineable 0.75% (1% without Otium's referral code; unMineable pays Otium part of its own fee for the code) |
-| Internet sharing | 2% of each payout's conversion to your coin |
+| Internet sharing | 2% of sharing earnings, paid to Otium's address before the rest is converted to your coin (the conversion itself has no Otium fee) |
 
 In total about 3.75% on the processor and 3.6–4.75% on the graphics card. The app shows the same breakdown before you
 start.
@@ -76,8 +78,9 @@ start.
   allow it.
 - Otium's server keeps your payout address, your computers and invite codes. An email address is optional (it lets
   you keep your invites when you reinstall). Settings has **Download my data** and **Delete my account**.
-- "Help show what PCs really earn" (on by default, can be turned off at the start or in Settings) sends your graphics
-  card and processor model and what they earned, never your address. otium.lol shows only totals across several PCs.
+- "Share analytics" is a yes-or-no question at the start (and a switch in Settings). If you say yes,
+  the app sends your graphics card and processor model and what they earned, never your address; otium.lol shows only
+  totals across several PCs. Saying no later deletes what was sent.
 - Uninstalling removes the miners, Otium's scheduled tasks and its downloaded files.
 
 ## Help
@@ -97,4 +100,4 @@ dotnet run --project src/Otium.App       # the app on its own
 The app is .NET 10 with Avalonia, and the server is ASP.NET Core with SQLite. How everything works, the server's
 settings, building installers and releasing are in [docs/technical.md](docs/technical.md). Also:
 [deploying](docs/deploying.md), [releasing](docs/releasing.md), [release candidates](docs/release-candidate.md),
-[privacy policy draft](docs/privacy.md).
+[privacy policy draft](docs/privacy.md), [terms of use draft](docs/terms.md), [legal review](docs/legal-review.md).

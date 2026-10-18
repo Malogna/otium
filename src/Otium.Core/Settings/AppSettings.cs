@@ -103,6 +103,15 @@ public sealed class AppSettings
 
     public bool AcceptedTerms { get; set; }
 
+    /// <summary>
+    /// The user said they're a US citizen or resident: unMineable doesn't serve US persons anywhere, so they're paid in
+    /// Monero by MoneroOcean, like computers in the US region.
+    /// </summary>
+    public bool UsPerson { get; set; }
+
+    /// <summary>Why the Otium server says Otium isn't available where this computer is (sanctions, mining bans), or null.</summary>
+    public string? UnavailableReason { get; set; }
+
     /// <summary>Share unused internet bandwidth through Otium's partner. Off until the user opts in.</summary>
     public bool BandwidthEnabled { get; set; }
 
@@ -162,9 +171,16 @@ public sealed class AppSettings
 
     /// <summary>
     /// Send what this computer earns (graphics card model, processor name, hours, amounts; never an address) for the
-    /// real-earnings table on otium.lol. Ticked on the welcome screen, where the user can untick it; Settings turns it off.
+    /// real-earnings table on otium.lol. Asked as a plain yes or no on the welcome screen (nothing preselected: it's
+    /// consent); Settings turns it on or off.
     /// </summary>
     public bool ShareEarningsStats { get; set; }
+
+    /// <summary>When the user last answered "Share analytics", as a record of their choice.</summary>
+    public DateTimeOffset? ShareEarningsAnsweredAt { get; set; }
+
+    /// <summary>The user stopped sharing earnings and the server hasn't yet deleted what this computer shared.</summary>
+    public bool DeleteSharedEarnings { get; set; }
 
     /// <summary>
     /// When the user comes back, pause the processor miner instead of stopping it, keeping its memory (about 2.5 GB) for
