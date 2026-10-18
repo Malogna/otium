@@ -219,7 +219,7 @@ public sealed class EarningsEngine : IAsyncDisposable
             var idle = _idle.GetIdleTime();
             if (idle is { } idleTime && idleTime < config.IdleThreshold)
             {
-                await SuspendOrStopAsync(now, ct);
+                await SuspendOrStopAsync(now, config.PauseWhenBack, ct);
                 var wait = config.IdleThreshold - idleTime;
                 Publish(EngineState.WaitingForIdle, $"Waiting until you're away ({FormatMinutes(wait)} more)", idleTime: idle);
                 return;
@@ -337,20 +337,21 @@ public sealed class EarningsEngine : IAsyncDisposable
     }
 
     /// <summary>
-    /// The user is back. A pausable engine keeps its prepared state for <see cref="PauseGrace"/>, so earning resumes the
-    /// moment they leave again; others (and one paused for longer) are stopped.
+    /// The user is back. When they agreed (<see cref="EngineConfig.PauseWhenBack"/>), a pausable engine keeps its prepared
+    /// state for <see cref="PauseGrace"/>, so earning resumes the moment they leave again; otherwise (and after that) it
+    /// is stopped, freeing its memory.
     /// </summary>
-    private async Task SuspendOrStopAsync(DateTimeOffset now, CancellationToken ct)
+    private async Task SuspendOrStopAsync(DateTimeOffset now, bool pauseAllowed, CancellationToken ct)
     {
         if (_running is null)
             return;
         if (_suspendedSince is { } since)
         {
-            if (now - since >= PauseGrace)
+            if (!pauseAllowed || now - since >= PauseGrace)
                 await StopRunningAsync(ct);
             return;
         }
-        if (_provider is IPausableProvider pausable && await pausable.PauseAsync(ct))
+        if (pauseAllowed && _provider is IPausableProvider pausable && await pausable.PauseAsync(ct))
         {
             _suspendedSince = now;
             _saveLedger(_ledger);

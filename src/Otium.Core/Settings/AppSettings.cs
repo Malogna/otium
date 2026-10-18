@@ -135,10 +135,16 @@ public sealed class AppSettings
     public string? MonthlyReportDismissed { get; set; }
 
     /// <summary>
-    /// Opt-in: send what this computer earns (graphics card model, processor name, hours, amounts; never an address) for
-    /// the real-earnings table on otium.lol. Off until the user ticks it.
+    /// Send what this computer earns (graphics card model, processor name, hours, amounts; never an address) for the
+    /// real-earnings table on otium.lol. Ticked on the welcome screen, where the user can untick it; Settings turns it off.
     /// </summary>
     public bool ShareEarningsStats { get; set; }
+
+    /// <summary>
+    /// When the user comes back, pause the processor miner instead of stopping it, keeping its memory (about 2.5 GB) for
+    /// up to 10 minutes so earning resumes at once when they leave again. Off unless the user agrees.
+    /// </summary>
+    public bool KeepMinerReadyWhenBack { get; set; }
 
     public EarningsReportState EarningsReports { get; set; } = new();
 

@@ -37,6 +37,7 @@ public partial class SettingsViewModel : ViewModelBase
         OnlyWhenIdle = s.OnlyWhenIdle;
         KeepAwakeWhileEarning = s.KeepAwakeWhileEarning;
         ShareEarningsStats = s.ShareEarningsStats;
+        KeepMinerReadyWhenBack = s.KeepMinerReadyWhenBack;
         IdleMinutes = s.IdleMinutes;
         ElectricityPrice = (decimal)s.ElectricityPricePerKwh;
         CpuFullLoadWatts = s.CpuFullLoadWatts is { } w ? (decimal)w : null;
@@ -348,6 +349,17 @@ public partial class SettingsViewModel : ViewModelBase
     {
         if (!_loading)
             _host.SetShareEarningsStats(value);
+    }
+
+    /// <summary>Pause the processor miner instead of stopping it when the user comes back (opt-in).</summary>
+    [ObservableProperty] public partial bool KeepMinerReadyWhenBack { get; set; }
+
+    partial void OnKeepMinerReadyWhenBackChanged(bool value)
+    {
+        if (_loading)
+            return;
+        _host.Settings.KeepMinerReadyWhenBack = value;
+        _host.SaveSettings(); // rebuilds the engine config: turning it off stops a paused miner on the next tick
     }
 
     [ObservableProperty] public partial decimal? IdleMinutes { get; set; }
