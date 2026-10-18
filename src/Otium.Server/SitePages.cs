@@ -438,7 +438,7 @@ internal static class SitePages
                       <details><summary>I live in the United States</summary><p>unMineable doesn't serve US residents, so Otium pays you in Monero through MoneroOcean instead.</p></details>
                       <details><summary>What about AMD graphics cards?</summary><p>They can't mine Pearl, the best coin for NVIDIA cards. Add a free Quantus wallet in Settings and your card mines Quantus, paid hourly by Kryptex Pool.</p></details>
                       <details><summary>Which download do I need?</summary><p>The Download button picks the installer for the computer you're on. To choose one yourself: <a href="/download?os=windows">Windows</a>, <a href="/download?os=macos">Mac with Apple silicon</a>, <a href="/download?os=macos-intel">Mac with Intel</a> or <a href="/download?os=linux">Linux (AppImage)</a>.</p></details>
-                      <details><summary>Can I also share my internet connection?</summary><p>On Windows, optionally. A Mysterium node shares a little of your unused bandwidth with businesses and pays you in MYST at your own Polygon address. It's off unless you turn it on.</p></details>
+                      <details><summary>Will my computer go to sleep?</summary><p>Not while it's earning: Otium keeps it awake so it can mine through the night, and the screen still turns off. When it stops earning (you're back, power is too expensive, or a laptop runs on battery) your usual sleep settings apply again. You can switch this off in Settings.</p></details>
                     </div>
                   </div>
                 </section>

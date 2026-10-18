@@ -175,7 +175,7 @@ public sealed class NonCustodialServerTests : IDisposable
         Assert.Equal(8049, quantusRoute.Port);
         Assert.True(quantusRoute.Tls);
         Assert.Null(quantusRoute.User);
-        Assert.Null(pearl.OnlyGpus); // Pearl's fork isn't active
+        Assert.Equal(["NVIDIA"], pearl.OnlyGpus); // unMineable's PearlPow is NVIDIA-only; Pearl's fork isn't active
     }
 
     [Fact]

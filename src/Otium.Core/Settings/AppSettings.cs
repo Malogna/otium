@@ -58,6 +58,12 @@ public sealed class AppSettings
     /// <summary>On by default so Otium never slows down someone who is using their computer.</summary>
     public bool OnlyWhenIdle { get; set; } = true;
 
+    /// <summary>
+    /// Keep the computer from sleeping while it earns on mains power (the screen still turns off). On by default:
+    /// without it Windows' usual power plan sleeps 15–30 minutes after the user leaves and the miners stop for the night.
+    /// </summary>
+    public bool KeepAwakeWhileEarning { get; set; } = true;
+
     public int IdleMinutes { get; set; } = 3;
 
     /// <summary>Stop automatically when estimated earnings don't cover the electricity.</summary>

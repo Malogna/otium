@@ -13,6 +13,10 @@ sealed class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        // Elevated helper for "Speed up processor mining": grant the account the right to large pages, then exit.
+        if (OperatingSystem.IsWindows() && args is [Otium.Core.Platform.LargePages.GrantArgument, var sid])
+            Environment.Exit(Otium.Core.Platform.LargePages.Grant(sid));
+
         // Must run first: Velopack's install/update/uninstall hooks re-launch the app with special arguments
         // and expect it to exit quickly without showing UI.
         var velopack = VelopackApp.Build();

@@ -62,7 +62,7 @@ public sealed class AppHost : IAsyncDisposable
         ElectricityPrices = new ElectricityPriceProvider(_http);
 
         // CPU
-        Provider = new XmrigProvider(_http, Pool, Paths.EnginesDir, referralCode: ReferralCode);
+        Provider = new XmrigProvider(_http, Pool, Paths.EnginesDir, referralCode: ReferralCode, unitedStates: InUnitedStates);
         PowerModel = CpuPowerModel.ForThisMachine(Settings.CpuFullLoadWatts);
         PowerMeter = RaplPowerMeter.IsAvailable() ? new RaplPowerMeter(() => PowerModel) : new EstimatedCpuPowerMeter(() => PowerModel);
         var cpuLedger = new JsonFileStore<EarningsLedger>(Paths.LedgerFile);
@@ -80,7 +80,8 @@ public sealed class AppHost : IAsyncDisposable
             _http, Pool, Paths.EnginesDir, Paths.GpuBenchmarksFile, Gpus, GpuPowerMeter, EffectivePricePerKwh,
             policy: () => EffectiveGpuPolicy,
             freeMemoryGb: gpu => gpu.Vendor == GpuVendor.Nvidia ? _nvml?.ReadFreeMemoryGb(gpu.Index) : null,
-            referralCode: ReferralCode);
+            referralCode: ReferralCode,
+            unitedStates: InUnitedStates);
         if (IsSimulated)
         {
             var gpuLedger = new JsonFileStore<EarningsLedger>(Paths.GpuLedgerFile);
@@ -109,6 +110,58 @@ public sealed class AppHost : IAsyncDisposable
         Bandwidth = new BandwidthSharer(bandwidthProvider, idle, () => _bandwidthConfig,
             UsesMysterium ? null : (report, ct) => CreateClient().ReportBandwidthAsync(DeviceId, Settings.DeviceSecret, report, ct),
             bandwidthLedger.Load(), bandwidthLedger.Save);
+
+        foreach (var engine in Engines)
+            engine.SnapshotChanged += _ => UpdateKeepAwake();
+    }
+
+    private readonly ISleepInhibitor _sleep = SleepInhibitor.ForThisPlatform();
+
+    /// <summary>
+    /// "Speed up processor mining": runs Otium once with administrator rights (Windows asks) to give this account the
+    /// "Lock pages in memory" right, which the miner needs for large memory pages. Returns what to tell the user.
+    /// </summary>
+    public async Task<string> GrantLargePagesAsync()
+    {
+        if (!OperatingSystem.IsWindows())
+            return "Large memory pages are set up by your system administrator on this operating system.";
+        if (Environment.ProcessPath is not { } self)
+            return "Couldn't find Otium's program file to ask Windows for permission.";
+        try
+        {
+            using var helper = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(self, [LargePages.GrantArgument, LargePages.CurrentUserSid()])
+            {
+                UseShellExecute = true,
+                Verb = "runas", // the Windows administrator prompt
+                WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden,
+            });
+            if (helper is null)
+                return "Couldn't ask Windows for permission. Try again.";
+            await helper.WaitForExitAsync();
+            return helper.ExitCode == 0
+                ? "Done. Sign out of Windows and back in (or restart) to finish; processor mining is faster from then on."
+                : $"Windows didn't allow it (error {helper.ExitCode}). Processor mining keeps working as before.";
+        }
+        catch (System.ComponentModel.Win32Exception e) when (e.NativeErrorCode == 1223)
+        {
+            return "Nothing changed, because the Windows permission prompt was cancelled. Processor mining keeps working as before.";
+        }
+    }
+
+    /// <summary>Whether Otium is currently keeping the computer awake because it's earning.</summary>
+    public bool KeepingAwake => _sleep.IsHeld;
+
+    /// <summary>
+    /// Holds off system sleep while a miner is starting or earning on mains power, and lets the computer sleep again
+    /// as soon as nothing is (paused, waiting for you to leave, or on battery). Called on every engine change and once
+    /// a minute, which also notices the charger being unplugged.
+    /// </summary>
+    public void UpdateKeepAwake()
+    {
+        if (KeepAwakePolicy.ShouldHold(Settings.KeepAwakeWhileEarning, Engines.Select(e => e.Snapshot.State), PowerSource.OnBattery()))
+            _sleep.Hold();
+        else
+            _sleep.Release();
     }
 
     public static AppHost Create() => new();
@@ -155,7 +208,7 @@ public sealed class AppHost : IAsyncDisposable
     public IReadOnlyList<string> FeeWallets { get; }
 
     /// <summary>The fee target on the user's pool, or null when the build has none for it (the fee then stays with the user).</summary>
-    public string? FeeWallet => PayoutRouting.FeeTargetFor(OwnPayoutTarget, FeeWallets);
+    public string? FeeWallet => PayoutRouting.FeeTargetFor(OwnPayoutTarget, FeeWallets, InUnitedStates);
 
     /// <summary>Otium's unMineable referral code, added to every unMineable login.</summary>
     public string? ReferralCode { get; }
@@ -217,8 +270,8 @@ public sealed class AppHost : IAsyncDisposable
             IComputeProvider provider = IsSimulated ? Engine.Provider : Provider;
             PoolBalance = await provider.GetPayoutBalanceAsync(target, ct);
             PoolBalanceError = null;
-            // A Monero user's graphics card earns on unMineable, which pays the same address separately.
-            GpuPoolBalance = PayoutRouting.PoolFor(target) == PayoutPool.MoneroOcean && GpuPayoutPool == PayoutPool.Unmineable && GpuEngine is not null
+            // Processor and graphics card share one pool now, so this only applies if they ever mine on different ones.
+            GpuPoolBalance = GpuPayoutPool == PayoutPool.Unmineable && PayoutRouting.PoolFor(target, InUnitedStates) != PayoutPool.Unmineable && GpuEngine is not null
                 ? await UnmineableClient.GetPayoutBalanceAsync(new UnmineableClient(_http), PayoutTarget.ParseOrNull(target)!, ct)
                 : null;
             // Quantus mined by the graphics card is paid by Kryptex, to the user's Quantus wallet.
@@ -275,17 +328,15 @@ public sealed class AppHost : IAsyncDisposable
             if (Settings.PayoutMode == PayoutMode.Balance)
                 return _gpuPolicy;
             string[] quantus = QuantusTarget is null ? [] : [GpuRoutes.KryptexAddress];
-            return PayoutRouting.PoolFor(Settings.PayoutAddress) == PayoutPool.Unmineable
+            // The graphics card mines on the same pool as the processor: unMineable, or MoneroOcean for US users' Monero.
+            return PayoutRouting.PoolFor(Settings.PayoutAddress, InUnitedStates) == PayoutPool.Unmineable
                 ? (_gpuPolicy ?? new GpuPolicy(DateTimeOffset.MinValue, [], [])).OnlyRoutes([GpuRoutes.Unmineable, .. quantus])
-                : InUnitedStates
-                    ? _gpuPolicy?.OnlyRoutes([GpuRoutes.MoneroOcean, .. quantus])
-                    // Monero outside the US: the graphics card can also mine unMineable's coins, paid in XMR there.
-                    : _gpuPolicy?.OnlyRoutes([GpuRoutes.MoneroOcean, GpuRoutes.Unmineable, .. quantus]);
+                : _gpuPolicy?.OnlyRoutes([GpuRoutes.MoneroOcean, .. quantus]);
         }
     }
 
-    /// <summary>The pool the graphics card mines on for the user's payout coin (see <see cref="PayoutRouting.GpuPoolFor"/>).</summary>
-    public PayoutPool? GpuPayoutPool => PayoutRouting.GpuPoolFor(OwnPayoutTarget, InUnitedStates);
+    /// <summary>The pool the graphics card mines on for the user's payout coin: the processor's (see <see cref="PayoutRouting.PoolFor"/>).</summary>
+    public PayoutPool? GpuPayoutPool => PayoutRouting.PoolFor(OwnPayoutTarget, InUnitedStates);
 
     /// <summary>
     /// For Monero users whose graphics card mines on unMineable: what unMineable holds for their address (paid out
@@ -332,7 +383,7 @@ public sealed class AppHost : IAsyncDisposable
     {
         PayoutMode.OwnWallet when OwnPayoutTarget is null =>
             "Add the address you want to be paid at in Advanced settings.",
-        PayoutMode.OwnWallet when InUnitedStates && PayoutRouting.PoolFor(Settings.PayoutAddress) == PayoutPool.Unmineable =>
+        PayoutMode.OwnWallet when InUnitedStates && PayoutRouting.PoolFor(Settings.PayoutAddress, unitedStates: true) == PayoutPool.Unmineable =>
             "unMineable, which pays out in your chosen coin, doesn't serve US residents. Choose Monero (XMR) as your payout coin in Advanced settings.",
         PayoutMode.Balance when Settings.Account.WorkerId is null || ValidWalletOrNull(Settings.Account.PoolWallet) is null =>
             LastServerError is null ? "Connecting to Otium…" : "Can't reach Otium right now. Retrying automatically.",
@@ -563,7 +614,7 @@ public sealed class AppHost : IAsyncDisposable
         // Fee and referral slices mine on the user's own pool, so a referrer paid on the other pool gets no slice.
         var referral = Settings.Referral;
         var user = OwnPayoutTarget ?? Settings.PayoutAddress;
-        var referrer = PayoutRouting.SamePool(user, referral.ReferrerWallet) ? PayoutTarget.Normalize(referral.ReferrerWallet!) : null;
+        var referrer = PayoutRouting.SamePool(user, referral.ReferrerWallet, InUnitedStates) ? PayoutTarget.Normalize(referral.ReferrerWallet!) : null;
         var standing = new ReferralStanding(referrer, referral.ReferredAt, referral.FeeFreeUntil);
         return new EngineConfig(
             user,
@@ -610,7 +661,7 @@ public sealed class AppHost : IAsyncDisposable
             var client = CreateClient();
             // Monero targets register as the bare address, which servers before the non-custodial switch expect.
             var ownWallet = Settings.PayoutMode == PayoutMode.OwnWallet && OwnPayoutTarget is { } own
-                ? PayoutRouting.PoolFor(own) == PayoutPool.MoneroOcean ? PayoutRouting.MoneroOceanWallet(own) : own
+                ? PayoutRouting.PoolFor(own, InUnitedStates) == PayoutPool.MoneroOcean ? PayoutRouting.MoneroOceanWallet(own) : own
                 : null;
             var needsRegister = account.WorkerId is null
                                 || referral.MyCode is null
@@ -841,6 +892,7 @@ public sealed class AppHost : IAsyncDisposable
         if (GpuProvider is not null)
             await GpuProvider.DisposeAsync();
         await Bandwidth.Provider.DisposeAsync();
+        _sleep.Dispose();
         _nvml?.Dispose();
         _settingsStore.Save(Settings);
         _http.Dispose();

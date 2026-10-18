@@ -106,8 +106,9 @@ public sealed class GpuPolicyService(
                     continue;
                 var route = $"{GpuRoutes.Unmineable}-{algo}";
                 routes.Add(new GpuPoolRoute(route, GpuRoutes.Unmineable, coin.Host, coin.Port, null, Tls: true));
-                algorithms.Add(await FeedAlgorithmAsync(algo, coin.WhatToMineId, route, um.FeePercent,
-                    coin.Tier == GpuTiers.FreePowerOnly ? GpuTiers.FreePowerOnly : GpuTiers.Primary, now, ct));
+                var priced = await FeedAlgorithmAsync(algo, coin.WhatToMineId, route, um.FeePercent,
+                    coin.Tier == GpuTiers.FreePowerOnly ? GpuTiers.FreePowerOnly : GpuTiers.Primary, now, ct);
+                algorithms.Add(coin.OnlyGpus is { Length: > 0 } only ? priced with { OnlyGpus = only } : priced);
             }
         }
 

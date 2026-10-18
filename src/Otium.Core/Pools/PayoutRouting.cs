@@ -5,7 +5,7 @@ namespace Otium.Core.Pools;
 /// <summary>Which pool pays a payout target.</summary>
 public enum PayoutPool
 {
-    /// <summary>Monero to a Monero address. Also the pool for US users, whom unMineable's terms exclude.</summary>
+    /// <summary>Monero for US users, whom unMineable's terms exclude: MoneroOcean pays their Monero address.</summary>
     MoneroOcean,
 
     /// <summary>Every other coin: unMineable mines and converts, and pays the address in its own coin.</summary>
@@ -19,6 +19,10 @@ public enum PayoutPool
 /// Turns a payout target ("USDT:T…", "XMR:4…", or a bare Monero address from older settings) into the pool that pays
 /// it and the login the miner uses there. Fee and referral slices mine to other targets, so a slice can only go to a
 /// target on the same pool as the user: the miner keeps its pool and algorithm and only the login changes.
+///
+/// Everyone outside the US mines on unMineable, Monero users included (paid in XMR there), so processor, graphics
+/// card and every fee slice share one pool and Otium needs a single fee address (USDT). unMineable's terms exclude US
+/// persons, so US users' Monero mines on MoneroOcean instead.
 /// </summary>
 public static class PayoutRouting
 {
@@ -26,31 +30,23 @@ public static class PayoutRouting
     public const string UnmineableCpuHost = "rx.unmineable.com";
     public const int UnmineableTlsPort = 443;
 
-    public static PayoutPool? PoolFor(string? target) => PayoutTarget.ParseAnyOrNull(target) switch
+    /// <summary>The pool that mines and pays a target, or null for an invalid one.</summary>
+    /// <param name="unitedStates">The user is in the US, where Monero mines on MoneroOcean.</param>
+    public static PayoutPool? PoolFor(string? target, bool unitedStates) => PayoutTarget.ParseAnyOrNull(target) switch
     {
         null => null,
-        { Coin.Symbol: "XMR" } => PayoutPool.MoneroOcean,
+        { Coin.Symbol: "XMR" } => unitedStates ? PayoutPool.MoneroOcean : PayoutPool.Unmineable,
         { Coin.Symbol: "QTC" } => PayoutPool.Kryptex,
         _ => PayoutPool.Unmineable,
     };
 
-    /// <summary>
-    /// The pool a payout target's graphics card mines on. Monero users outside the US also use unMineable there: its
-    /// GPU coins (Pearl) pay far more than MoneroOcean's GPU algorithms, and it pays them in XMR to the same address.
-    /// US users stay on MoneroOcean, since unMineable's terms exclude US persons. Null for an invalid target.
-    /// </summary>
-    public static PayoutPool? GpuPoolFor(string? target, bool unitedStates) => PoolFor(target) switch
-    {
-        PayoutPool.MoneroOcean when !unitedStates => PayoutPool.Unmineable,
-        var pool => pool,
-    };
-
     /// <summary>Whether <paramref name="other"/> can be mined on the same pool as <paramref name="user"/>.</summary>
-    public static bool SamePool(string? user, string? other) => PoolFor(user) is { } pool && PoolFor(other) == pool;
+    public static bool SamePool(string? user, string? other, bool unitedStates) =>
+        PoolFor(user, unitedStates) is { } pool && PoolFor(other, unitedStates) == pool;
 
     /// <summary>The first fee target that fits the user's pool, or null (the fee slice then stays with the user).</summary>
-    public static string? FeeTargetFor(string? user, IEnumerable<string> feeTargets) =>
-        feeTargets.FirstOrDefault(t => SamePool(user, t)) is { } fee ? PayoutTarget.Normalize(fee) : null;
+    public static string? FeeTargetFor(string? user, IEnumerable<string> feeTargets, bool unitedStates) =>
+        feeTargets.FirstOrDefault(t => SamePool(user, t, unitedStates)) is { } fee ? PayoutTarget.Normalize(fee) : null;
 
     /// <summary>
     /// The user's Quantus target ("QTC:qz…") in canonical form, or null when the setting is empty or not a Quantus

@@ -89,8 +89,8 @@ public partial class WelcomeViewModel : ViewModelBase
         get
         {
             var target = Payout.Target?.ToString();
-            var pool = Core.Pools.PayoutRouting.PoolFor(target) ?? Core.Pools.PayoutPool.Unmineable;
-            var gpuPool = HasGpu && UseGpu ? Core.Pools.PayoutRouting.GpuPoolFor(target, AppHost.InUnitedStates) ?? pool : (Core.Pools.PayoutPool?)null;
+            var pool = Core.Pools.PayoutRouting.PoolFor(target, AppHost.InUnitedStates) ?? Core.Pools.PayoutPool.Unmineable;
+            var gpuPool = HasGpu && UseGpu ? pool : (Core.Pools.PayoutPool?)null;
             var lines = Core.Fees.CostBreakdown.For(_host.Fees, pool, gpuPool, _host.ReferralCode is not null);
             return "What it costs you:\n" + Core.Fees.CostBreakdown.Text(lines);
         }

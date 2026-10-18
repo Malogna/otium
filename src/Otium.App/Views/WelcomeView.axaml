@@ -21,7 +21,7 @@
                         <TextBlock Classes="h1" FontSize="36" HorizontalAlignment="Center" TextAlignment="Center"
                                    Text="Earn money while your computer rests" />
                         <TextBlock Classes="muted" FontSize="16" HorizontalAlignment="Center" TextAlignment="Center"
-                                   Text="One app for every way your computer can earn while you're away: mining, internet sharing and more, set up and switched for you. Close to one click; a little tech know-how helps." />
+                                   Text="Your processor and graphics card mine the best-paying coin while you're away, and the pool pays your own wallet. Set up and switched for you, close to one click." />
                     </StackPanel>
 
                     <Border Classes="card delay1" Padding="18">
@@ -30,7 +30,7 @@
                                 <Border Classes="iconBadge"><Path Classes="icon" Data="{StaticResource IconMoon}" /></Border>
                                 <StackPanel Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center">
                                     <TextBlock FontWeight="SemiBold" Text="Only while you're away" />
-                                    <TextBlock Classes="muted" FontSize="13" Text="It never slows you down. Touch the mouse and it steps aside." />
+                                    <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Text="It never slows you down: touch the mouse and it steps aside. While it earns it keeps the computer awake; the screen still turns off." />
                                 </StackPanel>
                             </Grid>
                             <Grid ColumnDefinitions="Auto,*">
