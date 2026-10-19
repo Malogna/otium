@@ -11,27 +11,29 @@ namespace Otium.App.Services;
 /// </summary>
 public sealed class FallbackUpdateSource(IUpdateSource primary, IUpdateSource fallback) : IUpdateSource
 {
-    private IUpdateSource _answered = primary;
+    private readonly IUpdateSource _primary = primary;
+    private readonly IUpdateSource _fallback = fallback;
+    private IUpdateSource? _answered;
 
     public async Task<VelopackAssetFeed> GetReleaseFeed(IVelopackLogger logger, string? appId, string channel,
         Guid? stagingId = null, VelopackAsset? latestLocalRelease = null)
     {
         try
         {
-            var feed = await primary.GetReleaseFeed(logger, appId, channel, stagingId, latestLocalRelease);
-            _answered = primary;
+            var feed = await _primary.GetReleaseFeed(logger, appId, channel, stagingId, latestLocalRelease);
+            _answered = _primary;
             return feed;
         }
         catch (Exception e)
         {
             logger.Warn($"Otium's update server didn't answer ({e.Message}); asking GitHub directly.");
-            var feed = await fallback.GetReleaseFeed(logger, appId, channel, stagingId, latestLocalRelease);
-            _answered = fallback;
+            var feed = await _fallback.GetReleaseFeed(logger, appId, channel, stagingId, latestLocalRelease);
+            _answered = _fallback;
             return feed;
         }
     }
 
     public Task DownloadReleaseEntry(IVelopackLogger logger, VelopackAsset releaseEntry, string localFile, Action<int> progress,
         CancellationToken cancelToken = default) =>
-        _answered.DownloadReleaseEntry(logger, releaseEntry, localFile, progress, cancelToken);
+        (_answered ?? _primary).DownloadReleaseEntry(logger, releaseEntry, localFile, progress, cancelToken);
 }
