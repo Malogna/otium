@@ -16,6 +16,9 @@ public static class AppIdentity
     /// <summary>Otium's public email address (Cloudflare Email Routing forwards it), named in the terms and privacy policy.</summary>
     public const string ContactEmail = "contact@otium.lol";
 
+    /// <summary>Otium's community Discord server (a permanent invite link).</summary>
+    public const string DiscordUrl = "https://discord.gg/4FtFDrz97t";
+
     public const string Name = "Otium";
 
     /// <summary>
