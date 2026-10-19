@@ -79,6 +79,9 @@ foreach (var variant in new[] { ThemeVariant.Light, ThemeVariant.Dark })
     // Settings.
     var settings = new SettingsViewModel(host);
     Shoot(new SettingsView { DataContext = settings }, $"settings-{theme}", 900, 2650);
+
+    // Advanced, Details tab, in a wide window (it stays centred).
+    Shoot(new ShellView { DataContext = new ShellViewModel(host, () => { }) }, $"advanced-{theme}", 1300, 1100);
 }
 
 // The picture "Save picture" makes.
