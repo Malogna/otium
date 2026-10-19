@@ -1,9 +1,18 @@
 namespace Otium.Core.Switching;
 
 /// <summary>A measured option: how fast this hardware runs an algorithm and how much extra power it draws doing so.</summary>
-public sealed record BenchmarkResult(string Algorithm, double HashrateHps, double? ExtraWatts, DateTimeOffset MeasuredAt, string? Failure = null)
+/// <param name="FailedTimes">For a failed test: how many tests in a row have failed, which sets when it's tried again.</param>
+public sealed record BenchmarkResult(string Algorithm, double HashrateHps, double? ExtraWatts, DateTimeOffset MeasuredAt, string? Failure = null,
+    int FailedTimes = 0)
 {
     public bool Succeeded => Failure is null && HashrateHps > 0;
+
+    /// <summary>
+    /// A test can fail for a reason that passes (the driver compiling a coin's code on first launch, a busy computer),
+    /// so a failure is tried again after 6 hours, then 12, 24… up to a week. A success stands.
+    /// </summary>
+    public bool IsCurrent(DateTimeOffset now) =>
+        Succeeded || now - MeasuredAt < TimeSpan.FromHours(6 * Math.Pow(2, Math.Clamp(FailedTimes - 1, 0, 5)));
 }
 
 /// <param name="RevenuePerHashPerSecondDay">Earned per day per 1 H/s, in the unit priced by the coin price passed to Score.</param>

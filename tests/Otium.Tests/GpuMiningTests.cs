@@ -888,4 +888,39 @@ public sealed class SrbMinerProviderTests : IDisposable
         {
         }
     }
+
+    [Fact]
+    public void A_failed_coin_test_is_tried_again_later_and_a_success_stands()
+    {
+        // On the RTX 3080 the first Pearl test failed ("no stable hashrate") while the same miner did 108 TH/s by hand
+        // later: a failure can pass, so it mustn't rule the coin out for good.
+        var time = new ManualTime(new DateTimeOffset(2026, 10, 19, 10, 31, 0, TimeSpan.Zero));
+        var path = Path.Combine(Path.GetTempPath(), $"otium-bench-{Guid.NewGuid():N}.json");
+        try
+        {
+            var store = new BenchmarkStore(path, [new GpuInfo(GpuVendor.Nvidia, 0, "RTX 3080", 12)], time);
+            store.Record(new BenchmarkResult("pearlhash", 0, null, time.GetUtcNow(), "no stable hashrate"));
+            store.Record(new BenchmarkResult("xelishash", 9e3, 229, time.GetUtcNow()));
+            Assert.True(store.Has("pearlhash"));
+
+            time.Advance(TimeSpan.FromHours(6));
+            Assert.False(store.Has("pearlhash")); // due for another try
+            Assert.True(store.Has("xelishash")); // a success stands
+
+            store.Record(new BenchmarkResult("pearlhash", 0, null, time.GetUtcNow(), "no stable hashrate"));
+            time.Advance(TimeSpan.FromHours(7));
+            Assert.True(store.Has("pearlhash")); // failed twice: waits 12 hours
+            time.Advance(TimeSpan.FromHours(5));
+            Assert.False(store.Has("pearlhash"));
+
+            store.Record(new BenchmarkResult("pearlhash", 1.08e14, 343, time.GetUtcNow()));
+            time.Advance(TimeSpan.FromDays(30));
+            Assert.True(store.Has("pearlhash"));
+            Assert.Equal(0, store.Results.Single(r => r.Algorithm == "pearlhash").FailedTimes);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
 }

@@ -19,11 +19,13 @@ public sealed class BenchmarkStore
 {
     private readonly JsonFileStore<BenchmarkFile> _store;
     private readonly string _signature;
+    private readonly TimeProvider _time;
     private readonly Lock _lock = new();
     private BenchmarkFile _file;
 
-    public BenchmarkStore(string path, IReadOnlyList<GpuInfo> gpus)
+    public BenchmarkStore(string path, IReadOnlyList<GpuInfo> gpus, TimeProvider? time = null)
     {
+        _time = time ?? TimeProvider.System;
         _store = new JsonFileStore<BenchmarkFile>(path);
         _signature = string.Join("|", gpus.Select(g => $"{g.Vendor}:{g.Name}:{g.MemoryGb:0}"));
         _file = _store.Load();
@@ -40,16 +42,21 @@ public sealed class BenchmarkStore
         }
     }
 
+    /// <summary>Tested, and not due for another try (a failed test is retried after a while; see <see cref="BenchmarkResult.IsCurrent"/>).</summary>
     public bool Has(string algorithm)
     {
+        var now = _time.GetUtcNow();
         lock (_lock)
-            return _file.Results.Any(r => string.Equals(r.Algorithm, algorithm, StringComparison.OrdinalIgnoreCase));
+            return _file.Results.Any(r => string.Equals(r.Algorithm, algorithm, StringComparison.OrdinalIgnoreCase) && r.IsCurrent(now));
     }
 
     public void Record(BenchmarkResult result)
     {
         lock (_lock)
         {
+            var previous = _file.Results.FirstOrDefault(r => string.Equals(r.Algorithm, result.Algorithm, StringComparison.OrdinalIgnoreCase));
+            if (!result.Succeeded)
+                result = result with { FailedTimes = previous is { Succeeded: false } ? previous.FailedTimes + 1 : 1 };
             _file.Results.RemoveAll(r => string.Equals(r.Algorithm, result.Algorithm, StringComparison.OrdinalIgnoreCase));
             _file.Results.Add(result);
             _store.Save(_file);

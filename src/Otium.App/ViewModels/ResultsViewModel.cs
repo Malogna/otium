@@ -106,7 +106,7 @@ public partial class ResultsViewModel : ViewModelBase
         }
 
         MeasuredLine = settings.Measurement is { } last && !ShowMeasureResult
-            ? $"Measured {Format.Date(last.MeasuredAt)}: about {Format.Money((decimal)last.PerMonth(HoursPerDay))} a month at {HoursPerDay:0.#} hours a day."
+            ? $"Measured {Format.Date(last.MeasuredAt)}: about {Format.Money((decimal)last.PerMonth(HoursPerDay))} a month at {HoursPerDay.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)} hours a day."
             : "";
 
         // While you were away
@@ -143,7 +143,7 @@ public partial class ResultsViewModel : ViewModelBase
         MeasureAmount = Format.Money((decimal)result.PerMonth(hours));
         MeasureDetail = result.NetUsdPerDay <= 0
             ? "At your electricity price, mining would cost more than it earns, so Otium will mostly wait. Prices change daily; Otium checks every 30 minutes."
-            : $"a month, earning about {hours:0.#} hours a day while you're away. That's {Format.Usd(result.NetUsdPerDay)} per full day of earning, after Otium's fee"
+            : $"a month, earning about {hours.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)} hours a day while you're away. That's {Format.Usd(result.NetUsdPerDay)} per full day of earning, after Otium's fee"
               + (_host.Settings.PayForElectricity ? " and electricity." : ".");
         var rows = result.Devices.Select(d => new MeasuredRow(
             d.Name,
