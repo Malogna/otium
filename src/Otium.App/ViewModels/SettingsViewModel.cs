@@ -262,11 +262,11 @@ public partial class SettingsViewModel : ViewModelBase
                 Benchmarks.Add(new BenchmarkRow(failed.Algorithm, "—", "—", "—", "—", $"didn't work: {Shorten(failed.Failure)}"));
 
             HasBenchmarks = Benchmarks.Count > 0;
-            BenchmarkNote = $"Using today's MoneroOcean payouts and your electricity price. Re-checked every {SrbMinerGpuProvider.ReevaluateEvery.TotalMinutes:0} minutes while mining.";
+            BenchmarkNote = $"Using today's payouts at your pool and your electricity price. Re-checked every {SrbMinerGpuProvider.ReevaluateEvery.TotalMinutes:0} minutes while mining.";
         }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException)
         {
-            BenchmarkNote = "Couldn't reach MoneroOcean for today's payouts.";
+            BenchmarkNote = "Couldn't fetch today's payouts. Otium tries again in a few minutes.";
         }
     }
 
