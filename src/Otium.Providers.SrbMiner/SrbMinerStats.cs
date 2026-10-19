@@ -1,84 +1,14 @@
 using System.Globalization;
-using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace Otium.Providers.SrbMiner;
 
 /// <summary>
-/// Reads SRBMiner's statistics. SRBMiner doesn't document its JSON schema, so the parser accepts the shapes
-/// community tools read (algorithms[].hashrate.gpu.total in H/s) plus a few fallbacks, and can also read the
-/// hashrate from console output if the API is unavailable.
+/// Reads SRBMiner's statistics from its console output: hashrate and shares from the "Total" line it prints every
+/// 30 s, plus its dev-fee rounds and problems. (Its statistics API isn't used: it can't be limited to this computer.)
 /// </summary>
 internal static partial class SrbMinerStats
 {
-    public static double? ParseApiHashrate(string json)
-    {
-        using var doc = JsonDocument.Parse(json);
-        var root = doc.RootElement;
-
-        if (root.TryGetProperty("algorithms", out var algorithms) && algorithms.ValueKind == JsonValueKind.Array)
-        {
-            double total = 0;
-            var found = false;
-            foreach (var algo in algorithms.EnumerateArray())
-            {
-                if (!algo.TryGetProperty("hashrate", out var hashrate))
-                    continue;
-                if (TryNumber(hashrate, out var direct))
-                {
-                    total += direct;
-                    found = true;
-                }
-                else if (hashrate.TryGetProperty("gpu", out var gpu) && TryTotal(gpu, out var gpuTotal))
-                {
-                    total += gpuTotal;
-                    found = true;
-                }
-                else if (TryTotal(hashrate, out var anyTotal))
-                {
-                    total += anyTotal;
-                    found = true;
-                }
-            }
-            if (found)
-                return total;
-        }
-
-        foreach (var key in new[] { "hashrate_total_now", "total_hashrate", "hashrate" })
-        {
-            if (root.TryGetProperty(key, out var value) && (TryNumber(value, out var n) || TryTotal(value, out n)))
-                return n;
-        }
-
-        return null;
-    }
-
-    /// <summary>Accepted and rejected shares summed over algorithms[].shares, or null when the API has none yet.</summary>
-    public static ShareCounts? ParseApiShares(string json)
-    {
-        using var doc = JsonDocument.Parse(json);
-        if (!doc.RootElement.TryGetProperty("algorithms", out var algorithms) || algorithms.ValueKind != JsonValueKind.Array)
-            return null;
-        long accepted = 0, rejected = 0;
-        var found = false;
-        foreach (var algo in algorithms.EnumerateArray())
-        {
-            if (!algo.TryGetProperty("shares", out var shares) || shares.ValueKind != JsonValueKind.Object)
-                continue;
-            if (shares.TryGetProperty("accepted", out var a) && TryNumber(a, out var acceptedCount))
-            {
-                accepted += (long)acceptedCount;
-                found = true;
-            }
-            if (shares.TryGetProperty("rejected", out var r) && TryNumber(r, out var rejectedCount))
-            {
-                rejected += (long)rejectedCount;
-                found = true;
-            }
-        }
-        return found ? new ShareCounts(accepted, rejected) : null;
-    }
-
     /// <summary>The share counts on the last console "Total" line ("Total: … [P:349.2W EFF: A:2 R:1 HW:0]"), or null.</summary>
     public static ShareCounts? ParseConsoleShares(IEnumerable<string> lines)
     {
@@ -162,26 +92,6 @@ internal static partial class SrbMinerStats
         "P" => 1e15,
         _ => 1,
     };
-
-    private static bool TryTotal(JsonElement element, out double value)
-    {
-        value = 0;
-        return element.ValueKind == JsonValueKind.Object
-               && element.TryGetProperty("total", out var total)
-               && TryNumber(total, out value);
-    }
-
-    private static bool TryNumber(JsonElement element, out double value)
-    {
-        value = 0;
-        if (element.ValueKind == JsonValueKind.Number)
-        {
-            value = element.GetDouble();
-            return true;
-        }
-        return element.ValueKind == JsonValueKind.String
-               && double.TryParse(element.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out value);
-    }
 
     [GeneratedRegex(@"(?i)total[^0-9]*(?<value>[0-9]+(?:\.[0-9]+)?)\s*(?<unit>[kMGTP]?)H/s")]
     private static partial Regex HashrateRegex();

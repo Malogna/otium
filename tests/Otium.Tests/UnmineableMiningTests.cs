@@ -135,7 +135,7 @@ public class UnmineableMiningTests
         Assert.Equal($"{OtiumUsdt}.ot1234abcdg#ztjq-jr7s", login.Wallet);
         Assert.Equal("x", login.Password);
 
-        var args = SrbMinerArgs.Build(pearl, login, 40001, [Rtx3080]);
+        var args = SrbMinerArgs.Build(pearl, login, [Rtx3080]);
         Assert.Equal("true", args[args.ToList().IndexOf("--tls") + 1]);
         Assert.Equal("pearlhash", args[args.ToList().IndexOf("--algorithm") + 1]);
     }
@@ -163,7 +163,7 @@ public class UnmineableMiningTests
     [Fact]
     public void Each_payout_pool_keeps_only_its_own_routes()
     {
-        var unmineable = Policy.OnlyRoutes(GpuRoutes.Unmineable);
+        var unmineable = Policy.OnlyRoutes(GpuRoutes.Unmineable).OnlyTrustedHosts();
         Assert.Equal(["pearlhash"], unmineable.Algorithms.Select(a => a.Algorithm));
 
         var moneroOcean = Policy.OnlyRoutes(GpuRoutes.MoneroOcean);

@@ -69,9 +69,14 @@ public static class ProblemReportBuilder
         if (host.GpuProvider is { } g)
             AppendLog(b, "Graphics card miner (SRBMiner), recent output", g.RecentLog);
 
-        var details = ReportScrubber.Scrub(b.ToString(), [s.PayoutAddress, Core.Wallets.PayoutTarget.ParseOrNull(s.PayoutAddress)?.Address,
-            s.BandwidthPayoutAddress, s.QuantusAddress, s.DeviceSecret, s.Referral.ReferrerWallet]);
-        var cleanNote = string.IsNullOrWhiteSpace(note) ? null : ReportScrubber.Scrub(note.Trim(), [s.PayoutAddress, s.DeviceSecret]);
+        string?[] known =
+        [
+            s.PayoutAddress, Core.Wallets.PayoutTarget.ParseOrNull(s.PayoutAddress)?.Address, s.BandwidthPayoutAddress, s.QuantusAddress,
+            s.DeviceSecret, s.Referral.ReferrerWallet, s.Account.Email, s.Account.LastPayPalEmail, .. s.Account.LastAddresses.Values,
+            Environment.MachineName, Environment.UserName,
+        ];
+        var details = ReportScrubber.Scrub(b.ToString(), known);
+        var cleanNote = string.IsNullOrWhiteSpace(note) ? null : ReportScrubber.Scrub(note.Trim(), known);
         return new ProblemReport(host.Updates.CurrentVersion, RuntimeInformation.OSDescription + " " + RuntimeInformation.OSArchitecture, cleanNote, details);
     }
 

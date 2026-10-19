@@ -326,6 +326,13 @@ public sealed class ProxybaseBandwidthProvider : IBandwidthProvider
             _payoutProblem = route.Message;
             return;
         }
+        // Relay's deposit addresses are on Tempo, an EVM chain: anything else isn't a route Otium's server makes.
+        // (Who a deposit address pays out to can only be looked up with Relay's API key, so that isn't checked here.)
+        if (!ProxybaseOutput.IsEvmAddress(depositAddress))
+        {
+            _payoutProblem = "Otium's server sent a payout address that doesn't look right, so nothing was paid. Trying again later.";
+            return;
+        }
 
         var fee = route.FeeAddress is { } feeAddress && ProxybaseOutput.IsEvmAddress(feeAddress) ? Math.Clamp(route.FeeMicrocredits, 0, free / 10) : 0;
         var amount = Math.Min(route.AmountMicrocredits, free - fee);

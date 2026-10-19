@@ -27,6 +27,35 @@ public sealed record GpuPolicy(DateTimeOffset GeneratedAt, IReadOnlyList<GpuAlgo
     /// </summary>
     public GpuPolicy WithoutOperatorPools() => OnlyRoutes(GpuRoutes.MoneroOcean, GpuRoutes.Unmineable, GpuRoutes.KryptexAddress);
 
+    /// <summary>
+    /// The pool each kind of route may send a graphics card to, whatever the server says. A compromised or mistaken
+    /// server could otherwise point own-wallet users' cards at a proxy that keeps the work while the login still shows
+    /// the user's own address.
+    /// </summary>
+    private static readonly Dictionary<string, string> TrustedPoolDomains = new(StringComparer.OrdinalIgnoreCase)
+    {
+        [GpuRoutes.Unmineable] = "unmineable.com",
+        [GpuRoutes.KryptexAddress] = "kryptex.network",
+        [GpuRoutes.MoneroOcean] = "moneroocean.stream",
+    };
+
+    /// <summary>The route's host belongs to the pool its kind names (e.g. "pearlpow.unmineable.com" for unMineable).</summary>
+    public static bool IsTrustedHost(GpuPoolRoute route) =>
+        TrustedPoolDomains.TryGetValue(route.Kind, out var domain)
+        && (string.Equals(route.Host, domain, StringComparison.OrdinalIgnoreCase)
+            || route.Host.EndsWith("." + domain, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>The policy without routes whose host isn't on their pool's own domain (see <see cref="IsTrustedHost"/>).</summary>
+    public GpuPolicy OnlyTrustedHosts()
+    {
+        var routes = Routes.Where(IsTrustedHost).ToList();
+        return this with
+        {
+            Routes = routes,
+            Algorithms = Algorithms.Where(a => routes.Any(r => string.Equals(r.Name, a.Route, StringComparison.OrdinalIgnoreCase))).ToList(),
+        };
+    }
+
     /// <summary>The policy limited to routes of the given kinds, e.g. only MoneroOcean for a Monero payout.</summary>
     public GpuPolicy OnlyRoutes(params string[] kinds)
     {

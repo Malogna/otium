@@ -124,7 +124,7 @@ public sealed class QuantusAndPearlForkTests
         Assert.Equal(Quantus1, login.Wallet);
         Assert.Equal("ot1234abcdg", login.Worker);
 
-        var args = SrbMinerArgs.Build(quantus, login, 40001, [Rtx3080]).ToList();
+        var args = SrbMinerArgs.Build(quantus, login, [Rtx3080]).ToList();
         Assert.Equal(Quantus1, args[args.IndexOf("--wallet") + 1]);
         Assert.Equal("ot1234abcdg", args[args.IndexOf("--worker") + 1]);
         Assert.Equal("true", args[args.IndexOf("--tls") + 1]);

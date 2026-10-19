@@ -39,18 +39,31 @@ public sealed record FeePolicy
     public const double MaxFeePercent = 10;
 
     /// <summary>
+    /// Most of a user's mining time the server may give to the person who invited them, in percent (today a quarter of
+    /// the 2% fee: 0.5%). The fee itself goes to Otium's address, built into the app, but the referrer's address comes
+    /// from the server, so this caps what a compromised server could send to an address of its choosing.
+    /// </summary>
+    public const double MaxReferrerPercent = 1;
+
+    /// <summary>
     /// The terms the server announces, or <see cref="Default"/> when it hasn't. Out-of-range values are clamped, so a
     /// misconfigured server can't make the app mine an unreasonable fee.
     /// </summary>
-    public static FeePolicy FromTerms(Accounts.FeeTerms? terms) => terms is null ? Default : new FeePolicy
+    public static FeePolicy FromTerms(Accounts.FeeTerms? terms)
     {
-        FeePercent = Math.Clamp(terms.FeePercent, 0, MaxFeePercent),
-        ReferrerShareOfFee = Math.Clamp(terms.ReferrerShareOfFee, 0, 1),
-        ReferrerRewardPeriod = TimeSpan.FromDays(Math.Clamp(terms.ReferrerRewardDays, 0, 730)),
-        RefereeFeeHoliday = TimeSpan.FromDays(Math.Clamp(terms.RefereeFeeFreeDays, 0, 365)),
-        ReferrerFeeHolidayPerVerifiedFriend = TimeSpan.FromDays(Math.Clamp(terms.ReferrerFeeFreeDaysPerFriend, 0, 365)),
-        MaxFeeHoliday = TimeSpan.FromDays(Math.Clamp(terms.MaxFeeFreeDays, 0, 365)),
-    };
+        if (terms is null)
+            return Default;
+        var fee = Math.Clamp(terms.FeePercent, 0, MaxFeePercent);
+        return new FeePolicy
+        {
+            FeePercent = fee,
+            ReferrerShareOfFee = Math.Clamp(terms.ReferrerShareOfFee, 0, fee > 0 ? Math.Min(1, MaxReferrerPercent / fee) : 1),
+            ReferrerRewardPeriod = TimeSpan.FromDays(Math.Clamp(terms.ReferrerRewardDays, 0, 730)),
+            RefereeFeeHoliday = TimeSpan.FromDays(Math.Clamp(terms.RefereeFeeFreeDays, 0, 365)),
+            ReferrerFeeHolidayPerVerifiedFriend = TimeSpan.FromDays(Math.Clamp(terms.ReferrerFeeFreeDaysPerFriend, 0, 365)),
+            MaxFeeHoliday = TimeSpan.FromDays(Math.Clamp(terms.MaxFeeFreeDays, 0, 365)),
+        };
+    }
 
     public Accounts.FeeTerms ToTerms() => new(
         FeePercent,

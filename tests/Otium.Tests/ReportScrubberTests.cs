@@ -25,6 +25,35 @@ public sealed class ReportScrubberTests
         Assert.Contains("[address]", text);
     }
 
+    [Theory]
+    [InlineData("BC1QAR0SRRR7XFKVY5L643LYDNW9RE59GTZZWF5MDQ")] // bech32 is valid in capitals too (QR codes use them)
+    [InlineData("LTC1QG82VE6V7P8WDP2QGRKMG6W8D3VFMU3QXW7R3VL")]
+    public void Upper_case_addresses_are_replaced(string address)
+    {
+        var text = ReportScrubber.Scrub($"pay to {address} please", []);
+        Assert.DoesNotContain(address, text);
+        Assert.Contains("[address]", text);
+    }
+
+    [Fact]
+    public void Emails_and_the_users_name_in_file_paths_are_removed()
+    {
+        var text = ReportScrubber.Scrub(
+            "Antivirus: Norton; add an exception for C:\\Users\\Kari Nordmann\\AppData\\Local\\Otium\\engines\n"
+            + "IO error: Access to the path 'c:\\users\\kari\\AppData\\Local\\Otium\\settings.json' is denied.\n"
+            + "mac: /Users/kari/Library/Application Support/Otium; linux: /home/kari/.local/share/Otium\n"
+            + "Signed in as kari.nordmann+otium@example.no, PayPal pay@firma.example.com",
+            []);
+        Assert.DoesNotContain("Kari", text);
+        Assert.DoesNotContain("kari", text);
+        Assert.DoesNotContain("Nordmann", text); // Windows account names can have spaces
+        Assert.DoesNotContain("@", text);
+        Assert.Contains("C:\\Users\\[user]\\AppData\\Local\\Otium\\engines", text);
+        Assert.Contains("/Users/[user]/Library", text);
+        Assert.Contains("/home/[user]/.local", text);
+        Assert.Contains("Signed in as [email], PayPal [email]", text);
+    }
+
     [Fact]
     public void Long_hex_keys_are_replaced_and_ordinary_log_lines_kept()
     {

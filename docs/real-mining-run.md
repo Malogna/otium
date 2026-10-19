@@ -74,6 +74,8 @@ automatically" (one UAC prompt adds a Defender exclusion for the engines folder)
 4. **SRBMiner's stats API listens on 0.0.0.0** (XMRig binds 127.0.0.1), and 3.7.6 has no bind-address option. This
    triggers a Windows Firewall prompt, and onboarding tells users to click Allow, which exposes the read-only stats
    (pool, wallet, hashrate) to the LAN. Users should be told the miner only needs outgoing connections.
+   **Fixed (October 2026):** Otium no longer turns SRBMiner's API on (it also answered any website with
+   `Access-Control-Allow-Origin: *`); hashrate and shares come from the console's "Total" line.
 5. **Closing the window keeps mining in the tray**, presumably by design. dev.ps1 waits for the window's process, so
    dev mode only stops when the process exits.
 6. **pearlhash / quantus units still need a Kryptex run:** about 5 minutes of `SRBMiner-MULTI --algorithm pearlhash

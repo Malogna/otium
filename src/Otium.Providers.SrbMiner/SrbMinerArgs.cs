@@ -43,7 +43,6 @@ internal static class SrbMinerArgs
     public static IReadOnlyList<string> Build(
         GpuAlgorithm algorithm,
         PoolLogin login,
-        int apiPort,
         IReadOnlyList<GpuInfo> gpus,
         bool lowPriority = true)
     {
@@ -54,9 +53,9 @@ internal static class SrbMinerArgs
             "--wallet", login.Wallet,
             "--password", login.Password,
             "--disable-cpu", // the CPU belongs to the XMRig provider
-            "--api-enable",
-            "--api-port", apiPort.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            "--api-rig-name", "otium",
+            // No --api-enable: SRBMiner's statistics API always listens on every network interface (3.7.6 has no
+            // bind option; "127.0.0.1:port" is read as port 127), answers any website (Access-Control-Allow-Origin: *)
+            // and shows the payout address. Otium reads the hashrate and shares from the console instead.
             // SRBMiner sets its own priority (and its watchdog's): below normal (2) while the user may be at the
             // computer, normal (3) while they're away. Without it, it was seen lowering itself while the user was away.
             "--miner-priority", lowPriority ? "2" : "3",

@@ -144,7 +144,7 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         _gpus = gpus.Where(g => g.Vendor is GpuVendor.Nvidia or GpuVendor.Amd).ToList();
         _meter = meter;
         _pricePerKwh = pricePerKwh;
-        _factory = factory ?? new SrbMinerProcessFactory(http);
+        _factory = factory ?? new SrbMinerProcessFactory();
         _time = time ?? TimeProvider.System;
         _endpoint = endpoint ?? GpuPoolEndpoint.MoneroOcean;
         _switcher = switcher ?? new ProfitSwitcher();
@@ -624,12 +624,11 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         _nextCreditCheck = now + CreditGrace;
         _samples.Clear();
 
-        var apiPort = SrbMinerProcessFactory.FreeLoopbackPort();
         var login = LoginFor(algorithm, options);
         _currentPool = login.Pool;
-        var args = SrbMinerArgs.Build(algorithm, login, apiPort, _gpus, options.LowPriority);
+        var args = SrbMinerArgs.Build(algorithm, login, _gpus, options.LowPriority);
         ct.ThrowIfCancellationRequested();
-        _process = _factory.Start(binary, args, apiPort, options.LowPriority);
+        _process = _factory.Start(binary, args, options.LowPriority);
     }
 
     /// <summary>

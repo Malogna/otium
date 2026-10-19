@@ -122,19 +122,20 @@ public class SrbMinerTests
     public void Arguments_pin_the_algorithm_in_the_password_and_leave_the_cpu_alone()
     {
         var cnGpu = GpuAlgorithms.Find("cn/gpu")!;
-        var args = SrbMinerArgs.Build(cnGpu, PoolLogin.MoneroOcean(GpuPoolEndpoint.MoneroOcean, "WALLET", "sc12345678g", cnGpu), 40001, [Rtx3080]);
+        var args = SrbMinerArgs.Build(cnGpu, PoolLogin.MoneroOcean(GpuPoolEndpoint.MoneroOcean, "WALLET", "sc12345678g", cnGpu), [Rtx3080]);
         string Value(string flag) => args[args.ToList().IndexOf(flag) + 1];
 
         Assert.Equal("cryptonight_gpu", Value("--algorithm"));
         Assert.Equal("gulf.moneroocean.stream:10128", Value("--pool"));
         Assert.Equal("WALLET", Value("--wallet"));
         Assert.Equal("sc12345678g~cn/gpu", Value("--password"));
-        Assert.Equal("40001", Value("--api-port"));
+        // No statistics API: SRBMiner's listens on every network interface and shows the wallet to anyone who asks.
+        Assert.DoesNotContain(args, a => a.StartsWith("--api", StringComparison.Ordinal));
         Assert.Contains("--disable-cpu", args);
         Assert.Contains("--disable-gpu-amd", args);
         Assert.Contains("--disable-gpu-intel", args);
         Assert.Equal("2", Value("--miner-priority")); // below normal: the user may be at the computer
-        var away = SrbMinerArgs.Build(cnGpu, PoolLogin.MoneroOcean(GpuPoolEndpoint.MoneroOcean, "WALLET", "sc12345678g", cnGpu), 40001, [Rtx3080], lowPriority: false);
+        var away = SrbMinerArgs.Build(cnGpu, PoolLogin.MoneroOcean(GpuPoolEndpoint.MoneroOcean, "WALLET", "sc12345678g", cnGpu), [Rtx3080], lowPriority: false);
         Assert.Equal("3", away[away.ToList().IndexOf("--miner-priority") + 1]); // normal while they're away
         Assert.DoesNotContain("--disable-gpu-nvidia", args);
     }
@@ -149,45 +150,6 @@ public class SrbMinerTests
         Assert.False(GpuAlgorithms.Find("kawpow")!.Supports([new GpuInfo(GpuVendor.Intel, 0, "Arc", 16)]));
         // unknown VRAM (0) doesn't exclude anything
         Assert.True(GpuAlgorithms.Find("pearlhash")!.Supports([new GpuInfo(GpuVendor.Amd, 0, "Radeon", 0)]));
-    }
-
-    [Theory]
-    [InlineData("""{"algorithms":[{"name":"kawpow","hashrate":{"gpu":{"gpu0":25000000.5,"total":25000000.5}}}]}""", 25000000.5)]
-    [InlineData("""{"algorithms":[{"name":"kawpow","hashrate":{"total":"1234.5"}}]}""", 1234.5)]
-    [InlineData("""{"algorithms":[{"name":"etchash","hashrate":61000000}]}""", 61000000)]
-    [InlineData("""{"hashrate_total_now":4200}""", 4200)]
-    public void Api_hashrate_is_read_from_known_shapes(string json, double expected)
-    {
-        Assert.Equal(expected, SrbMinerStats.ParseApiHashrate(json));
-    }
-
-    [Fact]
-    public void Unknown_api_shape_returns_null()
-    {
-        Assert.Null(SrbMinerStats.ParseApiHashrate("""{"miner":"x"}"""));
-    }
-
-    [Fact]
-    public void Real_srbminer_376_api_is_read_in_hps()
-    {
-        // Trimmed from SRBMiner-Multi 3.7.6 mining kawpow on an RTX 3080 (October 2026); the UI showed 33.54 MH/s.
-        const string json = """
-            {"rig_name":"otium","miner_version":"3.7.6","mining_time":68,"total_gpu_workers":1,
-             "gpu_devices":[{"id":0,"device":"gpu0","vendor":"nvidia","model":"nvidia_geforce_rtx_3080","asic_power":266}],
-             "algorithms":[{"id":0,"name":"kawpow",
-               "pool":{"pool":"gulf.moneroocean.stream:10128","difficulty":0.987,"last_job_received":2},
-               "shares":{"total":0,"accepted":0,"rejected":0,"avg_find_time":0},
-               "hashrate":{"1min":33728089.38,"15min":33728089.38,"1hr":33728089.38,"6hr":33728089.38,
-                           "cpu":{"total":0.0},"gpu":{"gpu0":33040828.85,"total":33040828.85}}}]}
-            """;
-        Assert.Equal(33040828.85, SrbMinerStats.ParseApiHashrate(json));
-    }
-
-    [Fact]
-    public void Srbminer_api_before_the_first_job_has_no_hashrate()
-    {
-        // While SRBMiner can't reach the pool, 3.7.6 serves "algorithms": null.
-        Assert.Null(SrbMinerStats.ParseApiHashrate("""{"rig_name":"otium","miner_version":"3.7.6","mining_time":5,"algorithms":null}"""));
     }
 
     [Fact]
@@ -425,7 +387,7 @@ public sealed class SrbMinerProviderTests : IDisposable
         public Action<string, FakeProcess>? OnStart { get; set; }
         public List<(string Algorithm, string Password, FakeProcess Process, string Pool, string Wallet)> Launches { get; } = [];
 
-        public IMinerProcess Start(string binary, IReadOnlyList<string> arguments, int apiPort, bool lowPriority)
+        public IMinerProcess Start(string binary, IReadOnlyList<string> arguments, bool lowPriority)
         {
             string Arg(string flag) => arguments[arguments.ToList().IndexOf(flag) + 1];
             var algo = Arg("--algorithm");
@@ -623,14 +585,8 @@ public sealed class SrbMinerProviderTests : IDisposable
     }
 
     [Fact]
-    public void Share_counts_are_read_from_the_api_and_the_console()
+    public void Share_counts_are_read_from_the_console()
     {
-        const string json = """
-            {"algorithms":[{"name":"pearlhash","shares":{"total":12,"accepted":2,"rejected":10,"avg_find_time":9},
-              "hashrate":{"gpu":{"gpu0":1.0e14,"total":1.0e14}}}]}
-            """;
-        Assert.Equal(new ShareCounts(2, 10), SrbMinerStats.ParseApiShares(json));
-        Assert.Null(SrbMinerStats.ParseApiShares("""{"algorithms":null}"""));
         Assert.Equal(new ShareCounts(2, 1), SrbMinerStats.ParseConsoleShares(
             ["[2026-10-16 16:36:28] GPU0 RTX 3080: 360.53 MH/s [A:9 R:9 HW:0]", "[2026-10-16 16:36:28] Total: 360.53 MH/s [P:349.2W EFF: A:2 R:1 HW:0]"]));
         Assert.Null(SrbMinerStats.ParseConsoleShares(["nothing here"]));
@@ -754,6 +710,26 @@ public sealed class SrbMinerProviderTests : IDisposable
         await provider.StartAsync(Options, CancellationToken.None);
         Assert.Equal("kawpow", _factory.Launches[^1].Algorithm);
         Assert.True((await provider.GetStatusAsync(CancellationToken.None)).IsCalibrating);
+    }
+
+    [Theory]
+    [InlineData(GpuRoutes.Unmineable, "pearlpow.unmineable.com", true)]
+    [InlineData(GpuRoutes.Unmineable, "UNMINEABLE.COM", true)]
+    [InlineData(GpuRoutes.Unmineable, "pearlpow.unmineable.com.evil.example", false)]
+    [InlineData(GpuRoutes.Unmineable, "evilunmineable.com", false)]
+    [InlineData(GpuRoutes.Unmineable, "203.0.113.9", false)]
+    [InlineData(GpuRoutes.KryptexAddress, "qtc.kryptex.network", true)]
+    [InlineData(GpuRoutes.KryptexAddress, "qtc.unmineable.com", false)] // each kind only to its own pool
+    [InlineData(GpuRoutes.MoneroOcean, "gulf.moneroocean.stream", true)]
+    [InlineData(GpuRoutes.Kryptex, "pearl.kryptex.network", false)] // the operator's account: never for own-wallet users
+    public void Own_wallet_cards_only_go_to_the_pools_own_hosts(string kind, string host, bool trusted)
+    {
+        // A compromised or mistaken server could otherwise send the card to a proxy that keeps the work, while the
+        // login still shows the user's own address.
+        var route = new GpuPoolRoute("r", kind, host, 443, null, true);
+        Assert.Equal(trusted, GpuPolicy.IsTrustedHost(route));
+        var policy = new GpuPolicy(DateTimeOffset.UnixEpoch, [new GpuAlgorithmPolicy("pearlhash", GpuTiers.Primary, "r", 3e-14, 0.75)], [route]);
+        Assert.Equal(trusted ? 1 : 0, policy.OnlyTrustedHosts().Algorithms.Count);
     }
 
     [Fact]
