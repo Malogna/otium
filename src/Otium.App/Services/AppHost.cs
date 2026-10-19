@@ -248,12 +248,23 @@ public sealed class AppHost : IAsyncDisposable
         MeasurementChanged?.Invoke();
     }
 
+    /// <summary>The first test switched the processor off in this session; the result card says why.</summary>
+    public bool CpuLeftOffByTest { get; private set; }
+
     private void FinishMeasurement(PcMeasurementRun run)
     {
         foreach (var engine in Engines)
             engine.EndRunNow(); // back to earning only while the user is away
         if (run.Result() is { } result)
         {
+            // After the first test only, so someone who turns the processor back on keeps it: next to a graphics card
+            // that earns ten times as much, it mostly adds heat and noise.
+            if (Settings.Measurement is null && Settings.CpuEnabled && result.ProcessorAddsLittle)
+            {
+                Settings.CpuEnabled = false;
+                CpuLeftOffByTest = true;
+                ApplyDeviceSwitches();
+            }
             Settings.Measurement = result;
             _settingsStore.Save(Settings);
         }
