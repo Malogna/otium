@@ -259,7 +259,7 @@ public partial class SettingsViewModel : ViewModelBase
                     : option.Algorithm == best ? "best" : option.Algorithm == gpu.CurrentAlgorithm ? "mining" : ""));
             }
             foreach (var failed in results.Where(r => !r.Succeeded))
-                Benchmarks.Add(new BenchmarkRow(failed.Algorithm, "—", "—", "—", "—", $"didn't work: {Shorten(failed.Failure)}"));
+                Benchmarks.Add(new BenchmarkRow(failed.Algorithm, "—", "—", "—", "—", $"not working on this card: {Shorten(failed.Failure)}. Tried again later."));
 
             HasBenchmarks = Benchmarks.Count > 0;
             BenchmarkNote = $"Using today's payouts at your pool and your electricity price. Re-checked every {SrbMinerGpuProvider.ReevaluateEvery.TotalMinutes:0} minutes while mining.";
@@ -543,4 +543,21 @@ public partial class SettingsViewModel : ViewModelBase
     private Task CopyProblemReference() => ProblemReportReference is { } reference ? ClipboardService.CopyAsync(reference) : Task.CompletedTask;
 }
 
-public sealed record BenchmarkRow(string Algorithm, string Speed, string Power, string Earns, string Net, string Note);
+public sealed record BenchmarkRow(string Algorithm, string Speed, string Power, string Earns, string Net, string Note)
+{
+    /// <summary>The coin people know rather than the algorithm's name ("Pearl", not "pearlhash").</summary>
+    public string Coin => CoinFor(Algorithm);
+
+    public static string CoinFor(string algorithm) => algorithm switch
+    {
+        "pearlhash" => "Pearl",
+        "quantus" => "Quantus",
+        "xelishash" => "Xelis",
+        "fishhash" => "Iron Fish",
+        "kawpow" => "Ravencoin",
+        "autolykos2" => "Ergo",
+        "etchash" => "Ethereum Classic",
+        "cn/gpu" => "Conceal",
+        _ => algorithm,
+    };
+}

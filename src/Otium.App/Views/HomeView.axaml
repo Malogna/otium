@@ -82,7 +82,7 @@
                                     IsVisible="{Binding ProjectedMonthCaption, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
                                 <StackPanel HorizontalAlignment="Right">
                                     <TextBlock Text="{Binding ProjectedMonth}" FontSize="18" FontWeight="Bold" HorizontalAlignment="Right" />
-                                    <TextBlock Classes="heroMuted" FontSize="11.5" Text="{Binding ProjectedMonthCaption}" HorizontalAlignment="Right" />
+                                    <TextBlock Classes="heroMuted" FontSize="12" Text="{Binding ProjectedMonthCaption}" HorizontalAlignment="Right" />
                                 </StackPanel>
                             </Border>
                         </Grid>
@@ -146,7 +146,7 @@
                                     <DataTemplate x:DataType="vm:CashoutChoice">
                                         <StackPanel Spacing="1" MinWidth="150" Opacity="{Binding Available, Converter={x:Static vm:CashOutConverters.DimWhenFalse}}">
                                             <TextBlock FontWeight="SemiBold" Text="{Binding Title}" />
-                                            <TextBlock Classes="muted" FontSize="11" Text="{Binding Subtitle}" />
+                                            <TextBlock Classes="muted" FontSize="12" Text="{Binding Subtitle}" />
                                         </StackPanel>
                                     </DataTemplate>
                                 </ListBox.ItemTemplate>
