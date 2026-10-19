@@ -202,6 +202,8 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         var eligible = await EligibleAsync(ct);
         if (eligible.Count == 0 && options.Target.Role != PayoutRole.User)
             throw new ProviderProblemException("Graphics card is resting during Otium's short fee slice: none of the coins it can mine there pay on this card. It carries on afterwards.");
+        if (eligible.Count == 0 && _policy() is { IsNotYetFetched: true })
+            throw new ProviderProblemException("Graphics card is waiting for today's coin prices from Otium's server; it starts as soon as they arrive.");
         if (eligible.Count == 0)
             throw new ProviderProblemException("Graphics card isn't mining: no coin it can mine pays more than its electricity right now.");
 

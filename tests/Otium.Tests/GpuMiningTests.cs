@@ -756,6 +756,35 @@ public sealed class SrbMinerProviderTests : IDisposable
         Assert.True((await provider.GetStatusAsync(CancellationToken.None)).IsCalibrating);
     }
 
+    [Fact]
+    public async Task Before_the_servers_prices_arrive_the_card_says_its_waiting_not_that_power_costs_too_much()
+    {
+        // Otium starts its miners before its first call to the server; unMineable's coins are priced only by the server.
+        var provider = CreateProvider(policy: () => GpuPolicy.NotYetFetched.OnlyRoutes(GpuRoutes.Unmineable), pricePerKwh: 0);
+        var refused = await Assert.ThrowsAsync<ProviderProblemException>(() => provider.StartAsync(Options, CancellationToken.None));
+        Assert.Equal("Graphics card is waiting for today's coin prices from Otium's server; it starts as soon as they arrive.", refused.Message);
+        Assert.Empty(_factory.Launches);
+    }
+
+    [Fact]
+    public void The_last_policy_is_kept_on_disk_and_used_at_startup_for_a_day()
+    {
+        var policy = new GpuPolicy(DateTimeOffset.UnixEpoch,
+            [new GpuAlgorithmPolicy("pearlhash", GpuTiers.Primary, "unmineable-pearlhash", 3.36e-14, 0.75, null)],
+            [new GpuPoolRoute("unmineable-pearlhash", GpuRoutes.Unmineable, "pearlpow.unmineable.com", 443, null, true)]);
+        var fetched = new DateTimeOffset(2026, 10, 19, 19, 44, 0, TimeSpan.Zero);
+        var store = new Otium.Core.Settings.JsonFileStore<CachedGpuPolicy>(Path.Combine(_dir, "gpu-policy.json"));
+        Assert.Null(store.Load().UsableAt(fetched)); // nothing kept yet
+
+        store.Save(new CachedGpuPolicy { Policy = policy, FetchedAt = fetched });
+        var kept = store.Load();
+        var usable = kept.UsableAt(fetched + TimeSpan.FromHours(12))!;
+        Assert.False(usable.IsNotYetFetched);
+        Assert.Equal(3.36e-14, usable.For("pearlhash")!.UsdPerHashPerSecondDay);
+        Assert.Equal("pearlpow.unmineable.com", usable.Route("unmineable-pearlhash")!.Host);
+        Assert.Null(kept.UsableAt(fetched + CachedGpuPolicy.MaxAge + TimeSpan.FromMinutes(1))); // too old: wait for the server
+    }
+
     private async Task<ProviderStatus> RunForProvider(SrbMinerGpuProvider provider, TimeSpan duration)
     {
         ProviderStatus status = ProviderStatus.Stopped(true);
