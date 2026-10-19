@@ -302,6 +302,12 @@
                         </StackPanel>
                         <TextBlock Classes="muted" FontSize="13" Text="{Binding UpdateStatus}"
                                    IsVisible="{Binding UpdateStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                        <StackPanel Spacing="4" IsVisible="{Binding UpdatesEnabled}">
+                            <ToggleSwitch IsChecked="{Binding InstallUpdatesWhileAway}"
+                                          OnContent="Install updates while I'm away" OffContent="Install updates while I'm away" />
+                            <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap"
+                                       Text="When a new version has downloaded, Otium restarts into it while you're away from the computer and its window is closed. Earning pauses for the few seconds that takes. Off: it waits for you to press Restart to update." />
+                        </StackPanel>
                         <TextBlock Classes="muted" Text="{Binding EngineInfo}" />
                         <TextBlock Classes="muted" TextWrapping="Wrap" Text="{Binding FeeInfo}" />
                         <StackPanel Spacing="4">
