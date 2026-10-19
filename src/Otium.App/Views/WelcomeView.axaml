@@ -304,6 +304,8 @@
                                      HorizontalContentAlignment="Center" FontFamily="Consolas, Menlo, monospace" />
                             <TextBlock Classes="error" HorizontalAlignment="Center" Text="{Binding InviteError}"
                                        IsVisible="{Binding InviteError, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                            <TextBlock Classes="good" FontSize="12" HorizontalAlignment="Center" IsVisible="{Binding InviteFromLink}"
+                                       Text="Filled in from your friend's invite link." />
                             <TextBlock Classes="muted" FontSize="12" HorizontalAlignment="Center" Text="Your first 30 days are fee-free." />
                         </StackPanel>
                     </StackPanel>

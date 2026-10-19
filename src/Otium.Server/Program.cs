@@ -47,6 +47,7 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.ConfigureHttpClientDefaults(http => http.ConfigureHttpClient(client =>
     client.DefaultRequestHeaders.UserAgent.ParseAdd($"Otium-Server/{typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "0"} (+https://otium.lol)")));
 builder.Services.AddSingleton(_ => new OtiumStore(builder.Configuration.GetConnectionString("Otium") ?? "Data Source=otium.db"));
+builder.Services.AddSingleton<InviteLinks>();
 builder.Services.AddHttpClient<IMoneroPoolApi, MoneroOceanClient>();
 builder.Services.AddHttpClient<IUnmineableApi, UnmineableClient>();
 builder.Services.AddSingleton<IMoneroWallet, MoneroWalletRpc>();
@@ -304,13 +305,20 @@ api.MapPost("/devices/{deviceId}/email/code", async (string deviceId, EmailCodeR
 api.MapPost("/devices/{deviceId}/email/verify", (string deviceId, EmailVerifyRequest body, HttpRequest request, AccountService accounts, IOptions<ReferralOptions> options) =>
     Results.Ok(accounts.VerifySignInCode(deviceId, Secret(request), body, PublicBase(request, options))));
 
+// The invite link opened on the caller's internet connection in the last week, if any: Otium asks on its first start,
+// so a friend who downloaded it from the link doesn't have to type the code (see InviteLinks).
+api.MapGet("/invite-link", (HttpContext context, InviteLinks links) =>
+    links.PendingFor(context.Connection.RemoteIpAddress) is { } code ? Results.Ok(new InviteLinkResponse(code)) : Results.NoContent());
+
 // Which GPU algorithms to mine and where; the same for every app, rebuilt from live feeds every few minutes.
 api.MapGet("/gpu-policy", async (GpuPolicyService policy, CancellationToken ct) => Results.Ok(await policy.GetAsync(ct)));
 
-app.MapGet("/r/{code}", (string code, HttpRequest request, OtiumStore store, IOptions<ReferralOptions> options, IOptions<SiteOptions> site) =>
+app.MapGet("/r/{code}", (string code, HttpRequest request, OtiumStore store, InviteLinks links, IOptions<ReferralOptions> options, IOptions<SiteOptions> site) =>
 {
     var normalized = ReferralCodes.Normalize(code);
     var exists = ReferralCodes.IsWellFormed(normalized) && store.CodeExists(normalized);
+    if (exists)
+        links.Clicked(request.HttpContext.Connection.RemoteIpAddress, normalized); // so Otium installed on this connection fills it in
     return Results.Content(LandingPage.Render(normalized, "/download", exists, PublicBase(request, options),
             SitePages.AvailableLegalPages(site.Value.PagesDirectory)),
         "text/html; charset=utf-8");
