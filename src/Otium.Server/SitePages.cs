@@ -87,8 +87,8 @@ internal static class SitePages
     }
 
     private static string EstimateLine(CardEstimate e) => e.Day <= 0
-        ? $"At this electricity price an {e.Card} would cost more than it earns, so Otium would wait."
-        : $"{Usd(e.Day)} a day with an {e.Card}, mining {e.Coin} ({e.Note}), after every fee and the power it uses.";
+        ? $"Mining: waits at this power price on an {e.Card}."
+        : $"Mining: {Usd(e.Day)}/day on an {e.Card} ({e.Coin}).";
 
     private static string PayoutLine(double perDay)
     {
@@ -96,7 +96,7 @@ internal static class SitePages
             return "";
         var days = (double)Core.Wallets.PayoutCoins.Usdt.Threshold / perDay;
         var when = days < 1 ? "within a day" : $"in about {Math.Ceiling(days):0} day{(Math.Ceiling(days) == 1 ? "" : "s")}";
-        return $"First payout of 1.5 USDT to your wallet {when}, then daily.";
+        return $"First payout {when}.";
     }
 
     /// <summary>What internet sharing pays a visitor from this country per day: Otium users' real median when there is one.</summary>
@@ -109,13 +109,13 @@ internal static class SitePages
         var market = ProxybaseMarkets.For(code is { Length: 2 } and not ("XX" or "T1") ? code : null);
         if (real?.SharingByCountry.FirstOrDefault(s => s.Country == code) is { } measured)
             return new SharingFigure(market.CountryName, measured.UsdPerMonth / 30, true, measured.Computers, market.SellerUsdPerGb, market.Listed,
-                $"the median of {measured.Computers} Otium computers in {market.CountryName}");
+                $"median of {measured.Computers} Otium computers in {market.CountryName}");
         var estimate = ProxybaseMarkets.EstimatedUserUsdPerDay(market, fees.FeePercent / 100);
-        return new SharingFigure(market.CountryName, estimate, false, 0, market.SellerUsdPerGb, market.Listed, "an estimate from Proxybase's rate");
+        return new SharingFigure(market.CountryName, estimate, false, 0, market.SellerUsdPerGb, market.Listed, "estimate");
     }
 
     private static string SharingLine(SharingFigure s) =>
-        $"Plus about {Usd(s.PerDay)} a day from sharing your internet ({E(s.Short)}).";
+        $"Internet sharing: +{Usd(s.PerDay)}/day ({E(s.Short)}).";
 
     /// <summary>"Your unused internet can earn too": the visitor's country, real figures when there are, else the estimate.</summary>
     private static string SharingSection(SharingFigure s, string fee)
@@ -380,7 +380,7 @@ internal static class SitePages
             : $"""
                       <div class="est-head"><span class="label">What your PC could earn</span><span class="live"><i></i>Today's prices</span></div>
                       <div class="est-figure"><span class="est-amount" id="est-month">{UsdWhole(estimate.Value.Month + sharing.PerDay * 30)}</span><span class="est-per">a month</span></div>
-                      <p class="est-sub" id="est-sub">{EstimateLine(estimate.Value)} {SharingLine(sharing)}</p>
+                      <p class="est-sub" id="est-sub">{EstimateLine(estimate.Value)}<br><span id="est-share">{SharingLine(sharing)}</span></p>
                       <p class="est-payout" id="est-payout">{PayoutLine(estimate.Value.Day)}</p>
                       <div class="chips" role="group" aria-label="Popular graphics cards">{chips}</div>
                       <label class="card-pick"><span>Your graphics card</span><select id="card">{options}</select></label>
@@ -392,7 +392,7 @@ internal static class SitePages
                         <input id="price" type="range" min="0" max="0.60" step="0.01" value="{priceText}">
                         <output id="price-out" for="price">${priceText} / kWh</output>
                       </div>
-                      <p class="footnote">Today's coin prices from WhatToMine{(asOf is null ? "" : $" ({asOf})")} and typical card speeds. They change daily; the app measures your own computer before you start. The processor adds a few cents a day.</p>
+                      <p class="footnote">Estimate from today's coin prices{(asOf is null ? "" : $" ({asOf})")} and Proxybase's rates. The app measures your own PC before you start.</p>
                       <script type="application/json" id="otium-data">{data}</script>
               """;
 
@@ -412,16 +412,15 @@ internal static class SitePages
                   <div class="wrap">
                     <div class="hero-copy">
                       <h1 id="hero-title">Your computer works the night shift. <span class="shift">You get paid.</span></h1>
-                      <p class="lede">Otium mines with your idle processor and graphics card while you're away, and the pool pays your own wallet directly. It stops the moment you're back, and waits when electricity costs more than it earns.</p>
+                      <p class="lede">Otium earns with your PC while you're away, and pays your own wallet directly.</p>
                       <div class="actions">
                         <a class="button" href="{download}"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M11 3h2v10.2l3.6-3.6 1.4 1.4-6 6-6-6 1.4-1.4 3.6 3.6z"/><path fill="currentColor" d="M5 19h14v2H5z"/></svg><span data-download-label>Download Otium</span></a>
                         <a class="button ghost" href="#night-shift">How it works</a>
                       </div>
                       <ul class="facts">
-                        <li>Pays your wallet, never holds your money</li>
-                        <li><a href="#useful-work">Mines Pearl, built on AI's matrix math</a></li>
-                        <li>Open source</li>
-                        <li>Windows, macOS and Linux</li>
+                        <li>Stops when you're back</li>
+                        <li>Never holds your money</li>
+                        <li>Windows, macOS, Linux</li>
                       </ul>
                     </div>
                     <div class="panel estimator" id="earnings" aria-label="Earnings estimate">
@@ -558,6 +557,7 @@ internal static class SitePages
                 </section>
 
                 <section class="closing" aria-labelledby="closing-title">
+                  <pre class="ascii" aria-hidden="true"></pre>
                   <div class="wrap">
                     <h2 id="closing-title">Your computer sleeps eight hours a night. <span>It could be working.</span></h2>
                     <a class="button" href="{download}"><span data-download-label>Download Otium</span></a>
