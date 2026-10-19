@@ -354,6 +354,33 @@ public sealed class SitePagesTests : IDisposable
     }
 
     [Fact]
+    public async Task The_feed_follows_the_newest_version_not_githubs_tag_name_order()
+    {
+        // GitHub lists releases by tag name, so rc.10 comes after rc.1 and rc.2 there; the feed must still pick it.
+        const string gh = "https://github.com/Malogna/otium/releases/download";
+        Otium.Server.PublishedRelease Rc(string tag) => new(tag, true, [new("releases.win-x64.json", $"{gh}/{tag}/releases.win-x64.json")]);
+        _releaseList.Releases = [Rc("v0.1.0-rc.9"), Rc("v0.1.0-rc.2"), Rc("v0.1.0-rc.10"), Rc("v0.1.0-rc.1")];
+        foreach (var r in _releaseList.Releases)
+            _releaseList.Texts[r.Assets[0].Url] = $$"""{"Assets":[{"Version":"{{r.Tag[1..]}}"}]}""";
+
+        var (_, feed) = await Get("/updates/pre/releases.win-x64.json");
+        Assert.Contains("0.1.0-rc.10", feed);
+    }
+
+    [Theory]
+    [InlineData("v0.1.0-rc.10", "v0.1.0-rc.9")]
+    [InlineData("v0.1.0", "v0.1.0-rc.10")]
+    [InlineData("v0.2.0-rc.1", "v0.1.9")]
+    [InlineData("v1.0.0", "v0.10.0")]
+    [InlineData("v0.1.0-rc.2", "v0.1.0-beta.9")]
+    public void Release_tags_order_by_version(string newer, string older)
+    {
+        Assert.True(Otium.Server.ReleaseVersion.Compare(newer, older) > 0);
+        Assert.True(Otium.Server.ReleaseVersion.Compare(older, newer) < 0);
+        Assert.Equal(0, Otium.Server.ReleaseVersion.Compare(newer, newer));
+    }
+
+    [Fact]
     public void The_release_list_skips_drafts_and_marks_release_candidates()
     {
         using var doc = System.Text.Json.JsonDocument.Parse("""
