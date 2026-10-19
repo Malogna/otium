@@ -651,9 +651,10 @@ public sealed class AppHost : IAsyncDisposable
                 return _gpuPolicy;
             string[] quantus = QuantusTarget is null ? [] : [GpuRoutes.KryptexAddress];
             // The graphics card mines on the same pool as the processor: unMineable, or MoneroOcean for US users' Monero.
+            // Only to the pools' own hosts, so the server can't send the user's card to someone else's proxy.
             return PayoutRouting.PoolFor(Settings.PayoutAddress, InUnitedStates) == PayoutPool.Unmineable
-                ? (_gpuPolicy ?? GpuPolicy.NotYetFetched).OnlyRoutes([GpuRoutes.Unmineable, .. quantus])
-                : _gpuPolicy?.OnlyRoutes([GpuRoutes.MoneroOcean, .. quantus]);
+                ? (_gpuPolicy ?? GpuPolicy.NotYetFetched).OnlyRoutes([GpuRoutes.Unmineable, .. quantus]).OnlyTrustedHosts()
+                : _gpuPolicy?.OnlyRoutes([GpuRoutes.MoneroOcean, .. quantus]).OnlyTrustedHosts();
         }
     }
 

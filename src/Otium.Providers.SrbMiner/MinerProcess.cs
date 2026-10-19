@@ -1,8 +1,6 @@
 using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.Diagnostics;
-using System.Net;
-using System.Net.Sockets;
 using Otium.Core.Providers;
 
 namespace Otium.Providers.SrbMiner;
@@ -32,15 +30,15 @@ public sealed record ShareCounts(long Accepted, long Rejected)
 public interface IMinerProcessFactory
 {
     /// <param name="lowPriority">Below normal priority, because the user may be at the computer (see ProviderRunOptions).</param>
-    IMinerProcess Start(string binary, IReadOnlyList<string> arguments, int apiPort, bool lowPriority);
+    IMinerProcess Start(string binary, IReadOnlyList<string> arguments, bool lowPriority);
 }
 
-internal sealed class SrbMinerProcessFactory(HttpClient http) : IMinerProcessFactory
+internal sealed class SrbMinerProcessFactory : IMinerProcessFactory
 {
     private const int ErrorVirusInfected = 225;
     private const int ErrorVirusDeleted = 226;
 
-    public IMinerProcess Start(string binary, IReadOnlyList<string> arguments, int apiPort, bool lowPriority)
+    public IMinerProcess Start(string binary, IReadOnlyList<string> arguments, bool lowPriority)
     {
         var startInfo = new ProcessStartInfo(binary)
         {
@@ -65,36 +63,23 @@ internal sealed class SrbMinerProcessFactory(HttpClient http) : IMinerProcessFac
             catch (Exception e) when (e is InvalidOperationException or Win32Exception)
             {
             }
-            return new SrbMinerProcess(process, http, apiPort);
+            return new SrbMinerProcess(process);
         }
         catch (Win32Exception e) when (e.NativeErrorCode is ErrorVirusInfected or ErrorVirusDeleted)
         {
             throw new EngineBlockedException("Windows Security blocked the GPU miner from starting.", Path.GetDirectoryName(binary)!);
         }
     }
-
-    public static int FreeLoopbackPort()
-    {
-        var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        listener.Stop();
-        return port;
-    }
 }
 
 internal sealed class SrbMinerProcess : IMinerProcess
 {
     private readonly Process _process;
-    private readonly HttpClient _http;
-    private readonly int _apiPort;
     private readonly ConcurrentQueue<string> _log = new();
 
-    public SrbMinerProcess(Process process, HttpClient http, int apiPort)
+    public SrbMinerProcess(Process process)
     {
         _process = process;
-        _http = http;
-        _apiPort = apiPort;
         _process.OutputDataReceived += (_, e) => Append(e.Data);
         _process.ErrorDataReceived += (_, e) => Append(e.Data);
         _process.BeginOutputReadLine();
@@ -109,24 +94,15 @@ internal sealed class SrbMinerProcess : IMinerProcess
 
     public ShareCounts? Shares { get; private set; }
 
-    public async Task<double?> ReadHashrateAsync(CancellationToken ct)
+    /// <summary>
+    /// From the console: SRBMiner's statistics API can't be limited to this computer, so it isn't turned on (see
+    /// SrbMinerArgs). SRBMiner prints a "Total" line every 30 s; an older one means the miner has stopped (e.g. frozen).
+    /// </summary>
+    public Task<double?> ReadHashrateAsync(CancellationToken ct)
     {
-        try
-        {
-            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            timeout.CancelAfter(TimeSpan.FromSeconds(3));
-            var json = await _http.GetStringAsync($"http://127.0.0.1:{_apiPort}/", timeout.Token);
-            Shares = SrbMinerStats.ParseApiShares(json) ?? Shares;
-            if (SrbMinerStats.ParseApiHashrate(json) is { } hashrate)
-                return hashrate;
-        }
-        catch (Exception e) when (e is HttpRequestException or OperationCanceledException or System.Text.Json.JsonException && !ct.IsCancellationRequested)
-        {
-        }
-        // SRBMiner prints a "Total" line every 30 s; an older one means the miner has stopped (e.g. frozen).
         var recent = RecentLog.TakeLast(40).ToList();
         Shares = SrbMinerStats.ParseConsoleShares(recent) ?? Shares;
-        return SrbMinerStats.ParseConsoleHashrate(recent, DateTime.Now - TimeSpan.FromSeconds(90));
+        return Task.FromResult(SrbMinerStats.ParseConsoleHashrate(recent, DateTime.Now - TimeSpan.FromSeconds(90)));
     }
 
     private void Append(string? line)

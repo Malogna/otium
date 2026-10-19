@@ -105,10 +105,14 @@ public class FeeScheduleTests
         Assert.Equal(TimeSpan.FromDays(14), policy.RefereeFeeHoliday);
         Assert.Equal(terms, policy.ToTerms());
 
-        // A misconfigured or hostile server can't push the fee past 10% or give away more than all of it.
+        // A misconfigured or hostile server can't push the fee past 10%, nor send more than 1% of a user's mining time
+        // to the referrer's address (which, unlike Otium's own fee address, comes from the server).
         var silly = FeePolicy.FromTerms(new Otium.Core.Accounts.FeeTerms(50, 3, -1, 9999, 0, 0));
         Assert.Equal(FeePolicy.MaxFeePercent, silly.FeePercent);
-        Assert.Equal(1, silly.ReferrerShareOfFee);
+        Assert.Equal(FeePolicy.MaxReferrerPercent, silly.ReferrerPercent, precision: 6);
+        Assert.Equal(0.1, silly.ReferrerShareOfFee, precision: 6);
+        Assert.Equal(0.5, FeePolicy.FromTerms(new Otium.Core.Accounts.FeeTerms(2, 0.25, 180, 30, 30, 90)).ReferrerPercent, precision: 6); // today's terms
+        Assert.Equal(1, FeePolicy.FromTerms(new Otium.Core.Accounts.FeeTerms(2, 1, 180, 30, 30, 90)).ReferrerPercent, precision: 6);
         Assert.Equal(TimeSpan.Zero, silly.ReferrerRewardPeriod);
         Assert.Equal(TimeSpan.FromDays(365), silly.RefereeFeeHoliday);
 

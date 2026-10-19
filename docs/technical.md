@@ -230,7 +230,7 @@ Configure `src/Otium.Server/appsettings.json` (or environment variables such as 
 | Setting | Purpose |
 |---|---|
 | `ConnectionStrings:Otium` | SQLite database path |
-| `Fees:FeePercent`, `ReferrerShareOfFee`, `ReferrerRewardDays` | The disclosed fee as a share of mining time (default 2, apps cap it at 10) and the referrer's part of it (default a quarter, for 180 days); apps pick changes up at their next sync |
+| `Fees:FeePercent`, `ReferrerShareOfFee`, `ReferrerRewardDays` | The disclosed fee as a share of mining time (default 2, apps cap it at 10) and the referrer's part of it (default a quarter, for 180 days; apps cap the referrer's part at 1% of mining time, since the referrer's address comes from the server); apps pick changes up at their next sync |
 | `Fees:RefereeFeeFreeDays`, `ReferrerFeeFreeDaysPerFriend`, `MaxFeeFreeDays` | Fee-free days for invited users (30), per verified friend for the referrer (30), and the most that can stack up (90) |
 | `Custody:Enabled` | Off (default): non-custodial, accounts and referrals only. On: balances, crediting, cash-outs, Kryptex and internet sharing; the settings marked "custodial" below apply only then |
 | `Unmineable:OtiumTarget` | Otium's fee address on unMineable (e.g. `USDT:T…`), shown with its fee and referral earnings on the admin dashboard |

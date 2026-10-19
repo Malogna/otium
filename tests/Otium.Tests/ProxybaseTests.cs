@@ -229,6 +229,19 @@ public sealed class ProxybaseTests : IDisposable
     }
 
     [Fact]
+    public async Task Nothing_is_paid_to_a_deposit_address_that_isnt_one()
+    {
+        // A compromised or broken server: Relay's deposit addresses are 0x addresses on Tempo, so anything else is refused.
+        _route = _route with { DepositAddress = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t" };
+        var provider = Provider();
+        await provider.StartAsync(new BandwidthRunOptions("w1"), CancellationToken.None);
+        _cli.SellerAvailable = 16_000_000;
+        await provider.CheckBalanceAndPayAsync(CancellationToken.None);
+        Assert.DoesNotContain(_cli.Commands, c => c.StartsWith("seller payout create", StringComparison.Ordinal));
+        Assert.Empty(provider.Payouts);
+    }
+
+    [Fact]
     public async Task Otiums_fee_is_kept_back_and_paid_to_otiums_address_from_one_dollar_never_through_the_conversion()
     {
         const string otium = "0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed";
