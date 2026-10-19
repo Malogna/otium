@@ -85,11 +85,15 @@ public sealed class UpdateService
     }
 
     /// <summary>Exits, installs the downloaded version and restarts. Callers must stop the miners first.</summary>
-    public void ApplyAndRestart()
+    /// <param name="showWindow">The window was open: the new version opens it again instead of starting in the tray.</param>
+    public void ApplyAndRestart(bool showWindow)
     {
         if (_manager is not null && _ready is not null)
-            _manager.ApplyUpdatesAndRestart(_ready.TargetFullRelease, ["--minimized"]);
+            _manager.ApplyUpdatesAndRestart(_ready.TargetFullRelease, RestartArguments(showWindow));
     }
+
+    /// <summary>What the new version starts with: in the tray ("--minimized") unless the window was open.</summary>
+    private static string[] RestartArguments(bool showWindow) => showWindow ? [] : ["--minimized"];
 
     private void SetStatus(string status)
     {
