@@ -196,7 +196,7 @@ jobs:
           dotnet tool restore
           # "0.1.0-rc.1" and the like are pre-releases: on GitHub but not "latest", so the website's Download button and
           # installed apps on stable versions don't pick them up.
-          $pre = if ($v.Contains('-')) { @('--pre') } else { @() }
+          $pre = @(if ($v.Contains('-')) { '--pre' })  # @(...) keeps it an array: splatting a plain string passes it letter by letter
           foreach ($rid in 'win-x64', 'linux-x64', 'osx-arm64', 'osx-x64') {
             $dir = "artifacts/releases/otium-$rid"
             if (-not (Test-Path $dir)) { Write-Warning "No packages for $rid"; continue }
