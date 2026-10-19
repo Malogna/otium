@@ -12,6 +12,7 @@ namespace Otium.Core.Platform;
 public sealed partial class SingleInstance : IDisposable
 {
     private const string ShowMessage = "show";
+    private const string AckMessage = "ok";
 
     private readonly Mutex _mutex;
     private readonly string _pipeName;
@@ -34,24 +35,40 @@ public sealed partial class SingleInstance : IDisposable
         return null;
     }
 
-    /// <summary>Asks the Otium running on <paramref name="root"/> to show its window. False when it didn't answer.</summary>
+    /// <summary>
+    /// Asks the Otium running on <paramref name="root"/> to show its window, and waits for it to confirm. False when it
+    /// didn't answer in time.
+    /// </summary>
     public static bool AskToShow(string root, TimeSpan timeout)
     {
-        try
+        var name = NameFor(root);
+        var deadline = DateTime.UtcNow + timeout;
+        while (deadline - DateTime.UtcNow is { Ticks: > 0 } left)
         {
-            using var pipe = new NamedPipeClientStream(".", NameFor(root), PipeDirection.Out, PipeOptions.CurrentUserOnly);
-            pipe.Connect((int)timeout.TotalMilliseconds);
-            // Windows only lets the app the user just started bring a window forward; pass that right on.
-            if (OperatingSystem.IsWindows())
-                AllowSetForegroundWindow(AnyProcess);
-            pipe.Write(Encoding.UTF8.GetBytes(ShowMessage + "\n"));
-            pipe.Flush();
-            return true;
+            try
+            {
+                using var pipe = new NamedPipeClientStream(".", name, PipeDirection.InOut, PipeOptions.CurrentUserOnly);
+                pipe.Connect((int)Math.Ceiling(left.TotalMilliseconds));
+                // Windows only lets the app the user just started bring a window forward; pass that right on.
+                if (OperatingSystem.IsWindows())
+                    AllowSetForegroundWindow(AnyProcess);
+                pipe.Write(Encoding.UTF8.GetBytes(ShowMessage + "\n"));
+                pipe.Flush();
+                using var reader = new StreamReader(pipe, Encoding.UTF8);
+                if (reader.ReadLine() == AckMessage)
+                    return true;
+                // No answer: on Linux a start can reach the listener the running Otium is just closing. Try again.
+            }
+            catch (TimeoutException)
+            {
+                return false;
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+            }
+            Thread.Sleep(50);
         }
-        catch (Exception e) when (e is TimeoutException or IOException or UnauthorizedAccessException)
-        {
-            return false;
-        }
+        return false;
     }
 
     /// <summary>Calls <paramref name="show"/> (on a background thread) whenever another start asks for the window.</summary>
@@ -64,11 +81,14 @@ public sealed partial class SingleInstance : IDisposable
             try
             {
                 await using var pipe = new NamedPipeServerStream(
-                    _pipeName, PipeDirection.In, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+                    _pipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
                 await pipe.WaitForConnectionAsync(ct);
-                using var reader = new StreamReader(pipe, Encoding.UTF8);
-                if (await reader.ReadLineAsync(ct) == ShowMessage)
-                    show();
+                using var reader = new StreamReader(pipe, Encoding.UTF8, leaveOpen: true);
+                if (await reader.ReadLineAsync(ct) != ShowMessage)
+                    continue;
+                await pipe.WriteAsync(Encoding.UTF8.GetBytes(AckMessage + "\n"), ct);
+                await pipe.FlushAsync(ct);
+                show();
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
