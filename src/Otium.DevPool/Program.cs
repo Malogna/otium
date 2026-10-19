@@ -99,7 +99,6 @@ public static class DevPoolHost
                 "469" => 3.4e-14, // Pearl: an RTX 4090 at ~310 TH/s grosses about $10.5 a day
                 "473" => 1.6e-9,  // Quantus
                 "459" => 6e-6,    // Xelis: an RTX 3080 at ~50 kH/s grosses about $0.30 a day
-                "411" => 5e-9,    // Iron Fish (FishHash): an RTX 3080 at ~40 MH/s, about $0.20 a day
                 _ => 0,
             } * pool.Speedup;
             if (usdPerHashDay <= 0)
