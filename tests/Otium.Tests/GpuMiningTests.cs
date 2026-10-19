@@ -422,7 +422,7 @@ public sealed class SrbMinerProviderTests : IDisposable
         public Action<string, FakeProcess>? OnStart { get; set; }
         public List<(string Algorithm, string Password, FakeProcess Process, string Pool, string Wallet)> Launches { get; } = [];
 
-        public IMinerProcess Start(string binary, IReadOnlyList<string> arguments, int apiPort)
+        public IMinerProcess Start(string binary, IReadOnlyList<string> arguments, int apiPort, bool lowPriority)
         {
             string Arg(string flag) => arguments[arguments.ToList().IndexOf(flag) + 1];
             var algo = Arg("--algorithm");

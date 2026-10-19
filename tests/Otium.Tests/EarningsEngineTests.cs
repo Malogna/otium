@@ -88,6 +88,7 @@ public class EarningsEngineTests
         public EarningsLedger Ledger { get; } = new();
         public double PricePerKwh { get; set; } = 0.15;
         public bool OnlyWhenIdle { get; set; }
+        public bool RunsWhileBrowsing { get; set; }
         public int CpuPercent { get; set; } = 50;
         public EarningsEngine Engine { get; }
 
@@ -100,7 +101,8 @@ public class EarningsEngineTests
 
         private EngineConfig Config() => new(
             User, CpuPercent, OnlyWhenIdle, TimeSpan.FromMinutes(5), NeverRunAtLoss: true, PricePerKwh,
-            new FeeSchedule(FeePolicy.Default, User, AppWallet, new ReferralStanding(null, null, null)), "test");
+            new FeeSchedule(FeePolicy.Default, User, AppWallet, new ReferralStanding(null, null, null)), "test",
+            RunsWhileBrowsing: RunsWhileBrowsing);
 
         public async Task TickFor(TimeSpan duration)
         {
@@ -300,5 +302,30 @@ public class EarningsEngineTests
         h.Engine.Enable();
         await h.TickFor(TimeSpan.FromSeconds(20));
         Assert.Equal("kawpow", h.Engine.Snapshot.Detail);
+    }
+
+    [Theory]
+    [InlineData(true, false, false)] // away: normal priority, so nothing holds it back
+    [InlineData(false, false, true)] // mines while the user works: lowest priority
+    [InlineData(true, true, true)] // the graphics card may mine while they browse: lowest priority
+    public async Task Mines_at_normal_priority_only_while_the_user_is_away(bool onlyWhenAway, bool whileBrowsing, bool lowPriority)
+    {
+        var h = new Harness { OnlyWhenIdle = onlyWhenAway, RunsWhileBrowsing = whileBrowsing };
+        h.Engine.Enable();
+        await h.TickFor(TimeSpan.FromSeconds(20));
+
+        Assert.Equal(lowPriority, Assert.Single(h.Provider.Starts).LowPriority);
+    }
+
+    [Fact]
+    public async Task The_test_the_user_starts_at_the_computer_mines_at_the_lowest_priority()
+    {
+        var h = new Harness { OnlyWhenIdle = true };
+        h.Idle.Idle = TimeSpan.FromSeconds(3); // at the computer
+        h.Engine.RunNow(TimeSpan.FromMinutes(2));
+        h.Engine.Enable();
+        await h.TickFor(TimeSpan.FromSeconds(20));
+
+        Assert.True(Assert.Single(h.Provider.Starts).LowPriority);
     }
 }

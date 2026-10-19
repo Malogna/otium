@@ -22,6 +22,9 @@ public sealed class EarningsEngine : IAsyncDisposable
     /// earning resumes the moment they leave again; after it, the engine is stopped and its memory freed.
     /// </summary>
     public static readonly TimeSpan PauseGrace = TimeSpan.FromMinutes(10);
+
+    /// <summary>How often a miner at normal priority checks whether the user is back, so it stops within about a second.</summary>
+    public static readonly TimeSpan ReturnCheck = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan LedgerSaveInterval = TimeSpan.FromMinutes(1);
 
     private readonly IComputeProvider _provider;
@@ -143,12 +146,31 @@ public sealed class EarningsEngine : IAsyncDisposable
 
             try
             {
-                await _wake.WaitAsync(TickInterval, ct);
+                await WaitForNextTickAsync(ct);
             }
             catch (OperationCanceledException)
             {
                 break;
             }
+        }
+    }
+
+    /// <summary>
+    /// Waits for the next tick. A miner at normal priority (the user is away) checks every second whether they're back,
+    /// and ticks at once when they are, so it stops before it can slow down what they're doing.
+    /// </summary>
+    private async Task WaitForNextTickAsync(CancellationToken ct)
+    {
+        if (_running is not { LowPriority: false } || _suspendedSince is not null)
+        {
+            await _wake.WaitAsync(TickInterval, ct);
+            return;
+        }
+        var threshold = _config().IdleThreshold;
+        for (var waited = TimeSpan.Zero; waited < TickInterval; waited += ReturnCheck)
+        {
+            if (await _wake.WaitAsync(ReturnCheck, ct) || _idle.GetIdleTime() is { } idle && idle < threshold)
+                return;
         }
     }
 
@@ -227,11 +249,13 @@ public sealed class EarningsEngine : IAsyncDisposable
         }
 
         // A new pool route from the server changes the options, which restarts the miner on the new pool.
+        // Lowest priority whenever the user may be at the computer; normal while they're away, so nothing holds it back.
         var desired = new ProviderRunOptions(
             config.FeeSchedule.TargetAt(_ledger.MiningTime, now),
             config.WorkerName,
             config.UsagePercent,
-            config.CpuPool);
+            config.CpuPool,
+            LowPriority: !config.OnlyWhenIdle || config.RunsWhileBrowsing || IsRunningNow);
 
         // Back from a pause: hashing again at once, with the dataset and pool connection it kept.
         if (_suspendedSince is not null && _running is not null)

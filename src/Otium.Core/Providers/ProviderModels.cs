@@ -32,7 +32,12 @@ public sealed record MiningTarget(string WalletAddress, PayoutRole Role, string?
 
 /// <param name="UsagePercent">Share of the device to use (CPU threads for CPU providers; GPU providers may ignore it).</param>
 /// <param name="Pool">The server's pool route for this CPU, overriding the provider's default pool; null for own-wallet mining.</param>
-public sealed record ProviderRunOptions(MiningTarget Target, string WorkerName, int UsagePercent, Accounts.CpuPoolRoute? Pool = null);
+/// <param name="LowPriority">
+/// Mine at the lowest priority, because the user may be using the computer. While they're away the miner runs at normal
+/// priority instead, so Windows doesn't push it onto slower cores; it stops within a second of their return.
+/// </param>
+public sealed record ProviderRunOptions(
+    MiningTarget Target, string WorkerName, int UsagePercent, Accounts.CpuPoolRoute? Pool = null, bool LowPriority = true);
 
 /// <param name="Detail">Short provider-specific note for the UI, e.g. the algorithm being mined.</param>
 /// <param name="IsCalibrating">

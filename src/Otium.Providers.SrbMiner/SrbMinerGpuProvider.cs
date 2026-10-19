@@ -626,7 +626,7 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         _currentPool = login.Pool;
         var args = SrbMinerArgs.Build(algorithm, login, apiPort, _gpus);
         ct.ThrowIfCancellationRequested();
-        _process = _factory.Start(binary, args, apiPort);
+        _process = _factory.Start(binary, args, apiPort, options.LowPriority);
     }
 
     /// <summary>
