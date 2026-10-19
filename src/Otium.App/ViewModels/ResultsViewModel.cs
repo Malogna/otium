@@ -46,6 +46,9 @@ public partial class ResultsViewModel : ViewModelBase
     [ObservableProperty] public partial string MeasureStatus { get; set; } = "";
     [ObservableProperty] public partial string MeasureAmount { get; set; } = "";
     [ObservableProperty] public partial string MeasureDetail { get; set; } = "";
+
+    /// <summary>Why the processor was left off after the first test, when it was.</summary>
+    [ObservableProperty] public partial string MeasureNote { get; set; } = "";
     [ObservableProperty] public partial string? MeasureError { get; set; }
 
     public ObservableCollection<MeasuredRow> MeasuredDevices { get; } = [];
@@ -122,7 +125,7 @@ public partial class ResultsViewModel : ViewModelBase
         }
 
         MeasuredLine = settings.Measurement is { } last && !ShowMeasureResult
-            ? $"Measured {Format.Date(last.MeasuredAt)}: about {Format.Money((decimal)last.PerMonth(HoursPerDay))} a month at {HoursPerDay.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)} hours a day."
+            ? $"Measured {Format.Date(last.MeasuredAt)}: about {Format.Money((decimal)Counted(last).PerMonth(HoursPerDay))} a month at {HoursPerDay.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)} hours a day."
             : "";
 
         // While you were away
@@ -153,18 +156,28 @@ public partial class ResultsViewModel : ViewModelBase
             ShowMonthly = false;
     }
 
-    private void ShowResult(PcMeasurement result)
+    /// <summary>What the test's numbers come to as the computer is set up now: a processor switched off doesn't count.</summary>
+    private PcMeasurement Counted(PcMeasurement measured) =>
+        !_host.Settings.CpuEnabled && measured.Devices.Any(d => d.Device != DeviceKind.Cpu) ? measured.WithoutProcessor() : measured;
+
+    private void ShowResult(PcMeasurement measured)
     {
+        var result = Counted(measured);
+        var cpuOff = !ReferenceEquals(result, measured);
+        MeasureNote = _host.CpuLeftOffByTest && measured.Devices.FirstOrDefault(d => d.Device == DeviceKind.Cpu) is { } cpu
+            ? $"Otium left your processor off: it would add about {Format.Usd(Math.Max(0, cpu.NetUsdPerDay))} a day next to your graphics card's "
+              + $"{Format.Usd(result.NetUsdPerDay)}, and your computer stays cooler and quieter without it. You can turn it on in Advanced → Settings → Devices."
+            : "";
         var hours = HoursPerDay;
         MeasureAmount = Format.Money((decimal)result.PerMonth(hours));
         MeasureDetail = result.NetUsdPerDay <= 0
             ? "At your electricity price, mining would cost more than it earns, so Otium will mostly wait. Prices change daily; Otium checks every 30 minutes."
             : $"a month, earning about {hours.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)} hours a day while you're away. That's {Format.Usd(result.NetUsdPerDay)} per full day of earning, after Otium's fee"
               + (_host.Settings.PayForElectricity ? " and electricity." : ".");
-        var rows = result.Devices.Select(d => new MeasuredRow(
+        var rows = measured.Devices.Select(d => new MeasuredRow(
             d.Name,
             d.HashrateHps > 0 ? $"{d.Coin} at {Format.Hashrate(d.HashrateHps)}" : "Wouldn't pay at your electricity price",
-            d.NetUsdPerDay > 0 ? $"{Format.Usd(d.NetUsdPerDay)}/day" : "—")).ToList();
+            cpuOff && d.Device == DeviceKind.Cpu ? "Off" : d.NetUsdPerDay > 0 ? $"{Format.Usd(d.NetUsdPerDay)}/day" : "—")).ToList();
         if (!rows.SequenceEqual(MeasuredDevices))
         {
             MeasuredDevices.Clear();

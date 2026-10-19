@@ -142,6 +142,21 @@ public sealed class ProofOfEarningsTests
     }
 
     [Fact]
+    public void The_processor_is_left_off_only_next_to_a_card_that_earns_ten_times_as_much()
+    {
+        static PcMeasurement Of(double cpu, double gpu) => new(T0, [
+            new DeviceMeasurement(DeviceKind.Cpu, "i7-8700K", "Monero", 2500, cpu, 0),
+            new DeviceMeasurement(DeviceKind.Gpu, "RTX 3080", "Pearl", 100e12, gpu, 0),
+        ]);
+        Assert.True(Of(0.09, 3.23).ProcessorAddsLittle); // a real PC in October 2026: 34 times
+        Assert.True(Of(0.10, 1.00).ProcessorAddsLittle);
+        Assert.False(Of(0.15, 1.00).ProcessorAddsLittle); // under ten times: the processor still adds something
+        Assert.False(new PcMeasurement(T0, [new DeviceMeasurement(DeviceKind.Cpu, "i5", "Monero", 1500, 0.05, 0)]).ProcessorAddsLittle);
+        Assert.False(new PcMeasurement(T0, [new DeviceMeasurement(DeviceKind.Gpu, "RTX 3080", "Pearl", 1, 3, 0)]).ProcessorAddsLittle);
+        Assert.Equal(3.23, Of(0.09, 3.23).WithoutProcessor().NetUsdPerDay, precision: 6);
+    }
+
+    [Fact]
     public void A_device_that_wouldnt_pay_counts_as_zero_and_doesnt_hold_the_test_up()
     {
         var run = new PcMeasurementRun(T0);

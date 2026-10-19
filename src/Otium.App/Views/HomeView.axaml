@@ -243,6 +243,8 @@
                             <StackPanel Spacing="2" IsVisible="{Binding MeasureError, Converter={x:Static StringConverters.IsNullOrEmpty}}">
                                 <TextBlock FontSize="34" FontWeight="Bold" Text="{Binding MeasureAmount}" />
                                 <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Text="{Binding MeasureDetail}" />
+                                <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Text="{Binding MeasureNote}"
+                                           IsVisible="{Binding MeasureNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                             </StackPanel>
                             <ItemsControl ItemsSource="{Binding MeasuredDevices}">
                                 <ItemsControl.ItemsPanel>
