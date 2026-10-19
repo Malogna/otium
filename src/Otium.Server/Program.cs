@@ -17,7 +17,12 @@ using Otium.Server.RealEarnings;
 
 var builder = WebApplication.CreateBuilder(args);
 // No "Server: Kestrel" header: it only tells scanners what to look for.
-builder.WebHost.ConfigureKestrel(kestrel => kestrel.AddServerHeader = false);
+// No request needs more than 1 MB (the largest, a problem report, is at most 300 000 characters).
+builder.WebHost.ConfigureKestrel(kestrel =>
+{
+    kestrel.AddServerHeader = false;
+    kestrel.Limits.MaxRequestBodySize = 1024 * 1024;
+});
 
 // Non-custodial unless the operator turns custody on: see CustodyOptions.
 var custodial = builder.Configuration.GetValue<bool>($"{CustodyOptions.Section}:Enabled");
@@ -48,6 +53,7 @@ builder.Services.ConfigureHttpClientDefaults(http => http.ConfigureHttpClient(cl
     client.DefaultRequestHeaders.UserAgent.ParseAdd($"Otium-Server/{typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "0"} (+https://otium.lol)")));
 builder.Services.AddSingleton(_ => new OtiumStore(builder.Configuration.GetConnectionString("Otium") ?? "Data Source=otium.db"));
 builder.Services.AddSingleton<InviteLinks>();
+builder.Services.AddSingleton<ConnectionQuotas>();
 builder.Services.AddHttpClient<IMoneroPoolApi, MoneroOceanClient>();
 builder.Services.AddHttpClient<IUnmineableApi, UnmineableClient>();
 builder.Services.AddSingleton<IMoneroWallet, MoneroWalletRpc>();
@@ -153,8 +159,9 @@ builder.Services.AddProblemDetails();
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    // Per internet connection: IPv6 by its /64, which a single home or phone can pick addresses from at will.
     options.AddPolicy("per-ip", context => RateLimitPartition.GetFixedWindowLimiter(
-        context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        ClientNetwork.Of(context.Connection.RemoteIpAddress) ?? "unknown",
         _ => new FixedWindowRateLimiterOptions { PermitLimit = 60, Window = TimeSpan.FromMinutes(1) }));
 });
 
@@ -212,9 +219,14 @@ void CheckCountry(HttpRequest request)
 
 var api = app.MapGroup("/api/v1").RequireRateLimiting("per-ip");
 
-api.MapPost("/devices", async (RegisterDeviceRequest body, HttpRequest request, AccountService accounts, IOptions<ReferralOptions> options, CancellationToken ct) =>
+api.MapPost("/devices", async (RegisterDeviceRequest body, HttpRequest request, AccountService accounts, OtiumStore store, ConnectionQuotas quotas,
+    IOptions<ReferralOptions> options, CancellationToken ct) =>
 {
     CheckCountry(request);
+    // New computers only: a known one re-registers (e.g. a new payout address) as often as it likes.
+    if (store.FindDevice(body.DeviceId ?? "") is null
+        && !quotas.TryTake("new-device", request.HttpContext.Connection.RemoteIpAddress, ConnectionQuotas.NewDevicesPerDay, TimeSpan.FromDays(1)))
+        throw new OtiumException(StatusCodes.Status429TooManyRequests, "Too many new installs from this internet connection today. Please try again tomorrow.");
     return Results.Ok(await accounts.RegisterAsync(body, PublicBase(request, options), ct));
 });
 
@@ -268,8 +280,13 @@ api.MapPost("/devices/{deviceId}/sharing/route", async (string deviceId, Sharing
 
 // Problem reports users send from the app ("Send a problem report"), answered with a reference to quote.
 api.MapPost("/devices/{deviceId}/problem-report", (string deviceId, ProblemReport body, HttpRequest request, AccountService accounts,
-    Otium.Server.Support.ProblemReportService reports) =>
-    Results.Ok(reports.Report(accounts.Authenticate(deviceId, Secret(request)), body)));
+    Otium.Server.Support.ProblemReportService reports, ConnectionQuotas quotas) =>
+{
+    var session = accounts.Authenticate(deviceId, Secret(request));
+    if (!quotas.TryTake("problem-report", request.HttpContext.Connection.RemoteIpAddress, ConnectionQuotas.ProblemReportsPerDay, TimeSpan.FromDays(1)))
+        throw new OtiumException(StatusCodes.Status429TooManyRequests, "Several problem reports already came from this internet connection today. Please try again tomorrow.");
+    return Results.Ok(reports.Report(session, body));
+});
 
 // Opt-in earnings reports for the website's real-earnings table (custodial or not).
 api.MapPost("/devices/{deviceId}/earnings", (string deviceId, EarningsReport body, HttpRequest request, AccountService accounts, EarningsReportService reports) =>
@@ -295,8 +312,14 @@ api.MapPost("/devices/{deviceId}/mysterium/sponsor", async (string deviceId, Mys
     return Results.Ok(await sponsor.SponsorAsync(session, body, ip, ct));
 });
 
-api.MapPost("/devices/{deviceId}/email/code", async (string deviceId, EmailCodeRequest body, HttpRequest request, AccountService accounts, CancellationToken ct) =>
+api.MapPost("/devices/{deviceId}/email/code", async (string deviceId, EmailCodeRequest body, HttpRequest request, AccountService accounts,
+    ConnectionQuotas quotas, CancellationToken ct) =>
 {
+    // Per connection too, since devices are free: otherwise anyone could have Otium email codes to any address.
+    var from = request.HttpContext.Connection.RemoteIpAddress;
+    if (!quotas.TryTake("code-email-hour", from, ConnectionQuotas.CodeEmailsPerHour, TimeSpan.FromHours(1))
+        || !quotas.TryTake("code-email-day", from, ConnectionQuotas.CodeEmailsPerDay, TimeSpan.FromDays(1)))
+        throw new OtiumException(StatusCodes.Status429TooManyRequests, "Too many codes requested from this internet connection. Please wait a while and try again.");
     await accounts.SendSignInCodeAsync(deviceId, Secret(request), body, ct);
     return Results.NoContent();
 });
