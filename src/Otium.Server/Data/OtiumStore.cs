@@ -1034,6 +1034,34 @@ public sealed class OtiumStore
     public long DevicesSeenSince(DateTimeOffset since) =>
         Scalar<long>("SELECT COUNT(*) FROM devices WHERE last_seen_at >= $s", ("$s", Format(since)));
 
+    /// <summary>Live accounts (not merged or deleted), and how many of them were created after <paramref name="since"/>.</summary>
+    public (long Total, long New) AccountCounts(DateTimeOffset since) => (
+        Scalar<long>("SELECT COUNT(*) FROM accounts WHERE merged_into IS NULL AND deleted_at IS NULL"),
+        Scalar<long>("SELECT COUNT(*) FROM accounts WHERE merged_into IS NULL AND deleted_at IS NULL AND created_at >= $s", ("$s", Format(since))));
+
+    public long DeviceCount() => Scalar<long>("SELECT COUNT(*) FROM devices");
+
+    /// <summary>
+    /// Computers registered on each of the last <paramref name="days"/> days (UTC), oldest first, including days with none.
+    /// Timestamps are stored as round-trip strings, so the first ten characters are the UTC date.
+    /// </summary>
+    public IReadOnlyList<(DateOnly Day, long Devices)> NewDevicesPerDay(DateTimeOffset now, int days)
+    {
+        var first = DateOnly.FromDateTime(now.UtcDateTime).AddDays(1 - days);
+        using var connection = Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT substr(created_at, 1, 10) AS day, COUNT(*) FROM devices WHERE created_at >= $s GROUP BY day";
+        Bind(cmd, [("$s", Format(new DateTimeOffset(first.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero)))]);
+        using var r = cmd.ExecuteReader();
+        var counts = new Dictionary<string, long>();
+        while (r.Read())
+            counts[r.GetString(0)] = r.GetInt64(1);
+        return Enumerable.Range(0, days)
+            .Select(i => first.AddDays(i))
+            .Select(d => (d, counts.GetValueOrDefault(d.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture))))
+            .ToList();
+    }
+
     public IReadOnlyList<(string Address, long Accounts)> PoolWalletLoads()
     {
         using var connection = Open();
