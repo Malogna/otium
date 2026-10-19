@@ -330,8 +330,8 @@ app.MapGet("/", async (HttpRequest request, IOptions<FeeOptions> fees, IOptions<
     }
     var html = SitePages.Home(policy, "/download", SitePages.AvailableLegalPages(site.Value.PagesDirectory),
         SitePages.Earnings(gpu, policy), gpu?.GeneratedAt,
-        // Cloudflare's visitor country, for the local electricity price. Only Cloudflare reaches the server in production;
-        // anyone sending it themselves only changes their own estimate.
+        // Cloudflare's visitor country, for the local electricity price. Only Cloudflare reaches the server in production
+        // (Caddyfile.cloudflare turns everyone else away); anyone sending it themselves only changes their own estimate.
         request.Headers["CF-IPCountry"].ToString(),
         realEarnings.Get());
     return Results.Content(html, "text/html; charset=utf-8");
