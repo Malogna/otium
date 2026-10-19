@@ -36,8 +36,12 @@ public partial class ResultsViewModel : ViewModelBase
     // ---------- measure my PC ----------
 
     [ObservableProperty] public partial bool ShowMeasureOffer { get; set; }
-    [ObservableProperty] public partial bool IsMeasuring { get; set; }
-    [ObservableProperty] public partial bool ShowMeasureResult { get; set; }
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowMeasureResultNow), nameof(ShowAwayNow), nameof(ShowMonthlyNow))]
+    public partial bool IsMeasuring { get; set; }
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowMeasureResultNow), nameof(ShowAwayNow), nameof(ShowMonthlyNow))]
+    public partial bool ShowMeasureResult { get; set; }
     [ObservableProperty] public partial double MeasureProgress { get; set; }
     [ObservableProperty] public partial string MeasureStatus { get; set; } = "";
     [ObservableProperty] public partial string MeasureAmount { get; set; } = "";
@@ -54,13 +58,25 @@ public partial class ResultsViewModel : ViewModelBase
 
     // ---------- while you were away ----------
 
-    [ObservableProperty] public partial bool ShowAway { get; set; }
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowAwayNow), nameof(ShowMonthlyNow))]
+    public partial bool ShowAway { get; set; }
     [ObservableProperty] public partial string AwayAmount { get; set; } = "";
     [ObservableProperty] public partial string AwayText { get; set; } = "";
 
     // ---------- last month ----------
 
-    [ObservableProperty] public partial bool ShowMonthly { get; set; }
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowMonthlyNow))]
+    public partial bool ShowMonthly { get; set; }
+
+    // The overview shows one result at a time, so they don't push "Right now" out of sight: the running test, then
+    // its result, then "while you were away", then last month. Closing one shows the next.
+    public bool ShowMeasureResultNow => ShowMeasureResult && !IsMeasuring;
+
+    public bool ShowAwayNow => ShowAway && !IsMeasuring && !ShowMeasureResult;
+
+    public bool ShowMonthlyNow => ShowMonthly && !IsMeasuring && !ShowMeasureResult && !ShowAway;
     [ObservableProperty] public partial string MonthlyTitle { get; set; } = "";
     [ObservableProperty] public partial string MonthlyAmount { get; set; } = "";
     [ObservableProperty] public partial string MonthlyText { get; set; } = "";

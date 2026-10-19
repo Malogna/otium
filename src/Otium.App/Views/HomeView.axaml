@@ -128,119 +128,6 @@
                     </StackPanel>
                 </Border>
 
-                <!-- ===== Results: the PC test, "while you were away", last month (shareable) ===== -->
-                <StackPanel Spacing="16" DataContext="{Binding Results}" x:DataType="vm:ResultsViewModel">
-
-                    <!-- The two-minute test: offered once, then its progress, then the result -->
-                    <Border Classes="card" IsVisible="{Binding ShowMeasureOffer}">
-                        <Grid ColumnDefinitions="Auto,*">
-                            <Border Classes="iconBadge" VerticalAlignment="Top"><Path Classes="icon" Data="{StaticResource IconChart}" /></Border>
-                            <StackPanel Grid.Column="1" Margin="14,0,0,0" Spacing="10">
-                                <StackPanel Spacing="2">
-                                    <TextBlock Classes="h2" Text="See what this PC really earns" />
-                                    <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap"
-                                               Text="A two-minute test runs the miners now, while you watch, and measures your own processor and graphics card instead of guessing from a table. It earns for real, to your address. Your fans may speed up for those two minutes." />
-                                </StackPanel>
-                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <Button Classes="accent" Content="Run the 2-minute test" Command="{Binding StartMeasureCommand}" />
-                                    <Button Content="Not now" Command="{Binding SkipMeasureCommand}" />
-                                </StackPanel>
-                                <TextBlock Classes="error" FontSize="12.5" TextWrapping="Wrap" Text="{Binding StartError}"
-                                           IsVisible="{Binding StartError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                            </StackPanel>
-                        </Grid>
-                    </Border>
-
-                    <Border Classes="card" IsVisible="{Binding IsMeasuring}">
-                        <StackPanel Spacing="10">
-                            <Grid ColumnDefinitions="*,Auto">
-                                <StackPanel Spacing="2">
-                                    <TextBlock Classes="h2" Text="Measuring this PC" />
-                                    <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Text="{Binding MeasureStatus}" />
-                                </StackPanel>
-                                <Button Grid.Column="1" VerticalAlignment="Top" Content="Stop test" Command="{Binding StopMeasureCommand}" />
-                            </Grid>
-                            <ProgressBar Classes="goal" Value="{Binding MeasureProgress}" Maximum="100" />
-                        </StackPanel>
-                    </Border>
-
-                    <Border Classes="card" IsVisible="{Binding ShowMeasureResult}">
-                        <StackPanel Spacing="12">
-                            <Grid ColumnDefinitions="*,Auto">
-                                <TextBlock Classes="h2" Text="Measured on this PC" />
-                                <Button Grid.Column="1" Classes="link" Content="Close" Command="{Binding CloseMeasureCommand}" />
-                            </Grid>
-                            <TextBlock Classes="error" TextWrapping="Wrap" Text="{Binding MeasureError}"
-                                       IsVisible="{Binding MeasureError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                            <StackPanel Spacing="2" IsVisible="{Binding MeasureError, Converter={x:Static StringConverters.IsNullOrEmpty}}">
-                                <TextBlock FontSize="34" FontWeight="Bold" Text="{Binding MeasureAmount}" />
-                                <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Text="{Binding MeasureDetail}" />
-                            </StackPanel>
-                            <ItemsControl ItemsSource="{Binding MeasuredDevices}">
-                                <ItemsControl.ItemsPanel>
-                                    <ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate>
-                                </ItemsControl.ItemsPanel>
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate x:DataType="vm:MeasuredRow">
-                                        <Border Classes="tile">
-                                            <Grid ColumnDefinitions="*,Auto">
-                                                <StackPanel Spacing="1">
-                                                    <TextBlock FontWeight="SemiBold" Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
-                                                    <TextBlock Classes="muted" FontSize="12.5" Text="{Binding What}" TextTrimming="CharacterEllipsis" />
-                                                </StackPanel>
-                                                <TextBlock Grid.Column="1" VerticalAlignment="Center" FontWeight="SemiBold" Text="{Binding PerDay}" />
-                                            </Grid>
-                                        </Border>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                            <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding MeasureError, Converter={x:Static StringConverters.IsNullOrEmpty}}">
-                                <Button Classes="accent" Content="Copy to share" Command="{Binding CopyMeasureCommand}" />
-                                <Button Content="Save picture" Command="{Binding SaveMeasurePictureCommand}" />
-                            </StackPanel>
-                        </StackPanel>
-                    </Border>
-
-                    <!-- While you were away -->
-                    <Border Classes="card" IsVisible="{Binding ShowAway}">
-                        <StackPanel Spacing="12">
-                            <Grid ColumnDefinitions="*,Auto">
-                                <TextBlock Classes="h2" Text="While you were away" />
-                                <Button Grid.Column="1" Classes="link" Content="Close" Command="{Binding CloseAwayCommand}" />
-                            </Grid>
-                            <StackPanel Spacing="2">
-                                <TextBlock FontSize="34" FontWeight="Bold" Text="{Binding AwayAmount}" />
-                                <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Text="{Binding AwayText}" />
-                            </StackPanel>
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <Button Classes="accent" Content="Copy to share" Command="{Binding CopyAwayCommand}" />
-                                <Button Content="Save picture" Command="{Binding SaveAwayPictureCommand}" />
-                            </StackPanel>
-                        </StackPanel>
-                    </Border>
-
-                    <!-- Last month, for the first days of a new month -->
-                    <Border Classes="card" IsVisible="{Binding ShowMonthly}">
-                        <StackPanel Spacing="12">
-                            <Grid ColumnDefinitions="*,Auto">
-                                <TextBlock Classes="h2" Text="{Binding MonthlyTitle}" />
-                                <Button Grid.Column="1" Classes="link" Content="Close" Command="{Binding CloseMonthlyCommand}" />
-                            </Grid>
-                            <StackPanel Spacing="2">
-                                <TextBlock FontSize="34" FontWeight="Bold" Text="{Binding MonthlyAmount}" />
-                                <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Text="{Binding MonthlyText}" />
-                            </StackPanel>
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <Button Classes="accent" Content="Copy to share" Command="{Binding CopyMonthlyCommand}" />
-                                <Button Content="Save picture" Command="{Binding SaveMonthlyPictureCommand}" />
-                            </StackPanel>
-                        </StackPanel>
-                    </Border>
-
-                    <TextBlock Classes="good" FontSize="12" HorizontalAlignment="Center" Text="{Binding ShareStatus}"
-                               IsVisible="{Binding ShareStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                </StackPanel>
-
                 <!-- Cash-out panel -->
                 <Border Classes="card" IsVisible="{Binding IsCashingOut}">
                     <StackPanel Spacing="12" DataContext="{Binding CashOut}" x:DataType="vm:CashOutViewModel">
@@ -329,6 +216,103 @@
                     </StackPanel>
                 </Border>
 
+                <!-- ===== Results: the running test, its result, "while you were away", last month (shareable), one at a time ===== -->
+                <StackPanel Spacing="16" DataContext="{Binding Results}" x:DataType="vm:ResultsViewModel">
+
+                    <Border Classes="card" IsVisible="{Binding IsMeasuring}">
+                        <StackPanel Spacing="10">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Classes="h2" Text="Measuring this PC" />
+                                    <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Text="{Binding MeasureStatus}" />
+                                </StackPanel>
+                                <Button Grid.Column="1" VerticalAlignment="Top" Content="Stop test" Command="{Binding StopMeasureCommand}" />
+                            </Grid>
+                            <ProgressBar Classes="goal" Value="{Binding MeasureProgress}" Maximum="100" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Classes="card" IsVisible="{Binding ShowMeasureResultNow}">
+                        <StackPanel Spacing="12">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Classes="h2" Text="Measured on this PC" />
+                                <Button Grid.Column="1" Classes="link" Content="Close" Command="{Binding CloseMeasureCommand}" />
+                            </Grid>
+                            <TextBlock Classes="error" TextWrapping="Wrap" Text="{Binding MeasureError}"
+                                       IsVisible="{Binding MeasureError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                            <StackPanel Spacing="2" IsVisible="{Binding MeasureError, Converter={x:Static StringConverters.IsNullOrEmpty}}">
+                                <TextBlock FontSize="34" FontWeight="Bold" Text="{Binding MeasureAmount}" />
+                                <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Text="{Binding MeasureDetail}" />
+                            </StackPanel>
+                            <ItemsControl ItemsSource="{Binding MeasuredDevices}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:MeasuredRow">
+                                        <Border Classes="tile">
+                                            <Grid ColumnDefinitions="*,Auto">
+                                                <StackPanel Spacing="1">
+                                                    <TextBlock FontWeight="SemiBold" Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock Classes="muted" FontSize="12.5" Text="{Binding What}" TextTrimming="CharacterEllipsis" />
+                                                </StackPanel>
+                                                <TextBlock Grid.Column="1" VerticalAlignment="Center" FontWeight="SemiBold" Text="{Binding PerDay}" />
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding MeasureError, Converter={x:Static StringConverters.IsNullOrEmpty}}">
+                                <Button Classes="accent" Content="Copy to share" Command="{Binding CopyMeasureCommand}" />
+                                <Button Content="Save picture" Command="{Binding SaveMeasurePictureCommand}" />
+                                <TextBlock Classes="good" FontSize="12" VerticalAlignment="Center" TextWrapping="Wrap" Text="{Binding ShareStatus}"
+                                           IsVisible="{Binding ShareStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- While you were away -->
+                    <Border Classes="card" IsVisible="{Binding ShowAwayNow}">
+                        <StackPanel Spacing="12">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Classes="h2" Text="While you were away" />
+                                <Button Grid.Column="1" Classes="link" Content="Close" Command="{Binding CloseAwayCommand}" />
+                            </Grid>
+                            <StackPanel Spacing="2">
+                                <TextBlock FontSize="34" FontWeight="Bold" Text="{Binding AwayAmount}" />
+                                <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Text="{Binding AwayText}" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button Classes="accent" Content="Copy to share" Command="{Binding CopyAwayCommand}" />
+                                <Button Content="Save picture" Command="{Binding SaveAwayPictureCommand}" />
+                                <TextBlock Classes="good" FontSize="12" VerticalAlignment="Center" TextWrapping="Wrap" Text="{Binding ShareStatus}"
+                                           IsVisible="{Binding ShareStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Last month, for the first days of a new month -->
+                    <Border Classes="card" IsVisible="{Binding ShowMonthlyNow}">
+                        <StackPanel Spacing="12">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Classes="h2" Text="{Binding MonthlyTitle}" />
+                                <Button Grid.Column="1" Classes="link" Content="Close" Command="{Binding CloseMonthlyCommand}" />
+                            </Grid>
+                            <StackPanel Spacing="2">
+                                <TextBlock FontSize="34" FontWeight="Bold" Text="{Binding MonthlyAmount}" />
+                                <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Text="{Binding MonthlyText}" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button Classes="accent" Content="Copy to share" Command="{Binding CopyMonthlyCommand}" />
+                                <Button Content="Save picture" Command="{Binding SaveMonthlyPictureCommand}" />
+                                <TextBlock Classes="good" FontSize="12" VerticalAlignment="Center" TextWrapping="Wrap" Text="{Binding ShareStatus}"
+                                           IsVisible="{Binding ShareStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                </StackPanel>
+
                 <!-- ===== Right now ===== -->
                 <Border Classes="card delay1">
                     <StackPanel Spacing="14">
@@ -366,25 +350,6 @@
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
-                    </StackPanel>
-                </Border>
-
-                <!-- ===== Earn more: opt-in internet sharing ===== -->
-                <Border Classes="card delay1" IsVisible="{Binding InternetSharing.ShowSuggestion}">
-                    <StackPanel Spacing="14" DataContext="{Binding InternetSharing}" x:DataType="vm:InternetSharingViewModel">
-                        <Grid ColumnDefinitions="Auto,*,Auto">
-                            <Border Classes="iconBadge" VerticalAlignment="Top"><Path Classes="icon" Data="{StaticResource IconGlobe}" /></Border>
-                            <StackPanel Grid.Column="1" Margin="14,0" VerticalAlignment="Center" Spacing="2">
-                                <TextBlock Classes="h2" Text="Earn from your internet too" />
-                                <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap">
-                                    <Run Text="Share internet you're not using, even while you're at the computer." />
-                                    <Run Text="{Binding EstimateSentence, Mode=OneWay}" />
-                                </TextBlock>
-                            </StackPanel>
-                            <Button Grid.Column="2" Classes="accent" VerticalAlignment="Center" Content="Learn more"
-                                    Command="{Binding LearnMoreCommand}" IsVisible="{Binding !ShowConsent}" />
-                        </Grid>
-                        <views:InternetSharingConsentView IsVisible="{Binding ShowConsent}" />
                     </StackPanel>
                 </Border>
 
@@ -433,6 +398,50 @@
                         </Grid>
                         <TextBlock Classes="error" FontSize="12" TextWrapping="Wrap" DataContext="{Binding Results}" x:DataType="vm:ResultsViewModel"
                                    Text="{Binding StartError}" IsVisible="{Binding StartError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                    </StackPanel>
+                </Border>
+
+                <!-- ===== Suggestions: the PC test and internet sharing, after the numbers ===== -->
+                <StackPanel Spacing="16" DataContext="{Binding Results}" x:DataType="vm:ResultsViewModel"
+                            IsVisible="{Binding ShowMeasureOffer}">
+                    <!-- The two-minute test, offered once, then its progress, then the result -->
+                    <Border Classes="card" IsVisible="{Binding ShowMeasureOffer}">
+                        <Grid ColumnDefinitions="Auto,*">
+                            <Border Classes="iconBadge" VerticalAlignment="Top"><Path Classes="icon" Data="{StaticResource IconChart}" /></Border>
+                            <StackPanel Grid.Column="1" Margin="14,0,0,0" Spacing="10">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Classes="h2" Text="See what this PC really earns" />
+                                    <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap"
+                                               Text="A two-minute test runs the miners now, while you watch, and measures your own processor and graphics card instead of guessing from a table. It earns for real, to your address. Your fans may speed up for those two minutes." />
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Button Classes="accent" Content="Run the 2-minute test" Command="{Binding StartMeasureCommand}" />
+                                    <Button Content="Not now" Command="{Binding SkipMeasureCommand}" />
+                                </StackPanel>
+                                <TextBlock Classes="error" FontSize="12.5" TextWrapping="Wrap" Text="{Binding StartError}"
+                                           IsVisible="{Binding StartError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                </StackPanel>
+
+                <!-- ===== Earn more: opt-in internet sharing ===== -->
+                <Border Classes="card delay1" IsVisible="{Binding InternetSharing.ShowSuggestion}">
+                    <StackPanel Spacing="14" DataContext="{Binding InternetSharing}" x:DataType="vm:InternetSharingViewModel">
+                        <Grid ColumnDefinitions="Auto,*,Auto">
+                            <Border Classes="iconBadge" VerticalAlignment="Top"><Path Classes="icon" Data="{StaticResource IconGlobe}" /></Border>
+                            <StackPanel Grid.Column="1" Margin="14,0" VerticalAlignment="Center" Spacing="2">
+                                <TextBlock Classes="h2" Text="Earn from your internet too" />
+                                <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap">
+                                    <Run Text="Share internet you're not using, even while you're at the computer." />
+                                    <Run Text="{Binding EstimateSentence, Mode=OneWay}" />
+                                </TextBlock>
+                            </StackPanel>
+                            <Button Grid.Column="2" Classes="accent" VerticalAlignment="Center" Content="Learn more"
+                                    Command="{Binding LearnMoreCommand}" IsVisible="{Binding !ShowConsent}" />
+                        </Grid>
+                        <views:InternetSharingConsentView IsVisible="{Binding ShowConsent}" />
                     </StackPanel>
                 </Border>
 

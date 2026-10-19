@@ -5,7 +5,8 @@
              x:Class="Otium.App.Views.ShellView"
              x:DataType="vm:ShellViewModel">
 
-    <Grid RowDefinitions="Auto,*">
+    <!-- Centred and no wider than its content, like the overview, so wide windows don't leave it hugging the left. -->
+    <Grid RowDefinitions="Auto,*" MaxWidth="800">
         <StackPanel Orientation="Horizontal" Spacing="12" Margin="22,16,22,0">
             <Button AutomationProperties.Name="Back to overview" Command="{Binding BackCommand}" ToolTip.Tip="Back to overview">
                 <StackPanel Orientation="Horizontal" Spacing="6">
