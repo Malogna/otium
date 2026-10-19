@@ -16,8 +16,8 @@
 
 ## 1. Who we are
 
-Otium is made and run from Norway by its developer. You can reach us at **contact@otium.lol**, or from the app with
-Settings → Send a problem report.
+Otium is made and run by an independent developer, for people all over the world. You can reach us at
+**contact@otium.lol**, or from the app with Settings → Send a problem report.
 
 ## 2. What Otium does
 
@@ -137,17 +137,16 @@ your choice and can be changed in Settings.
 ## 13. Withdrawal and stopping
 
 You may withdraw from this agreement **within 14 days** of starting Otium, without giving a reason: use Settings →
-Your data → **Delete my account**, or email us at contact@otium.lol (you may use the
-[standard withdrawal form](https://lovdata.no/dokument/NL/lov/2014-06-20-27)). On request, we'll pay to your address
-what Otium's fee mined from your computer during those 14 days.
+Your data → **Delete my account**, or email us at contact@otium.lol (a short message is enough; no form needed). On
+request, we'll pay to your address what Otium's fee mined from your computer during those 14 days. This applies
+wherever you live, even if your local law gives you a shorter right or none.
 
 You can also stop at any time after that: pause Otium, uninstall it, or delete your account. Anything waiting at your
 pool stays yours there.
 
 ## 14. If something goes wrong
 
-You have the rights consumer law gives you, including under the Norwegian Digital Services Act
-(digitalytelsesloven) and the consumer law of the country where you live. **Nothing in these terms limits them.**
+You have the rights the consumer law of the country where you live gives you. **Nothing in these terms limits them.**
 
 If Otium doesn't work as described, tell us (Settings → Send a problem report, or email) and we'll fix it within a
 reasonable time. We don't exclude liability for death or personal injury, intent or gross negligence, or anything
@@ -177,9 +176,9 @@ shown in the app. We may refuse invites used to get around those rules (for exam
 
 ## 18. Law and disputes
 
-Norwegian law applies. If you're a consumer, you also keep the protection of the mandatory consumer law of the country
-where you live, and you can take a dispute to the courts there.
+These terms are governed by the law of Norway, where Otium is run from. If you're a consumer, you also keep the
+protection of the mandatory consumer law of the country where you live, and you can take a dispute to the courts there.
 
-If you have a complaint, contact us first at contact@otium.lol. If we can't agree, you can ask Forbrukertilsynet for
-mediation and take the case to Forbrukerklageutvalget (forbrukerklageutvalget.no). Consumers in the EU can contact
-their national consumer centre (ECC-Net).
+If you have a complaint, contact us first at contact@otium.lol; most things can be sorted out that way. If we can't
+agree, you can turn to the consumer protection authority or consumer dispute service where you live. In the EU, EEA
+and UK, your national European Consumer Centre can help for free.
