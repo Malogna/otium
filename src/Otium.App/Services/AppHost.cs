@@ -834,9 +834,16 @@ public sealed class AppHost : IAsyncDisposable
 
     public event Action? HistoryChanged;
 
-    /// <summary>Stops every miner (so none is left orphaned), then lets Velopack install the update and relaunch.</summary>
+    /// <summary>Whether the main window is open (shown and not minimised); the app sets it once the window exists.</summary>
+    public Func<bool> IsWindowOpen { get; set; } = () => false;
+
+    /// <summary>
+    /// Stops every miner (so none is left orphaned), then lets Velopack install the update and relaunch: with the window
+    /// open again if it was open, otherwise in the tray.
+    /// </summary>
     public async Task ApplyUpdateAndRestartAsync()
     {
+        var showWindow = IsWindowOpen();
         foreach (var engine in Engines)
             await engine.DisposeAsync();
         await Bandwidth.DisposeAsync();
@@ -845,7 +852,7 @@ public sealed class AppHost : IAsyncDisposable
             await GpuProvider.DisposeAsync();
         await Bandwidth.Provider.DisposeAsync();
         _settingsStore.Save(Settings);
-        Updates.ApplyAndRestart();
+        Updates.ApplyAndRestart(showWindow);
     }
 
     /// <summary>
