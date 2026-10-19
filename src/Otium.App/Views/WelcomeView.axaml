@@ -280,7 +280,7 @@
                         <StackPanel Spacing="10">
                             <TextBlock FontWeight="SemiBold" Text="Share analytics?" TextWrapping="Wrap" />
                             <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap"
-                                       Text="Otium would send this PC's graphics card model, processor name, hours earning and amounts earned, a few times a day. Never your address. otium.lol shows only figures combined across several PCs, so people can see what Otium really earns. You can change this in Settings at any time; saying no later deletes what was sent." />
+                                       Text="Otium would send this PC's graphics card model, processor name, hours earning and amounts earned (and, if you share your internet, your country and what sharing earned), a few times a day. Never your address. otium.lol shows only figures combined across several PCs, so people can see what Otium really earns. You can change this in Settings at any time; saying no later deletes what was sent." />
                             <StackPanel Orientation="Horizontal" Spacing="10">
                                 <Button Content="Yes, share" Classes.accent="{Binding ShareEarningsYes}" Command="{Binding AnswerShareEarningsYesCommand}"
                                         AutomationProperties.Name="Yes, share my earnings figures" />

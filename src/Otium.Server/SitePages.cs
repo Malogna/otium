@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net;
 using System.Text.Json;
+using Otium.Core.Bandwidth;
 using Otium.Core.Fees;
 using Otium.Core.Pools;
 using Otium.Core.Switching;
@@ -98,6 +99,50 @@ internal static class SitePages
         return $"First payout of 1.5 USDT to your wallet {when}, then daily.";
     }
 
+    /// <summary>What internet sharing pays a visitor from this country per day: Otium users' real median when there is one.</summary>
+    /// <param name="Short">Where the figure comes from, for the hero's line.</param>
+    internal sealed record SharingFigure(string CountryName, double PerDay, bool IsReal, int Computers, double RatePerGb, bool ListedMarket, string Short);
+
+    internal static SharingFigure SharingFor(string? visitorCountry, FeePolicy fees, RealEarnings.RealEarningsSummary? real)
+    {
+        var code = visitorCountry?.Trim().ToUpperInvariant();
+        var market = ProxybaseMarkets.For(code is { Length: 2 } and not ("XX" or "T1") ? code : null);
+        if (real?.SharingByCountry.FirstOrDefault(s => s.Country == code) is { } measured)
+            return new SharingFigure(market.CountryName, measured.UsdPerMonth / 30, true, measured.Computers, market.SellerUsdPerGb, market.Listed,
+                $"the median of {measured.Computers} Otium computers in {market.CountryName}");
+        var estimate = ProxybaseMarkets.EstimatedUserUsdPerDay(market, fees.FeePercent / 100);
+        return new SharingFigure(market.CountryName, estimate, false, 0, market.SellerUsdPerGb, market.Listed, "an estimate from Proxybase's rate");
+    }
+
+    private static string SharingLine(SharingFigure s) =>
+        $"Plus about {Usd(s.PerDay)} a day from sharing your internet ({E(s.Short)}).";
+
+    /// <summary>"Your unused internet can earn too": the visitor's country, real figures when there are, else the estimate.</summary>
+    private static string SharingSection(SharingFigure s, string fee)
+    {
+        var rate = Usd(s.RatePerGb);
+        var explain = s.IsReal
+            ? $"a month: the median of {s.Computers} Otium computers in {E(s.CountryName)} whose owners shared their numbers, after Otium's {fee}."
+            : (s.ListedMarket
+                  ? $"a month, estimated for {E(s.CountryName)}: Proxybase pays {rate} per GB there"
+                  : $"a month, estimated: Proxybase pays {rate} per GB where it doesn't list a country on its own")
+              + $", and says a home connection carries 1–5 GB a day on average. This assumes 1 GB, after Otium's {fee}. What you really earn depends on how much Proxybase's customers use your connection; the app shows your real numbers after the first hour.";
+        return $"""
+                <section id="sharing" aria-labelledby="sharing-title">
+                  <div class="wrap power">
+                    <div class="reveal">
+                      <span class="label">Internet sharing</span>
+                      <h2 id="sharing-title" style="margin-top:18px">Your unused internet can earn too.</h2>
+                      <p style="margin-top:20px" class="muted">Optional, and off until you tick it. Proxybase's customers, mostly AI agents and businesses that collect public web pages, use some of the internet connection you aren't using. It's paid to your wallet in your coin, like mining.</p>
+                    </div>
+                    <div class="panel reveal">
+                      <p class="keep">{(s.IsReal ? "" : "≈ ")}{UsdWhole(s.PerDay * 30)}<small>{explain}</small></p>
+                    </div>
+                  </div>
+                </section>
+            """;
+    }
+
     /// <summary>
     /// "Real numbers": what the pools have paid Otium users, and what real computers earned per graphics card (only from
     /// users who chose to share, and only cards with several computers). Nothing at all until there is something real.
@@ -121,6 +166,16 @@ internal static class SitePages
                         <p class="footnote">Medians across computers whose owners chose to share their numbers. Measured hash rates at each hour's prices, after every fee, before electricity. "Per day" is what they actually earned on an average day, at the hours they were away.</p>
                       </div>
             """;
+        var sharingTable = real.SharingByCountry.Count == 0 ? "" : $"""
+                      <div class="panel real-cards">
+                        <table>
+                          <caption>Internet sharing on real computers running Otium, last {real.WindowDays} days</caption>
+                          <thead><tr><th scope="col">Country</th><th scope="col">Computers</th><th scope="col">Per day of sharing</th><th scope="col">Per month</th></tr></thead>
+                          <tbody>{string.Concat(real.SharingByCountry.Select(s => $"<tr><th scope=\"row\">{E(ProxybaseMarkets.For(s.Country).CountryName)}</th><td>{s.Computers}</td><td>{Usd(s.UsdPerSharingDay)}</td><td>{Usd(s.UsdPerMonth)}</td></tr>"))}</tbody>
+                        </table>
+                        <p class="footnote">Medians across computers whose owners chose to share their numbers, after Otium's fee. "Per month" is what they actually earned, at the hours they shared.</p>
+                      </div>
+            """;
         return $"""
                 <section id="real" aria-labelledby="real-title">
                   <div class="wrap">
@@ -131,6 +186,7 @@ internal static class SitePages
                     <div class="real reveal">
                       {(stats.Count == 0 ? "" : $"<div class=\"real-stats\">{string.Concat(stats)}</div>")}
                       {table}
+                      {sharingTable}
                     </div>
                   </div>
                 </section>
@@ -291,9 +347,10 @@ internal static class SitePages
         var coins = string.Concat(new[]
         {
             ("USDT", "TRC-20"), ("BTC", "Bitcoin"), ("LTC", "Litecoin"), ("BNB", "BEP-20"), ("SOL", "Solana"),
-            ("TRX", "TRON"), ("ETH", "Ethereum"), ("XMR", "Monero"), ("QTC", "graphics card"),
+            ("TRX", "TRON"), ("ETH", "Ethereum"), ("XMR", "Monero"),
         }.Select(c => $"""<span class="coin">{c.Item1} <small>{c.Item2}</small></span>"""));
 
+        var sharing = SharingFor(visitorCountry, fees, real);
         var data = JsonSerializer.Serialize(new
         {
             cards = earnings.Select(c => new
@@ -303,6 +360,8 @@ internal static class SitePages
                 coins = c.Coins.Select(x => new { coin = x.Coin, usdPerDay = Math.Round(x.UsdPerDay, 4), watts = x.Watts, note = x.Note }),
             }),
             payoutUsdt = (double)Core.Wallets.PayoutCoins.Usdt.Threshold,
+            sharingPerDay = Math.Round(sharing.PerDay, 4),
+            sharingSource = sharing.Short,
         }).Replace("</", "<\\/", StringComparison.Ordinal);
         var asOf = pricesAt is { } at ? at.UtcDateTime.ToString("d MMMM yyyy, HH:mm 'UTC'", CultureInfo.InvariantCulture) : null;
         var typical = earnings.FirstOrDefault(c => c.Id == TypicalCard) ?? earnings.FirstOrDefault();
@@ -320,8 +379,8 @@ internal static class SitePages
               """
             : $"""
                       <div class="est-head"><span class="label">What your PC could earn</span><span class="live"><i></i>Today's prices</span></div>
-                      <div class="est-figure"><span class="est-amount" id="est-month">{UsdWhole(estimate.Value.Month)}</span><span class="est-per">a month</span></div>
-                      <p class="est-sub" id="est-sub">{EstimateLine(estimate.Value)}</p>
+                      <div class="est-figure"><span class="est-amount" id="est-month">{UsdWhole(estimate.Value.Month + sharing.PerDay * 30)}</span><span class="est-per">a month</span></div>
+                      <p class="est-sub" id="est-sub">{EstimateLine(estimate.Value)} {SharingLine(sharing)}</p>
                       <p class="est-payout" id="est-payout">{PayoutLine(estimate.Value.Day)}</p>
                       <div class="chips" role="group" aria-label="Popular graphics cards">{chips}</div>
                       <label class="card-pick"><span>Your graphics card</span><select id="card">{options}</select></label>
@@ -447,6 +506,7 @@ internal static class SitePages
                   </div>
                 </section>
 
+                {SharingSection(sharing, fee)}
                 <section id="fees" aria-labelledby="fees-title">
                   <div class="wrap fees">
                     <div class="reveal">

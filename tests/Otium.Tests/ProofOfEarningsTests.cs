@@ -565,6 +565,52 @@ public sealed class ProofOfEarningsTests
     }
 
     [Fact]
+    public async Task Internet_sharing_figures_by_country_come_from_three_computers_and_reach_the_page()
+    {
+        using var server = new Server();
+        for (var i = 0; i < 3; i++)
+        {
+            var (device, secret, _) = await server.Register(TestAddresses.Usdt(i));
+            // 24 hours of sharing in Norway earning $1, $2 and $3 (lower case is accepted and stored as "NO").
+            await server.Report(device, secret, new EarningsReport(1, T0 - TimeSpan.FromDays(1), T0,
+                [new DeviceEarnings("sharing", i == 0 ? "no" : "NO", 24 * 3600, i + 1, 0)]));
+        }
+
+        var real = server.Factory.Services.GetRequiredService<RealEarningsService>().Compute(server.Time.GetUtcNow());
+        var norway = Assert.Single(real.SharingByCountry);
+        Assert.Equal("NO", norway.Country);
+        Assert.Equal(3, norway.Computers);
+        Assert.Equal(2.0, norway.UsdPerSharingDay, precision: 6);
+        Assert.Equal(2.0 / 7 * 30, norway.UsdPerMonth, precision: 6); // $2 in the 7-day window
+
+        server.Time.Advance(TimeSpan.FromMinutes(11));
+        var request = new HttpRequestMessage(HttpMethod.Get, "/");
+        request.Headers.Add("CF-IPCountry", "NO");
+        var page = await (await server.Http.SendAsync(request)).Content.ReadAsStringAsync();
+        Assert.Contains("the median of 3 Otium computers in Norway", page);
+        Assert.Contains("<th scope=\"row\">Norway</th><td>3</td><td>$2.00</td>", page);
+    }
+
+    [Fact]
+    public async Task Sharing_reports_must_name_a_country_and_stay_plausible()
+    {
+        using var server = new Server();
+        var (device, secret, _) = await server.Register(TestAddresses.Usdt(0));
+        var client = new AccountClient(server.Http);
+        foreach (var bad in new[]
+                 {
+                     new DeviceEarnings("sharing", "Norway", 3600, 0.1, 0), // not a two-letter code
+                     new DeviceEarnings("sharing", "NO", 3 * 3600, 20, 0), // $160 a day of sharing
+                     new DeviceEarnings("sharing", "NO", 3600, 0.1, 0.05), // sharing doesn't count electricity
+                 })
+        {
+            var e = await Assert.ThrowsAsync<AccountRequestException>(() =>
+                client.ReportEarningsAsync(device, secret, new EarningsReport(1, T0 - TimeSpan.FromHours(6), T0, [bad]), CancellationToken.None));
+            Assert.Equal(400, e.StatusCode);
+        }
+    }
+
+    [Fact]
     public async Task Forged_or_broken_reports_are_refused()
     {
         using var server = new Server();

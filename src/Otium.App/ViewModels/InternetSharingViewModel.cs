@@ -202,17 +202,17 @@ public partial class InternetSharingViewModel : ViewModelBase
     }
 
     /// <summary>Proxybase's rate where this computer is (its markets page).</summary>
-    public Otium.Providers.Proxybase.ProxybaseMarket Market
+    public Otium.Core.Bandwidth.ProxybaseMarket Market
     {
         get
         {
             try
             {
-                return Otium.Providers.Proxybase.ProxybaseMarkets.For(System.Globalization.RegionInfo.CurrentRegion.TwoLetterISORegionName);
+                return Otium.Core.Bandwidth.ProxybaseMarkets.For(System.Globalization.RegionInfo.CurrentRegion.TwoLetterISORegionName);
             }
             catch (ArgumentException)
             {
-                return Otium.Providers.Proxybase.ProxybaseMarkets.For(null);
+                return Otium.Core.Bandwidth.ProxybaseMarkets.For(null);
             }
         }
     }
@@ -222,7 +222,7 @@ public partial class InternetSharingViewModel : ViewModelBase
     /// "1–5 GB a day" average for a home connection), after Otium's fee.
     /// </summary>
     public double EstimatedUsdPerDay => IsProxybase
-        ? Otium.Providers.Proxybase.ProxybaseMarkets.EstimatedUserUsdPerDay(Market, _host.Fees.FeePercent / 100)
+        ? Otium.Core.Bandwidth.ProxybaseMarkets.EstimatedUserUsdPerDay(Market, _host.Fees.FeePercent / 100)
         : 0;
 
     private string EstimateExplanation()

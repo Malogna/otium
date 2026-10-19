@@ -1,6 +1,6 @@
 using System.Globalization;
 
-namespace Otium.Providers.Proxybase;
+namespace Otium.Core.Bandwidth;
 
 /// <summary>What Proxybase pays sellers in a country, and whether the country is one of its listed markets.</summary>
 public sealed record ProxybaseMarket(string CountryName, double SellerUsdPerGb, bool Listed);
@@ -9,7 +9,7 @@ public sealed record ProxybaseMarket(string CountryName, double SellerUsdPerGb, 
 /// Proxybase's seller rates for home (residential) connections, from its markets page (proxybase.xyz/markets,
 /// October 2026; sellers get 60% of the buyer price). The live table behind it (api.proxybase.xyz/v2/catalog/pricing)
 /// doesn't answer without an account, so the rates are built in. Used only to estimate before a computer has its own
-/// earnings history.
+/// earnings history, and by the website for its visitors' country.
 /// </summary>
 public static class ProxybaseMarkets
 {
