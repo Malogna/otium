@@ -3,6 +3,8 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.13" />
     <PackageReference Include="Nethereum.Web3" Version="7.0.0" />
+    <!-- Nethereum 7.0.0 brings Newtonsoft.Json 11.0.2, which has a known high-severity flaw (GHSA-5crp-9r3c-p9vr). -->
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
   </ItemGroup>
 
   <ItemGroup>
