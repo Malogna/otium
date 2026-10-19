@@ -164,7 +164,7 @@ public sealed class NonCustodialServerTests : IDisposable
         Assert.Equal(0.75, pearl.PoolFeePercent);
         Assert.DoesNotContain(policy.Routes, r => r.Kind == GpuRoutes.Kryptex);
 
-        // No feed for Xelis or FishHash in this test: they're listed but switched off until their data is back.
+        // No feed for Xelis in this test: it's listed but switched off until its data is back.
         Assert.Equal(GpuTiers.Disabled, policy.For("xelishash")!.Tier);
 
         // Quantus would need a second (Quantus) wallet; everything is paid to the one payout address, so it isn't offered.

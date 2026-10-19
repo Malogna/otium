@@ -63,8 +63,9 @@ public sealed record GpuAlgorithm(
 
 /// <summary>
 /// GPU algorithms SRBMiner can mine. The server's GPU policy decides which are mined and where; as of October 2026
-/// the MoneroOcean algorithms lose money at normal electricity prices, so they only run on free power. Pearl, Xelis
-/// and FishHash (Iron Fish) are mined on unMineable, paid to the user's own address in their chosen coin. Quantus is
+/// the MoneroOcean algorithms lose money at normal electricity prices, so they only run on free power. Pearl and Xelis
+/// are mined on unMineable, paid to the user's own address in their chosen coin (FishHash was dropped in October 2026:
+/// Pearl and Quantus pay more on every card, and an RTX 3080 never started hashing it within its test). Quantus is
 /// mined on Kryptex Pool to the user's own Quantus wallet when they've added one (it's the only coin that pays on most
 /// AMD cards); balance accounts mine Pearl and Quantus to Otium's Kryptex account instead. Dev fees are SRBMiner's
 /// (README, October 2026), except Quantus: Kryptex's and NurseryPool's guides say 2.5%, not the README's 2%.
@@ -78,7 +79,6 @@ public static class GpuAlgorithms
         new("pearlhash", "pearlhash", 2.0, 8, NvidiaAmd, GpuTiers.Primary, GpuRoutes.Unmineable),
         new("quantus", "quantus", 2.5, 2, NvidiaAmd, GpuTiers.Primary, GpuRoutes.Kryptex),
         new("xelishash", "xelishashv3", 1.5, 2, NvidiaAmd, GpuTiers.FreePowerOnly, GpuRoutes.Unmineable),
-        new("fishhash", "fishhash", 0.85, 4, NvidiaAmd, GpuTiers.FreePowerOnly, GpuRoutes.Unmineable),
         new("kawpow", "kawpow", 0.85, 6, NvidiaAmd),
         new("autolykos2", "autolykos2", 1.0, 4, NvidiaAmd),
         new("etchash", "etchash", 0.65, 4, NvidiaAmd),

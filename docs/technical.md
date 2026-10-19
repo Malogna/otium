@@ -89,7 +89,7 @@ policy.
   unMineable 0.75% instead of 1%, and unMineable pays Otium 0.25–0.50% of their rewards.
 - CPU: XMRig on `rx.unmineable.com:443` with TLS (unMineable's only RandomX port that works). GPU: SRBMiner on the
   routes in the server's GPU policy: unMineable for **Pearl** (the best-paying coin for NVIDIA cards in October 2026),
-  plus Xelis (`xelishashv3`) and FishHash, which only run on free power since they lose money at normal prices; all
+  plus Xelis (`xelishashv3`), which only runs on free power since it loses money at normal prices; all
   with `--tls true`, priced from WhatToMine minus unMineable's 0.75%. unMineable's Pearl is NVIDIA-only (its own
   support article), so the policy marks it that way and AMD cards skip it. US users' graphics cards stay on
   MoneroOcean, whose GPU algorithms are "free power only". Without the server's policy, unMineable users' GPUs wait
@@ -232,7 +232,7 @@ Configure `src/Otium.Server/appsettings.json` (or environment variables such as 
 | `Fees:RefereeFeeFreeDays`, `ReferrerFeeFreeDaysPerFriend`, `MaxFeeFreeDays` | Fee-free days for invited users (30), per verified friend for the referrer (30), and the most that can stack up (90) |
 | `Custody:Enabled` | Off (default): non-custodial, accounts and referrals only. On: balances, crediting, cash-outs, Kryptex and internet sharing; the settings marked "custodial" below apply only then |
 | `Unmineable:OtiumTarget` | Otium's fee address on unMineable (e.g. `USDT:T…`), shown with its fee and referral earnings on the admin dashboard |
-| `Unmineable:Enabled`, `FeePercent`, `Algorithms:{algorithm}` | unMineable GPU routes in the policy (default on, 0.75%; Pearl, Xelis and FishHash with their WhatToMine ids and hosts) |
+| `Unmineable:Enabled`, `FeePercent`, `Algorithms:{algorithm}` | unMineable GPU routes in the policy (default on, 0.75%; Pearl and Xelis with their WhatToMine ids and hosts) |
 | `Referral:VerifyUnmineableByRewards` | Count an invited friend paid by unMineable as verified once unMineable has rewarded their address (default on) |
 | `Earnings:PoolWallets` | Custodial: operator XMR addresses (subaddresses of one wallet). Balance mode is off until at least one is set or the wallet RPC is configured. |
 | `Earnings:FeePercent`, `ReferralPercent`, `HoldPeriod` | Business terms; defaults 10%, 5%, 48 h |

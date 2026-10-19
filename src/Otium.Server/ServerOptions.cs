@@ -409,7 +409,6 @@ public sealed class UnmineableOptions
         ["pearlhash"] = new() { WhatToMineId = 469, Host = "pearlpow.unmineable.com" },
         // Loses money at $0.15/kWh on every card checked (October 2026).
         ["xelishash"] = new() { WhatToMineId = 459, Host = "xelishash.unmineable.com", Tier = "free-power-only" },
-        ["fishhash"] = new() { WhatToMineId = 411, Host = "fishhash.unmineable.com", Tier = "free-power-only" },
     };
 }
 

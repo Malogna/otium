@@ -169,7 +169,8 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
 
     public IReadOnlyList<GpuInfo> Gpus => _gpus;
 
-    public IReadOnlyList<BenchmarkResult> Benchmarks => _store.Results;
+    /// <summary>Test results for the coins Otium still mines (a dropped coin's old result isn't shown).</summary>
+    public IReadOnlyList<BenchmarkResult> Benchmarks => _store.Results.Where(r => GpuAlgorithms.Find(r.Algorithm) is not null).ToList();
 
     public string? CurrentAlgorithm => _current?.PoolName;
 
