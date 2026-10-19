@@ -34,7 +34,7 @@ services:
     # No published ports: only Caddy reaches the server.
 
   caddy:
-    image: caddy:2.10
+    image: caddy:2.11
     restart: unless-stopped
     logging: *logging
     depends_on:
