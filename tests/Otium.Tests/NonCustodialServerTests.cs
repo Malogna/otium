@@ -206,6 +206,26 @@ public sealed class NonCustodialServerTests : IDisposable
         Assert.Equal(0, root.GetProperty("analytics").GetProperty("devices").GetInt32());
     }
 
+    [Fact]
+    public async Task A_computers_regular_check_in_keeps_it_online_on_the_admin_dashboard()
+    {
+        var (device, secret, _) = await Register(Usdt);
+        async Task<long> OnlineNow()
+        {
+            var request = new HttpRequestMessage(HttpMethod.Get, "/admin/summary");
+            request.Headers.Add("X-Admin-Token", AdminToken);
+            using var doc = JsonDocument.Parse(await (await _http.SendAsync(request)).Content.ReadAsStringAsync());
+            return doc.RootElement.GetProperty("activity").GetProperty("devicesActiveNow").GetInt64();
+        }
+        Assert.Equal(1, await OnlineNow());
+
+        _time.Advance(TimeSpan.FromHours(1)); // still running, but last registered an hour ago
+        Assert.Equal(0, await OnlineNow());
+
+        await new AccountClient(_http).GetSummaryAsync(device, secret, CancellationToken.None); // the check-in every minute
+        Assert.Equal(1, await OnlineNow());
+    }
+
     public void Dispose()
     {
         _http.Dispose();
