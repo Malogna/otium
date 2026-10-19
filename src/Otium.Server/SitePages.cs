@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Otium.Core.Bandwidth;
 using Otium.Core.Fees;
 using Otium.Core.Pools;
@@ -281,8 +282,19 @@ internal static class SitePages
             policy.For(algorithm) is { Tier: GpuTiers.Primary, UsdPerHashPerSecondDay: > 0 } a ? a : null;
     }
 
-    public static string Layout(string title, string description, string body, IEnumerable<string> legalLinks, string? downloadUrl, string? head = null) =>
-        $$"""
+    /// <param name="baseUrl">The site's public address ("https://otium.lol"): search engines and link previews need full URLs.</param>
+    /// <param name="path">This page's own path ("/", "/privacy", "/r/ABC123").</param>
+    /// <param name="index">
+    /// False keeps the page out of search results while links on it are still followed: invite pages, one per code, all
+    /// saying the same thing. Indexed pages name their address without query strings as canonical.
+    /// </param>
+    /// <param name="head">Extra tags for the page's head (the front page's structured data).</param>
+    public static string Layout(string title, string description, string body, IEnumerable<string> legalLinks, string? downloadUrl,
+        string baseUrl, string path, bool index = true, string? head = null)
+    {
+        var url = E(baseUrl.TrimEnd('/') + path);
+        var image = E(baseUrl.TrimEnd('/') + SiteAssets.Url("og.png"));
+        return $$"""
         <!doctype html>
         <html lang="en">
         <head>
@@ -290,11 +302,22 @@ internal static class SitePages
           <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
           <title>{{E(title)}}</title>
           <meta name="description" content="{{E(description)}}">
+          {{(index ? $"""<link rel="canonical" href="{url}">""" : """<meta name="robots" content="noindex, follow">""")}}
           <meta name="theme-color" content="#08131a">
+          <meta property="og:site_name" content="Otium">
           <meta property="og:title" content="{{E(title)}}">
           <meta property="og:description" content="{{E(description)}}">
           <meta property="og:type" content="website">
+          <meta property="og:url" content="{{url}}">
+          <meta property="og:locale" content="en_US">
+          <meta property="og:image" content="{{image}}">
+          <meta property="og:image:type" content="image/png">
+          <meta property="og:image:width" content="1200">
+          <meta property="og:image:height" content="630">
+          <meta property="og:image:alt" content="{{E(PreviewImageAlt)}}">
+          <meta name="twitter:card" content="summary_large_image">
           <link rel="icon" href="{{SiteAssets.Url("otium.svg")}}" type="image/svg+xml">
+          <link rel="apple-touch-icon" href="{{SiteAssets.Url("icon.png")}}">
           <link rel="preload" href="/site/fonts/BricolageGrotesque.woff2" as="font" type="font/woff2" crossorigin>
           <link rel="preload" href="/site/fonts/HankenGrotesk.woff2" as="font" type="font/woff2" crossorigin>
           <link rel="stylesheet" href="{{SiteAssets.Url("site.css")}}">
@@ -327,12 +350,47 @@ internal static class SitePages
         </body>
         </html>
         """;
+    }
+
+    /// <summary>What Site/og.png, the picture shown when a link to the site is shared, says.</summary>
+    private const string PreviewImageAlt = "Otium: Your computer works the night shift. You get paid. Paid to your own wallet, stops when you're back, for Windows, macOS and Linux.";
+
+    /// <summary>
+    /// For search engines: everything public may be crawled except the operator's dashboard, the app's API and feeds,
+    /// and the download redirects. Invite pages stay crawlable so their noindex is seen.
+    /// </summary>
+    public static string Robots(string baseUrl) => $"""
+        User-agent: *
+        Disallow: /admin
+        Disallow: /api/
+        Disallow: /updates/
+        Disallow: /download
+        Disallow: /dev/
+
+        Sitemap: {baseUrl.TrimEnd('/')}/sitemap.xml
+
+        """.ReplaceLineEndings("\n");
+
+    /// <summary>The pages worth finding: the front page and whichever legal pages exist.</summary>
+    public static string Sitemap(string baseUrl, IEnumerable<string> legalLinks)
+    {
+        var root = baseUrl.TrimEnd('/');
+        var urls = new[] { "/" }.Concat(legalLinks.Select(p => "/" + p))
+            .Select(p => $"  <url><loc>{System.Security.SecurityElement.Escape(root + p)}</loc></url>\n");
+        return $"""
+            <?xml version="1.0" encoding="UTF-8"?>
+            <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+            {string.Concat(urls)}</urlset>
+
+            """.ReplaceLineEndings("\n");
+    }
 
     /// <param name="fees">The server's fee terms, as apps receive them.</param>
     /// <param name="earnings">Live per-card earnings (<see cref="Earnings"/>); empty hides the numbers.</param>
     /// <param name="pricesAt">When the GPU prices were last refreshed.</param>
     /// <param name="legalLinks">The legal pages that exist ("privacy", "terms").</param>
-    public static string Home(FeePolicy fees, string? downloadUrl, IEnumerable<string> legalLinks,
+    /// <param name="baseUrl">The site's public address, for search engines and link previews.</param>
+    public static string Home(FeePolicy fees, string? downloadUrl, IEnumerable<string> legalLinks, string baseUrl,
         IReadOnlyList<CardEarnings>? earnings = null, DateTimeOffset? pricesAt = null, string? visitorCountry = null,
         RealEarnings.RealEarningsSummary? real = null)
     {
@@ -551,14 +609,7 @@ internal static class SitePages
                   <div class="wrap">
                     <div class="section-head reveal"><div><span class="label">Questions</span><h2 id="faq-title">Before you install</h2></div></div>
                     <div class="faq reveal">
-                      <details><summary>Is my money safe?</summary><p>Otium never touches it. The pool pays your wallet directly, and you can check your balance on the pool's own page at any time.</p></details>
-                      <details><summary>Why does my antivirus warn about it?</summary><p>Antivirus tools flag every mining program, because criminals hide miners on other people's computers. Otium downloads the official open-source XMRig and SRBMiner releases, checks their fingerprints, and keeps them in one folder you can allow. It only mines when you've set it up and turned it on.</p></details>
-                      <details><summary>Will it slow my computer down?</summary><p>By default it only runs while you're away, and stops within a second when you're back. If you let it run while you work, it uses the lowest priority and only as much of the processor as you allow. Games and work always come first.</p></details>
-                      <details><summary>I live in the United States</summary><p>unMineable doesn't serve US residents, so Otium pays you in Monero through MoneroOcean instead.</p></details>
-                      <details><summary>What about AMD graphics cards?</summary><p>Otium tests Pearl on yours too: the mining software now runs it on recent AMD cards (an RX 9070 XT makes about $2 a day before power). If the pool doesn't accept an AMD card's work, Otium moves it to the next coin that pays your wallet more than the power it uses. Either way it's paid to your one wallet, and your processor earns too.</p></details>
-                      <details><summary>Which download do I need?</summary><p>The Download button picks the installer for the computer you're on. To choose one yourself: <a href="/download?os=windows">Windows</a>, <a href="/download?os=macos">Mac with Apple silicon</a>, <a href="/download?os=macos-intel">Mac with Intel</a> or <a href="/download?os=linux">Linux (AppImage)</a>. The Mac and Linux versions are a beta in this first release: they work, but have been tested less than Windows.</p></details>
-                      <details><summary>Something isn't working</summary><p>In Otium, open Advanced and press "Send a problem report". It sends what Otium knows about why it isn't earning, without your payout address or any keys, and gives you a reference. Then <a href="{HelpUrl}">ask for help</a> and mention it.</p></details>
-                      <details><summary>Will my computer go to sleep?</summary><p>Not while it's earning: Otium keeps it awake so it can mine through the night, and the screen still turns off. When it stops earning (you're back, power is too expensive, or a laptop runs on battery) your usual sleep settings apply again. You can switch this off in Settings.</p></details>
+                      {string.Concat(Faq.Select(q => $"<details><summary>{q.Question}</summary><p>{q.AnswerHtml}</p></details>"))}
                     </div>
                   </div>
                 </section>
@@ -571,15 +622,90 @@ internal static class SitePages
                   </div>
                 </section>
             """;
-        return Layout("Otium: get paid for your computer's spare power",
-            "Otium mines with your idle processor and graphics card while you're away, and the pool pays your own wallet directly.",
-            body, legalLinks, downloadUrl);
+        const string description = "Otium mines crypto with your idle PC while you're away, stops when you're back, and the pool pays your own wallet directly. For Windows, macOS and Linux.";
+        return Layout("Otium: get paid for your computer's spare power", description, body, legalLinks, downloadUrl, baseUrl, "/",
+            head: StructuredData(baseUrl, description));
     }
 
+    /// <summary>"Questions" on the front page, also given to search engines as an FAQ. Answers are trusted HTML.</summary>
+    private static readonly (string Question, string AnswerHtml)[] Faq =
+    [
+        ("Is my money safe?", "Otium never touches it. The pool pays your wallet directly, and you can check your balance on the pool's own page at any time."),
+        ("Why does my antivirus warn about it?", "Antivirus tools flag every mining program, because criminals hide miners on other people's computers. Otium downloads the official open-source XMRig and SRBMiner releases, checks their fingerprints, and keeps them in one folder you can allow. It only mines when you've set it up and turned it on."),
+        ("Will it slow my computer down?", "By default it only runs while you're away, and stops within a second when you're back. If you let it run while you work, it uses the lowest priority and only as much of the processor as you allow. Games and work always come first."),
+        ("I live in the United States", "unMineable doesn't serve US residents, so Otium pays you in Monero through MoneroOcean instead."),
+        ("What about AMD graphics cards?", "Otium tests Pearl on yours too: the mining software now runs it on recent AMD cards (an RX 9070 XT makes about $2 a day before power). If the pool doesn't accept an AMD card's work, Otium moves it to the next coin that pays your wallet more than the power it uses. Either way it's paid to your one wallet, and your processor earns too."),
+        ("Which download do I need?", """The Download button picks the installer for the computer you're on. To choose one yourself: <a href="/download?os=windows">Windows</a>, <a href="/download?os=macos">Mac with Apple silicon</a>, <a href="/download?os=macos-intel">Mac with Intel</a> or <a href="/download?os=linux">Linux (AppImage)</a>. The Mac and Linux versions are a beta in this first release: they work, but have been tested less than Windows."""),
+        ("Something isn't working", $"""In Otium, open Advanced and press "Send a problem report". It sends what Otium knows about why it isn't earning, without your payout address or any keys, and gives you a reference. Then <a href="{HelpUrl}">ask for help</a> and mention it."""),
+        ("Will my computer go to sleep?", "Not while it's earning: Otium keeps it awake so it can mine through the night, and the screen still turns off. When it stops earning (you're back, power is too expensive, or a laptop runs on battery) your usual sleep settings apply again. You can switch this off in Settings."),
+    ];
+
+    /// <summary>
+    /// The front page's schema.org description for search engines: who makes Otium (with its GitHub and Discord), the
+    /// app itself, and the questions. JSON's default escaping turns &lt; into <, so nothing in it can end the script.
+    /// </summary>
+    private static string StructuredData(string baseUrl, string description)
+    {
+        var root = baseUrl.TrimEnd('/');
+        var graph = new JsonArray(
+            new JsonObject
+            {
+                ["@type"] = "Organization",
+                ["@id"] = $"{root}/#organization",
+                ["name"] = "Otium",
+                ["url"] = $"{root}/",
+                ["logo"] = root + SiteAssets.Url("icon.png"),
+                ["email"] = Core.AppIdentity.ContactEmail,
+                ["sameAs"] = new JsonArray("https://github.com/Malogna/otium", Core.AppIdentity.DiscordUrl),
+            },
+            new JsonObject
+            {
+                ["@type"] = "WebSite",
+                ["@id"] = $"{root}/#website",
+                ["name"] = "Otium",
+                ["url"] = $"{root}/",
+                ["publisher"] = new JsonObject { ["@id"] = $"{root}/#organization" },
+            },
+            new JsonObject
+            {
+                ["@type"] = "SoftwareApplication",
+                ["name"] = "Otium",
+                ["description"] = description,
+                ["url"] = $"{root}/",
+                ["image"] = root + SiteAssets.Url("og.png"),
+                ["applicationCategory"] = "UtilitiesApplication",
+                ["operatingSystem"] = "Windows, macOS, Linux",
+                ["downloadUrl"] = $"{root}/download",
+                ["publisher"] = new JsonObject { ["@id"] = $"{root}/#organization" },
+            },
+            new JsonObject
+            {
+                ["@type"] = "FAQPage",
+                ["mainEntity"] = new JsonArray(Faq.Select(q => (JsonNode)new JsonObject
+                {
+                    ["@type"] = "Question",
+                    ["name"] = q.Question,
+                    ["acceptedAnswer"] = new JsonObject { ["@type"] = "Answer", ["text"] = q.AnswerHtml },
+                }).ToArray()),
+            });
+        var json = new JsonObject { ["@context"] = "https://schema.org", ["@graph"] = graph }.ToJsonString();
+        return $"""<script type="application/ld+json">{json}</script>""";
+    }
+
+    private static readonly Dictionary<string, (string Title, string Description)> LegalMeta = new()
+    {
+        ["privacy"] = ("Otium privacy policy", "How Otium handles your data: what the app and website collect, why, who it goes to, and your choices."),
+        ["terms"] = ("Otium terms of use", "The terms for using Otium, the app that earns with your computer's spare power while you're away."),
+    };
+
     /// <summary>A legal page: the operator's reviewed HTML inside the site's layout.</summary>
-    public static string Legal(string page, string bodyHtml, IEnumerable<string> legalLinks, string? downloadUrl) =>
-        Layout($"Otium: {Capitalize(page)}", $"Otium's {page} page.",
-            $"""<section class="page"><div class="wrap"><div class="panel legal">{bodyHtml}</div></div></section>""", legalLinks, downloadUrl);
+    public static string Legal(string page, string bodyHtml, IEnumerable<string> legalLinks, string? downloadUrl, string baseUrl)
+    {
+        var (title, description) = LegalMeta.GetValueOrDefault(page, ($"Otium: {Capitalize(page)}", $"Otium's {page} page."));
+        return Layout(title, description,
+            $"""<section class="page"><div class="wrap"><div class="panel legal">{bodyHtml}</div></div></section>""", legalLinks, downloadUrl,
+            baseUrl, "/" + page);
+    }
 
     /// <summary>The legal pages whose files exist in <paramref name="directory"/>, in footer order.</summary>
     public static IReadOnlyList<string> AvailableLegalPages(string directory) =>
