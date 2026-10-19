@@ -476,6 +476,27 @@
                         <Button Grid.Column="2" Classes="accent" VerticalAlignment="Center" Content="Copy invite" Command="{Binding CopyInviteCommand}" />
                     </Grid>
                 </Border>
+
+                <!-- ===== Community and contact ===== -->
+                <WrapPanel HorizontalAlignment="Center" Margin="0,4,0,0">
+                    <WrapPanel.Styles>
+                        <Style Selector="Button.link TextBlock">
+                            <Setter Property="FontSize" Value="12.5" />
+                            <Setter Property="Foreground" Value="{DynamicResource MutedText}" />
+                        </Style>
+                    </WrapPanel.Styles>
+                    <Button Classes="link" Command="{Binding OpenDiscordCommand}" ToolTip.Tip="Otium's Discord server">
+                        <TextBlock Text="Discord" TextDecorations="Underline" />
+                    </Button>
+                    <TextBlock Classes="muted" FontSize="12.5" VerticalAlignment="Center" Text="·" />
+                    <Button Classes="link" Command="{Binding EmailUsCommand}" ToolTip.Tip="Email Otium">
+                        <TextBlock Text="{Binding ContactEmail}" TextDecorations="Underline" />
+                    </Button>
+                    <TextBlock Classes="muted" FontSize="12.5" VerticalAlignment="Center" Text="·" />
+                    <Button Classes="link" Command="{Binding OpenHelpCommand}" ToolTip.Tip="Otium's help page">
+                        <TextBlock Text="Help" TextDecorations="Underline" />
+                    </Button>
+                </WrapPanel>
             </StackPanel>
         </ScrollViewer>
     </Grid>
