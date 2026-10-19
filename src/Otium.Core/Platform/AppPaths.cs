@@ -14,6 +14,9 @@ public sealed class AppPaths(string root)
 
     public string GpuBenchmarksFile => Path.Combine(Root, "gpu-benchmarks.json");
 
+    /// <summary>The last GPU policy from the server, so the graphics card can start right away after a restart.</summary>
+    public string GpuPolicyFile => Path.Combine(Root, "gpu-policy.json");
+
     public string HistoryFile => Path.Combine(Root, "history.json");
 
     public string BandwidthLedgerFile => Path.Combine(Root, "bandwidth.json");
