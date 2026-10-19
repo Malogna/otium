@@ -33,6 +33,17 @@ public class XmrigTests
     }
 
     [Fact]
+    public void While_the_user_is_away_the_miner_runs_at_normal_priority()
+    {
+        var json = XmrigConfig.Build(
+            new ProviderRunOptions(new MiningTarget(TestAddresses.Generate(), PayoutRole.User), "w", 50, LowPriority: false),
+            PoolEndpoint.MoneroOcean, httpPort: 45678, accessToken: "secret", unitedStates: true);
+
+        using var doc = JsonDocument.Parse(json);
+        Assert.Equal(2, doc.RootElement.GetProperty("cpu").GetProperty("priority").GetInt32());
+    }
+
+    [Fact]
     public void The_servers_pool_route_replaces_the_default_pool_and_login()
     {
         var route = new Otium.Core.Accounts.CpuPoolRoute("kryptex", "xmr.kryptex.network", 8029, true, "otium.ot1234abcd5678", "x");
