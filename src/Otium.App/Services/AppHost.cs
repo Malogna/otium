@@ -1046,6 +1046,10 @@ public sealed class AppHost : IAsyncDisposable
             var ownWallet = Settings.PayoutMode == PayoutMode.OwnWallet && OwnPayoutTarget is { } own
                 ? PayoutRouting.PoolFor(own, InUnitedStates) == PayoutPool.MoneroOcean ? PayoutRouting.MoneroOceanWallet(own) : own
                 : null;
+            // Setup finished without reaching the server, so the welcome screen couldn't ask: a friend's invite link
+            // opened on this connection still applies on the first registration.
+            if (account.WorkerId is null && referral.CodeUsed is null && referral.ReferredAt is null)
+                referral.CodeUsed = await CheckInviteLinkAsync(ct);
             var needsRegister = account.WorkerId is null
                                 || referral.MyCode is null
                                 || referral.RegisteredPayoutAddress != ownWallet
@@ -1085,6 +1089,29 @@ public sealed class AppHost : IAsyncDisposable
         AccountChanged?.Invoke();
         // The pool pays own-address users directly, so its balance doesn't depend on reaching the Otium server.
         await RefreshPoolBalanceAsync(force: false, ct);
+    }
+
+    /// <summary>
+    /// The code of a friend's invite link (otium.lol/r/CODE) opened on this internet connection in the last week, so a
+    /// friend who downloaded Otium from it doesn't have to type the code. Asked once: after the server answers, never
+    /// again, so a code the user cleared stays cleared. Null when there's none or the server can't be reached.
+    /// </summary>
+    public async Task<string?> CheckInviteLinkAsync(CancellationToken ct)
+    {
+        if (Settings.Referral.InviteLinkChecked)
+            return null;
+        try
+        {
+            var code = await CreateClient().GetInviteLinkCodeAsync(ct);
+            Settings.Referral.InviteLinkChecked = true;
+            _settingsStore.Save(Settings);
+            return code is not null && ReferralCodes.IsWellFormed(code) && code != Settings.Referral.MyCode ? code : null;
+        }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or UriFormatException or AccountRequestException
+                                       or System.Text.Json.JsonException)
+        {
+            return null; // asked again on the first check-in
+        }
     }
 
     /// <summary>Fetches the GPU policy (it needs no account, so the welcome screen's estimate can use it).</summary>

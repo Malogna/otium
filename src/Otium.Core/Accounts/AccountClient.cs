@@ -37,6 +37,9 @@ public interface IAccountClient
 
     Task<Switching.GpuPolicy> GetGpuPolicyAsync(CancellationToken ct);
 
+    /// <summary>The invite code of a friend's link opened on this internet connection in the last week, or null.</summary>
+    Task<string?> GetInviteLinkCodeAsync(CancellationToken ct);
+
     Task<InviteLeaderboard> GetInviteLeaderboardAsync(string deviceId, string deviceSecret, CancellationToken ct);
 }
 
@@ -101,6 +104,14 @@ public sealed class AccountClient(HttpClient http) : IAccountClient
     {
         using var response = await http.GetAsync("api/v1/gpu-policy", ct);
         return await ReadAsync<Switching.GpuPolicy>(response, ct);
+    }
+
+    public async Task<string?> GetInviteLinkCodeAsync(CancellationToken ct)
+    {
+        using var response = await http.GetAsync("api/v1/invite-link", ct);
+        if (response.StatusCode == System.Net.HttpStatusCode.NoContent)
+            return null;
+        return (await ReadAsync<InviteLinkResponse>(response, ct)).Code;
     }
 
     public async Task<BandwidthReportResult> ReportBandwidthAsync(string deviceId, string deviceSecret, BandwidthReport report, CancellationToken ct)

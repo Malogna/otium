@@ -96,7 +96,7 @@ public sealed record EmailCodeRecord(long Id, string Email, string DeviceId, str
 public sealed class OtiumStore
 {
     public const long MicrosPerDollar = 1_000_000;
-    private const int SchemaVersion = 7;
+    private const int SchemaVersion = 8;
 
     private readonly string _connectionString;
 
@@ -306,6 +306,20 @@ public sealed class OtiumStore
             );
             CREATE INDEX IF NOT EXISTS ix_problem_device ON problem_reports(device_id, created_at);
             CREATE INDEX IF NOT EXISTS ix_problem_account ON problem_reports(account_id);
+            """);
+
+        // Version 8: invite links opened on an internet connection (a keyed hash of it), so Otium installed there fills
+        // in the code; and the server's own random keys.
+        Execute("""
+            CREATE TABLE IF NOT EXISTS invite_clicks (
+                network    TEXT PRIMARY KEY,
+                code       TEXT NOT NULL,
+                clicked_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS server_secrets (
+                name  TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
             """);
 
         Execute($"PRAGMA user_version = {SchemaVersion};");
@@ -548,6 +562,41 @@ public sealed class OtiumStore
             ("$n", Format(now)), ("$d", deviceId), ("$cut", Format(now - every)));
 
     public long DeviceCount(string accountId) => Scalar<long>("SELECT COUNT(*) FROM devices WHERE account_id = $a", ("$a", accountId));
+
+    // ---------- invite links opened (see InviteLinks) ----------
+
+    public void RecordInviteClick(string network, string code, DateTimeOffset now) =>
+        Execute("""
+            INSERT INTO invite_clicks (network, code, clicked_at) VALUES ($n, $c, $t)
+            ON CONFLICT(network) DO UPDATE SET code = excluded.code, clicked_at = excluded.clicked_at
+            """, ("$n", network), ("$c", code), ("$t", Format(now)));
+
+    /// <summary>The code last opened on this network since <paramref name="since"/>, or null.</summary>
+    public string? InviteClickCode(string network, DateTimeOffset since)
+    {
+        using var connection = Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT code FROM invite_clicks WHERE network = $n AND clicked_at >= $s";
+        Bind(cmd, [("$n", network), ("$s", Format(since))]);
+        return cmd.ExecuteScalar() as string;
+    }
+
+    public void DeleteInviteClicksBefore(DateTimeOffset before) =>
+        Execute("DELETE FROM invite_clicks WHERE clicked_at < $b", ("$b", Format(before)));
+
+    public long InviteClickCount() => Scalar<long>("SELECT COUNT(*) FROM invite_clicks");
+
+    /// <summary>A random 32-byte key (base64) made the first time it's asked for and kept in the database.</summary>
+    public string ServerSecret(string name)
+    {
+        Execute("INSERT OR IGNORE INTO server_secrets (name, value) VALUES ($n, $v)",
+            ("$n", name), ("$v", Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32))));
+        using var connection = Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT value FROM server_secrets WHERE name = $n";
+        Bind(cmd, [("$n", name)]);
+        return (string)cmd.ExecuteScalar()!;
+    }
 
     // ---------- email sign-in codes ----------
 
