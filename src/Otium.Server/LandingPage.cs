@@ -11,7 +11,7 @@ internal static class LandingPage
         var safeCode = WebUtility.HtmlEncode(code);
         var safeDownload = WebUtility.HtmlEncode(downloadUrl ?? "#");
         var invite = codeExists
-            ? $"""<p class="lead">A friend invited you. Enter code <span class="code">{safeCode}</span> during setup and pay <strong>no Otium fee for 30 days</strong>.</p>"""
+            ? $"""<p class="lead">A friend invited you: pay <strong>no Otium fee for 30 days</strong>. Download Otium on this computer and the invite is filled in for you; if setup doesn't show it, enter code <span class="code">{safeCode}</span>.</p>"""
             : """<p class="lead">This invite code isn't valid any more, but you can still join.</p>""";
 
         var body = $"""
