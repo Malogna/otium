@@ -1,10 +1,6 @@
 # Otium terms of use
 
-> **DRAFT – NOT FOR PUBLICATION.** A first draft by the developers. It has not been checked by a lawyer and must not
-> be shown to users until it has.
-> Everything in `[square brackets]` is a placeholder or an open question. Norwegian users need a Norwegian version.
-
-*Version [1], [date]*
+*Version 1, 19 October 2026*
 
 ## In short
 
@@ -20,8 +16,8 @@
 
 ## 1. Who we are
 
-Otium is provided by **[legal name]**, organisation number **[number]**, **[address]**, Norway. Email:
-**contact@otium.lol**. [VAT status.]
+Otium is made and run from Norway by its developer. You can reach us at **contact@otium.lol**, or from the app with
+Settings → Send a problem report.
 
 ## 2. What Otium does
 
@@ -44,7 +40,8 @@ You can use Otium if:
 - the computer is yours, or you have permission to use it (and its electricity) for mining. Don't install Otium on an
   employer's, school's or someone else's computer without permission;
 - for internet sharing, you are the internet subscriber or have their permission, and your provider's terms allow it;
-- you're not in a country where Otium isn't available (sanctions or mining bans; the list is in `src/Otium.Core/Availability.cs`) and you're not subject to
+- you're not in a country where Otium isn't available (sanctions or mining bans; the app tells you, and the
+  [list is public](https://github.com/Malogna/otium/blob/main/src/Otium.Core/Availability.cs)) and you're not subject to
   sanctions;
 - mining and holding crypto is legal where you live.
 
@@ -92,8 +89,8 @@ restores it afterwards. You can turn each part off in Settings.
 ## 7. Partners and payouts
 
 Payouts come from the mining pools (and for internet sharing, from the conversion service), not from Otium. Each
-works under its own terms, which apply to you as well: [unMineable], [MoneroOcean], [Proxybase], [Relay],
-[SideShift], [ChangeNOW].
+works under its own terms, which apply to you as well: unMineable, MoneroOcean, Proxybase, Relay, SideShift and
+ChangeNOW.
 
 Things to know about the pools:
 - you're paid only once you reach the pool's payout minimum;
@@ -117,7 +114,7 @@ businesses that collect public web pages or check ads) send traffic through your
 - websites they visit see your internet address, and some may block it or show you more CAPTCHAs;
 - Otium can't see or control that traffic, and Proxybase doesn't verify who its customers are. If someone misuses it,
   the traffic shows your internet address;
-- some internet providers (for example [Telia, Telenor, Ice]) don't allow sharing a connection.
+- some internet providers don't allow sharing a connection. Check your provider's terms before turning it on.
 
 You can turn it off at any time in Settings; Otium stops Proxybase's client straight away. Uninstalling Otium
 removes it.
@@ -153,9 +150,8 @@ You have the rights consumer law gives you, including under the Norwegian Digita
 (digitalytelsesloven) and the consumer law of the country where you live. **Nothing in these terms limits them.**
 
 If Otium doesn't work as described, tell us (Settings → Send a problem report, or email) and we'll fix it within a
-reasonable time. [Liability: wording to be set by counsel. We don't exclude liability for death or personal injury,
-intent or gross negligence, or anything consumer law doesn't allow us to exclude. We aren't liable for losses in a
-business that uses Otium.]
+reasonable time. We don't exclude liability for death or personal injury, intent or gross negligence, or anything
+consumer law doesn't allow us to exclude. We aren't liable for losses in a business that uses Otium.
 
 ## 15. When we may suspend Otium
 
@@ -171,8 +167,8 @@ What's at your pool stays yours in any case.
 
 We may change these terms for good reason, such as new law, new features or a partner's changed terms. We'll tell you
 at least 30 days before an important change takes effect, in the app and by email if you gave one. If you don't
-accept it, you can stop using Otium and delete your account at no cost. Earlier versions are available at
-[otium.lol/terms/archive].
+accept it, you can stop using Otium and delete your account at no cost. Earlier versions are available on request
+at contact@otium.lol.
 
 ## 17. Invites
 
