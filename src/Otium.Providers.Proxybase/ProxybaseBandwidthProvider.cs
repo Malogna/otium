@@ -65,14 +65,23 @@ public sealed record ProxybaseEarnedSample(DateTimeOffset At, long GrossMicrocre
 /// <param name="Uptime">The share of Proxybase's checks it answered (0–1).</param>
 /// <param name="PendingMicrocredits">Earned but not yet cleared for payout.</param>
 public sealed record ProxybaseNode(int ActiveStreams, int MaxStreams, string? Country, string? Category, double? LatencyMs,
-    double? Uptime, long PendingMicrocredits)
+    double? Uptime, long PendingMicrocredits, string? Pool = null)
 {
-    /// <summary>A few words for the overview's internet row.</summary>
-    public string Activity => ActiveStreams switch
+    /// <summary>
+    /// Proxybase took this computer out of the pool buyers are sent to ("pool": "suspended"), which its servers decide from
+    /// their own test requests through it (a node whose tests took ~14 s was suspended; ~1.5 s was in "production").
+    /// </summary>
+    public bool Suspended => string.Equals(Pool, "suspended", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// A few words for the overview's internet row. Open streams aren't all buyers: Proxybase's own test requests use them
+    /// too, so they're called connections.
+    /// </summary>
+    public string Activity => Suspended ? "Paused by Proxybase: too slow in its tests" : ActiveStreams switch
     {
         0 => "Online, waiting for a buyer",
-        1 => "1 buyer connected now",
-        var n => $"{n} buyers connected now",
+        1 => "1 connection open now",
+        var n => $"{n} connections open now",
     };
 
     /// <summary>The fuller account for Details and Settings.</summary>
@@ -82,8 +91,11 @@ public sealed record ProxybaseNode(int ActiveStreams, int MaxStreams, string? Co
         var kind = Category is { Length: > 0 } c ? $"a {c} connection" : "a connection";
         var parts = new List<string>
         {
-            ActiveStreams > 0
-                ? $"Selling now: {Activity.Replace(" now", "")} through this computer."
+            Suspended
+                ? "Proxybase has paused this computer, so buyers aren't sent to it: its test requests through it were too slow. " +
+                  "Otium keeps it online so Proxybase can test it again and list it once it answers quicker."
+            : ActiveStreams > 0
+                ? $"Open now: {ActiveStreams} connection{(ActiveStreams == 1 ? "" : "s")} through this computer, from buyers or Proxybase's own tests."
                 : earnedAnything
                     ? $"Listed for Proxybase's buyers as {kind} in {where}; nobody is using it right now."
                     : $"Listed for Proxybase's buyers as {kind} in {where}, and waiting for the first one. Nothing sold yet.",
