@@ -194,6 +194,44 @@ public sealed class ProxybaseTests : IDisposable
     }
 
     [Fact]
+    public async Task A_wallet_the_client_cant_open_is_never_replaced()
+    {
+        // "wallet info" says "No wallet found" for a damaged or locked file too; "wallet create" would overwrite it.
+        var wallet = Path.Combine(_engines, "proxybase-data", "wallet");
+        Directory.CreateDirectory(wallet);
+        await File.WriteAllTextAsync(Path.Combine(wallet, "keyfile.enc"), "damaged");
+
+        var e = await Assert.ThrowsAsync<ProviderProblemException>(() => Provider().StartAsync(new BandwidthRunOptions("w1"), CancellationToken.None));
+        Assert.Contains("couldn't open this computer's wallet", e.Message);
+        Assert.Equal(["wallet info"], _cli.Commands); // no "wallet create", no sign-in, nothing relayed
+        Assert.Empty(_cli.Sellers);
+        Assert.Equal("damaged", await File.ReadAllTextAsync(Path.Combine(wallet, "keyfile.enc")));
+    }
+
+    [Fact]
+    public void The_client_only_sees_the_environment_it_needs()
+    {
+        var environment = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["PATH"] = @"C:\Windows\system32",
+            ["SystemRoot"] = @"C:\Windows",
+            ["TEMP"] = @"C:\Temp",
+            ["HTTPS_PROXY"] = "http://proxy.example:3128",
+            ["GITHUB_TOKEN"] = "ghp_secret", // the client sends it with its update checks
+            ["GH_TOKEN"] = "gho_secret",
+            ["PROXYBASE_PASSWORD"] = "x", // would change how the wallet is opened
+            ["PROXYBASE_UPDATE_REPO"] = "someone/else",
+            ["PROXYBASE_BACKEND"] = "https://evil.example",
+            ["AWS_SECRET_ACCESS_KEY"] = "secret",
+            ["OTIUM_SERVER_URL"] = "https://otium.lol",
+        };
+        ProxybaseCli.LimitEnvironment(environment, @"C:\Otium\proxybase-data");
+
+        Assert.Equal(["HTTPS_PROXY", "NO_COLOR", "PATH", "PROXYBASE_DIR", "SystemRoot", "TEMP"], environment.Keys.Order(StringComparer.Ordinal));
+        Assert.Equal(@"C:\Otium\proxybase-data", environment["PROXYBASE_DIR"]);
+    }
+
+    [Fact]
     public async Task A_failed_sign_in_is_explained_and_nothing_relays()
     {
         _cli.LoginWorks = false;
