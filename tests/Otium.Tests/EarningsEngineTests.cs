@@ -89,6 +89,7 @@ public class EarningsEngineTests
         public double PricePerKwh { get; set; } = 0.15;
         public bool OnlyWhenIdle { get; set; }
         public bool RunsWhileBrowsing { get; set; }
+        public bool FullSpeedWhenAway { get; set; }
         public int CpuPercent { get; set; } = 50;
         public EarningsEngine Engine { get; }
 
@@ -102,7 +103,7 @@ public class EarningsEngineTests
         private EngineConfig Config() => new(
             User, CpuPercent, OnlyWhenIdle, TimeSpan.FromMinutes(5), NeverRunAtLoss: true, PricePerKwh,
             new FeeSchedule(FeePolicy.Default, User, AppWallet, new ReferralStanding(null, null, null)), "test",
-            RunsWhileBrowsing: RunsWhileBrowsing);
+            RunsWhileBrowsing: RunsWhileBrowsing, FullSpeedWhenAway: FullSpeedWhenAway);
 
         public async Task TickFor(TimeSpan duration)
         {
@@ -327,5 +328,63 @@ public class EarningsEngineTests
         await h.TickFor(TimeSpan.FromSeconds(20));
 
         Assert.True(Assert.Single(h.Provider.Starts).LowPriority);
+    }
+
+    [Fact]
+    public async Task The_processor_uses_every_thread_while_the_user_is_away()
+    {
+        var h = new Harness { OnlyWhenIdle = true, FullSpeedWhenAway = true, CpuPercent = 50 };
+        h.Engine.Enable();
+        await h.TickFor(TimeSpan.FromSeconds(20));
+
+        var start = Assert.Single(h.Provider.Starts);
+        Assert.Equal(100, start.UsagePercent);
+        Assert.False(start.LowPriority);
+    }
+
+    [Fact]
+    public async Task Always_on_it_goes_full_speed_when_the_user_leaves_and_back_to_their_share_when_they_return()
+    {
+        var h = new Harness { OnlyWhenIdle = false, FullSpeedWhenAway = true, CpuPercent = 50 };
+        h.Idle.Idle = TimeSpan.FromSeconds(3); // at the computer
+        h.Engine.Enable();
+        await h.TickFor(TimeSpan.FromSeconds(20));
+        Assert.Equal((50, true), (h.Provider.Starts[^1].UsagePercent, h.Provider.Starts[^1].LowPriority));
+
+        h.Idle.Idle = TimeSpan.FromMinutes(6); // away past the 5-minute threshold
+        await h.TickFor(TimeSpan.FromSeconds(10));
+        Assert.Equal((100, false), (h.Provider.Starts[^1].UsagePercent, h.Provider.Starts[^1].LowPriority));
+
+        h.Idle.Idle = TimeSpan.FromSeconds(1); // back
+        await h.TickFor(TimeSpan.FromSeconds(10));
+        Assert.Equal((50, true), (h.Provider.Starts[^1].UsagePercent, h.Provider.Starts[^1].LowPriority));
+        Assert.Equal(3, h.Provider.Starts.Count);
+    }
+
+    [Fact]
+    public async Task The_test_the_user_watches_measures_every_thread_at_the_lowest_priority()
+    {
+        var h = new Harness { OnlyWhenIdle = true, FullSpeedWhenAway = true, CpuPercent = 50 };
+        h.Idle.Idle = TimeSpan.FromSeconds(3);
+        h.Engine.RunNow(TimeSpan.FromMinutes(2));
+        h.Engine.Enable();
+        await h.TickFor(TimeSpan.FromSeconds(20));
+
+        var start = Assert.Single(h.Provider.Starts);
+        Assert.Equal((100, true), (start.UsagePercent, start.LowPriority));
+    }
+
+    [Fact]
+    public async Task The_graphics_card_keeps_one_setting_whether_or_not_the_user_is_there()
+    {
+        // Without FullSpeedWhenAway (the graphics card), always-on mining doesn't restart as the user comes and goes.
+        var h = new Harness { OnlyWhenIdle = false, CpuPercent = 100 };
+        h.Engine.Enable();
+        await h.TickFor(TimeSpan.FromSeconds(20));
+        h.Idle.Idle = TimeSpan.FromSeconds(1);
+        await h.TickFor(TimeSpan.FromSeconds(20));
+
+        var start = Assert.Single(h.Provider.Starts);
+        Assert.True(start.LowPriority);
     }
 }
