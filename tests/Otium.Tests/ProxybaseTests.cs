@@ -132,11 +132,43 @@ public sealed class ProxybaseTests : IDisposable
             "Proxybase's checks: reachable 99.95% of the time, answers in 1.5 s.",
             node.Describe(earnedAnything: false));
 
+        Assert.False(node.Suspended);
+
+        // Open streams include Proxybase's own test requests, so they're connections, not buyers.
         var busy = node with { ActiveStreams = 2, PendingMicrocredits = 120_000 };
-        Assert.Equal("2 buyers connected now", busy.Activity);
-        Assert.StartsWith("Selling now: 2 buyers connected through this computer.", busy.Describe(earnedAnything: true));
+        Assert.Equal("2 connections open now", busy.Activity);
+        Assert.StartsWith("Open now: 2 connections through this computer, from buyers or Proxybase's own tests.", busy.Describe(earnedAnything: true));
         Assert.EndsWith("$0.120 is still clearing at Proxybase.", busy.Describe(earnedAnything: true));
         Assert.Null(ProxybaseOutput.Node("Daemon:  not running"));
+    }
+
+    [Fact]
+    public void A_node_Proxybase_suspended_says_so_instead_of_waiting_for_buyers()
+    {
+        // The same node in Norway later that day: Proxybase's tests through it took 13.9 s and it left the buyers' pool.
+        const string output = """
+            {
+              "active_streams": 0,
+              "country": "NO",
+              "earnings": { "seller_available": 0, "seller_payout_locked": 0, "seller_pending": 0, "spendable_balance": 0 },
+              "max_streams": 200,
+              "node_type": "standard",
+              "pool": "suspended",
+              "proxy_category": "residential",
+              "qos_latency_ms": 13936.304795475138,
+              "qos_throughput_mbps": null,
+              "qos_uptime": 0.9999923080844556,
+              "wallet_address": "0x0000000000000000000000000000000000000000"
+            }
+            """;
+        var node = ProxybaseOutput.Node(output)!;
+        Assert.True(node.Suspended);
+        Assert.Equal("Paused by Proxybase: too slow in its tests", node.Activity);
+        Assert.Equal(
+            "Proxybase has paused this computer, so buyers aren't sent to it: its test requests through it were too slow. " +
+            "Otium keeps it online so Proxybase can test it again and list it once it answers quicker. " +
+            "Proxybase's checks: reachable 99.99% of the time, answers in 13.9 s.",
+            node.Describe(earnedAnything: false));
     }
 
     [Fact]

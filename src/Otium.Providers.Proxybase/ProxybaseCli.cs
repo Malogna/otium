@@ -65,6 +65,16 @@ public sealed class ProxybaseCli(Func<string?> binary, string dataDir) : IProxyb
         // Direct mode with the saved config (no upstream proxies), kept in the foreground so Otium owns the process.
         var process = Process.Start(StartInfo(["seller", "start", "--foreground"])) ?? throw new InvalidOperationException("Could not start the Proxybase client.");
         MinerLifetime.Adopt(process); // ends with Otium, even if Otium crashes
+        try
+        {
+            // Above the miners, which run at normal priority on every thread while the user is away: Proxybase times its
+            // test requests through this computer and stops sending buyers to slow ones. The client itself uses little CPU.
+            process.PriorityClass = ProcessPriorityClass.AboveNormal;
+        }
+        catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception or PlatformNotSupportedException)
+        {
+            // already gone, or not allowed here; it still runs at normal priority
+        }
         return new SellerProcess(process);
     }
 
@@ -189,7 +199,8 @@ public static partial class ProxybaseOutput
             Text(json, "proxy_category"),
             Number(json, "qos_latency_ms"),
             Number(json, "qos_uptime"),
-            pending);
+            pending,
+            Text(json, "pool"));
     }
 
     /// <summary>The payout id from <c>seller payout create</c>, or null when it wasn't created.</summary>
