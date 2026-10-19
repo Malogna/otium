@@ -238,6 +238,12 @@ public sealed class ProxybaseBandwidthProvider : IBandwidthProvider
             // The wallet key that earnings build up under: made once on this computer, never shown or sent anywhere.
             var info = await _cli.RunAsync(["wallet", "info"], ct);
             NodeAddress = ProxybaseOutput.Address(info.Output);
+            // The client says "No wallet found" for any wallet it can't load (a damaged or locked file too), and
+            // "wallet create" replaces the file without asking: earnings not yet paid out would stay with the lost key.
+            if (NodeAddress is null && File.Exists(Path.Combine(_dataDir, "wallet", "keyfile.enc")))
+                throw new ProviderProblemException(
+                    "Proxybase couldn't open this computer's wallet, so internet sharing is paused rather than starting a new one, which would lose " +
+                    "anything not yet paid out. Send a problem report (Settings → About) so it can be looked at.");
             if (NodeAddress is null)
             {
                 var created = await _cli.RunAsync(["wallet", "create"], ct);

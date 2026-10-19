@@ -91,9 +91,32 @@ public sealed class ProxybaseCli(Func<string?> binary, string dataDir) : IProxyb
         };
         foreach (var argument in arguments)
             start.ArgumentList.Add(argument);
-        start.Environment["PROXYBASE_DIR"] = dataDir;
-        start.Environment["NO_COLOR"] = "1";
+        LimitEnvironment(start.Environment, dataDir);
         return start;
+    }
+
+    /// <summary>
+    /// What the client may see of Otium's environment, by name: what any program needs to run, find its folders and
+    /// reach the internet through the user's proxy. Not the rest, which can hold tokens (the client sends
+    /// GITHUB_TOKEN/GH_TOKEN with its update checks) or settings that change it (PROXYBASE_PASSWORD,
+    /// PROXYBASE_UPDATE_REPO, PROXYBASE_BACKEND…).
+    /// </summary>
+    private static readonly HashSet<string> PassedThrough = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "SystemRoot", "windir", "SystemDrive", "ComSpec", "PATH", "PATHEXT", "TEMP", "TMP", "TMPDIR",
+        "USERPROFILE", "HOME", "HOMEDRIVE", "HOMEPATH", "APPDATA", "LOCALAPPDATA", "ProgramData",
+        "ProgramFiles", "ProgramFiles(x86)", "ProgramW6432", "CommonProgramFiles", "NUMBER_OF_PROCESSORS",
+        "PROCESSOR_ARCHITECTURE", "OS", "LANG", "LC_ALL", "XDG_RUNTIME_DIR", "SSL_CERT_FILE", "SSL_CERT_DIR",
+        "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
+    };
+
+    /// <summary>Leaves only <see cref="PassedThrough"/>, then points the client at its own folder.</summary>
+    public static void LimitEnvironment(IDictionary<string, string?> environment, string dataDir)
+    {
+        foreach (var name in environment.Keys.Where(k => !PassedThrough.Contains(k)).ToList())
+            environment.Remove(name);
+        environment["PROXYBASE_DIR"] = dataDir;
+        environment["NO_COLOR"] = "1";
     }
 
     private static void Append(StringBuilder output, string? line)
