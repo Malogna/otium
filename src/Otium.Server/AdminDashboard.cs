@@ -40,6 +40,7 @@ internal static class AdminDashboard
               <h1>Otium operator</h1>
               <div class="actions" id="session" hidden>
                 <span class="muted" id="updated"></span>
+                <label class="muted toggle"><input type="checkbox" id="auto" checked> every minute</label>
                 <button type="button" id="refresh">Refresh</button>
                 <button type="button" id="signout" class="quiet">Sign out</button>
               </div>
@@ -60,6 +61,19 @@ internal static class AdminDashboard
 
               <div id="noncustodial" hidden>
                 <section>
+                  <h2>At a glance</h2>
+                  <div class="tiles">
+                    <div class="tile"><span class="label">Computers online now</span><strong id="act-now"></strong><span class="muted" id="act-now-detail"></span></div>
+                    <div class="tile"><span class="label">Accounts</span><strong id="act-accounts"></strong><span class="muted" id="act-accounts-detail"></span></div>
+                    <div class="tile"><span class="label">Paid to users by pools</span><strong id="pp-paid"></strong><span class="muted" id="pp-paid-detail"></span></div>
+                    <div class="tile"><span class="label">Users earned, 30 days</span><strong id="pp-rewarded"></strong><span class="muted">at their pools, before payout</span></div>
+                  </div>
+                  <h3>New computers per day</h3>
+                  <div class="chart" id="act-chart" role="img" aria-label="New computers per day, last 14 days"></div>
+                  <div class="chart-axis"><span id="act-chart-first"></span><span id="act-chart-last"></span></div>
+                </section>
+
+                <section>
                   <h2>Otium on unMineable</h2>
                   <p class="muted">Non-custodial: pools pay users directly. Otium earns its fee slices and unMineable's referral share, both paid to <span class="mono" id="nc-target"></span>.</p>
                   <div class="tiles">
@@ -72,12 +86,35 @@ internal static class AdminDashboard
                   <p><a id="nc-link" target="_blank" rel="noopener noreferrer">Open on unMineable</a></p>
                 </section>
                 <section>
+                  <h2>Share analytics, last 7 days</h2>
+                  <p class="muted" id="an-summary"></p>
+                  <div class="table-wrap">
+                    <table id="an-table" hidden>
+                      <thead><tr><th>Part</th><th>Computers</th><th>Hours</th><th>Earned by users</th><th>Electricity</th><th>Per hour</th></tr></thead>
+                      <tbody id="an-rows"></tbody>
+                    </table>
+                  </div>
+                </section>
+
+                <section>
                   <h2>Accounts</h2>
                   <div class="tiles">
                     <div class="tile"><span class="label">Computers seen</span><strong id="nc-devices"></strong><span class="muted">in the last 7 days</span></div>
                     <div class="tile"><span class="label">Joined by invite</span><strong id="nc-referred"></strong><span class="muted" id="nc-verified"></span></div>
                   </div>
+                  <h3>Payout coins</h3>
                   <ul class="addresses" id="nc-coins"></ul>
+                </section>
+
+                <section>
+                  <h2>Pearl</h2>
+                  <p id="pearl"></p>
+                  <p class="muted">Pearl's FP8 fork (PIP-3) limits Pearl to Hopper and Blackwell cards once active; the GPU policy then stops offering it to other cards.</p>
+                </section>
+
+                <section id="myst" hidden>
+                  <h2>Mysterium sponsoring</h2>
+                  <p id="myst-detail"></p>
                 </section>
               </div>
 
@@ -144,6 +181,20 @@ internal static class AdminDashboard
                 <ul class="addresses" id="addresses"></ul>
               </section>
               </div>
+
+              <section>
+                <div class="section-head">
+                  <h2 id="pr-title">Problem reports</h2>
+                  <span class="muted">newest first; open one to read what the app sent</span>
+                </div>
+                <p class="muted" id="pr-empty" hidden>No problem reports yet.</p>
+                <div class="table-wrap">
+                  <table id="pr-table" hidden>
+                    <thead><tr><th>Sent</th><th>Reference</th><th>Version</th><th>System</th><th>What happened</th><th></th></tr></thead>
+                    <tbody id="pr-rows"></tbody>
+                  </table>
+                </div>
+              </section>
             </div>
           </main>
         </body>
@@ -194,6 +245,15 @@ internal static class AdminDashboard
         .flag { display:inline-block; font-size:12px; color:var(--warn); }
         .buttons { display:flex; gap:6px; white-space:nowrap; }
         .addresses { margin:0; padding-left:18px; }
+        h3 { font-size:13px; font-weight:600; color:var(--muted); margin:18px 0 8px; }
+        .toggle { display:inline-flex; align-items:center; gap:6px; }
+        .toggle input { min-width:0; flex:none; }
+        .chart { display:flex; align-items:flex-end; gap:4px; height:72px; }
+        .chart div { flex:1; min-height:2px; background:var(--accent); border-radius:3px 3px 0 0; opacity:.85; }
+        .chart div.zero { background:var(--border); }
+        .chart-axis { display:flex; justify-content:space-between; font-size:12px; color:var(--muted); margin-top:4px; }
+        tr.details td { background:var(--soft); }
+        pre.report { margin:0; max-height:420px; overflow:auto; white-space:pre-wrap; word-break:break-word; font:12px/1.45 ui-monospace,Consolas,monospace; }
         @media (max-width:640px) { input { min-width:0; } }
         """;
 
@@ -401,11 +461,97 @@ internal static class AdminDashboard
             const link = $("nc-link");
             link.hidden = !o;
             if (o) link.href = o.dashboardUrl;
+            const a = s.activity || {};
+            const n = v => Number(v || 0).toLocaleString("en-US");
+            $("act-now").textContent = n(a.devicesActiveNow);
+            $("act-now-detail").textContent = `seen in the last 15 minutes; ${n(a.devicesSeenPast24h)} in 24 h, ${n(s.devicesSeenPast7Days)} in 7 days, ${n(a.devices)} ever`;
+            $("act-accounts").textContent = n(a.accounts);
+            $("act-accounts-detail").textContent = `+${n(a.accountsNew24h)} in 24 h, +${n(a.accountsNew7d)} in 7 days`;
+            const pp = s.poolPayouts || {};
+            $("pp-paid").textContent = usd(pp.paidUsd);
+            $("pp-paid-detail").textContent = `${n(pp.paidAccounts)} account(s) paid at least once`;
+            $("pp-rewarded").textContent = usd(pp.rewarded30dUsd);
+            const days = a.newDevicesPerDay || [];
+            const most = Math.max(1, ...days.map(d => Number(d.devices)));
+            $("act-chart").replaceChildren(...days.map(d => {
+              const bar = el("div", null, Number(d.devices) ? "" : "zero");
+              bar.style.height = Math.max(3, Number(d.devices) / most * 100) + "%";
+              bar.title = `${d.day}: ${d.devices}`;
+              return bar;
+            }));
+            $("act-chart-first").textContent = days.length ? days[0].day : "";
+            $("act-chart-last").textContent = days.length ? days[days.length - 1].day : "";
+
+            const an = s.analytics || { devices: 0, byKind: [] };
+            const names = { cpu: "Processor", gpu: "Graphics card", sharing: "Internet sharing" };
+            $("an-summary").textContent = an.devices
+              ? `${n(an.devices)} computer(s) shared their numbers this week.`
+              : "No computer has shared its numbers this week (Share analytics is opt-in).";
+            $("an-table").hidden = !an.byKind.length;
+            $("an-rows").replaceChildren(...an.byKind.map(k => {
+              const tr = el("tr");
+              const perHour = Number(k.hours) > 0 ? usd(Number(k.userUsd) / Number(k.hours)) : "–";
+              [names[k.kind] || k.kind, n(k.devices), Number(k.hours).toLocaleString("en-US"), usd(k.userUsd), usd(k.electricityUsd), perHour]
+                .forEach((v, i) => tr.append(el("td", v, i ? "num" : "")));
+              return tr;
+            }));
+
+            const pearl = s.pearlFork;
+            $("pearl").textContent = !pearl ? "Not watched on this server."
+              : pearl.active ? `Fork active since block ${pearl.activationHeight}: only Hopper and Blackwell cards can mine Pearl.`
+              : `Not active yet` + (pearl.height ? ` (block ${pearl.height}` + (pearl.activationHeight ? ` of ${pearl.activationHeight})` : ")") : "") + (pearl.reason ? `. ${pearl.reason}` : ".");
+            const myst = s.mysterium;
+            $("myst").hidden = !(myst && (myst.sponsoring || Number(myst.nodesSponsored) > 0));
+            if (myst) $("myst-detail").textContent = `${n(myst.nodesSponsored)} node(s) sponsored, ${myst.mystSpent} MYST spent (${myst.mystSpentPast24h} in 24 h)` +
+              (myst.walletError ? `; wallet: ${myst.walletError}` : myst.walletBalanceMyst != null ? `; wallet holds ${myst.walletBalanceMyst} MYST` : "");
+
             $("nc-devices").textContent = s.devicesSeenPast7Days;
             $("nc-referred").textContent = s.referredAccounts;
             $("nc-verified").textContent = `${s.verifiedReferrals} verified by their pool`;
             const coins = $("nc-coins");
             coins.replaceChildren(...s.accountsByCoin.map(c => el("li", `${c.coin === "none" ? "No payout address yet" : c.coin}: ${c.accounts}`)));
+          }
+
+          function renderProblemReports(reports) {
+            $("pr-title").textContent = `Problem reports (${reports.length}${reports.length >= 50 ? "+" : ""})`;
+            $("pr-table").hidden = !reports.length;
+            $("pr-empty").hidden = reports.length > 0;
+            $("pr-rows").replaceChildren(...reports.map(r => {
+              const tr = el("tr");
+              tr.append(el("td", when(r.createdAt)));
+              const ref = el("td", null, "mono");
+              ref.append(el("span", r.reference));
+              tr.append(ref);
+              tr.append(el("td", r.appVersion, "mono"));
+              tr.append(el("td", r.platform));
+              tr.append(el("td", r.note || "(no note)", r.note ? "" : "muted"));
+              const actions = el("td");
+              const buttons = el("div", null, "buttons");
+              let open = null;
+              const show = button("Open", "", async () => {
+                if (open) { open.remove(); open = null; show.textContent = "Open"; return; }
+                try {
+                  const full = await api(`/admin/problem-reports/${encodeURIComponent(r.reference)}`);
+                  open = el("tr", null, "details");
+                  const td = el("td");
+                  td.colSpan = 6;
+                  td.append(el("div", `Account ${full.accountId} · computer ${full.deviceId}`, "muted mono"), el("pre", full.details || "(empty)", "report"));
+                  open.append(td);
+                  tr.after(open);
+                  show.textContent = "Close";
+                } catch (e) {
+                  if (e.message !== "unauthorized") $("error").textContent = e.message;
+                }
+              });
+              const copy = button("Copy reference", "quiet", async () => {
+                try { await navigator.clipboard.writeText(r.reference); copy.textContent = "Copied"; } catch { copy.textContent = "Copy failed"; }
+                setTimeout(() => { copy.textContent = "Copy reference"; }, 1500);
+              });
+              buttons.append(show, copy);
+              actions.append(buttons);
+              tr.append(actions);
+              return tr;
+            }));
           }
 
           async function refresh() {
@@ -422,6 +568,8 @@ internal static class AdminDashboard
               } else {
                 renderNonCustodial(summary);
               }
+              // Problem reports in both modes; an open report stays open until the next manual refresh.
+              if (!document.querySelector("tr.details")) renderProblemReports(await api("/admin/problem-reports"));
               $("updated").textContent = "Updated " + new Date().toLocaleTimeString();
               $("error").textContent = "";
             } catch (e) {
@@ -437,6 +585,8 @@ internal static class AdminDashboard
             $("refresh").addEventListener("click", () => { $("error").textContent = ""; refresh(); });
             $("signout").addEventListener("click", () => signOut(""));
             $("status").addEventListener("change", refresh);
+            // Every minute while the tab is visible and auto-refresh is on (the API is rate-limited per address).
+            setInterval(() => { if (token && $("auto").checked && document.visibilityState === "visible") refresh(); }, 60000);
             if (token) { showSignedIn(true); refresh(); } else { showSignedIn(false); $("token").focus(); }
           });
         })();
