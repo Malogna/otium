@@ -14,7 +14,6 @@ public sealed class SitePagesTests : IDisposable
     private readonly string _pages = Path.Combine(Path.GetTempPath(), $"otium-site-pages-{Guid.NewGuid():N}");
     private readonly ManualTime _time = new(new DateTimeOffset(2026, 10, 18, 15, 0, 0, TimeSpan.Zero));
     private readonly GpuPolicyTests.FakeFeed _feed = new();
-    private readonly FakeReleases _releases = new();
     private readonly FakeReleaseList _releaseList = new();
     private readonly WebApplicationFactory<Program> _factory;
     private readonly HttpClient _http;
@@ -42,8 +41,6 @@ public sealed class SitePagesTests : IDisposable
                 services.AddSingleton<IKryptexApi>(new GpuPolicyTests.FakeKryptex());
                 services.RemoveAll<IPearlPipFeed>();
                 services.AddSingleton<IPearlPipFeed>(new GpuPolicyTests.FakePip());
-                services.RemoveAll<Otium.Server.IReleaseFeed>();
-                services.AddSingleton<Otium.Server.IReleaseFeed>(_releases);
                 services.RemoveAll<Otium.Server.IReleaseList>();
                 services.AddSingleton<Otium.Server.IReleaseList>(_releaseList);
                 services.RemoveAll<TimeProvider>();
@@ -336,35 +333,76 @@ public sealed class SitePagesTests : IDisposable
     public void The_visitors_system_is_read_from_the_browser(string? userAgent, string? os) =>
         Assert.Equal(os, Otium.Server.ReleaseDownloads.DetectOs(userAgent));
 
-    [Fact]
-    public async Task Download_goes_straight_to_the_installer_for_the_visitors_computer()
+    /// <summary>A release with every installer the release build makes, as GitHub lists them.</summary>
+    private static Otium.Server.PublishedRelease Release(string tag, bool prerelease)
     {
-        _releases.Assets =
+        var dl = $"https://github.com/Malogna/otium/releases/download/{tag}";
+        return new(tag, prerelease,
         [
-            new("Otium.Desktop-win-x64-Setup.exe", "https://dl.example/win-setup.exe"),
-            new("Otium.Desktop-win-x64-Portable.zip", "https://dl.example/win.zip"),
-            new("Otium.Desktop-osx-arm64-Setup.pkg", "https://dl.example/mac-arm.pkg"),
-            new("Otium.Desktop-osx-x64-Setup.pkg", "https://dl.example/mac-intel.pkg"),
-            new("Otium.Desktop-linux-x64.AppImage", "https://dl.example/linux.AppImage"),
-            new("RELEASES-win-x64", "https://dl.example/RELEASES"),
-        ];
-        using var noRedirect = _factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
-        async Task<string?> Where(string path, string? userAgent)
-        {
-            using var request = new HttpRequestMessage(HttpMethod.Get, path);
-            if (userAgent is not null)
-                request.Headers.TryAddWithoutValidation("User-Agent", userAgent);
-            using var response = await noRedirect.SendAsync(request);
-            Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
-            return response.Headers.Location?.ToString();
-        }
+            new($"Otium.Desktop-{tag.TrimStart('v')}-win-x64-full.nupkg", $"{dl}/full.nupkg"),
+            new("Otium.Desktop-win-x64-Setup.exe", $"{dl}/Otium.Desktop-win-x64-Setup.exe"),
+            new("Otium.Desktop-win-x64-Portable.zip", $"{dl}/Otium.Desktop-win-x64-Portable.zip"),
+            new("Otium.Desktop-osx-arm64-Setup.pkg", $"{dl}/Otium.Desktop-osx-arm64-Setup.pkg"),
+            new("Otium.Desktop-osx-x64-Setup.pkg", $"{dl}/Otium.Desktop-osx-x64-Setup.pkg"),
+            new("Otium.Desktop-linux-x64.AppImage", $"{dl}/Otium.Desktop-linux-x64.AppImage"),
+            new("releases.win-x64.json", $"{dl}/releases.win-x64.json"),
+        ]);
+    }
 
-        Assert.Equal("https://dl.example/win-setup.exe", await Where("/download", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"));
-        Assert.Equal("https://dl.example/mac-arm.pkg", await Where("/download", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"));
-        Assert.Equal("https://dl.example/linux.AppImage", await Where("/download", "Mozilla/5.0 (X11; Linux x86_64)"));
-        Assert.Equal("https://dl.example/mac-intel.pkg", await Where("/download?os=macos-intel", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"));
-        // Phones can't install it: the releases page explains what's there.
-        Assert.Equal("https://example.com/download?a=1&b=2", await Where("/download", "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Mobile"));
+    private async Task<HttpResponseMessage> Visit(string path, string? userAgent)
+    {
+        using var noRedirect = _factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        using var request = new HttpRequestMessage(HttpMethod.Get, path);
+        if (userAgent is not null)
+            request.Headers.TryAddWithoutValidation("User-Agent", userAgent);
+        return await noRedirect.SendAsync(request);
+    }
+
+    private const string WindowsBrowser = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)";
+
+    [Fact]
+    public async Task Download_shows_otiums_own_page_and_starts_the_installer_for_the_visitors_computer()
+    {
+        // Only release candidates so far: GitHub's "latest release" leaves them out, the download page doesn't.
+        _releaseList.Releases = [Release("v0.1.0-rc.9", true), Release("v0.1.0-rc.13", true), Release("v0.1.0-rc.12", true)];
+
+        using var windows = await Visit("/download", WindowsBrowser);
+        Assert.Equal(HttpStatusCode.OK, windows.StatusCode);
+        var html = await windows.Content.ReadAsStringAsync();
+        Assert.Contains("""<meta http-equiv="refresh" content="1;url=/download/windows">""", html); // starts by itself
+        Assert.Contains("Otium 0.1.0-rc.13 for Windows", html); // the newest version, not GitHub's tag-name order
+        Assert.Contains("Run anyway", html); // what to do about the unsigned installer's warning
+        Assert.Contains("""href="/download/macos-intel">macOS (Intel)</a>""", html); // the other systems
+        Assert.DoesNotContain("""href="/download/windows">Windows</a>""", html);
+
+        using var mac = await Visit("/download", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)");
+        Assert.Contains("Otium 0.1.0-rc.13 for macOS (Apple silicon)", await mac.Content.ReadAsStringAsync());
+        using var linux = await Visit("/download?os=linux", WindowsBrowser);
+        Assert.Contains("chmod +x", await linux.Content.ReadAsStringAsync());
+
+        // Phones can't install it: the page says so, lists every system and starts nothing.
+        using var phone = await Visit("/download", "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Mobile");
+        var phoneHtml = await phone.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("http-equiv=\"refresh\"", phoneHtml);
+        Assert.Contains("On a phone? Open otium.lol on the computer", phoneHtml);
+        Assert.Contains("""href="/download/windows">Windows</a>""", phoneHtml);
+
+        // Each button is a direct link to that system's installer on GitHub.
+        async Task<string?> Where(string path) => (await Visit(path, WindowsBrowser)).Headers.Location?.ToString();
+        const string dl = "https://github.com/Malogna/otium/releases/download/v0.1.0-rc.13";
+        Assert.Equal($"{dl}/Otium.Desktop-win-x64-Setup.exe", await Where("/download/windows"));
+        Assert.Equal($"{dl}/Otium.Desktop-osx-arm64-Setup.pkg", await Where("/download/macos"));
+        Assert.Equal($"{dl}/Otium.Desktop-osx-x64-Setup.pkg", await Where("/download/macos-intel"));
+        Assert.Equal($"{dl}/Otium.Desktop-linux-x64.AppImage", await Where("/download/linux"));
+        Assert.Equal("/download", await Where("/download/amiga"));
+    }
+
+    [Fact]
+    public async Task Once_there_is_a_stable_release_the_page_offers_it_over_newer_release_candidates()
+    {
+        _releaseList.Releases = [Release("v0.1.1-rc.1", true), Release("v0.1.0", false), Release("v0.1.0-rc.13", true)];
+        using var response = await Visit("/download", WindowsBrowser);
+        Assert.Contains("Otium 0.1.0 for Windows", await response.Content.ReadAsStringAsync());
     }
 
     [Fact]
@@ -456,13 +494,6 @@ public sealed class SitePagesTests : IDisposable
         public Task<IReadOnlyList<Otium.Server.PublishedRelease>> GetRecentAsync(CancellationToken ct) => Task.FromResult(Releases);
 
         public Task<string> GetTextAsync(string url, CancellationToken ct) => Task.FromResult(Texts[url]);
-    }
-
-    private sealed class FakeReleases : Otium.Server.IReleaseFeed
-    {
-        public IReadOnlyList<Otium.Server.ReleaseAsset> Assets { get; set; } = [];
-
-        public Task<IReadOnlyList<Otium.Server.ReleaseAsset>> GetLatestAsync(CancellationToken ct) => Task.FromResult(Assets);
     }
 
     public void Dispose()

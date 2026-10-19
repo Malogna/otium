@@ -1,8 +1,9 @@
 # Release candidate checklist
 
 Before v0.1.0, a release candidate is installed on a real Windows PC and checked by hand. Tag `v0.1.0-rc.1` (then
-`rc.2`, …): the release workflow builds the real installers and publishes them on GitHub as a **pre-release**, which
-the website's Download button and stable installs ignore. Download the Windows installer from the pre-release page.
+`rc.2`, …): the release workflow builds the real installers and publishes them on GitHub as a **pre-release**, which stable
+installs ignore. Until there is a stable release, the website's download page (otium.lol/download) offers the newest
+release candidate; once there is one, it offers the newest stable release instead.
 
 ## Before the first candidate
 

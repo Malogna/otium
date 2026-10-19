@@ -707,6 +707,63 @@ internal static class SitePages
             baseUrl, "/" + page);
     }
 
+    /// <summary>
+    /// The download page: starts the installer for the visitor's system by itself (a meta refresh, no script needed),
+    /// offers the other systems' installers of the same release, and says what to expect while installing, including
+    /// the warning an unsigned installer gets.
+    /// </summary>
+    public static string Download(LatestRelease release, string? os, IEnumerable<string> legalLinks, string baseUrl)
+    {
+        var mine = release.Installers.FirstOrDefault(i => i.Os == os);
+        var version = E(release.Version);
+        var intro = mine is not null
+            ? $"""
+              <h1 style="margin-top:14px">Your download is starting</h1>
+              <p class="lead">Otium {version} for {E(mine.Label)}. If nothing happens, use the button.</p>
+              <div class="actions"><a class="button" href="/download/{E(mine.Os)}">Download for {E(mine.Label)}</a></div>
+              """
+            : $"""
+              <h1 style="margin-top:14px">Download Otium</h1>
+              <p class="lead">Otium {version} runs on Windows, macOS and Linux computers. On a phone? Open otium.lol on the computer you want to earn with.</p>
+              """;
+        var steps = mine?.Os switch
+        {
+            "windows" => $"""
+                <li>Open <span class="code">{E(mine.FileName)}</span> from your downloads. Otium isn't signed yet, so Windows may say "Windows protected your PC": choose <strong>More info</strong>, then <strong>Run anyway</strong>.</li>
+                <li>Setup takes a few seconds and opens Otium. Choose Quick start, and add the wallet address you want to be paid to.</li>
+                """,
+            "macos" or "macos-intel" => $"""
+                <li>Open <span class="code">{E(mine.FileName)}</span> and follow the installer. If macOS says it can't check it for malicious software, open System Settings, Privacy &amp; Security, and choose <strong>Open Anyway</strong>.</li>
+                <li>Open Otium from Applications. Choose Quick start, and add the wallet address you want to be paid to.</li>
+                """,
+            "linux" => $"""
+                <li>Make <span class="code">{E(mine.FileName)}</span> executable (right-click, Properties, or <span class="code">chmod +x</span>) and run it.</li>
+                <li>Choose Quick start, and add the wallet address you want to be paid to.</li>
+                """,
+            _ => "",
+        };
+        var others = string.Join("", release.Installers.Where(i => i != mine)
+            .Select(i => $"""<a class="button ghost" href="/download/{E(i.Os)}">{E(i.Label)}</a>"""));
+        var body = $"""
+                <div class="glow" aria-hidden="true"></div>
+                <section class="page">
+                  <div class="wrap">
+                    <div class="panel">
+                      <span class="label">Download</span>
+                      {intro}
+                      {(steps.Length > 0 ? $"<ol>{steps}</ol>" : "")}
+                      <p class="muted" style="margin-top:18px">{(mine is null ? "Choose your system:" : "Another system?")}</p>
+                      <div class="actions">{others}</div>
+                      <p class="muted" style="margin-top:18px">The macOS and Linux versions are in beta. Otium runs the open-source XMRig and SRBMiner miners, which some antivirus tools flag. <a href="/">How Otium works</a></p>
+                    </div>
+                  </div>
+                </section>
+            """;
+        var head = mine is null ? null : $"""<meta http-equiv="refresh" content="1;url=/download/{E(mine.Os)}">""";
+        return Layout($"Download Otium {release.Version}", $"Download Otium {release.Version} for Windows, macOS and Linux.", body, legalLinks,
+            "/download", baseUrl, "/download", head: head);
+    }
+
     /// <summary>The legal pages whose files exist in <paramref name="directory"/>, in footer order.</summary>
     public static IReadOnlyList<string> AvailableLegalPages(string directory) =>
         LegalPages.Where(p => File.Exists(Path.Combine(directory, $"{p}.html"))).ToList();
