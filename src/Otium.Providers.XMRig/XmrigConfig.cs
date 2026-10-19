@@ -72,8 +72,9 @@ internal static class XmrigConfig
                 ["enabled"] = true,
                 ["huge-pages"] = true,
                 ["yield"] = true,
-                // Lowest scheduling priority so games and work always win.
-                ["priority"] = 0,
+                // Lowest priority (0) when the user may be at the computer, so games and work always win; normal (2) while
+                // they're away, so Windows doesn't push the threads onto slower efficiency cores.
+                ["priority"] = options.LowPriority ? 0 : 2,
                 ["max-threads-hint"] = Math.Clamp(options.UsagePercent, 1, 100),
             },
             ["opencl"] = false,
