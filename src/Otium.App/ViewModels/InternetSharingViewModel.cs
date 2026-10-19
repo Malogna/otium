@@ -171,7 +171,8 @@ public partial class InternetSharingViewModel : ViewModelBase
         IsOn = settings.BandwidthEnabled && settings.BandwidthConsentAt is not null;
         ShowSuggestion = IsOffered && !IsOn && !settings.BandwidthPromptDismissed;
         var month = ExpectedUsdPerDay * 30;
-        EstimateText = IsProxybase ? "usually a few dollars a month, paid in your coin" : month > 0 ? $"about {Format.Usd(month)} a month extra" : "";
+        EstimateText = IsProxybase ? $"about {Format.Usd(EstimatedUsdPerDay * 30)} a month by Proxybase's rates, paid in your coin"
+            : month > 0 ? $"about {Format.Usd(month)} a month extra" : "";
         OnPropertyChanged(nameof(LimitsText));
         OnPropertyChanged(nameof(ConsentText));
         OnPropertyChanged(nameof(UnavailableText));
@@ -197,8 +198,43 @@ public partial class InternetSharingViewModel : ViewModelBase
         ProjectionText = !IsOn || !IsProxybase ? ""
             : snap.UserUsdPerDay > 0
                 ? $"At your recent pace that's about {Format.Usd(snap.UserUsdPerDay * 30)} a month (your share, after Otium's fee)."
-                : "Proxybase says homes typically earn $15–40 a month, depending on location and demand (its own figure, not checked " +
-                  "by Otium). Your real pace shows here after the first hour of earnings.";
+                : EstimateExplanation() + " Your real pace replaces this after the first hour of earnings.";
+    }
+
+    /// <summary>Proxybase's rate where this computer is (its markets page).</summary>
+    public Otium.Providers.Proxybase.ProxybaseMarket Market
+    {
+        get
+        {
+            try
+            {
+                return Otium.Providers.Proxybase.ProxybaseMarkets.For(System.Globalization.RegionInfo.CurrentRegion.TwoLetterISORegionName);
+            }
+            catch (ArgumentException)
+            {
+                return Otium.Providers.Proxybase.ProxybaseMarkets.For(null);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Before this computer has its own pace: what Proxybase's rate here pays for 1 GB a day (the low end of its
+    /// "1–5 GB a day" average for a home connection), after Otium's fee.
+    /// </summary>
+    public double EstimatedUsdPerDay => IsProxybase
+        ? Otium.Providers.Proxybase.ProxybaseMarkets.EstimatedUserUsdPerDay(Market, _host.Fees.FeePercent / 100)
+        : 0;
+
+    private string EstimateExplanation()
+    {
+        var market = Market;
+        var rate = Format.Usd(market.SellerUsdPerGb);
+        var where = market.Listed
+            ? $"Proxybase pays {rate} per GB in {market.CountryName}"
+            : $"Proxybase doesn't list {market.CountryName} on its own, so this uses its worldwide rate of {rate} per GB";
+        return $"Estimate: about {Format.Usd(EstimatedUsdPerDay * 30)} a month. {where}, and says a home connection carries " +
+               "1–5 GB a day on average; this assumes the low end, 1 GB, after Otium's fee. What you really earn depends on how " +
+               "much Proxybase's customers use your connection.";
     }
 
     partial void OnOnlyWhenAwayChanged(bool value) => Save();

@@ -282,4 +282,18 @@ public sealed class ProxybaseTests : IDisposable
         if (Directory.Exists(_engines))
             Directory.Delete(_engines, recursive: true);
     }
+
+    [Fact]
+    public void Proxybases_rate_where_the_user_is_gives_the_estimate_before_there_is_a_real_pace()
+    {
+        var norway = ProxybaseMarkets.For("NO");
+        Assert.True(norway.Listed);
+        Assert.Equal(2.10, norway.SellerUsdPerGb);
+        Assert.Equal(2.10 * 0.98, ProxybaseMarkets.EstimatedUserUsdPerDay(norway, 0.02), precision: 6); // 1 GB a day, after Otium's 2%
+
+        var elsewhere = ProxybaseMarkets.For("KE"); // not listed on its own: Proxybase's worldwide rate
+        Assert.False(elsewhere.Listed);
+        Assert.Equal(ProxybaseMarkets.WorldWideUsdPerGb, elsewhere.SellerUsdPerGb);
+        Assert.False(ProxybaseMarkets.For(null).Listed);
+    }
 }
