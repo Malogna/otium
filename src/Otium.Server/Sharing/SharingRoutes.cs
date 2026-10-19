@@ -21,7 +21,7 @@ namespace Otium.Server.Sharing;
 /// Otium's cut is not part of the conversion: of each payout the app keeps back Otium's share (<see cref="FeeBps"/>, the
 /// mining fee by default) and pays it from the user's Proxybase earnings straight to <see cref="FeeRecipient"/> on Tempo,
 /// the way mining pays Otium a slice of mining time. The conversion carries no Otium fee, so Otium earns nothing from
-/// exchanging anyone's coins (docs/legal-review.md, D1).
+/// exchanging anyone's coins.
 /// </summary>
 public sealed class SharingOptions
 {

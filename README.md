@@ -107,4 +107,18 @@ dotnet run --project src/Otium.App       # the app on its own
 The app is .NET 10 with Avalonia, and the server is ASP.NET Core with SQLite. How everything works, the server's
 settings, building installers and releasing are in [docs/technical.md](docs/technical.md). Also:
 [deploying](docs/deploying.md), [releasing](docs/releasing.md), [release candidates](docs/release-candidate.md),
-[privacy policy draft](docs/privacy.md), [terms of use draft](docs/terms.md), [legal review](docs/legal-review.md).
+[privacy policy draft](docs/privacy.md), [terms of use draft](docs/terms.md).
+
+## License
+
+Otium is free software under the [GNU Affero General Public License v3.0](LICENSE). You may use, study, change and
+share it. If you distribute a changed version, or run a changed version of the server for other people, you must
+publish your changes under the same license.
+
+XMRig, SRBMiner-Multi and Proxybase's client are separate programs under their own licenses. They aren't part of this
+repository: the app downloads them from their official releases on each computer.
+
+## Trademarks
+
+The license covers the code, not the name. Forks are welcome, but please don't call them Otium, use Otium's logo, or
+present them as the official app or otium.lol.

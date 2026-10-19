@@ -9,3 +9,8 @@ obj/
 TestResults/
 artifacts/
 Releases/
+
+# Kept privately, outside the public repository (the operator keeps a copy elsewhere).
+reports/
+research_notes/
+docs/legal-review.md

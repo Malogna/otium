@@ -5,7 +5,7 @@ namespace Otium.Core;
 /// <summary>
 /// Countries where Otium doesn't run: comprehensive sanctions (EU, Norway, US) and countries that ban crypto mining.
 /// The app checks the Windows region, and the server the visitor's country from Cloudflare, so neither alone decides.
-/// See docs/legal-review.md (D4); review the list yearly.
+/// Review the list yearly.
 /// </summary>
 public static class Availability
 {
