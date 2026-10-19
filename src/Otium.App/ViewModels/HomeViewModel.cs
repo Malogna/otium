@@ -191,7 +191,8 @@ public partial class HomeViewModel : ViewModelBase
         {
             // Internet sharing pays the same wallet (Proxybase's earnings are converted to the user's coin), so it counts.
             var sharedUsd = _host.Bandwidth.Snapshot.TotalUserUsd;
-            balanceValue = (decimal)(snapshots.Sum(s => s.TotalUserUsd) + sharedUsd);
+            // The engines' ledgers, not their snapshots: those are empty until each engine's first tick after a start.
+            balanceValue = (decimal)(engines.Sum(e => e.Totals.UserUsd) + sharedUsd);
             BalanceCaption = "Earned so far · paid straight to your wallet";
             var parts = new List<string>();
             if (sharedUsd > 0)
@@ -242,7 +243,7 @@ public partial class HomeViewModel : ViewModelBase
         // Cash-out goal
         CanCashOut = IsBalanceMode && account.AvailableUsd >= minimum && account.AvailableUsd > 0;
         if (!IsBalanceMode)
-            RefreshPoolGoal(settings.EarningEnabled ? rate : 0, snapshots.Sum(s => s.TotalUserUsd));
+            RefreshPoolGoal(settings.EarningEnabled ? rate : 0, engines.Sum(e => e.Totals.UserUsd));
         else if (CanCashOut)
         {
             GoalText = "You can cash out now";

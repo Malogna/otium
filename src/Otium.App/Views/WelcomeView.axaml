@@ -61,10 +61,13 @@
                                 Command="{Binding QuickStartCommand}" AutomationProperties.Name="Quick start">
                             <StackPanel Spacing="4" Margin="4">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <Path Classes="icon filled" Data="{StaticResource IconPlay}" Width="14" Height="14" Stroke="White" Fill="White" />
-                                    <TextBlock Text="Quick start" FontWeight="Bold" FontSize="16" />
+                                    <!-- Text on the accent green: white on the light theme's, near-black on the dark theme's brighter
+                                         one (white there read at only 2.2:1). -->
+                                    <Path Classes="icon filled" Data="{StaticResource IconPlay}" Width="14" Height="14"
+                                          Stroke="{DynamicResource OnAccentText}" Fill="{DynamicResource OnAccentText}" />
+                                    <TextBlock Text="Quick start" FontWeight="Bold" FontSize="16" Foreground="{DynamicResource OnAccentText}" />
                                 </StackPanel>
-                                <TextBlock FontSize="12.5" TextWrapping="Wrap" Opacity="0.9"
+                                <TextBlock FontSize="12.5" TextWrapping="Wrap" Foreground="{DynamicResource OnAccentText}"
                                            Text="Processor and graphics card on, internet sharing one tick away. Just tell us where to pay you." />
                             </StackPanel>
                         </Button>
