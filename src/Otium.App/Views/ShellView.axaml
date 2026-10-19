@@ -29,9 +29,8 @@
                 </ScrollViewer>
             </TabItem>
             <TabItem Header="Settings">
-                <ScrollViewer>
-                    <views:SettingsView DataContext="{Binding Settings}" Margin="4,8,4,24" />
-                </ScrollViewer>
+                <!-- It scrolls by itself, so its section bar stays in view. -->
+                <views:SettingsView DataContext="{Binding Settings}" />
             </TabItem>
         </TabControl>
     </Grid>

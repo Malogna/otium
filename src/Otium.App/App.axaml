@@ -18,7 +18,7 @@
                     <SolidColorBrush x:Key="SubtleBackground" Color="#F0F3F6" />
                     <SolidColorBrush x:Key="MutedText" Color="#5B6575" />
                     <SolidColorBrush x:Key="AccentBrush" Color="#16A672" />
-                    <SolidColorBrush x:Key="GoodBrush" Color="#138A5E" />
+                    <SolidColorBrush x:Key="GoodBrush" Color="#0F7A52" />
                     <SolidColorBrush x:Key="GoodSoft" Color="#DDF5EA" />
                     <SolidColorBrush x:Key="WarnBrush" Color="#9A6200" />
                     <SolidColorBrush x:Key="WarnSoft" Color="#FFF1D6" />
@@ -49,14 +49,15 @@
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
 
-            <!-- The hero card keeps the same vivid gradient in both themes. -->
+            <!-- The hero card keeps the same gradient in both themes, deep enough that its white text reads at 4.5:1 or
+                 better everywhere (WCAG AA), including the muted lines. -->
             <LinearGradientBrush x:Key="HeroGradient" StartPoint="0%,0%" EndPoint="100%,100%">
-                <GradientStop Color="#1DB97F" Offset="0" />
-                <GradientStop Color="#0E8A8A" Offset="0.6" />
-                <GradientStop Color="#0B6E8F" Offset="1" />
+                <GradientStop Color="#0C8160" Offset="0" />
+                <GradientStop Color="#0A7378" Offset="0.6" />
+                <GradientStop Color="#0A6585" Offset="1" />
             </LinearGradientBrush>
             <SolidColorBrush x:Key="HeroText" Color="#FFFFFF" />
-            <SolidColorBrush x:Key="HeroMuted" Color="#D8F3EA" />
+            <SolidColorBrush x:Key="HeroMuted" Color="#ECFAF4" />
             <SolidColorBrush x:Key="HeroChip" Color="#26FFFFFF" />
 
             <!-- Line icons on a 24×24 grid, drawn with a 2px stroke. -->
@@ -83,7 +84,8 @@
     <Application.Styles>
         <FluentTheme>
             <FluentTheme.Palettes>
-                <ColorPaletteResources x:Key="Light" Accent="#16A672" />
+                <!-- Light: deep enough for white button text at 4.8:1. Dark buttons use dark text on the bright green. -->
+                <ColorPaletteResources x:Key="Light" Accent="#0E8259" />
                 <ColorPaletteResources x:Key="Dark" Accent="#2FC487" />
             </FluentTheme.Palettes>
         </FluentTheme>
@@ -134,7 +136,7 @@
             <Setter Property="Background" Value="{StaticResource HeroGradient}" />
             <Setter Property="CornerRadius" Value="24" />
             <Setter Property="Padding" Value="28" />
-            <Setter Property="BoxShadow" Value="0 14 36 0 #331DB97F" />
+            <Setter Property="BoxShadow" Value="0 14 36 0 #330C8160" />
         </Style>
         <Style Selector="Border.hero TextBlock">
             <Setter Property="Foreground" Value="{StaticResource HeroText}" />
@@ -345,12 +347,12 @@
             <Setter Property="Opacity" Value="0.9" />
         </Style>
 
-        <Style Selector="Button.link">
+        <Style Selector="Button.link, ToggleButton.link">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Padding" Value="4,2" />
         </Style>
-        <Style Selector="Button.link:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Style Selector="Button.link:pointerover /template/ ContentPresenter#PART_ContentPresenter, ToggleButton.link /template/ ContentPresenter#PART_ContentPresenter, ToggleButton.link:checked /template/ ContentPresenter#PART_ContentPresenter, ToggleButton.link:pointerover /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="Transparent" />
         </Style>
 
