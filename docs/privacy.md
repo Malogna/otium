@@ -9,7 +9,9 @@ kept and how you use your rights.
 
 ## 1. Who is responsible
 
-The controller of your personal data is Otium's developer, in Norway. For anything about your data, email
+The controller of your personal data is Otium's developer. Otium is run from within the European Economic Area, so
+the EU's General Data Protection Regulation (GDPR) protects your data wherever in the world you live, and this policy
+gives everyone the same rights. For anything about your data, email
 **contact@otium.lol**. Otium is too small to need a data protection officer; that address reaches the person
 responsible.
 
@@ -28,7 +30,7 @@ and computers. We treat it with the same care as your email.
 | **Computers:** a device id (a one-way hash of your computer's machine id; the machine id itself never leaves your computer), a hash of the computer's secret key, when it first and last connected | Recognising your computers and keeping others out of your account | Contract; legitimate interest in security (art. 6(1)(f)) |
 | **Invites:** who invited you and whom you invited, and whether their pool shows that they started mining (yes or no, never amounts) | Fee-free periods and the referral share of Otium's fee. If you join with an invite code, the person who invited you can see whether you have started mining | Contract |
 | **What the pools paid your address:** the coin, the total the pool reports as paid to your address and its last 30 days, read about twice a day from the pools' public APIs | Showing on otium.lol the total paid to Otium users (one sum over everyone, never per person) | Legitimate interest in showing what Otium is worth. Source: the pools' public APIs (art. 14) |
-| **Earnings statistics**, only if you answer yes to "Share analytics": every few hours, your graphics card model, processor name, how long each mined, what it earned and the electricity it used, and, if you share your internet, your country, how long it shared and what sharing earned, linked to your computer's device id. Never your address | Publishing real per-card and per-country sharing earnings on otium.lol, only as medians across at least 3 computers | Consent (art. 6(1)(a) and ekomloven § 3-15). You can withdraw it in Settings at any time; we then delete that computer's statistics. The app records when you answered |
+| **Earnings statistics**, only if you answer yes to "Share analytics": every few hours, your graphics card model, processor name, how long each mined, what it earned and the electricity it used, and, if you share your internet, your country, how long it shared and what sharing earned, linked to your computer's device id. Never your address | Publishing real per-card and per-country sharing earnings on otium.lol, only as medians across at least 3 computers | Consent (GDPR art. 6(1)(a)). You can withdraw it in Settings at any time; we then delete that computer's statistics. The app records when you answered |
 | **Problem reports**, only when you press "Send a problem report": the app version and operating system, your settings switches, what each miner is doing and its recent messages, your graphics card's test results, internet sharing's status, your pool balance and the name of your antivirus, with payout addresses, keys and the device secret removed, plus any note you write | Finding out why Otium isn't working for you, when you ask for help | Contract (support you asked for) |
 | **Server logs:** IP addresses and request details | Security and troubleshooting | Legitimate interest |
 
@@ -59,7 +61,7 @@ years) in its data folder (Settings → About → Open data folder). Uninstallin
 | **Cloudflare** | Your IP address and requests to otium.lol | Protecting and delivering the website and API (our processor) |
 | **Cloudflare** (R2 storage, Europe) | Copies of the server database, encrypted at rest | Backups (our processor) |
 | **GitHub** | Your computer's IP address when the app checks for updates and downloads the miners | Updates and miner downloads |
-| **Electricity price services:** hvakosterstrommen.no, elprisetjustnu.se, elprisenligenu.dk, sahkotin.fi | Your computer's IP address when the app fetches today's prices for your price area (no account data) | Pausing in expensive hours |
+| **Electricity price services** where your area has one (today the Nordic countries: hvakosterstrommen.no, elprisetjustnu.se, elprisenligenu.dk, sahkotin.fi); elsewhere the app uses a typical price for your country or the one you enter | Your computer's IP address when the app fetches today's prices for your price area (no account data) | Pausing in expensive hours |
 | **CoinGecko** | Nothing about you: the server asks it for today's coin prices | Converting what the pools paid into dollars for otium.lol |
 | **Authorities** | What the law requires us to hand over | Legal obligations |
 
@@ -109,8 +111,8 @@ You can use these rights at any time, free of charge:
 - **Objection:** where we rely on legitimate interest (security logs, the site-wide total paid), you can object at
   contact@otium.lol; we'll stop unless we have compelling reasons.
 - **Restriction:** contact us at contact@otium.lol.
-- **Complaints:** you can complain to Datatilsynet (Norway, datatilsynet.no) or to the data protection authority where
-  you live.
+- **Complaints:** you can complain to the data protection authority where you live. Our lead authority is Norway's
+  Datatilsynet (datatilsynet.no), which you can also contact from anywhere.
 
 If you can no longer use the app (for example your computer broke), email contact@otium.lol from the address on your
 account and we'll help you export or delete your data.
@@ -120,7 +122,7 @@ account and we'll help you export or delete your data.
 Computers authenticate with a random secret that is stored on the server only as a hash, sign-in codes are stored only
 as salted hashes, the server is only reachable over HTTPS, and backups are encrypted. Problem reports have payout
 addresses, keys and secrets removed on your computer before they're sent. If a breach puts your data at risk, we'll
-tell Datatilsynet within 72 hours and tell you if the risk to you is high.
+tell the data protection authority within 72 hours and tell you if the risk to you is high.
 
 ## 7. Age
 
