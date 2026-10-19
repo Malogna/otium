@@ -22,7 +22,9 @@ building, dev mode and releasing. The short version for users is the [README](..
    link to your address page there.
 5. Share your invite code. Friends mine fee-free for 30 days, and part of Otium's fee is mined for you. The Invites page
    has ready-made messages (short, explained, for gamers) that you can edit, one-click sharing to WhatsApp, Discord and
-   email, and a monthly leaderboard of top inviters, counted by friends who actually started earning.
+   email, and a monthly leaderboard of top inviters, counted by friends who actually started earning. A friend who opens
+   your link (otium.lol/r/CODE) and installs Otium on the same internet connection within a week finds your code already
+   filled in on the welcome screen ("Filled in from your friend's invite link"), so they can't forget it.
 6. Optionally, earn from your internet connection too: the overview suggests it once, explains in plain words what
    sharing unused bandwidth means, and turns it on only when you agree. Proxybase's client then earns per GB, and Otium has
    it converted and paid to your own payout address, in the coin you chose, like your mining earnings.
@@ -375,6 +377,7 @@ The draft privacy policy is in [docs/privacy.md](privacy.md) and **still needs l
 |---|---|
 | Account: random id, pool worker id, invite code, email (if added), payout address with its coin, who invited it and when, fee-free period | Referrals (mining the referrer's share to their address, checking friends with their pool), sign-in; custodial: crediting mining |
 | Computers: random device id (a hash of the machine id), a SHA-256 hash of its secret, first and last seen | Authenticating each computer |
+| Invite links opened (7 days): the code and an HMAC-SHA256 of the visitor's IPv4 address or IPv6 /64, keyed with a random secret kept in the database (`InviteLinks`) | Filling in the code for Otium installed on the same connection (`GET /api/v1/invite-link`) |
 | Custodial only. Ledger: every earning, referral reward, cash-out, refund and adjustment, in micro-dollars, with dates and a reference to the pool record | The balance, and bookkeeping |
 | Custodial only. Cash-outs: method, destination address, amount, status, provider reference, review notes | Paying out, fraud checks, bookkeeping |
 | Custodial only. Bandwidth reports: computer, public IP address, period, bytes, credited amount | Paying for internet sharing; one paid computer per connection |

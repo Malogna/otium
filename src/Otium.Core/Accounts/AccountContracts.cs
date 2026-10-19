@@ -8,6 +8,9 @@ namespace Otium.Core.Accounts;
 /// </param>
 public sealed record RegisterDeviceRequest(string DeviceId, string DeviceSecret, string? PayoutAddress, string? ReferralCode);
 
+/// <summary>The invite code of a friend's link opened on the caller's internet connection in the last week.</summary>
+public sealed record InviteLinkResponse(string Code);
+
 /// <param name="PoolWallet">Operator wallet balance accounts mine to (with <paramref name="WorkerId"/> as the worker name).</param>
 /// <param name="ReferrerWallet">The referrer's payout target, which own-wallet apps mine the referral slice to.</param>
 /// <param name="MysteriumSponsored">Otium pays new Mysterium nodes' registration, so the app can offer internet sharing.</param>

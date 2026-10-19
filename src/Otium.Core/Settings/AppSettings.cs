@@ -281,8 +281,11 @@ public sealed class AccountState
 
 public sealed class ReferralState
 {
-    /// <summary>Code the user typed during setup (the friend who invited them).</summary>
+    /// <summary>Code the user typed during setup (the friend who invited them), or that their invite link filled in.</summary>
     public string? CodeUsed { get; set; }
+
+    /// <summary>The server has been asked once whether a friend's invite link was opened on this connection.</summary>
+    public bool InviteLinkChecked { get; set; }
 
     /// <summary>This user's own code to share.</summary>
     public string? MyCode { get; set; }

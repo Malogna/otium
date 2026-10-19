@@ -46,7 +46,22 @@ public partial class WelcomeViewModel : ViewModelBase
             OnPropertyChanged(nameof(FeeLine));
         };
         _ = LoadEstimateAsync();
+        _ = FillInviteFromLinkAsync();
     }
+
+    /// <summary>A friend's invite link opened on this connection fills in their code; the user can still change or clear it.</summary>
+    private async Task FillInviteFromLinkAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(InviteCode) || _host.Settings.OnboardingComplete)
+            return;
+        if (await _host.CheckInviteLinkAsync(CancellationToken.None) is not { } code || !string.IsNullOrWhiteSpace(InviteCode))
+            return;
+        _linkCode = code;
+        InviteCode = code;
+        ShowInvite = true;
+    }
+
+    private string? _linkCode;
 
     /// <summary>The payout step: coin and the user's own address.</summary>
     public PayoutTargetEditor Payout { get; }
@@ -342,6 +357,9 @@ public partial class WelcomeViewModel : ViewModelBase
 
     [ObservableProperty] public partial string? InviteError { get; set; }
 
+    /// <summary>The code came from the friend's invite link this was downloaded from, not typed.</summary>
+    [ObservableProperty] public partial bool InviteFromLink { get; set; }
+
     /// <summary>"Share analytics": null until the user answers yes or no; Start waits for an answer.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShareEarningsYes), nameof(ShareEarningsNo), nameof(ShareEarningsUnanswered))]
@@ -367,10 +385,13 @@ public partial class WelcomeViewModel : ViewModelBase
     [NotifyCanExecuteChangedFor(nameof(StartCommand))]
     public partial bool IsStarting { get; set; }
 
-    partial void OnInviteCodeChanged(string value) =>
+    partial void OnInviteCodeChanged(string value)
+    {
         InviteError = string.IsNullOrWhiteSpace(value) || ReferralCodes.IsWellFormed(value)
             ? null
             : $"Invite codes are {ReferralCodes.Length} letters and numbers.";
+        InviteFromLink = _linkCode is not null && ReferralCodes.Normalize(value) == _linkCode;
+    }
 
     [RelayCommand]
     private void ToggleInvite() => ShowInvite = !ShowInvite;
