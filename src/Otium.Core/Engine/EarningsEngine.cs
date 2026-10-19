@@ -249,13 +249,19 @@ public sealed class EarningsEngine : IAsyncDisposable
         }
 
         // A new pool route from the server changes the options, which restarts the miner on the new pool.
-        // Lowest priority whenever the user may be at the computer; normal while they're away, so nothing holds it back.
+        // While the user is away: normal priority, and (FullSpeedWhenAway, the processor) every thread. While they may be at
+        // the computer: the lowest priority and the share of threads they chose. The test they start while watching uses
+        // every thread too, at the lowest priority, so it measures what the PC earns while they're away.
+        var away = !IsRunningNow && (config.OnlyWhenIdle
+            ? !config.RunsWhileBrowsing
+            : config.FullSpeedWhenAway && _idle.GetIdleTime() is { } awayFor && awayFor >= config.IdleThreshold);
+        var allThreads = config.FullSpeedWhenAway && (away || IsRunningNow);
         var desired = new ProviderRunOptions(
             config.FeeSchedule.TargetAt(_ledger.MiningTime, now),
             config.WorkerName,
-            config.UsagePercent,
+            allThreads ? 100 : config.UsagePercent,
             config.CpuPool,
-            LowPriority: !config.OnlyWhenIdle || config.RunsWhileBrowsing || IsRunningNow);
+            LowPriority: !away);
 
         // Back from a pause: hashing again at once, with the dataset and pool connection it kept.
         if (_suspendedSince is not null && _running is not null)
@@ -271,7 +277,7 @@ public sealed class EarningsEngine : IAsyncDisposable
             await StopRunningAsync(ct); // a new slice or route, or it couldn't resume: start afresh below
         }
 
-        if (_running is null && !await PassesProfitGateAsync(config, now, ct))
+        if (_running is null && !await PassesProfitGateAsync(config, desired.UsagePercent, now, ct))
             return;
 
         if (_running is null || _running != desired)
@@ -298,7 +304,7 @@ public sealed class EarningsEngine : IAsyncDisposable
         var elapsed = now - _lastTick;
         _lastTick = now;
 
-        var power = _meter.Read(config.UsagePercent);
+        var power = _meter.Read(_running.UsagePercent);
         var feeFraction = config.FeeSchedule.EffectiveFeePercent(now) / 100.0;
         var estimate = status.HashrateHps > 0
             ? await _provider.EstimateRevenueAsync(status.HashrateHps, ct)
@@ -389,7 +395,8 @@ public sealed class EarningsEngine : IAsyncDisposable
     public bool IsSuspended => _suspendedSince is not null;
 
     /// <summary>Before starting, use what the provider (or the last run) says to avoid mining at a loss.</summary>
-    private async Task<bool> PassesProfitGateAsync(EngineConfig config, DateTimeOffset now, CancellationToken ct)
+    /// <param name="usagePercent">The share of the device the miner would start with (its power depends on it).</param>
+    private async Task<bool> PassesProfitGateAsync(EngineConfig config, int usagePercent, DateTimeOffset now, CancellationToken ct)
     {
         if (_pausedUntil is { } until && now < until)
         {
@@ -407,12 +414,12 @@ public sealed class EarningsEngine : IAsyncDisposable
         if (offer is not null)
         {
             grossPerDay = offer.GrossUsdPerDay;
-            extraWatts = offer.ExtraWatts ?? _meter.Read(config.UsagePercent).ExtraWatts;
+            extraWatts = offer.ExtraWatts ?? _meter.Read(usagePercent).ExtraWatts;
         }
         else if (_ledger.LastHashrateHps > 0)
         {
             grossPerDay = (await _provider.EstimateRevenueAsync(_ledger.LastHashrateHps, ct)).UsdPerDay;
-            extraWatts = _meter.Read(config.UsagePercent).ExtraWatts;
+            extraWatts = _meter.Read(usagePercent).ExtraWatts;
         }
         else
         {

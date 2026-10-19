@@ -33,9 +33,9 @@
                     <StackPanel Spacing="14">
                         <TextBlock Classes="h2" Text="How hard should your computer work?" />
                         <StackPanel Spacing="4">
-                            <TextBlock Text="{Binding CpuUsagePercent, StringFormat='Use up to {0:0}% of CPU threads'}" />
+                            <TextBlock Text="{Binding CpuUsagePercent, StringFormat='At the computer, use up to {0:0}% of CPU threads'}" />
                             <Slider Minimum="10" Maximum="100" TickFrequency="5" IsSnapToTickEnabled="True" Value="{Binding CpuUsagePercent}" />
-                            <TextBlock Classes="muted" FontSize="13" Text="While you're away it mines at full speed and stops within a second when you're back. If it mines while you work, it uses the lowest priority, so anything you're doing comes first." TextWrapping="Wrap" />
+                            <TextBlock Classes="muted" FontSize="13" Text="While you're away, mining uses every thread at full speed. When you're back it stops within a second, or, if it mines while you work, drops to this share at the lowest priority, so anything you're doing comes first." TextWrapping="Wrap" />
                         </StackPanel>
                         <ToggleSwitch IsChecked="{Binding OnlyWhenIdle}" OnContent="Only mine when I'm away from the computer" OffContent="Only mine when I'm away from the computer" />
                         <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding OnlyWhenIdle}">
