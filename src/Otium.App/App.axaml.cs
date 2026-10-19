@@ -43,6 +43,8 @@ public partial class App : Application
             };
 
             CreateTrayIcon(desktop);
+            // Starting Otium again (desktop icon, Start menu) shows this window instead of running a second Otium.
+            Program.Instance?.Listen(() => Dispatcher.UIThread.Post(ShowWindow));
 
             _host.StartEngines();
             _notifications = new EarningsNotifications(_host);
