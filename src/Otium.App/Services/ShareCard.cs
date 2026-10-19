@@ -49,9 +49,10 @@ public static class ShareCard
                 EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
                 GradientStops =
                 {
-                    new GradientStop(Color.Parse("#1DB97F"), 0),
-                    new GradientStop(Color.Parse("#0E8A8A"), 0.6),
-                    new GradientStop(Color.Parse("#0B6E8F"), 1),
+                    // The app's hero gradient, so the picture's white text reads as well as on screen.
+                    new GradientStop(Color.Parse("#0C8160"), 0),
+                    new GradientStop(Color.Parse("#0A7378"), 0.6),
+                    new GradientStop(Color.Parse("#0A6585"), 1),
                 },
             },
             Child = content,
