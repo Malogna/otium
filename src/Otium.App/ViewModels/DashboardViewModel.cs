@@ -208,7 +208,8 @@ public partial class DashboardViewModel : ViewModelBase
         SharingIsEarning = b.State == BandwidthState.Sharing;
         SharingIsPaused = b.State is BandwidthState.WaitingForIdle or BandwidthState.LimitReached;
         SharingIsProblem = b.State is BandwidthState.Error or BandwidthState.Unavailable;
-        SharingWhat = b.State is BandwidthState.Error or BandwidthState.Unavailable ? b.StatusText : "";
+        // A problem in its own words; otherwise, while sharing, what Proxybase says about this connection.
+        SharingWhat = b.State is BandwidthState.Error or BandwidthState.Unavailable ? b.StatusText : b.Detail ?? "";
         var estimate = InternetSharingViewModel.EstimateFor(_host);
         SharingPerDay = b.UserUsdPerDay > 0 ? $"{Format.Usd(b.UserUsdPerDay)}/day"
             : estimate > 0 ? $"≈ {Format.Usd(estimate)}/day"

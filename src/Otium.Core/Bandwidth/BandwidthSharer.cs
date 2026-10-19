@@ -63,6 +63,12 @@ public sealed record BandwidthSnapshot
     public string? Earnings { get; init; }
 
     public TimeSpan? IdleTime { get; init; }
+
+    /// <summary>While sharing: what the connection is doing right now, from the partner ("2 buyers connected now").</summary>
+    public string? Activity { get; init; }
+
+    /// <summary>While sharing: the partner's fuller account of this connection (findable, reachable, pending).</summary>
+    public string? Detail { get; init; }
 }
 
 /// <summary>Persistent counters, so totals and the report sequence survive restarts.</summary>
@@ -123,6 +129,8 @@ public sealed class BandwidthSharer : IAsyncDisposable
     private double _bytesPerSecond;
     private string? _note;
     private string? _earnings;
+    private string? _activity;
+    private string? _detail;
 
     /// <summary>What a provider that pays the user directly reports: the user's share so far, and its recent pace.</summary>
     private double _providerUserUsd;
@@ -256,6 +264,8 @@ public sealed class BandwidthSharer : IAsyncDisposable
 
         var status = await _provider.GetStatusAsync(ct);
         _earnings = status.Earnings ?? _earnings;
+        _activity = status.Activity ?? _activity;
+        _detail = status.Detail ?? _detail;
         if (status.UserUsd is { } userUsd)
             _providerUserUsd = Math.Max(_providerUserUsd, userUsd); // a running total: never shown going down
         _providerUserUsdPerDay = status.UserUsdPerDay ?? _providerUserUsdPerDay;
@@ -381,6 +391,8 @@ public sealed class BandwidthSharer : IAsyncDisposable
             Note = _note,
             Earnings = _earnings,
             IdleTime = idle,
+            Activity = state == BandwidthState.Sharing ? _activity : null,
+            Detail = state == BandwidthState.Sharing ? _detail : null,
         };
         SnapshotChanged?.Invoke(Snapshot);
     }
