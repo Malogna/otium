@@ -33,6 +33,15 @@ public class XmrigTests
     }
 
     [Fact]
+    public async Task Pause_and_resume_send_plain_json_because_xmrig_refuses_a_charset()
+    {
+        // XMRig answered 415 to "application/json; charset=utf-8", so "keep the miner ready" stopped it instead.
+        using var content = XmrigProvider.RpcContent("pause");
+        Assert.Equal("application/json", content.Headers.ContentType?.ToString());
+        Assert.Equal("""{"method":"pause","id":1,"jsonrpc":"2.0"}""", await content.ReadAsStringAsync());
+    }
+
+    [Fact]
     public void While_the_user_is_away_the_miner_runs_at_normal_priority()
     {
         var json = XmrigConfig.Build(

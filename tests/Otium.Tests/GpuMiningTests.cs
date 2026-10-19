@@ -133,6 +133,9 @@ public class SrbMinerTests
         Assert.Contains("--disable-cpu", args);
         Assert.Contains("--disable-gpu-amd", args);
         Assert.Contains("--disable-gpu-intel", args);
+        Assert.Equal("2", Value("--miner-priority")); // below normal: the user may be at the computer
+        var away = SrbMinerArgs.Build(cnGpu, PoolLogin.MoneroOcean(GpuPoolEndpoint.MoneroOcean, "WALLET", "sc12345678g", cnGpu), 40001, [Rtx3080], lowPriority: false);
+        Assert.Equal("3", away[away.ToList().IndexOf("--miner-priority") + 1]); // normal while they're away
         Assert.DoesNotContain("--disable-gpu-nvidia", args);
     }
 
