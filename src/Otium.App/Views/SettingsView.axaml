@@ -120,7 +120,7 @@
                                         <Grid ColumnDefinitions="1.3*,*,0.7*,0.8*,0.8*,1.2*" Margin="0,3">
                                             <StackPanel Grid.Column="0" Spacing="0">
                                                 <TextBlock Text="{Binding Coin}" FontWeight="SemiBold" />
-                                                <TextBlock Classes="muted" FontSize="11.5" Text="{Binding Algorithm}" />
+                                                <TextBlock Classes="muted" FontSize="12" Text="{Binding Algorithm}" />
                                             </StackPanel>
                                             <TextBlock Grid.Column="1" Text="{Binding Speed}" />
                                             <TextBlock Grid.Column="2" Text="{Binding Power}" />
