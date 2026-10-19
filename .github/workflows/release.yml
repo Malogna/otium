@@ -64,7 +64,8 @@ jobs:
           if (-not $v) { $v = '${{ github.ref_name }}'.TrimStart('v') }
           $props = [xml](Get-Content Directory.Build.props)
           $projectVersion = ($props.Project.PropertyGroup | Where-Object { $_.Version } | Select-Object -First 1).Version
-          if ($v -ne $projectVersion) { throw "Releasing $v, but Directory.Build.props says $projectVersion. Update <Version> first." }
+          # A release candidate (0.1.0-rc.1) builds the version it's a candidate for (0.1.0).
+          if ($v.Split('-')[0] -ne $projectVersion) { throw "Releasing $v, but Directory.Build.props says $projectVersion. Update <Version> first." }
 
           if (-not $env:SERVER_URL) {
             if ($env:ALLOW_LOCAL -eq 'true') { Write-Warning 'No OTIUM_SERVER_URL: this test build talks to http://localhost:5080.' }
