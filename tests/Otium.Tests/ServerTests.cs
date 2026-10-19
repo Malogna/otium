@@ -359,6 +359,40 @@ public sealed class ServerTests : IDisposable
     }
 
     [Fact]
+    public async Task Ten_wrong_codes_in_a_day_lock_the_email_address_until_the_next_day()
+    {
+        // Without a daily limit, new codes (5 an hour, 5 tries each) would allow about 600 guesses a day.
+        var device = NewDevice();
+        await RegisterBalance(device);
+        var client = new AccountClient(_http);
+        Task Verify(string code) => client.VerifyEmailCodeAsync(device.Id, device.Secret, new EmailVerifyRequest("sam@example.com", code), CancellationToken.None);
+        string Wrong(string right) => right == "000000" ? "111111" : "000000";
+
+        for (var round = 0; round < AccountService.MaxWrongCodesPerEmailPerDay / AccountService.MaxCodeAttempts; round++)
+        {
+            await client.SendEmailCodeAsync(device.Id, device.Secret, new EmailCodeRequest("sam@example.com"), CancellationToken.None);
+            var right = LatestCode("sam@example.com");
+            for (var i = 0; i < AccountService.MaxCodeAttempts; i++)
+                await Assert.ThrowsAsync<AccountRequestException>(() => Verify(Wrong(right)));
+        }
+
+        // Locked: no new code is sent, and even a right code isn't checked.
+        var sent = Outbox.Sent.Count;
+        var refused = await Assert.ThrowsAsync<AccountRequestException>(() =>
+            client.SendEmailCodeAsync(device.Id, device.Secret, new EmailCodeRequest("sam@example.com"), CancellationToken.None));
+        Assert.Equal(429, refused.StatusCode);
+        Assert.Contains("Too many wrong codes for this email address today", refused.Message);
+        Assert.Equal(sent, Outbox.Sent.Count);
+
+        // Other addresses aren't affected, and the next day it works again.
+        var other = NewDevice();
+        await RegisterBalance(other);
+        await SignIn(other, "other@example.com");
+        _time.Advance(TimeSpan.FromDays(1) + TimeSpan.FromMinutes(1));
+        await SignIn(device, "sam@example.com");
+    }
+
+    [Fact]
     public async Task Codes_expire_and_cannot_be_reused()
     {
         var device = NewDevice();

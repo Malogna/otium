@@ -642,6 +642,10 @@ public sealed class OtiumStore
 
     public void CountEmailCodeAttempt(long id) => Execute("UPDATE email_codes SET attempts = attempts + 1 WHERE id = $id", ("$id", id));
 
+    /// <summary>Wrong tries over every code sent to this email since <paramref name="since"/>.</summary>
+    public long EmailCodeAttemptsSince(string email, DateTimeOffset since) =>
+        Scalar<long>("SELECT COALESCE(SUM(attempts), 0) FROM email_codes WHERE email = $e AND created_at >= $s", ("$e", email), ("$s", Format(since)));
+
     public void UseEmailCode(long id) => Execute("UPDATE email_codes SET used = 1 WHERE id = $id", ("$id", id));
 
     // ---------- bandwidth ----------
@@ -715,6 +719,10 @@ public sealed class OtiumStore
             VALUES ($r, $a, $d, $v, $p, $n, $t, $c)
             """, ("$r", r.Reference), ("$a", r.AccountId), ("$d", r.DeviceId), ("$v", r.AppVersion), ("$p", r.Platform),
             ("$n", r.Note), ("$t", r.Details), ("$c", Format(r.CreatedAt)));
+
+    /// <summary>Characters stored in all problem reports' details and notes.</summary>
+    public long ProblemReportCharacters() =>
+        Scalar<long>("SELECT COALESCE(SUM(LENGTH(details) + COALESCE(LENGTH(note), 0)), 0) FROM problem_reports");
 
     public long ProblemReportsSince(string deviceId, DateTimeOffset since) =>
         Scalar<long>("SELECT COUNT(*) FROM problem_reports WHERE device_id = $d AND created_at > $s", ("$d", deviceId), ("$s", Format(since)));
