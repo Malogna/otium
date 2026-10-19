@@ -59,6 +59,60 @@ public sealed record ProxybaseEarned(IReadOnlyList<ProxybaseEarnedSample> Sample
 
 public sealed record ProxybaseEarnedSample(DateTimeOffset At, long GrossMicrocredits);
 
+/// <summary>This computer as Proxybase sees it (<c>seller status</c>).</summary>
+/// <param name="ActiveStreams">Buyer connections passing through it right now.</param>
+/// <param name="LatencyMs">How long Proxybase's checks take to get an answer through it.</param>
+/// <param name="Uptime">The share of Proxybase's checks it answered (0–1).</param>
+/// <param name="PendingMicrocredits">Earned but not yet cleared for payout.</param>
+public sealed record ProxybaseNode(int ActiveStreams, int MaxStreams, string? Country, string? Category, double? LatencyMs,
+    double? Uptime, long PendingMicrocredits)
+{
+    /// <summary>A few words for the overview's internet row.</summary>
+    public string Activity => ActiveStreams switch
+    {
+        0 => "Online, waiting for a buyer",
+        1 => "1 buyer connected now",
+        var n => $"{n} buyers connected now",
+    };
+
+    /// <summary>The fuller account for Details and Settings.</summary>
+    public string Describe(bool earnedAnything)
+    {
+        var where = Country is { Length: 2 } code ? CountryName(code) : "your country";
+        var kind = Category is { Length: > 0 } c ? $"a {c} connection" : "a connection";
+        var parts = new List<string>
+        {
+            ActiveStreams > 0
+                ? $"Selling now: {Activity.Replace(" now", "")} through this computer."
+                : earnedAnything
+                    ? $"Listed for Proxybase's buyers as {kind} in {where}; nobody is using it right now."
+                    : $"Listed for Proxybase's buyers as {kind} in {where}, and waiting for the first one. Nothing sold yet.",
+        };
+        var quality = new List<string>();
+        if (Uptime is { } up)
+            quality.Add(FormattableString.Invariant($"reachable {Math.Floor(up * 10000) / 100:0.##}% of the time"));
+        if (LatencyMs is { } ms)
+            quality.Add(FormattableString.Invariant($"answers in {ms / 1000:0.0} s"));
+        if (quality.Count > 0)
+            parts.Add($"Proxybase's checks: {string.Join(", ", quality)}.");
+        if (PendingMicrocredits > 0)
+            parts.Add(FormattableString.Invariant($"${PendingMicrocredits / ProxybaseBandwidthProvider.MicrocreditsPerUsd:0.000} is still clearing at Proxybase."));
+        return string.Join(" ", parts);
+    }
+
+    private static string CountryName(string code)
+    {
+        try
+        {
+            return new System.Globalization.RegionInfo(code).EnglishName;
+        }
+        catch (ArgumentException)
+        {
+            return code;
+        }
+    }
+}
+
 /// <summary>Asks the Otium server where to send a payout so it reaches the user's own address in their coin.</summary>
 public delegate Task<SharingRoute> SharingRouter(SharingRouteRequest request, CancellationToken ct);
 
@@ -85,6 +139,9 @@ public sealed class ProxybaseBandwidthProvider : IBandwidthProvider
     /// <summary>How often the balance is read (and paid out when it's enough).</summary>
     public static readonly TimeSpan BalanceInterval = TimeSpan.FromMinutes(10);
 
+    /// <summary>How often Otium asks Proxybase how this connection is doing (buyers connected, reachability).</summary>
+    public static readonly TimeSpan NodeInterval = TimeSpan.FromMinutes(2);
+
     private readonly EngineInstaller _installer;
     private readonly string _dataDir;
     private readonly SharingRouter _route;
@@ -96,6 +153,8 @@ public sealed class ProxybaseBandwidthProvider : IBandwidthProvider
     private ISellerProcess? _seller;
     private DateTimeOffset _startedAt;
     private DateTimeOffset _nextBalanceCheck;
+    private DateTimeOffset _nextNodeCheck;
+    private ProxybaseNode? _node;
     private long? _available;
     private string? _payoutProblem;
 
@@ -207,8 +266,14 @@ public sealed class ProxybaseBandwidthProvider : IBandwidthProvider
             _nextBalanceCheck = _time.GetUtcNow() + BalanceInterval;
             await CheckBalanceAndPayAsync(ct);
         }
+        if (_time.GetUtcNow() >= _nextNodeCheck)
+        {
+            _nextNodeCheck = _time.GetUtcNow() + NodeInterval;
+            _node = ProxybaseOutput.Node((await _cli.RunAsync(["seller", "status"], ct)).Output) ?? _node;
+        }
         var earned = Earned;
-        return new BandwidthStatus(BandwidthProviderState.Online, 0, _payoutProblem, EarningsText(), earned.UserUsd, earned.UserUsdPerDay(_time.GetUtcNow()));
+        return new BandwidthStatus(BandwidthProviderState.Online, 0, _payoutProblem, EarningsText(), earned.UserUsd, earned.UserUsdPerDay(_time.GetUtcNow()),
+            _node?.Activity, _node?.Describe(earned.GrossMicrocredits > 0));
     }
 
     /// <summary>
