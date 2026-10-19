@@ -82,10 +82,13 @@ public sealed class SitePagesTests : IDisposable
 
         // RTX 4090: Pearl 310 TH/s × 3.4e-14 $/H/s/day = $10.54, less SRBMiner 2%, unMineable 0.75% and Otium 3% = $9.94,
         // less 400 W for 24 h at $0.15/kWh ($1.44) = $8.50 a day of mining; left alone 16 hours a day, $5.67 a day and
-        // $170 a month. Without a visitor country the price is $0.15/kWh.
-        Assert.Contains("""<span class="est-amount" id="est-month">$170</span>""", html);
-        Assert.Contains("$5.67 a day with an RTX 4090, mining Pearl (paid in your coin)", html);
-        Assert.Contains("First payout of 1.5 USDT to your wallet within a day, then daily.", html);
+        // $170 a month. Without a visitor country the price is $0.15/kWh. Internet sharing adds Proxybase's worldwide rate
+        // for 1 GB a day ($1.50, less Otium's 3% = $1.455 a day, $43.65 a month): $214 in all.
+        Assert.Contains("""<span class="est-amount" id="est-month">$214</span>""", html);
+        Assert.Contains("Mining: $5.67/day on an RTX 4090 (Pearl).", html);
+        Assert.Contains("Internet sharing: +$1.46/day (estimate).", html);
+        Assert.Contains("\"sharingPerDay\":1.455", html);
+        Assert.Contains("First payout within a day.", html);
         Assert.Contains("""<input id="hours" type="range" min="2" max="24" step="1" value="16">""", html);
         Assert.Contains("""<input id="price" type="range" min="0" max="0.60" step="0.01" value="0.15">""", html);
         Assert.DoesNotContain("typical in", html);
@@ -99,7 +102,25 @@ public sealed class SitePagesTests : IDisposable
         Assert.Equal(30, System.Text.RegularExpressions.Regex.Matches(html, "<option value=").Count);
         Assert.Contains("""<script type="application/json" id="otium-data">{"cards":[{"id":"rtx5090","name":"RTX 5090",""", html);
         Assert.Contains("\"payoutUsdt\":1.5", html);
-        Assert.Contains("Today's coin prices from WhatToMine (18 October 2026, 15:00 UTC)", html);
+        Assert.Contains("Estimate from today's coin prices (18 October 2026, 15:00 UTC)", html);
+    }
+
+    [Fact]
+    public void Internet_sharing_uses_the_visitors_country_and_real_figures_once_there_are_enough()
+    {
+        var fees = new Otium.Core.Fees.FeePolicy { FeePercent = 2 };
+        var estimate = Otium.Server.SitePages.SharingFor("NO", fees, null);
+        Assert.False(estimate.IsReal);
+        Assert.Equal("Norway", estimate.CountryName);
+        Assert.Equal(2.10 * 0.98, estimate.PerDay, precision: 6);
+
+        var real = new Otium.Server.RealEarnings.RealEarningsSummary(0, 0, 0, [], 7,
+            [new Otium.Server.RealEarnings.RealSharing("NO", 4, 3.0, 45)]);
+        var measured = Otium.Server.SitePages.SharingFor("no", fees, real);
+        Assert.True(measured.IsReal);
+        Assert.Equal(1.5, measured.PerDay, precision: 6);
+        Assert.Contains("4 Otium computers in Norway", measured.Short);
+        Assert.False(Otium.Server.SitePages.SharingFor("SE", fees, real).IsReal); // other countries keep the estimate
     }
 
     [Fact]
@@ -108,7 +129,6 @@ public sealed class SitePagesTests : IDisposable
         var html = (await Get("/")).Html;
         Assert.Contains("Pearl mining runs the math AI runs on.", html);
         Assert.Contains("It doesn't run anyone's AI model or see their data.", html);
-        Assert.Contains("""<a href="#useful-work">Mines Pearl, built on AI's matrix math</a>""", html);
         Assert.Equal(48, System.Text.RegularExpressions.Regex.Matches(html, "<span style=\"--r:").Count); // three 4×4 grids
     }
 
