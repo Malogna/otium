@@ -104,6 +104,42 @@ public sealed class ProxybaseTests : IDisposable
         }, _cli, new ProxybaseAsset("test.zip", "00"), _time);
 
     [Fact]
+    public void Seller_status_says_whether_buyers_are_connected_and_how_the_connection_tests()
+    {
+        // What `seller status` printed on a real node in Norway that was online but hadn't sold anything yet.
+        const string output = """
+            Daemon:  running (PID: 25736)
+            Node Type: Standard
+            Backend node_type: Standard
+            {
+              "active_streams": 0,
+              "country": "NO",
+              "earnings": { "seller_available": 0, "seller_payout_locked": 0, "seller_pending": 0, "spendable_balance": 0 },
+              "max_streams": 200,
+              "node_type": "standard",
+              "pool": "production",
+              "proxy_category": "residential",
+              "qos_latency_ms": 1536.8177499152357,
+              "qos_throughput_mbps": null,
+              "qos_uptime": 0.9995784790654522,
+              "wallet_address": "0x0000000000000000000000000000000000000000"
+            }
+            """;
+        var node = ProxybaseOutput.Node(output)!;
+        Assert.Equal("Online, waiting for a buyer", node.Activity);
+        Assert.Equal(
+            "Listed for Proxybase's buyers as a residential connection in Norway, and waiting for the first one. Nothing sold yet. " +
+            "Proxybase's checks: reachable 99.95% of the time, answers in 1.5 s.",
+            node.Describe(earnedAnything: false));
+
+        var busy = node with { ActiveStreams = 2, PendingMicrocredits = 120_000 };
+        Assert.Equal("2 buyers connected now", busy.Activity);
+        Assert.StartsWith("Selling now: 2 buyers connected through this computer.", busy.Describe(earnedAnything: true));
+        Assert.EndsWith("$0.120 is still clearing at Proxybase.", busy.Describe(earnedAnything: true));
+        Assert.Null(ProxybaseOutput.Node("Daemon:  not running"));
+    }
+
+    [Fact]
     public async Task First_start_makes_a_wallet_signs_in_and_relays_this_connection_only()
     {
         var provider = Provider();

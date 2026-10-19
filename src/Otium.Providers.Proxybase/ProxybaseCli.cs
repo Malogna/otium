@@ -172,6 +172,26 @@ public static partial class ProxybaseOutput
             ? micro
             : null;
 
+    /// <summary>This computer as Proxybase sees it, from <c>seller status</c>; null when the backend didn't answer.</summary>
+    public static ProxybaseNode? Node(string output)
+    {
+        if (Json(output) is not { ValueKind: JsonValueKind.Object } json || !json.TryGetProperty("active_streams", out var streams))
+            return null;
+        static double? Number(JsonElement e, string name) =>
+            e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetDouble() : null;
+        static string? Text(JsonElement e, string name) =>
+            e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+        var pending = json.TryGetProperty("earnings", out var earnings) && Number(earnings, "seller_pending") is { } p ? (long)p : 0;
+        return new ProxybaseNode(
+            streams.ValueKind == JsonValueKind.Number ? streams.GetInt32() : 0,
+            (int)(Number(json, "max_streams") ?? 0),
+            Text(json, "country"),
+            Text(json, "proxy_category"),
+            Number(json, "qos_latency_ms"),
+            Number(json, "qos_uptime"),
+            pending);
+    }
+
     /// <summary>The payout id from <c>seller payout create</c>, or null when it wasn't created.</summary>
     public static string? PayoutId(string output) =>
         Json(output) is { ValueKind: JsonValueKind.Object } json && json.TryGetProperty("payout_id", out var v) && v.ValueKind == JsonValueKind.String
