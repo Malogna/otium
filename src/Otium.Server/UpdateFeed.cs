@@ -20,7 +20,7 @@ public sealed class GitHubReleaseList(HttpClient http, IOptions<SiteOptions> opt
 {
     public async Task<IReadOnlyList<PublishedRelease>> GetRecentAsync(CancellationToken ct)
     {
-        // The same repository as the "latest release" API the Download buttons use.
+        // The repository named by the configured "latest release" API address.
         var latest = options.Value.LatestReleaseApi;
         var list = (latest.EndsWith("/latest", StringComparison.Ordinal) ? latest[..^"/latest".Length] : latest) + "?per_page=100";
         using var request = new HttpRequestMessage(HttpMethod.Get, list);
@@ -42,8 +42,16 @@ public sealed class GitHubReleaseList(HttpClient http, IOptions<SiteOptions> opt
                 .Select(r => new PublishedRelease(
                     r.GetProperty("tag_name").GetString()!,
                     r.TryGetProperty("prerelease", out var p) && p.GetBoolean(),
-                    GitHubReleaseFeed.Parse(r)))
+                    ParseAssets(r)))
                 .ToList();
+
+    private static IReadOnlyList<ReleaseAsset> ParseAssets(JsonElement release) =>
+        release.TryGetProperty("assets", out var assets) && assets.ValueKind == JsonValueKind.Array
+            ? assets.EnumerateArray()
+                .Where(a => a.TryGetProperty("name", out _) && a.TryGetProperty("browser_download_url", out _))
+                .Select(a => new ReleaseAsset(a.GetProperty("name").GetString()!, a.GetProperty("browser_download_url").GetString()!))
+                .ToList()
+            : [];
 }
 
 /// <summary>
@@ -85,6 +93,9 @@ public sealed class UpdateFeed(IReleaseList releases, TimeProvider time, ILogger
             _lock.Release();
         }
     }
+
+    /// <summary>Recent releases, newest version first (pre-releases included), for the website's Download buttons.</summary>
+    public Task<IReadOnlyList<PublishedRelease>> ReleasesAsync(CancellationToken ct) => RecentAsync(ct);
 
     /// <summary>GitHub's download address for a package of a recent release, or null.</summary>
     public async Task<string?> DownloadUrlAsync(string file, CancellationToken ct) =>

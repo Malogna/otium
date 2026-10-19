@@ -70,7 +70,6 @@ builder.Services.AddHttpClient<IProfitFeed, WhatToMineClient>();
 builder.Services.AddHttpClient<IKryptexApi, KryptexClient>();
 builder.Services.AddHttpClient<IPearlPipFeed, PearlPipClient>();
 builder.Services.AddSingleton<PearlForkWatcher>();
-builder.Services.AddHttpClient<IReleaseFeed, GitHubReleaseFeed>();
 builder.Services.AddSingleton<ReleaseDownloads>();
 builder.Services.AddHttpClient<IReleaseList, GitHubReleaseList>();
 builder.Services.AddSingleton<UpdateFeed>();
@@ -384,13 +383,22 @@ app.MapGet("/.well-known/security.txt", (HttpRequest request, IOptions<ReferralO
         + $"Canonical: {PublicBase(request, referral)}/.well-known/security.txt\n",
         "text/plain; charset=utf-8"));
 
-// Every Download button: straight to the latest installer for the visitor's system (or ?os=windows|macos|macos-intel|linux),
-// else the releases page (phones, unknown systems, or before the first release).
-app.MapGet("/download", async (string? os, HttpRequest request, ReleaseDownloads downloads, IOptions<ReferralOptions> referral, CancellationToken ct) =>
+// Every Download button: otium.lol's own page for the latest release, which starts the installer for the visitor's
+// system by itself (or ?os=windows|macos|macos-intel|linux) and lists the others; phones are asked to open it on their
+// computer. GitHub's releases page only while no release can be read.
+app.MapGet("/download", async (string? os, HttpRequest request, ReleaseDownloads downloads, IOptions<ReferralOptions> referral,
+    IOptions<SiteOptions> site, CancellationToken ct) =>
 {
-    var target = await downloads.InstallerUrlAsync(os ?? ReleaseDownloads.DetectOs(request.Headers.UserAgent), ct);
-    return Results.Redirect(target ?? referral.Value.DownloadUrl);
+    if (await downloads.LatestAsync(ct) is not { } latest)
+        return Results.Redirect(referral.Value.DownloadUrl);
+    var system = os ?? ReleaseDownloads.DetectOs(request.Headers.UserAgent);
+    return Results.Content(SitePages.Download(latest, system, SitePages.AvailableLegalPages(site.Value.PagesDirectory), PublicBase(request, referral)),
+        "text/html; charset=utf-8");
 }).RequireRateLimiting("per-ip");
+
+// One system's installer of the latest release, as a direct link (the download page's buttons), or the page itself.
+app.MapGet("/download/{os}", async (string os, ReleaseDownloads downloads, CancellationToken ct) =>
+    Results.Redirect(await downloads.InstallerUrlAsync(os, ct) ?? "/download")).RequireRateLimiting("per-ip");
 
 // The app's update feed (see UpdateFeed): "pre" includes release candidates, "stable" only releases.
 app.MapGet("/updates/{track}/{file}", async (string track, string file, UpdateFeed feed, CancellationToken ct) =>
