@@ -527,6 +527,25 @@ public partial class SettingsViewModel : ViewModelBase
     [RelayCommand]
     private void OpenHelp() => Launch.Open(Core.AppIdentity.HelpUrl);
 
+    /// <summary>Otium's Discord server, where users ask each other and the team.</summary>
+    [RelayCommand]
+    private void OpenDiscord() => Launch.Open(Core.AppIdentity.DiscordUrl);
+
+    public string ContactEmail => Core.AppIdentity.ContactEmail;
+
+    [ObservableProperty] public partial string EmailCopied { get; set; } = "";
+
+    /// <summary>Opens the mail app; the address is also shown (and copyable) for computers without one.</summary>
+    [RelayCommand]
+    private void EmailUs() => Launch.Open($"mailto:{Core.AppIdentity.ContactEmail}");
+
+    [RelayCommand]
+    private async Task CopyEmail()
+    {
+        await ClipboardService.CopyAsync(Core.AppIdentity.ContactEmail);
+        EmailCopied = "Copied";
+    }
+
     [RelayCommand]
     private async Task SendProblemReport()
     {

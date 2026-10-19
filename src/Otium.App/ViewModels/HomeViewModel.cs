@@ -597,6 +597,17 @@ public partial class HomeViewModel : ViewModelBase
     }
 
     [RelayCommand]
+    private void OpenDiscord() => Launch.Open(Core.AppIdentity.DiscordUrl);
+
+    [RelayCommand]
+    private void EmailUs() => Launch.Open($"mailto:{Core.AppIdentity.ContactEmail}");
+
+    [RelayCommand]
+    private void OpenHelp() => Launch.Open(Core.AppIdentity.HelpUrl);
+
+    public string ContactEmail => Core.AppIdentity.ContactEmail;
+
+    [RelayCommand]
     private async Task CopyInvite()
     {
         var link = _host.Settings.Referral.ShareUrl;
