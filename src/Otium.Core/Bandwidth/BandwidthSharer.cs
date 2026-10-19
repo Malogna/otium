@@ -44,6 +44,9 @@ public sealed record BandwidthSnapshot
 
     public long TotalBytes { get; init; }
 
+    /// <summary>All the time sharing has been online, kept across restarts (for the opt-in earnings reports).</summary>
+    public TimeSpan TotalSharingTime { get; init; }
+
     /// <summary>What a full day of sharing at the recent pace would pay the user.</summary>
     public double UserUsdPerDay { get; init; }
 
@@ -77,6 +80,9 @@ public sealed class BandwidthLedger
     public double PeriodSeconds { get; set; }
 
     public long TotalBytes { get; set; }
+
+    /// <summary>Seconds sharing has been online in total, never reset.</summary>
+    public double TotalOnlineSeconds { get; set; }
 
     public double CreditedUsd { get; set; }
 
@@ -279,7 +285,11 @@ public sealed class BandwidthSharer : IAsyncDisposable
         _ledger.PeriodBytes += delta;
         // A long gap means the computer slept; that time wasn't spent online.
         if (status.State == BandwidthProviderState.Online)
-            _ledger.PeriodSeconds += Math.Min(elapsed.TotalSeconds, 6 * TickInterval.TotalSeconds);
+        {
+            var online = Math.Min(elapsed.TotalSeconds, 6 * TickInterval.TotalSeconds);
+            _ledger.PeriodSeconds += online;
+            _ledger.TotalOnlineSeconds += online;
+        }
         _ledger.TotalBytes += delta;
         _ledger.DayBytes += delta;
 
@@ -365,6 +375,7 @@ public sealed class BandwidthSharer : IAsyncDisposable
             BytesPerSecond = state == BandwidthState.Sharing ? _bytesPerSecond : 0,
             BytesToday = _ledger.DayBytes,
             TotalBytes = _ledger.TotalBytes,
+            TotalSharingTime = TimeSpan.FromSeconds(_ledger.TotalOnlineSeconds),
             UserUsdPerDay = perDay,
             TotalUserUsd = _ledger.CreditedUsd + unreported / GB * config.UserUsdPerGb + _providerUserUsd,
             Note = _note,

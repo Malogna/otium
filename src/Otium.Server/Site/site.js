@@ -237,10 +237,13 @@
         .map(c => ({ ...c, day: (c.usdPerDay - c.watts * 24 / 1000 * p) * h / 24 }))
         .sort((a, b) => b.day - a.day)[0];
       const day = Math.max(0, best.day);
-      animateTo(day * 30);
-      $("#est-sub").textContent = day <= 0
+      // Internet sharing adds the same whatever the card or power price (it uses next to no power).
+      const sharing = data.sharingPerDay || 0;
+      animateTo((day + sharing) * 30);
+      $("#est-sub").textContent = (day <= 0
         ? `At this electricity price an ${card.name} would cost more than it earns, so Otium would wait.`
-        : `$${day.toFixed(2)} a day with an ${card.name}, mining ${best.coin} (${best.note}), after every fee and the power it uses.`;
+        : `$${day.toFixed(2)} a day with an ${card.name}, mining ${best.coin} (${best.note}), after every fee and the power it uses.`)
+        + (sharing > 0 ? ` Plus about $${sharing.toFixed(2)} a day from sharing your internet (${data.sharingSource}).` : "");
       const raw = (data.payoutUsdt || 1.5) / day, days = Math.ceil(raw);
       $("#est-payout").textContent = day <= 0 ? ""
         : `First payout of 1.5 USDT to your wallet ${raw < 1 ? "within a day" : `in about ${days} day${days === 1 ? "" : "s"}`}, then daily.`;

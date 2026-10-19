@@ -269,7 +269,24 @@ public sealed class AppHost : IAsyncDisposable
         var devices = new List<ReportedDevice> { new("cpu", CpuInfo.Name, Engine.Totals) };
         if (GpuEngine is not null)
             devices.Add(new ReportedDevice("gpu", CardIds.FromName(GpuProvider?.Gpus.FirstOrDefault()?.Name) ?? GpuProvider?.Gpus.FirstOrDefault()?.Name, GpuEngine.Totals));
+        // Internet sharing pays by country, so its line carries the country instead of a model: hours online and the
+        // user's share earned, for the per-country figures on otium.lol.
+        var sharing = Bandwidth.Snapshot;
+        if (sharing.TotalSharingTime > TimeSpan.Zero && CountryCode() is { } country)
+            devices.Add(new ReportedDevice("sharing", country, new EarningsTotals(sharing.TotalSharingTime, sharing.TotalUserUsd, 0)));
         return devices;
+    }
+
+    private static string? CountryCode()
+    {
+        try
+        {
+            return System.Globalization.RegionInfo.CurrentRegion.TwoLetterISORegionName is { Length: 2 } code ? code : null;
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
     }
 
     /// <summary>Turns the opt-in on or off. Turning it on counts from now: nothing earned before is sent.</summary>

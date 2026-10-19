@@ -42,7 +42,7 @@
                     <ToggleSwitch IsChecked="{Binding ShareEarningsStats}"
                                   OnContent="Share analytics" OffContent="Share analytics" />
                     <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap"
-                               Text="Sends Otium this PC's graphics card model, processor name, hours earning and amounts earned, a few times a day; never your address. otium.lol shows only totals across several PCs. Turning it off deletes what this PC sent." />
+                               Text="Sends Otium this PC's graphics card model, processor name, hours earning and amounts earned (and, if you share your internet, your country and what sharing earned), a few times a day; never your address. otium.lol shows only totals across several PCs. Turning it off deletes what this PC sent." />
                 </StackPanel>
             </StackPanel>
         </Border>

@@ -40,12 +40,21 @@ public sealed class RealEarningsOptions
 /// <param name="UsdPerDay">Median actually earned per calendar day (fewer hours, less money).</param>
 public sealed record RealCard(string Model, int Computers, double UsdPerEarningDay, double HoursPerDay, double UsdPerDay);
 
+/// <summary>Internet sharing in one country as real Otium computers did it (after Otium's fee).</summary>
+/// <param name="Country">Two-letter country code.</param>
+/// <param name="UsdPerSharingDay">Median earned per 24 hours of sharing online.</param>
+/// <param name="UsdPerMonth">Median actually earned per month, at the hours those computers shared.</param>
+public sealed record RealSharing(string Country, int Computers, double UsdPerSharingDay, double UsdPerMonth);
+
 /// <param name="PaidUsd">Paid by the pools to Otium users' own addresses, in dollars at the time of each check.</param>
 /// <param name="PaidUsers">Users whose address has received at least one payout.</param>
 /// <param name="Rewarded30dUsd">Credited to those addresses by the pools in the last 30 days.</param>
-public sealed record RealEarningsSummary(double PaidUsd, long PaidUsers, double Rewarded30dUsd, IReadOnlyList<RealCard> Cards, int WindowDays)
+public sealed record RealEarningsSummary(double PaidUsd, long PaidUsers, double Rewarded30dUsd, IReadOnlyList<RealCard> Cards, int WindowDays,
+    IReadOnlyList<RealSharing>? Sharing = null)
 {
-    public bool IsEmpty => PaidUsd < 1 && Rewarded30dUsd < 1 && Cards.Count == 0;
+    public IReadOnlyList<RealSharing> SharingByCountry => Sharing ?? [];
+
+    public bool IsEmpty => PaidUsd < 1 && Rewarded30dUsd < 1 && Cards.Count == 0 && SharingByCountry.Count == 0;
 }
 
 /// <summary>Checks and stores the opt-in earnings reports.</summary>
@@ -55,6 +64,9 @@ public sealed class EarningsReportService(OtiumStore store, TimeProvider time)
     public const double MaxGpuUsdPerDay = 50;
 
     public const double MaxCpuUsdPerDay = 5;
+
+    /// <summary>Internet sharing: 5 GB a day at Proxybase's highest seller rate (mobile, $3.60/GB) is about $18.</summary>
+    public const double MaxSharingUsdPerDay = 20;
 
     /// <summary>Also generous: a 1.5 kW machine at $1/kWh.</summary>
     public const double MaxElectricityUsdPerDay = 36;
@@ -70,15 +82,18 @@ public sealed class EarningsReportService(OtiumStore store, TimeProvider time)
         foreach (var d in report.Devices)
         {
             var days = d.EarningSeconds / 86400;
-            var maxUsd = d.Kind == "gpu" ? MaxGpuUsdPerDay : MaxCpuUsdPerDay;
-            if (d.Kind is not ("cpu" or "gpu") || d.Model is { Length: > 100 } || d.EarningSeconds < 0 || d.EarningSeconds > period + 600
+            var maxUsd = d.Kind switch { "gpu" => MaxGpuUsdPerDay, "sharing" => MaxSharingUsdPerDay, _ => MaxCpuUsdPerDay };
+            // Sharing's "model" is the computer's country: two letters, nothing else.
+            if (d.Kind == "sharing" && (d.Model is not { Length: 2 } || !d.Model.All(char.IsAsciiLetter) || d.ElectricityUsd != 0))
+                throw new OtiumException(StatusCodes.Status400BadRequest, "This earnings report doesn't look right.");
+            if (d.Kind is not ("cpu" or "gpu" or "sharing") || d.Model is { Length: > 100 } || d.EarningSeconds < 0 || d.EarningSeconds > period + 600
                 || d.UserUsd < 0 || d.UserUsd > maxUsd * days + 0.01 || d.ElectricityUsd < 0 || d.ElectricityUsd > MaxElectricityUsdPerDay * days + 0.01)
                 throw new OtiumException(StatusCodes.Status400BadRequest, "This earnings report doesn't look right.");
         }
 
         var clean = report with
         {
-            Devices = report.Devices.Select(d => d with { Model = Clean(d.Model) }).ToList(),
+            Devices = report.Devices.Select(d => d with { Model = d.Kind == "sharing" ? d.Model!.ToUpperInvariant() : Clean(d.Model) }).ToList(),
         };
         store.AddEarningsReport(session.Device.DeviceId, session.Account.AccountId, clean, now);
     }
@@ -257,7 +272,8 @@ public sealed class RealEarningsService(OtiumStore store, IOptions<RealEarningsO
     {
         var o = options.Value;
         var (paidUsd, rewarded, paidUsers) = store.PoolPayoutTotals();
-        var cards = store.EarningsSince(now - TimeSpan.FromDays(o.WindowDays))
+        var rows = store.EarningsSince(now - TimeSpan.FromDays(o.WindowDays));
+        var cards = rows
             .Where(r => r.Kind == "gpu" && r.Seconds >= o.MinimumHours * 3600)
             .GroupBy(r => r.Model)
             .Where(g => g.Select(r => r.DeviceId).Distinct().Count() >= Math.Max(2, o.MinimumComputersPerCard))
@@ -269,7 +285,18 @@ public sealed class RealEarningsService(OtiumStore store, IOptions<RealEarningsO
                 Median(g.Select(r => r.UserUsd / o.WindowDays))))
             .OrderByDescending(c => c.UsdPerEarningDay)
             .ToList();
-        return new RealEarningsSummary(paidUsd, paidUsers, rewarded, cards, o.WindowDays);
+        var sharing = rows
+            .Where(r => r.Kind == "sharing" && r.Seconds >= o.MinimumHours * 3600)
+            .GroupBy(r => r.Model)
+            .Where(g => g.Select(r => r.DeviceId).Distinct().Count() >= Math.Max(2, o.MinimumComputersPerCard))
+            .Select(g => new RealSharing(
+                g.Key,
+                g.Select(r => r.DeviceId).Distinct().Count(),
+                Median(g.Select(r => r.UserUsd / r.Seconds * 86400)),
+                Median(g.Select(r => r.UserUsd / o.WindowDays * 30))))
+            .OrderByDescending(s => s.UsdPerMonth)
+            .ToList();
+        return new RealEarningsSummary(paidUsd, paidUsers, rewarded, cards, o.WindowDays, sharing);
     }
 
     internal static double Median(IEnumerable<double> values)
