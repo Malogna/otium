@@ -214,7 +214,7 @@ public sealed class XmrigProvider : IComputeProvider, IPausableProvider
         {
             using var request = new HttpRequestMessage(HttpMethod.Post, $"http://127.0.0.1:{_httpPort}/json_rpc")
             {
-                Content = new StringContent($$"""{"method":"{{method}}","id":1,"jsonrpc":"2.0"}""", System.Text.Encoding.UTF8, "application/json"),
+                Content = RpcContent(method),
             };
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -226,6 +226,17 @@ public sealed class XmrigProvider : IComputeProvider, IPausableProvider
         {
             return false;
         }
+    }
+
+    /// <summary>
+    /// The JSON-RPC body. XMRig answers 415 to "application/json; charset=utf-8" (StringContent's default), so the
+    /// content type carries no charset.
+    /// </summary>
+    internal static HttpContent RpcContent(string method)
+    {
+        var content = new StringContent($$"""{"method":"{{method}}","id":1,"jsonrpc":"2.0"}""", System.Text.Encoding.UTF8);
+        content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        return content;
     }
 
     public async Task<RevenueEstimate> EstimateRevenueAsync(double hashrateHps, CancellationToken ct)

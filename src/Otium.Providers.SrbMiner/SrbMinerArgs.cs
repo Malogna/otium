@@ -44,7 +44,8 @@ internal static class SrbMinerArgs
         GpuAlgorithm algorithm,
         PoolLogin login,
         int apiPort,
-        IReadOnlyList<GpuInfo> gpus)
+        IReadOnlyList<GpuInfo> gpus,
+        bool lowPriority = true)
     {
         var args = new List<string>
         {
@@ -56,6 +57,9 @@ internal static class SrbMinerArgs
             "--api-enable",
             "--api-port", apiPort.ToString(System.Globalization.CultureInfo.InvariantCulture),
             "--api-rig-name", "otium",
+            // SRBMiner sets its own priority (and its watchdog's): below normal (2) while the user may be at the
+            // computer, normal (3) while they're away. Without it, it was seen lowering itself while the user was away.
+            "--miner-priority", lowPriority ? "2" : "3",
         };
         if (login.Pool.Tls)
             args.AddRange(["--tls", "true"]);
