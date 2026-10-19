@@ -191,6 +191,19 @@ public sealed class NonCustodialServerTests : IDisposable
         var coins = root.GetProperty("accountsByCoin").EnumerateArray().ToDictionary(c => c.GetProperty("coin").GetString()!, c => c.GetProperty("accounts").GetInt64());
         Assert.Equal(1, coins["USDT"]);
         Assert.Equal(1, coins["none"]);
+
+        // Activity: both new accounts and computers today, in a 14-day series ending today.
+        var activity = root.GetProperty("activity");
+        Assert.Equal(2, activity.GetProperty("accounts").GetInt64());
+        Assert.Equal(2, activity.GetProperty("accountsNew24h").GetInt64());
+        Assert.Equal(2, activity.GetProperty("devices").GetInt64());
+        Assert.Equal(2, activity.GetProperty("devicesActiveNow").GetInt64());
+        var days = activity.GetProperty("newDevicesPerDay").EnumerateArray().ToList();
+        Assert.Equal(14, days.Count);
+        Assert.Equal(2, days[^1].GetProperty("devices").GetInt64());
+        Assert.Equal(0, days[0].GetProperty("devices").GetInt64());
+        Assert.Equal(0, root.GetProperty("poolPayouts").GetProperty("paidAccounts").GetInt64());
+        Assert.Equal(0, root.GetProperty("analytics").GetProperty("devices").GetInt32());
     }
 
     public void Dispose()
