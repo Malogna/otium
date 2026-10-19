@@ -76,6 +76,7 @@ public partial class App : Application
                 _ = _host.RefreshElectricityAsync(CancellationToken.None);
                 _ = _host.ReportEarningsAsync(CancellationToken.None); // opt-in; sends only every few hours
                 _host.ObserveMeasurement(); // the test also ends on time when the engines go quiet
+                _ = _host.InstallUpdateIfAwayAsync(); // a downloaded update installs itself while the user is away
             };
             historyTimer.Start();
 

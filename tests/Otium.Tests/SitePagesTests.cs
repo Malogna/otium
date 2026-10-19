@@ -15,6 +15,7 @@ public sealed class SitePagesTests : IDisposable
     private readonly ManualTime _time = new(new DateTimeOffset(2026, 10, 18, 15, 0, 0, TimeSpan.Zero));
     private readonly GpuPolicyTests.FakeFeed _feed = new();
     private readonly FakeReleases _releases = new();
+    private readonly FakeReleaseList _releaseList = new();
     private readonly WebApplicationFactory<Program> _factory;
     private readonly HttpClient _http;
 
@@ -43,6 +44,8 @@ public sealed class SitePagesTests : IDisposable
                 services.AddSingleton<IPearlPipFeed>(new GpuPolicyTests.FakePip());
                 services.RemoveAll<Otium.Server.IReleaseFeed>();
                 services.AddSingleton<Otium.Server.IReleaseFeed>(_releases);
+                services.RemoveAll<Otium.Server.IReleaseList>();
+                services.AddSingleton<Otium.Server.IReleaseList>(_releaseList);
                 services.RemoveAll<TimeProvider>();
                 services.AddSingleton<TimeProvider>(_time);
             });
@@ -320,6 +323,60 @@ public sealed class SitePagesTests : IDisposable
         request.Headers.TryAddWithoutValidation("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
         using var response = await noRedirect.SendAsync(request);
         Assert.Equal("https://example.com/download?a=1&b=2", response.Headers.Location?.ToString());
+    }
+
+    [Fact]
+    public async Task Installed_apps_get_their_update_feed_here_not_from_githubs_api()
+    {
+        const string gh = "https://github.com/Malogna/otium/releases/download";
+        _releaseList.Releases =
+        [
+            new("v0.1.0-rc.9", true, [new("releases.win-x64.json", $"{gh}/v0.1.0-rc.9/releases.win-x64.json"),
+                new("Otium.Desktop-0.1.0-rc.9-win-x64-full.nupkg", $"{gh}/v0.1.0-rc.9/Otium.Desktop-0.1.0-rc.9-win-x64-full.nupkg")]),
+            new("v0.0.9", false, [new("releases.win-x64.json", $"{gh}/v0.0.9/releases.win-x64.json")]),
+        ];
+        _releaseList.Texts[$"{gh}/v0.1.0-rc.9/releases.win-x64.json"] = """{"Assets":[{"Version":"0.1.0-rc.9"}]}""";
+        _releaseList.Texts[$"{gh}/v0.0.9/releases.win-x64.json"] = """{"Assets":[{"Version":"0.0.9"}]}""";
+
+        // Release candidates follow the newest pre-release; stable installs only see releases.
+        var (preStatus, pre) = await Get("/updates/pre/releases.win-x64.json?localVersion=0.1.0-rc.8");
+        Assert.Equal(HttpStatusCode.OK, preStatus);
+        Assert.Contains("0.1.0-rc.9", pre);
+        var (_, stable) = await Get("/updates/stable/releases.win-x64.json");
+        Assert.Contains("0.0.9", stable);
+        Assert.Equal(HttpStatusCode.NotFound, (await Get("/updates/pre/releases.osx-arm64.json")).Status);
+        Assert.Equal(HttpStatusCode.NotFound, (await Get("/updates/nightly/releases.win-x64.json")).Status);
+
+        // Packages are GitHub's own downloads, which have no hourly limit.
+        using var noRedirect = _factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        using var response = await noRedirect.GetAsync("/updates/pre/Otium.Desktop-0.1.0-rc.9-win-x64-full.nupkg");
+        Assert.Equal($"{gh}/v0.1.0-rc.9/Otium.Desktop-0.1.0-rc.9-win-x64-full.nupkg", response.Headers.Location?.ToString());
+    }
+
+    [Fact]
+    public void The_release_list_skips_drafts_and_marks_release_candidates()
+    {
+        using var doc = System.Text.Json.JsonDocument.Parse("""
+            [
+              {"tag_name":"v0.2.0","draft":true,"prerelease":false,"assets":[]},
+              {"tag_name":"v0.1.0-rc.9","draft":false,"prerelease":true,"assets":[{"name":"a.nupkg","browser_download_url":"https://x/a.nupkg"}]},
+              {"tag_name":"v0.0.9","draft":false,"prerelease":false,"assets":[]}
+            ]
+            """);
+        var releases = Otium.Server.GitHubReleaseList.Parse(doc.RootElement);
+        Assert.Equal(["v0.1.0-rc.9", "v0.0.9"], releases.Select(r => r.Tag));
+        Assert.True(releases[0].Prerelease);
+        Assert.Equal("https://x/a.nupkg", Assert.Single(releases[0].Assets).Url);
+    }
+
+    private sealed class FakeReleaseList : Otium.Server.IReleaseList
+    {
+        public IReadOnlyList<Otium.Server.PublishedRelease> Releases { get; set; } = [];
+        public Dictionary<string, string> Texts { get; } = [];
+
+        public Task<IReadOnlyList<Otium.Server.PublishedRelease>> GetRecentAsync(CancellationToken ct) => Task.FromResult(Releases);
+
+        public Task<string> GetTextAsync(string url, CancellationToken ct) => Task.FromResult(Texts[url]);
     }
 
     private sealed class FakeReleases : Otium.Server.IReleaseFeed

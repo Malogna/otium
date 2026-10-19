@@ -32,14 +32,21 @@ public sealed class UpdateService
         // installs only ever see stable releases.
         var version = typeof(UpdateService).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "";
         var followPrereleases = version.Split('+')[0].Contains('-');
+        // GitHub releases are read through Otium's server (its /updates feed), with GitHub itself as the fallback.
         var manager = Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase)
-            ? new UpdateManager(new GithubSource(url, null, followPrereleases))
+            ? new UpdateManager(new FallbackUpdateSource(
+                new SimpleWebSource(ServerFeedUrl(followPrereleases)),
+                new GithubSource(url, null, followPrereleases)))
             : new UpdateManager(url);
 
         return manager.IsInstalled
             ? new UpdateService(manager, "")
             : new UpdateService(null, "Updates work in installed copies only (this one is running from a build folder).");
     }
+
+    /// <summary>Otium's server's copy of the release feed: release candidates too, or releases only.</summary>
+    private static string ServerFeedUrl(bool prereleases) =>
+        $"{AppIdentity.ResolveServerUrl(null).TrimEnd('/')}/updates/{(prereleases ? "pre" : "stable")}/";
 
     public event Action? Changed;
 
@@ -76,7 +83,9 @@ public sealed class UpdateService
         }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException or ChecksumFailedException or AcquireLockFailedException or NotInstalledException or IOException)
         {
-            SetStatus($"Couldn't check for updates: {e.Message}");
+            SetStatus(e is HttpRequestException or TaskCanceledException
+                ? "Couldn't reach the update server just now. Otium tries again in a few hours."
+                : $"Couldn't check for updates: {e.Message}");
         }
         finally
         {

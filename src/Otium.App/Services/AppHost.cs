@@ -834,6 +834,25 @@ public sealed class AppHost : IAsyncDisposable
 
     public event Action? HistoryChanged;
 
+    /// <summary>How long the user has been away from keyboard and mouse after which a ready update installs itself.</summary>
+    public static readonly TimeSpan InstallUpdateAfterAway = TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// A downloaded update installs itself when the user allows it, has been away a while, the window is closed and no
+    /// test of the PC is running. Checked every minute.
+    /// </summary>
+    public async Task InstallUpdateIfAwayAsync()
+    {
+        if (_installingUpdate || !Settings.InstallUpdatesWhileAway || Updates.ReadyVersion is null || IsWindowOpen() || IsMeasuring)
+            return;
+        if (_idle.GetIdleTime() is not { } away || away < InstallUpdateAfterAway)
+            return;
+        _installingUpdate = true; // once: the restart takes a moment, and the timer keeps ticking meanwhile
+        await ApplyUpdateAndRestartAsync();
+    }
+
+    private bool _installingUpdate;
+
     /// <summary>Whether the main window is open (shown and not minimised); the app sets it once the window exists.</summary>
     public Func<bool> IsWindowOpen { get; set; } = () => false;
 

@@ -42,6 +42,7 @@ public partial class SettingsViewModel : ViewModelBase
         EarnWhileBrowsing = s.EarnWhileBrowsing;
         NotificationsEnabled = s.NotificationsEnabled;
         KeepMinerReadyWhenBack = s.KeepMinerReadyWhenBack;
+        InstallUpdatesWhileAway = s.InstallUpdatesWhileAway;
         IdleMinutes = s.IdleMinutes;
         ElectricityPrice = (decimal)s.ElectricityPricePerKwh;
         CpuFullLoadWatts = s.CpuFullLoadWatts is { } w ? (decimal)w : null;
@@ -412,6 +413,16 @@ public partial class SettingsViewModel : ViewModelBase
             return;
         _host.Settings.KeepMinerReadyWhenBack = value;
         _host.SaveSettings(); // rebuilds the engine config: turning it off stops a paused miner on the next tick
+    }
+
+    [ObservableProperty] public partial bool InstallUpdatesWhileAway { get; set; }
+
+    partial void OnInstallUpdatesWhileAwayChanged(bool value)
+    {
+        if (_loading)
+            return;
+        _host.Settings.InstallUpdatesWhileAway = value;
+        _host.SaveSettings();
     }
 
     [ObservableProperty] public partial decimal? IdleMinutes { get; set; }
