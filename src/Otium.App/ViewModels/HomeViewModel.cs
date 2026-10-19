@@ -407,7 +407,9 @@ public partial class HomeViewModel : ViewModelBase
         var b = _host.Bandwidth.Snapshot;
         _internetRow.IsActive = b.State == BandwidthState.Sharing;
         _internetRow.PerDay = b.State == BandwidthState.Sharing && b.UserUsdPerDay > 0 ? $"{Format.Usd(b.UserUsdPerDay)}/day" : "";
-        _internetRow.Speed = b.BytesToday > 0 ? $"{InternetSharingViewModel.FormatBytes(b.BytesToday)} today" : "";
+        // Partners that pay the user directly (Proxybase) report money, not traffic: show what it has earned so far.
+        _internetRow.Speed = b.Earnings is not null ? (b.TotalUserUsd > 0 ? $"{Format.Usd(b.TotalUserUsd)} earned so far" : "Nothing earned yet")
+            : b.BytesToday > 0 ? $"{InternetSharingViewModel.FormatBytes(b.BytesToday)} today" : "";
         _internetRow.What = b.State switch
         {
             BandwidthState.Sharing => "Sharing unused bandwidth",
@@ -427,6 +429,9 @@ public partial class HomeViewModel : ViewModelBase
         if (!InternetSharing.IsOn)
             return 0;
         var b = _host.Bandwidth.Snapshot;
+        // A partner that pays directly reports its pace over whole days already; a per-hour rate covers sharing hours only.
+        if (b.Earnings is not null)
+            return b.UserUsdPerDay;
         var hours = _host.Settings.BandwidthOnlyWhenIdle ? 8 : 16;
         return b.State == BandwidthState.Sharing && b.UserUsdPerDay > 0 ? b.UserUsdPerDay * hours / 24 : InternetSharing.ExpectedUsdPerDay;
     }
