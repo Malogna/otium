@@ -79,7 +79,7 @@ its own data folder, the web UI off and the local API (Tequila) on 127.0.0.1:405
 
 Decision (17 October 2026): Otium pays each node's registration from a small Polygon wallet of its own (option 2
 below). Follow-up research found no other bandwidth network that pays users' own wallets in a liquid coin without a
-per-user sign-up, stake or special hardware (`research_notes/Non-custodial bandwidth/`), and found that Mysterium's
+per-user sign-up, stake or special hardware (in the operator's research notes), and found that Mysterium's
 registration can be funded by sending MYST to the identity's channel address before `POST /identities/{id}/register`
 (the registry contract takes the fee from the channel; Mysterium's transactor pays gas). Built in Phase 5.
 
