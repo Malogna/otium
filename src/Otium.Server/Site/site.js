@@ -240,13 +240,12 @@
       // Internet sharing adds the same whatever the card or power price (it uses next to no power).
       const sharing = data.sharingPerDay || 0;
       animateTo((day + sharing) * 30);
-      $("#est-sub").textContent = (day <= 0
-        ? `At this electricity price an ${card.name} would cost more than it earns, so Otium would wait.`
-        : `$${day.toFixed(2)} a day with an ${card.name}, mining ${best.coin} (${best.note}), after every fee and the power it uses.`)
-        + (sharing > 0 ? ` Plus about $${sharing.toFixed(2)} a day from sharing your internet (${data.sharingSource}).` : "");
+      $("#est-sub").firstChild.textContent = day <= 0
+        ? `Mining: waits at this power price on an ${card.name}.`
+        : `Mining: $${day.toFixed(2)}/day on an ${card.name} (${best.coin}).`;
       const raw = (data.payoutUsdt || 1.5) / day, days = Math.ceil(raw);
       $("#est-payout").textContent = day <= 0 ? ""
-        : `First payout of 1.5 USDT to your wallet ${raw < 1 ? "within a day" : `in about ${days} day${days === 1 ? "" : "s"}`}, then daily.`;
+        : `First payout ${raw < 1 ? "within a day" : `in about ${days} day${days === 1 ? "" : "s"}`}.`;
     }
     for (const chip of chips) chip.addEventListener("click", () => choose(chip.dataset.card));
     select?.addEventListener("change", () => choose(select.value));
@@ -303,5 +302,24 @@
     for (const label of $$("[data-download-label]")) label.textContent = os === "Windows" ? "Download for Windows" : `Download for ${os} (beta)`;
   }
 
-  sky(); dial(); earnings(); reveal(); shiftLine(); spotlights(); platform();
+  // ---------- Hash field behind the closing line ----------
+  // Rows of hex, a few characters changing at a time, like hashes going by. Still for reduced motion.
+  function hashField() {
+    const pre = $(".ascii");
+    if (!pre) return;
+    const hex = "0123456789abcdef", cols = 120, rows = 18;
+    const grid = Array.from({ length: rows }, () => Array.from({ length: cols }, () => hex[(Math.random() * 16) | 0]));
+    const draw = () => { pre.textContent = grid.map(r => r.join("")).join("\n"); };
+    draw();
+    if (still) return;
+    let visible = false;
+    if ("IntersectionObserver" in window) new IntersectionObserver(e => { visible = e[0].isIntersecting; }).observe(pre);
+    setInterval(() => {
+      if (!visible || document.hidden) return;
+      for (let i = 0; i < 90; i++) grid[(Math.random() * rows) | 0][(Math.random() * cols) | 0] = hex[(Math.random() * 16) | 0];
+      draw();
+    }, 140);
+  }
+
+  sky(); dial(); earnings(); reveal(); shiftLine(); spotlights(); platform(); hashField();
 })();

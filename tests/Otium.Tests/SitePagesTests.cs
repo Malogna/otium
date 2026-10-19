@@ -85,10 +85,10 @@ public sealed class SitePagesTests : IDisposable
         // $170 a month. Without a visitor country the price is $0.15/kWh. Internet sharing adds Proxybase's worldwide rate
         // for 1 GB a day ($1.50, less Otium's 3% = $1.455 a day, $43.65 a month): $214 in all.
         Assert.Contains("""<span class="est-amount" id="est-month">$214</span>""", html);
-        Assert.Contains("$5.67 a day with an RTX 4090, mining Pearl (paid in your coin)", html);
-        Assert.Contains("a day from sharing your internet (an estimate from Proxybase", html);
+        Assert.Contains("Mining: $5.67/day on an RTX 4090 (Pearl).", html);
+        Assert.Contains("Internet sharing: +$1.46/day (estimate).", html);
         Assert.Contains("\"sharingPerDay\":1.455", html);
-        Assert.Contains("First payout of 1.5 USDT to your wallet within a day, then daily.", html);
+        Assert.Contains("First payout within a day.", html);
         Assert.Contains("""<input id="hours" type="range" min="2" max="24" step="1" value="16">""", html);
         Assert.Contains("""<input id="price" type="range" min="0" max="0.60" step="0.01" value="0.15">""", html);
         Assert.DoesNotContain("typical in", html);
@@ -102,7 +102,7 @@ public sealed class SitePagesTests : IDisposable
         Assert.Equal(30, System.Text.RegularExpressions.Regex.Matches(html, "<option value=").Count);
         Assert.Contains("""<script type="application/json" id="otium-data">{"cards":[{"id":"rtx5090","name":"RTX 5090",""", html);
         Assert.Contains("\"payoutUsdt\":1.5", html);
-        Assert.Contains("Today's coin prices from WhatToMine (18 October 2026, 15:00 UTC)", html);
+        Assert.Contains("Estimate from today's coin prices (18 October 2026, 15:00 UTC)", html);
     }
 
     [Fact]
@@ -129,7 +129,6 @@ public sealed class SitePagesTests : IDisposable
         var html = (await Get("/")).Html;
         Assert.Contains("Pearl mining runs the math AI runs on.", html);
         Assert.Contains("It doesn't run anyone's AI model or see their data.", html);
-        Assert.Contains("""<a href="#useful-work">Mines Pearl, built on AI's matrix math</a>""", html);
         Assert.Equal(48, System.Text.RegularExpressions.Regex.Matches(html, "<span style=\"--r:").Count); // three 4×4 grids
     }
 
