@@ -272,6 +272,7 @@ public sealed class SitePagesTests : IDisposable
         Assert.DoesNotContain("<b>x", html);
         Assert.Contains("""<a href="/">How Otium works</a>""", html);
         Assert.Contains("""<a href="https://github.com/Malogna/otium">Source code</a>""", html);
+        Assert.Contains("""<a href="https://discord.gg/4FtFDrz97t">Discord</a>""", html);
         // Outside Cloudflare's Email Obfuscation, whose decoding script the pages' CSP would block.
         Assert.Contains("""<!--email_off--><a href="mailto:contact@otium.lol">contact@otium.lol</a><!--/email_off-->""", html);
     }
