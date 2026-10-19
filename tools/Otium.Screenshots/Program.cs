@@ -31,6 +31,10 @@ host.Settings.OnboardingComplete = true;
 host.Settings.EarningEnabled = true;
 host.Settings.PayoutAddress = "USDT:TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
 host.Settings.Referral.MyCode = "7KQ2M9X";
+// A day and a half of earning, so the earnings tiles and the chart show real totals.
+var historyStart = DateTimeOffset.Now.AddHours(-36);
+for (var hour = 0; hour <= 36; hour++)
+    host.History.Record(historyStart.AddHours(hour), hour * 0.09, hour * 0.02, TimeSpan.FromHours(1));
 
 foreach (var variant in new[] { ThemeVariant.Light, ThemeVariant.Dark })
 {
