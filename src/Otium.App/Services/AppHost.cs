@@ -37,6 +37,8 @@ public sealed class AppHost : IAsyncDisposable
     private volatile EngineConfig _gpuConfig;
     private volatile BandwidthConfig _bandwidthConfig;
     private volatile GpuPolicy? _gpuPolicy;
+    private readonly JsonFileStore<CachedGpuPolicy> _gpuPolicyStore;
+    private bool _gpuPolicyFetched;
 
     private AppHost()
     {
@@ -46,6 +48,8 @@ public sealed class AppHost : IAsyncDisposable
         MinerLifetime.StopOrphans(Paths.EnginesDir, Path.Combine(Paths.Root, "otium.lock"));
         _settingsStore = new JsonFileStore<AppSettings>(Paths.SettingsFile);
         Settings = _settingsStore.Load();
+        _gpuPolicyStore = new JsonFileStore<CachedGpuPolicy>(Paths.GpuPolicyFile);
+        _gpuPolicy = _gpuPolicyStore.Load().UsableAt(DateTimeOffset.UtcNow);
         UsPersonDeclared = Settings.UsPerson;
         EnsureDeviceSecrets();
 
@@ -648,7 +652,7 @@ public sealed class AppHost : IAsyncDisposable
             string[] quantus = QuantusTarget is null ? [] : [GpuRoutes.KryptexAddress];
             // The graphics card mines on the same pool as the processor: unMineable, or MoneroOcean for US users' Monero.
             return PayoutRouting.PoolFor(Settings.PayoutAddress, InUnitedStates) == PayoutPool.Unmineable
-                ? (_gpuPolicy ?? new GpuPolicy(DateTimeOffset.MinValue, [], [])).OnlyRoutes([GpuRoutes.Unmineable, .. quantus])
+                ? (_gpuPolicy ?? GpuPolicy.NotYetFetched).OnlyRoutes([GpuRoutes.Unmineable, .. quantus])
                 : _gpuPolicy?.OnlyRoutes([GpuRoutes.MoneroOcean, .. quantus]);
         }
     }
@@ -1086,7 +1090,7 @@ public sealed class AppHost : IAsyncDisposable
     /// <summary>Fetches the GPU policy (it needs no account, so the welcome screen's estimate can use it).</summary>
     public Task RefreshGpuPolicyAsync(CancellationToken ct) => RefreshGpuPolicyAsync(CreateClient(), ct);
 
-    /// <summary>Fetches the GPU policy; on failure the last one stays in effect.</summary>
+    /// <summary>Fetches the GPU policy and keeps it on disk; on failure the last one stays in effect.</summary>
     private async Task RefreshGpuPolicyAsync(AccountClient client, CancellationToken ct)
     {
         try
@@ -1095,6 +1099,23 @@ public sealed class AppHost : IAsyncDisposable
         }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException or AccountRequestException or System.Text.Json.JsonException)
         {
+            return;
+        }
+        try
+        {
+            _gpuPolicyStore.Save(new CachedGpuPolicy { Policy = _gpuPolicy, FetchedAt = DateTimeOffset.UtcNow });
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // Not kept: the next start waits for the server, as before.
+        }
+        // The first policy of this run: a graphics card that found nothing to mine without it starts now instead of
+        // after its one-minute retry.
+        if (!_gpuPolicyFetched)
+        {
+            _gpuPolicyFetched = true;
+            if (GpuEngine is { Enabled: true } gpu)
+                gpu.Enable();
         }
     }
 

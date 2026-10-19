@@ -9,6 +9,12 @@ namespace Otium.Core.Switching;
 /// </summary>
 public sealed record GpuPolicy(DateTimeOffset GeneratedAt, IReadOnlyList<GpuAlgorithmPolicy> Algorithms, IReadOnlyList<GpuPoolRoute> Routes)
 {
+    /// <summary>Stands in until the server's policy arrives for coins only it prices (unMineable's): nothing to mine yet.</summary>
+    public static GpuPolicy NotYetFetched { get; } = new(DateTimeOffset.MinValue, [], []);
+
+    /// <summary>This is <see cref="NotYetFetched"/>, or a filtered copy of it: the server hasn't answered yet.</summary>
+    public bool IsNotYetFetched => GeneratedAt == DateTimeOffset.MinValue;
+
     public GpuAlgorithmPolicy? For(string algorithm) =>
         Algorithms.FirstOrDefault(a => string.Equals(a.Algorithm, algorithm, StringComparison.OrdinalIgnoreCase));
 
@@ -109,4 +115,25 @@ public static class GpuRoutes
     /// and Kryptex pays that wallet in the coin itself. Only for users who added an address for that coin.
     /// </summary>
     public const string KryptexAddress = "kryptex-address";
+}
+
+/// <summary>
+/// The last GPU policy the server sent, kept on disk: Otium starts its miners before its first call to the server, so
+/// without it the graphics card had nothing to mine for its first minute after every start (and every update).
+/// </summary>
+public sealed class CachedGpuPolicy
+{
+    /// <summary>
+    /// How old a kept policy may be and still be used at startup. The server's own arrives within a minute, so a coin it
+    /// has since dropped is mined for a minute at most.
+    /// </summary>
+    public static readonly TimeSpan MaxAge = TimeSpan.FromDays(1);
+
+    public GpuPolicy? Policy { get; set; }
+
+    public DateTimeOffset? FetchedAt { get; set; }
+
+    /// <summary>The kept policy, or null when there is none or it's older than <see cref="MaxAge"/>.</summary>
+    public GpuPolicy? UsableAt(DateTimeOffset now) =>
+        Policy is not null && FetchedAt is { } at && now - at <= MaxAge && now >= at ? Policy : null;
 }
