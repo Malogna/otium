@@ -22,6 +22,30 @@ public sealed record PcMeasurement(DateTimeOffset MeasuredAt, IReadOnlyList<Devi
 
     /// <summary>Per 30-day month, earning <paramref name="hoursPerDay"/> hours a day.</summary>
     public double PerMonth(double hoursPerDay) => NetUsdPerDay * Math.Clamp(hoursPerDay, 0, 24) / 24 * 30;
+
+    /// <summary>
+    /// How many times what the processor would earn the graphics card must earn before the first test leaves the
+    /// processor off: next to such a card it adds a few percent, for a warmer, louder computer (an i7-8700K next to an
+    /// RTX 3080 in October 2026: $0.09 against $3.23 a day).
+    /// </summary>
+    public const double GpuMultipleToLeaveCpuOff = 10;
+
+    /// <summary>
+    /// The test measured both, and the graphics card earns at least <see cref="GpuMultipleToLeaveCpuOff"/> times what the
+    /// processor would.
+    /// </summary>
+    public bool ProcessorAddsLittle
+    {
+        get
+        {
+            var gpu = Devices.Where(d => d.Device == DeviceKind.Gpu).Sum(d => Math.Max(0, d.NetUsdPerDay));
+            var cpu = Devices.Where(d => d.Device == DeviceKind.Cpu).Sum(d => Math.Max(0, d.NetUsdPerDay));
+            return gpu > 0 && Devices.Any(d => d.Device == DeviceKind.Cpu) && gpu >= GpuMultipleToLeaveCpuOff * cpu;
+        }
+    }
+
+    /// <summary>The same result without the processor, for when it's switched off.</summary>
+    public PcMeasurement WithoutProcessor() => this with { Devices = Devices.Where(d => d.Device != DeviceKind.Cpu).ToList() };
 }
 
 /// <summary>A device's latest state, as the test sees it.</summary>
