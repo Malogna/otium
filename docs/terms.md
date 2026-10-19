@@ -21,7 +21,7 @@
 ## 1. Who we are
 
 Otium is provided by **[legal name]**, organisation number **[number]**, **[address]**, Norway. Email:
-**[contact email]**. [VAT status.]
+**contact@otium.lol**. [VAT status.]
 
 ## 2. What Otium does
 
@@ -140,7 +140,7 @@ your choice and can be changed in Settings.
 ## 13. Withdrawal and stopping
 
 You may withdraw from this agreement **within 14 days** of starting Otium, without giving a reason: use Settings →
-Your data → **Delete my account**, or email us at [contact email] (you may use the
+Your data → **Delete my account**, or email us at contact@otium.lol (you may use the
 [standard withdrawal form](https://lovdata.no/dokument/NL/lov/2014-06-20-27)). On request, we'll pay to your address
 what Otium's fee mined from your computer during those 14 days.
 
@@ -184,6 +184,6 @@ shown in the app. We may refuse invites used to get around those rules (for exam
 Norwegian law applies. If you're a consumer, you also keep the protection of the mandatory consumer law of the country
 where you live, and you can take a dispute to the courts there.
 
-If you have a complaint, contact us first at [contact email]. If we can't agree, you can ask Forbrukertilsynet for
+If you have a complaint, contact us first at contact@otium.lol. If we can't agree, you can ask Forbrukertilsynet for
 mediation and take the case to Forbrukerklageutvalget (forbrukerklageutvalget.no). Consumers in the EU can contact
 their national consumer centre (ECC-Net).
