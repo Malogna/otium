@@ -64,7 +64,7 @@ public sealed record BandwidthSnapshot
 
     public TimeSpan? IdleTime { get; init; }
 
-    /// <summary>While sharing: what the connection is doing right now, from the partner ("2 buyers connected now").</summary>
+    /// <summary>While sharing: what the connection is doing right now, from the partner ("2 connections open now").</summary>
     public string? Activity { get; init; }
 
     /// <summary>While sharing: the partner's fuller account of this connection (findable, reachable, pending).</summary>

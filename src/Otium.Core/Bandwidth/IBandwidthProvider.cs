@@ -70,7 +70,7 @@ public enum BandwidthProviderState
 /// <param name="UserUsd">For providers that pay the user directly: the user's share of everything earned so far,
 /// after Otium's fee (paid out or still waiting).</param>
 /// <param name="UserUsdPerDay">The same, per day at the recent pace; null until there's enough history to tell.</param>
-/// <param name="Activity">What the connection is doing right now, in a few words ("2 buyers connected now").</param>
+/// <param name="Activity">What the connection is doing right now, in a few words ("2 connections open now").</param>
 /// <param name="Detail">The partner's fuller account of this connection: whether buyers can find it, how reachable and
 /// fast it is, what's pending.</param>
 public sealed record BandwidthStatus(BandwidthProviderState State, long BytesSinceStart, string? Message = null, string? Earnings = null,
