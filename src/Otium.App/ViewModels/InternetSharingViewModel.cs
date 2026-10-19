@@ -147,8 +147,9 @@ public partial class InternetSharingViewModel : ViewModelBase
     public string LimitsText => IsProxybase
         ? "There's no daily data cap: your connection is used whenever Proxybase's customers need an address like yours" +
           (_host.Settings.BandwidthOnlyWhenIdle ? ", and only while you're away. " : ". ") +
-          "Earnings depend on demand in your country; most home connections see modest traffic, so expect a few dollars a " +
-          "month rather than the rates Proxybase advertises. Turn it off any time in Advanced settings."
+          "What you earn depends on how much they use it. The estimate assumes 1 GB a day, the low end of what Proxybase " +
+          "says a home connection carries, and your real pace replaces it after the first hour of earnings. Turn it off " +
+          "any time in Advanced settings."
         : FormattableString.Invariant($"Uses at most {_host.Settings.BandwidthDailyLimitGb:0.#} GB a day (you can change this). ") +
           "Only one computer per internet connection is paid. Turn it off any time in Advanced settings.";
 

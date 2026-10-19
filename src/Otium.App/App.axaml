@@ -18,6 +18,7 @@
                     <SolidColorBrush x:Key="SubtleBackground" Color="#F0F3F6" />
                     <SolidColorBrush x:Key="MutedText" Color="#5B6575" />
                     <SolidColorBrush x:Key="AccentBrush" Color="#16A672" />
+                    <SolidColorBrush x:Key="OnAccentText" Color="#FFFFFF" />
                     <SolidColorBrush x:Key="GoodBrush" Color="#0F7A52" />
                     <SolidColorBrush x:Key="GoodSoft" Color="#DDF5EA" />
                     <SolidColorBrush x:Key="WarnBrush" Color="#9A6200" />
@@ -36,6 +37,7 @@
                     <SolidColorBrush x:Key="SubtleBackground" Color="#1A202A" />
                     <SolidColorBrush x:Key="MutedText" Color="#8D98AA" />
                     <SolidColorBrush x:Key="AccentBrush" Color="#3DDC97" />
+                    <SolidColorBrush x:Key="OnAccentText" Color="#0B0E13" />
                     <SolidColorBrush x:Key="GoodBrush" Color="#46D394" />
                     <SolidColorBrush x:Key="GoodSoft" Color="#12301F" />
                     <SolidColorBrush x:Key="WarnBrush" Color="#F2B544" />
