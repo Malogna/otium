@@ -26,7 +26,8 @@ public sealed record EngineConfig(
     string WorkerName,
     Accounts.CpuPoolRoute? CpuPool = null,
     bool PauseWhenBack = false,
-    bool RunsWhileBrowsing = false);
+    bool RunsWhileBrowsing = false,
+    bool FullSpeedWhenAway = false);
 
 public sealed record EngineSnapshot
 {

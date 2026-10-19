@@ -970,7 +970,8 @@ public sealed class AppHost : IAsyncDisposable
                 // The CPU mines wherever the server routes this account (MoneroOcean or Kryptex XMR).
                 cpu ? Settings.Account.CpuPool : null,
                 cpu && Settings.KeepMinerReadyWhenBack,
-                RunsWhileBrowsing: !cpu && Settings.EarnWhileBrowsing);
+                RunsWhileBrowsing: !cpu && Settings.EarnWhileBrowsing,
+                FullSpeedWhenAway: cpu);
         }
 
         // Fee and referral slices mine on the user's own pool, so a referrer paid on the other pool gets no slice.
@@ -990,7 +991,9 @@ public sealed class AppHost : IAsyncDisposable
             $"ot{DeviceId[..8]}{workerSuffix}",
             PauseWhenBack: cpu && Settings.KeepMinerReadyWhenBack,
             // The graphics card may mine while the user browses: then it stays at the lowest priority.
-            RunsWhileBrowsing: !cpu && Settings.EarnWhileBrowsing);
+            RunsWhileBrowsing: !cpu && Settings.EarnWhileBrowsing,
+            // The processor uses every thread while the user is away; their setting applies while they're at the computer.
+            FullSpeedWhenAway: cpu);
     }
 
     private BandwidthConfig BuildBandwidthConfig()
