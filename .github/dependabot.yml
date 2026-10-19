@@ -1,0 +1,29 @@
+# Weekly pull requests for outdated dependencies: NuGet packages, the GitHub Actions in .github/workflows, and the
+# base images of the server, backup sidecar and Caddy. Security fixes come as soon as GitHub publishes an advisory
+# (Dependabot security updates, switched on in the repository's settings), not just weekly. CI runs on every one.
+
+version: 2
+updates:
+  - package-ecosystem: nuget
+    directories: ["/src/*", "/tests/*", "/tools/*"]
+    schedule:
+      interval: weekly
+    groups:
+      # One pull request for all minor and patch bumps; major versions still come one by one.
+      nuget-minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: docker
+    directories: ["/src/Otium.Server", "/deploy/backup"]
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: docker-compose
+    directory: "/deploy"
+    schedule:
+      interval: weekly
