@@ -126,6 +126,8 @@ public sealed class AccountService(
     public async Task<AccountSummary> GetSummaryAsync(string deviceId, string secret, string publicBaseUrl, CancellationToken ct)
     {
         var session = Authenticate(deviceId, secret);
+        // The app's regular check-in (every minute): what the admin dashboard's "online now" and "seen in 24 h" count.
+        store.TouchDevice(deviceId, time.GetUtcNow(), TimeSpan.FromMinutes(5));
         await RefreshVerificationsAsync(session.Account, ct);
         return Summarize(store.FindAccount(session.Account.AccountId)!, publicBaseUrl, null);
     }

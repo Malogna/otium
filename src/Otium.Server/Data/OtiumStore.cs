@@ -539,6 +539,14 @@ public sealed class OtiumStore
             """,
             ("$id", d.DeviceId), ("$secret", d.SecretHash), ("$account", d.AccountId), ("$created", Format(d.CreatedAt)), ("$seen", Format(d.LastSeenAt)));
 
+    /// <summary>
+    /// Records that a computer checked in, at most once per <paramref name="every"/> (the app checks in every minute;
+    /// "online now" on the admin dashboard needs only a few minutes' precision, so most check-ins write nothing).
+    /// </summary>
+    public void TouchDevice(string deviceId, DateTimeOffset now, TimeSpan every) =>
+        Execute("UPDATE devices SET last_seen_at = $n WHERE device_id = $d AND last_seen_at < $cut",
+            ("$n", Format(now)), ("$d", deviceId), ("$cut", Format(now - every)));
+
     public long DeviceCount(string accountId) => Scalar<long>("SELECT COUNT(*) FROM devices WHERE account_id = $a", ("$a", accountId));
 
     // ---------- email sign-in codes ----------
