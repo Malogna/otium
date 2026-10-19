@@ -188,6 +188,12 @@ public sealed class AppSettings
     /// </summary>
     public bool KeepMinerReadyWhenBack { get; set; }
 
+    /// <summary>
+    /// Install a downloaded update by itself while the user is away and the window is closed, instead of waiting for
+    /// "Restart to update". Mining pauses for the few seconds the restart takes.
+    /// </summary>
+    public bool InstallUpdatesWhileAway { get; set; } = true;
+
     public EarningsReportState EarningsReports { get; set; } = new();
 
     public ReferralState Referral { get; set; } = new();

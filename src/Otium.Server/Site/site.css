@@ -267,7 +267,7 @@ p { margin: 0; text-wrap: pretty; }
   background: var(--night-3); border: 1px solid var(--line);
   transition: border-color .2s, background .2s, transform .2s;
 }
-.chip small { font: 400 0.7rem var(--mono); color: var(--mist); }
+.chip small { font: 400 0.75rem var(--mono); color: var(--mist); }
 .chip:hover { border-color: var(--mist); transform: translateY(-1px); }
 .chip[aria-pressed="true"] { border-color: var(--emerald); background: color-mix(in oklab, var(--emerald) 14%, var(--night-3)); box-shadow: 0 0 0 1px var(--emerald) inset; }
 .est-sliders { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px 16px; margin-top: 4px; }

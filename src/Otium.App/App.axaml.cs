@@ -33,6 +33,9 @@ public partial class App : Application
             desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
             _window = new MainWindow { DataContext = new MainWindowViewModel(_host) };
+            // An update restarts Otium; it comes back with the window open if the window was open.
+            var window = _window;
+            _host.IsWindowOpen = () => window.IsVisible && window.WindowState != WindowState.Minimized;
             _window.Closing += (_, e) =>
             {
                 // Closing the window keeps Otium earning from the tray; Quit is in the tray menu.
@@ -73,6 +76,7 @@ public partial class App : Application
                 _ = _host.RefreshElectricityAsync(CancellationToken.None);
                 _ = _host.ReportEarningsAsync(CancellationToken.None); // opt-in; sends only every few hours
                 _host.ObserveMeasurement(); // the test also ends on time when the engines go quiet
+                _ = _host.InstallUpdateIfAwayAsync(); // a downloaded update installs itself while the user is away
             };
             historyTimer.Start();
 

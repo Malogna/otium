@@ -71,6 +71,8 @@ builder.Services.AddHttpClient<IPearlPipFeed, PearlPipClient>();
 builder.Services.AddSingleton<PearlForkWatcher>();
 builder.Services.AddHttpClient<IReleaseFeed, GitHubReleaseFeed>();
 builder.Services.AddSingleton<ReleaseDownloads>();
+builder.Services.AddHttpClient<IReleaseList, GitHubReleaseList>();
+builder.Services.AddSingleton<UpdateFeed>();
 builder.Services.AddSingleton<GpuPolicyService>();
 builder.Services.AddSingleton<KryptexCreditor>();
 builder.Services.AddSingleton<CpuPoolRouter>();
@@ -372,6 +374,16 @@ app.MapGet("/download", async (string? os, HttpRequest request, ReleaseDownloads
 {
     var target = await downloads.InstallerUrlAsync(os ?? ReleaseDownloads.DetectOs(request.Headers.UserAgent), ct);
     return Results.Redirect(target ?? referral.Value.DownloadUrl);
+}).RequireRateLimiting("per-ip");
+
+// The app's update feed (see UpdateFeed): "pre" includes release candidates, "stable" only releases.
+app.MapGet("/updates/{track}/{file}", async (string track, string file, UpdateFeed feed, CancellationToken ct) =>
+{
+    if (track is not ("pre" or "stable"))
+        return Results.NotFound();
+    if (UpdateFeed.IsFeed(file))
+        return await feed.FeedAsync(file, track == "pre", ct) is { } json ? Results.Content(json, "application/json") : Results.NotFound();
+    return await feed.DownloadUrlAsync(file, ct) is { } url ? Results.Redirect(url) : Results.NotFound();
 }).RequireRateLimiting("per-ip");
 
 app.MapGet("/healthz", () => Results.Ok("ok"));
