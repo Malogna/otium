@@ -3,7 +3,7 @@ using System.Security.Cryptography;
 namespace Otium.Server;
 
 /// <summary>
-/// The website's own files (stylesheet, script, logo, fonts), embedded in the server so the site needs nothing else
+/// The website's own files (stylesheet, script, logo, link-preview image, fonts), embedded in the server so the site needs nothing else
 /// to deploy and loads nothing from other hosts. Pages link them with a content hash, so browsers and Cloudflare can
 /// cache them for a year and still get a new version the moment it changes.
 /// </summary>
@@ -16,6 +16,7 @@ internal static class SiteAssets
         [".css"] = "text/css; charset=utf-8",
         [".js"] = "text/javascript; charset=utf-8",
         [".svg"] = "image/svg+xml",
+        [".png"] = "image/png",
         [".woff2"] = "font/woff2",
         [".txt"] = "text/plain; charset=utf-8",
     };
