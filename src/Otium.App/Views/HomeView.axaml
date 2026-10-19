@@ -94,6 +94,8 @@
                                 <TextBlock Classes="heroMuted" FontSize="12.5" TextWrapping="Wrap" Text="{Binding GoalText}" />
                                 <TextBlock Grid.Column="1" Classes="heroMuted" FontSize="12.5" Margin="12,0,0,0" Text="{Binding GoalEta}" />
                             </Grid>
+                            <TextBlock Classes="heroMuted" FontSize="12" TextWrapping="Wrap" Opacity="0.85" Text="{Binding GoalNote}"
+                                       IsVisible="{Binding GoalNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                             <Border Classes="heroChip" IsVisible="{Binding PoolWarning, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
                                 <StackPanel Spacing="6">
                                     <TextBlock FontSize="12.5" FontWeight="SemiBold" TextWrapping="Wrap" Text="{Binding PoolWarning}" />
@@ -419,7 +421,9 @@
                             <TextBlock Classes="muted" FontSize="12" Text="{Binding ChartCaption}" />
                             <TextBlock Grid.Column="1" Classes="muted" FontSize="12" Text="last 24 h" />
                         </Grid>
-                        <TextBlock Classes="muted" FontSize="12" Text="{Binding ProjectionBasis}" />
+                        <TextBlock FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap" Text="{Binding ProjectionText}"
+                                   IsVisible="{Binding ProjectionText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                        <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap" Text="{Binding ProjectionBasis}" />
                         <Grid ColumnDefinitions="*,Auto" DataContext="{Binding Results}" x:DataType="vm:ResultsViewModel"
                               IsVisible="{Binding CanMeasureAgain}">
                             <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap" VerticalAlignment="Center" Text="{Binding MeasuredLine}" />

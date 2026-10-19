@@ -132,6 +132,10 @@ public partial class HomeViewModel : ViewModelBase
     [ObservableProperty] public partial string GoalText { get; set; } = "";
     [ObservableProperty] public partial double GoalPercent { get; set; }
     [ObservableProperty] public partial string GoalEta { get; set; } = "";
+    /// <summary>Why the pool's confirmed amount trails what Otium has counted, when it does.</summary>
+    [ObservableProperty] public partial string GoalNote { get; set; } = "";
+    /// <summary>"At this pace: about $30 a week, $128 a month." Kept apart from the real totals above it.</summary>
+    [ObservableProperty] public partial string ProjectionText { get; set; } = "";
     [ObservableProperty] public partial bool IsCashingOut { get; set; }
 
     /// <summary>Own-address payouts: something the user must fix at the pool (auto-pay off, failed payment…), or "".</summary>
@@ -185,9 +189,16 @@ public partial class HomeViewModel : ViewModelBase
         }
         else
         {
-            balanceValue = (decimal)snapshots.Sum(s => s.TotalUserUsd);
+            // Internet sharing pays the same wallet (Proxybase's earnings are converted to the user's coin), so it counts.
+            var sharedUsd = _host.Bandwidth.Snapshot.TotalUserUsd;
+            balanceValue = (decimal)(snapshots.Sum(s => s.TotalUserUsd) + sharedUsd);
             BalanceCaption = "Earned so far · paid straight to your wallet";
-            PendingText = _host.PoolBalance is { Paid: > 0 } paid ? $"{Format.Coin(paid.Paid, paid.Coin)} paid to you so far" : "";
+            var parts = new List<string>();
+            if (sharedUsd > 0)
+                parts.Add($"{Format.Usd(sharedUsd)} of it from internet sharing");
+            if (_host.PoolBalance is { Paid: > 0 } paid)
+                parts.Add($"{Format.Coin(paid.Paid, paid.Coin)} paid to you so far");
+            PendingText = string.Join(" · ", parts);
         }
         _balance.AnimateTo((double)balanceValue);
 
@@ -199,9 +210,14 @@ public partial class HomeViewModel : ViewModelBase
         _month.AnimateTo(projection.PerMonth);
         ProjectedMonthCaption = projection.PerMonth > 0 ? "projected per month" : "";
         var today = DateTimeOffset.Now.Date;
-        TodayText = Format.Usd(_host.History.EarnedSince(new DateTimeOffset(today, DateTimeOffset.Now.Offset)));
-        WeekText = projection.PerWeek > 0 ? $"≈ {Format.Usd(projection.PerWeek)}" : "—";
-        MonthText = projection.PerMonth > 0 ? $"≈ {Format.Usd(projection.PerMonth)}" : "—";
+        // The tiles are what was really earned; the projection is a separate line, so the two can't be mixed up.
+        var now = DateTimeOffset.Now;
+        TodayText = Format.Usd(_host.History.EarnedSince(new DateTimeOffset(today, now.Offset)));
+        WeekText = Format.Usd(_host.History.EarnedSince(new DateTimeOffset(StartOfWeek(today), now.Offset)));
+        MonthText = Format.Usd(_host.History.Month(MonthBucket.KeyFor(now))?.EarnedUsd ?? 0);
+        ProjectionText = projection.PerMonth > 0
+            ? $"At this pace: about {Format.Usd(projection.PerWeek)} a week, {Format.Usd(projection.PerMonth)} a month."
+            : "";
         var away = settings.OnlyWhenIdle ? " away" : "";
         var sharingEstimated = InternetSharing.IsOn && InternetSharing.IsProxybase && _host.Bandwidth.Snapshot.UserUsdPerDay <= 0;
         var miningLoses = rate > 0 && mining.PerDay <= 0;
@@ -226,7 +242,7 @@ public partial class HomeViewModel : ViewModelBase
         // Cash-out goal
         CanCashOut = IsBalanceMode && account.AvailableUsd >= minimum && account.AvailableUsd > 0;
         if (!IsBalanceMode)
-            RefreshPoolGoal(rate);
+            RefreshPoolGoal(settings.EarningEnabled ? rate : 0, snapshots.Sum(s => s.TotalUserUsd));
         else if (CanCashOut)
         {
             GoalText = "You can cash out now";
@@ -239,7 +255,9 @@ public partial class HomeViewModel : ViewModelBase
             var which = _host.Account?.Balance.RecentCashouts.Count > 0 ? "next" : "first";
             GoalText = $"{Format.Money(towards)} of {Format.Money(minimum)} to your {which} cash-out";
             GoalPercent = minimum > 0 ? (double)Math.Clamp(towards / minimum * 100, 0, 100) : 0;
-            GoalEta = projection.TimeToCashout is { } eta && eta > TimeSpan.Zero ? $"about {Friendly(eta)} at this pace" : "";
+            GoalEta = settings.EarningEnabled && projection.TimeToCashout is { } eta && eta > TimeSpan.Zero
+                ? $"about {Friendly(eta)} at this pace"
+                : "";
         }
 
         RefreshCashouts();
@@ -295,11 +313,14 @@ public partial class HomeViewModel : ViewModelBase
     /// Own-address payouts: how far the pool balance is from its payout threshold, and anything that would stop the
     /// pool from paying (unMineable's per-address auto-pay switch, failed payments, paused networks).
     /// </summary>
-    private void RefreshPoolGoal(double usdPerDay)
+    /// <param name="usdPerDay">The pace for "about 10 hours at this pace"; 0 while paused, which hides it.</param>
+    /// <param name="minedUsd">What Otium has counted from mining, to tell when the pool's confirmed amount trails it.</param>
+    private void RefreshPoolGoal(double usdPerDay, double minedUsd)
     {
         var pool = _host.PoolBalance;
         PoolWarning = "";
         GoalEta = "";
+        GoalNote = "";
         if (_host.OwnPayoutTarget is null)
         {
             GoalText = "Add your payout address in Settings to start earning.";
@@ -314,7 +335,11 @@ public partial class HomeViewModel : ViewModelBase
         }
 
         GoalPercent = pool.MinimumPayout > 0 ? Math.Clamp(pool.Pending / pool.MinimumPayout * 100, 0, 100) : 0;
-        GoalText = $"{Format.Coin(pool.Pending, pool.Coin)} at {pool.PoolName} · paid out at {Format.Coin(pool.MinimumPayout, pool.Coin)}";
+        GoalText = $"{Format.Coin(pool.Pending, pool.Coin)} confirmed at {pool.PoolName} · paid out at {Format.Coin(pool.MinimumPayout, pool.Coin)}";
+        // USDT is worth about a dollar, so the two can be compared: pools credit mining a few hours late.
+        var confirmedUsd = pool.Pending + pool.Paid;
+        if (pool.Coin == "USDT" && minedUsd - confirmedUsd > Math.Max(0.01, minedUsd * 0.1))
+            GoalNote = $"{pool.PoolName} confirms mining a few hours after it happens, so this trails what Otium has counted.";
         if (pool.Pending >= pool.MinimumPayout && pool.MinimumPayout > 0)
             GoalEta = pool.AutoPay ? "paid out at the next payout" : "ready: request it at the pool";
         else if (pool.Coin == "USDT" && usdPerDay > 0)
@@ -338,6 +363,13 @@ public partial class HomeViewModel : ViewModelBase
         if (_host.QuantusBalance is { } quantus && (quantus.Pending > 0 || quantus.Paid > 0))
             GoalText += $" · plus {Format.Coin(quantus.Pending, quantus.Coin)} at {quantus.PoolName} for your Quantus wallet, paid out at {Format.Coin(quantus.MinimumPayout, quantus.Coin)}";
         PoolWarning = string.Join(" ", warnings);
+    }
+
+    /// <summary>The first day of this week in the user's culture (Monday in most of Europe, Sunday in the US).</summary>
+    private static DateTime StartOfWeek(DateTime today)
+    {
+        var first = System.Globalization.CultureInfo.CurrentCulture.DateTimeFormat.FirstDayOfWeek;
+        return today.AddDays(-(((int)today.DayOfWeek - (int)first + 7) % 7));
     }
 
     [RelayCommand]
@@ -417,7 +449,10 @@ public partial class HomeViewModel : ViewModelBase
             : estimate > 0 ? $"≈ {Format.Usd(estimate)}/day" : "";
         // Partners that pay the user directly (Proxybase) report money, not traffic: show what it has earned so far.
         _internetRow.Speed = directPay
-            ? (b.TotalUserUsd > 0 ? $"{Format.Usd(b.TotalUserUsd)} earned so far" : estimate > 0 ? "estimate · nothing earned yet" : "Nothing earned yet")
+            ? (b.TotalUserUsd > 0 ? $"{Format.Usd(b.TotalUserUsd)} earned so far"
+                : estimate > 0 && b.State != BandwidthState.Sharing ? $"≈ {Format.Usd(estimate)}/day estimate · nothing earned yet"
+                : estimate > 0 ? "estimate · nothing earned yet"
+                : "Nothing earned yet")
             : b.BytesToday > 0 ? $"{InternetSharingViewModel.FormatBytes(b.BytesToday)} today" : "";
         _internetRow.What = b.State switch
         {
