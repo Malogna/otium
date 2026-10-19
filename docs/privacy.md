@@ -1,7 +1,7 @@
 # Otium privacy policy
 
-> **DRAFT – NOT FOR PUBLICATION.** Written by the developers as a starting point for legal review; see
-> [legal-review.md](legal-review.md). It has not been checked by a lawyer and must not be shown to users as Otium's
+> **DRAFT – NOT FOR PUBLICATION.** Written by the developers as a starting point for legal review. It has not been
+> checked by a lawyer and must not be shown to users as Otium's
 > policy until it has. Everything in `[square brackets]` is a placeholder or an open question for the reviewer.
 > Retention periods marked *(to build)* are proposals the server doesn't enforce yet.
 
@@ -61,7 +61,7 @@ years) in its data folder (Settings → About → Open data folder). Uninstallin
 | **unMineable's and MoneroOcean's public APIs** | Your payout address, when the app or server looks up your balance or checks an invite | Showing your progress to the next payout; verifying invites |
 | **The blockchain of your coin** | Your address and the amounts the pool pays you, published by the pool, not by Otium | Paying you |
 | **Proxybase** (PROXYBASE XYZ LLC, USA; only if you turn internet sharing on) | Runs its client on your computer, which relays its customers' traffic through your connection; sees your IP address and the traffic it relays, and a wallet address made on your computer for your earnings | Internet sharing. A separate controller under its own terms [link]. [Reviewer: transfer basis] |
-| **Relay** (Uneven Labs, Inc., USA) and, for LTC or XMR payouts, **SideShift** (St Kitts and Nevis) or **ChangeNOW** (St Vincent and the Grenadines) | Your payout address and coin, the amount, the sharing client's wallet address (for refunds); SideShift and ChangeNOW also your computer's IP address, which they require | Converting internet sharing earnings to your coin and paying your address. [Reviewer: these transfers need a safeguard; see legal-review.md D1] |
+| **Relay** (Uneven Labs, Inc., USA) and, for LTC or XMR payouts, **SideShift** (St Kitts and Nevis) or **ChangeNOW** (St Vincent and the Grenadines) | Your payout address and coin, the amount, the sharing client's wallet address (for refunds); SideShift and ChangeNOW also your computer's IP address, which they require | Converting internet sharing earnings to your coin and paying your address. [Reviewer: these transfers need a safeguard] |
 | **Amazon Web Services** (Simple Email Service, London) | Your email address and the sign-in code | Sending codes (our processor, under the same AWS agreement as hosting) |
 | **Amazon Web Services** (Lightsail, London) | Everything on the server | Hosting (our processor) |
 | **Cloudflare** | Your IP address and requests to otium.lol | Protecting and delivering the website and API (our processor) |
@@ -77,7 +77,7 @@ years) in its data folder (Settings → About → Open data folder). Uninstallin
 |---|---|---|
 | United Kingdom | Amazon Web Services (London: hosting and email) | EU adequacy decision for the UK (valid to December 2031) |
 | United States | Cloudflare, GitHub, Relay, Proxybase | EU-US Data Privacy Framework where the company is certified [check Relay and Proxybase]; otherwise standard contractual clauses [to sign] |
-| St Kitts and Nevis, St Vincent and the Grenadines | SideShift, ChangeNOW | [None yet: see legal-review.md D1] |
+| St Kitts and Nevis, St Vincent and the Grenadines | SideShift, ChangeNOW | [None yet] |
 
 The mining pools are reached directly by your computer, not by Otium. [Reviewer: confirm this isn't a transfer by
 Otium.]

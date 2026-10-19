@@ -198,7 +198,7 @@ earnings has legal consequences (see [Before launch](#before-launch)).
   - Kryptex credits the GPU coins to the operator's Kryptex account in BTC (auto-exchange), but account withdrawals
     are started by hand and confirmed by email (no withdrawal API as of October 2026), so sweep that BTC into the
     treasury about once a week. MoneroOcean still pays XMR, which has to be swapped to BTC by hand until THORChain's
-    announced native Monero support goes live. See reports/Pools and bandwidth that pay crypto.md for moving all
+    announced native Monero support goes live. The operator's research notes cover moving all
     mining to Kryptex.
   - PayPal and Monero payouts still exist in the code but are off; add `paypal` or `xmr` to `Cashouts:Methods` to
     offer them again.
@@ -321,7 +321,7 @@ service" button in Advanced remains for computers that installed it.)
 - **Otium's cut:** `Sharing:FeeBps` (default: the mining fee, 2% = 200) of each payout, kept back at Proxybase and,
   once $1 of it has built up, paid by the app from the user's sharing earnings to `Sharing:FeeRecipient` (Otium's 0x
   address, on Tempo). Only the rest is converted, with no app fee at Relay and SideShift's commission set to 0, so
-  Otium earns nothing from exchanging coins (docs/legal-review.md, D1). ChangeNOW's partner commission (from 0.4%)
+  Otium earns nothing from exchanging coins. ChangeNOW's partner commission (from 0.4%)
   still applies on XMR.
 - **Server secrets:** `Sharing:RelayApiKey` (Relay requires one for quotes from October 2026), `Sharing:SideShiftSecret`
   and `Sharing:SideShiftAffiliateId` for LTC, `Sharing:ChangeNowApiKey` for XMR. Without the last two, LTC and XMR users

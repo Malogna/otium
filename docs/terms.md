@@ -1,7 +1,7 @@
 # Otium terms of use
 
-> **DRAFT – NOT FOR PUBLICATION.** A first draft by the developers, following the outline in
-> [legal-review.md](legal-review.md). It has not been checked by a lawyer and must not be shown to users until it has.
+> **DRAFT – NOT FOR PUBLICATION.** A first draft by the developers. It has not been checked by a lawyer and must not
+> be shown to users until it has.
 > Everything in `[square brackets]` is a placeholder or an open question. Norwegian users need a Norwegian version.
 
 *Version [1], [date]*
@@ -44,7 +44,7 @@ You can use Otium if:
 - the computer is yours, or you have permission to use it (and its electricity) for mining. Don't install Otium on an
   employer's, school's or someone else's computer without permission;
 - for internet sharing, you are the internet subscriber or have their permission, and your provider's terms allow it;
-- you're not in a country where Otium isn't available [list, see legal-review.md D4] and you're not subject to
+- you're not in a country where Otium isn't available (sanctions or mining bans; the list is in `src/Otium.Core/Availability.cs`) and you're not subject to
   sanctions;
 - mining and holding crypto is legal where you live.
 
