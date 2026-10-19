@@ -280,8 +280,8 @@ public partial class HomeViewModel : ViewModelBase
             ? (double)(_host.Account?.Balance.ReferralPercent ?? 0)
             : _host.Fees.ReferrerPercent;
         InviteTitle = referralPercent <= 0 ? "Invite friends"
-            : IsBalanceMode ? $"Get {referralPercent:0.#}% of everything your friends earn"
-            : $"Get {referralPercent:0.#}% of your friends' mining time, paid to your wallet";
+            : IsBalanceMode ? FormattableString.Invariant($"Get {referralPercent:0.#}% of everything your friends earn")
+            : FormattableString.Invariant($"Get {referralPercent:0.#}% of your friends' mining time, paid to your wallet");
         InviteCode = settings.Referral.MyCode ?? "";
         HasInviteCode = InviteCode.Length > 0;
         UpdateReady = _host.Updates.ReadyVersion is not null;
