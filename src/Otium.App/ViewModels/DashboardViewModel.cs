@@ -4,6 +4,7 @@ using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Otium.App.Services;
+using Otium.Core.Bandwidth;
 using Otium.Core.Engine;
 using Otium.Core.Providers;
 
@@ -42,6 +43,7 @@ public partial class DashboardViewModel : ViewModelBase
         }
         Recalculate();
 
+        host.Bandwidth.SnapshotChanged += _ => Dispatcher.UIThread.Post(Recalculate);
         host.Updates.Changed += () => Dispatcher.UIThread.Post(RefreshUpdate);
         host.AntivirusChanged += () => Dispatcher.UIThread.Post(Recalculate);
         RefreshUpdate();
@@ -79,6 +81,17 @@ public partial class DashboardViewModel : ViewModelBase
     [ObservableProperty] public partial string PowerDetail { get; set; } = "per day";
     [ObservableProperty] public partial string NetPerDay { get; set; } = "—";
     [ObservableProperty] public partial bool IsNetNegative { get; set; }
+
+    // Internet sharing, shown next to the miners when it's on.
+    [ObservableProperty] public partial bool ShowSharing { get; set; }
+    [ObservableProperty] public partial string SharingLabel { get; set; } = "Off";
+    [ObservableProperty] public partial bool SharingIsEarning { get; set; }
+    [ObservableProperty] public partial bool SharingIsPaused { get; set; }
+    [ObservableProperty] public partial bool SharingIsProblem { get; set; }
+    [ObservableProperty] public partial string SharingWhat { get; set; } = "";
+    [ObservableProperty] public partial string SharingPerDay { get; set; } = "";
+    [ObservableProperty] public partial string SharingDetail { get; set; } = "";
+    [ObservableProperty] public partial string SharingEarned { get; set; } = "$0.000";
 
     [ObservableProperty] public partial string TotalEarned { get; set; } = "$0.000";
     [ObservableProperty] public partial string TotalElectricity { get; set; } = "$0.000";
@@ -126,20 +139,29 @@ public partial class DashboardViewModel : ViewModelBase
         AntivirusDetail = IsBlocked ? _host.AntivirusReport?.Describe(_host.Paths.EnginesDir) ?? "" : "";
         OnPropertyChanged(nameof(CanAllowAutomatically));
 
+        RefreshSharing();
+        var bandwidth = _host.Bandwidth.Snapshot;
+        var sharingNow = bandwidth.State == BandwidthState.Sharing ? bandwidth.UserUsdPerDay : 0;
         var withNumbers = Devices.Where(d => d.HasNumbers).Select(d => d.Snapshot).ToList();
-        var any = withNumbers.Count > 0;
-        var user = withNumbers.Sum(s => s.UserUsdPerDay);
+        var any = withNumbers.Count > 0 || sharingNow > 0;
+        var user = withNumbers.Sum(s => s.UserUsdPerDay) + sharingNow;
         var cost = withNumbers.Sum(s => s.ElectricityUsdPerDay);
         var watts = withNumbers.Sum(s => s.ExtraWatts);
+        var freePower = !_host.Settings.PayForElectricity;
         EarnPerDay = any ? Format.Usd(user) : "—";
-        ElectricityPerDay = any ? Format.Usd(cost) : "—";
-        PowerDetail = watts > 0 ? $"per day · +{Format.Watts(watts)}" : "per day";
+        ElectricityPerDay = !any ? "—" : freePower ? "Free" : Format.Usd(cost);
+        PowerDetail = (freePower ? "you don't pay for this power" : "per day") + (watts > 0 ? $" · +{Format.Watts(watts)}" : "");
         NetPerDay = any ? Format.Usd(user - cost) : "—";
         IsNetNegative = any && user - cost < 0;
 
         TotalEarned = Format.Usd(snapshots.Sum(s => s.TotalUserUsd));
-        TotalElectricity = $"{Format.Usd(snapshots.Sum(s => s.TotalElectricityUsd))} ({Format.Kwh(snapshots.Sum(s => s.TotalEnergyKwh))})";
-        TodayEarned = Format.Usd(snapshots.Sum(s => s.TodayUserUsd - s.TodayElectricityUsd));
+        SharingEarned = Format.Usd(bandwidth.TotalUserUsd);
+        var kwh = Format.Kwh(snapshots.Sum(s => s.TotalEnergyKwh));
+        TotalElectricity = freePower ? $"free ({kwh})" : $"{Format.Usd(snapshots.Sum(s => s.TotalElectricityUsd))} ({kwh})";
+        // Today's profit counts internet sharing too: the history has both, the miners have today's electricity.
+        var today = DateTimeOffset.Now.Date;
+        TodayEarned = Format.Usd(_host.History.EarnedSince(new DateTimeOffset(today, DateTimeOffset.Now.Offset))
+                                 - snapshots.Sum(s => s.TodayElectricityUsd));
         MiningTime = string.Join(" · ", Devices.Select(d => $"{d.Title}: {Format.Duration(d.Snapshot.TotalMiningTime)}"));
 
         var now = DateTimeOffset.UtcNow;
@@ -164,6 +186,36 @@ public partial class DashboardViewModel : ViewModelBase
             .Select(d => $"{d.Title} is mining a short slice for {DeviceViewModel.RoleText(d.Snapshot.CurrentRole)}")
             .ToList();
         MiningFor = earning.Count == 0 ? "" : slices.Count > 0 ? string.Join(" · ", slices) : "Mining for: you";
+    }
+
+    /// <summary>The internet sharing row: like a device's, with Proxybase's estimate until there's a real pace.</summary>
+    private void RefreshSharing()
+    {
+        var settings = _host.Settings;
+        ShowSharing = settings.BandwidthEnabled && settings.BandwidthConsentAt is not null && _host.BandwidthOffered;
+        if (!ShowSharing)
+            return;
+        var b = _host.Bandwidth.Snapshot;
+        SharingLabel = b.State switch
+        {
+            BandwidthState.Sharing => "Sharing",
+            BandwidthState.WaitingForIdle => "Waiting",
+            BandwidthState.LimitReached => "Limit reached",
+            BandwidthState.Starting => "Starting",
+            BandwidthState.Error or BandwidthState.Unavailable => "Problem",
+            _ => settings.EarningEnabled ? "Starting" : "Off",
+        };
+        SharingIsEarning = b.State == BandwidthState.Sharing;
+        SharingIsPaused = b.State is BandwidthState.WaitingForIdle or BandwidthState.LimitReached;
+        SharingIsProblem = b.State is BandwidthState.Error or BandwidthState.Unavailable;
+        SharingWhat = b.State is BandwidthState.Error or BandwidthState.Unavailable ? b.StatusText : "";
+        var estimate = InternetSharingViewModel.EstimateFor(_host);
+        SharingPerDay = b.UserUsdPerDay > 0 ? $"{Format.Usd(b.UserUsdPerDay)}/day"
+            : estimate > 0 ? $"≈ {Format.Usd(estimate)}/day"
+            : "";
+        SharingDetail = b.TotalUserUsd > 0 ? $"{Format.Usd(b.TotalUserUsd)} earned so far"
+            : estimate > 0 ? "estimate · nothing earned yet"
+            : b.BytesToday > 0 ? $"{InternetSharingViewModel.FormatBytes(b.BytesToday)} today" : "";
     }
 
     private static int Priority(EngineState state) => state switch
