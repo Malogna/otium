@@ -4,13 +4,6 @@
              x:Class="Otium.App.Views.DashboardView"
              x:DataType="vm:DashboardViewModel">
 
-    <UserControl.Styles>
-        <Style Selector="Border.tile">
-            <Setter Property="Width" Value="290" />
-            <Setter Property="Margin" Value="0,0,12,12" />
-        </Style>
-    </UserControl.Styles>
-
     <StackPanel Spacing="16">
         <!-- Status + main switch -->
         <Border Classes="card">
@@ -67,29 +60,29 @@
         </Border>
 
         <!-- Combined numbers -->
-        <WrapPanel>
-            <Border Classes="card tile">
+        <Grid ColumnDefinitions="*,12,*,12,*">
+            <Border Classes="card">
                 <StackPanel Spacing="4">
                     <TextBlock Classes="label" Text="You earn" />
                     <TextBlock Classes="value" Text="{Binding EarnPerDay}" />
                     <TextBlock Classes="muted" FontSize="12" Text="per day, after fees" />
                 </StackPanel>
             </Border>
-            <Border Classes="card tile">
+            <Border Grid.Column="2" Classes="card">
                 <StackPanel Spacing="4">
                     <TextBlock Classes="label" Text="Electricity" />
                     <TextBlock Classes="value" Text="{Binding ElectricityPerDay}" />
-                    <TextBlock Classes="muted" FontSize="12" Text="{Binding PowerDetail}" />
+                    <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap" Text="{Binding PowerDetail}" />
                 </StackPanel>
             </Border>
-            <Border Classes="card tile">
+            <Border Grid.Column="4" Classes="card">
                 <StackPanel Spacing="4">
                     <TextBlock Classes="label" Text="Profit" />
                     <TextBlock Classes="value" Classes.bad="{Binding IsNetNegative}" Text="{Binding NetPerDay}" />
                     <TextBlock Classes="muted" FontSize="12" Text="per day, after electricity" />
                 </StackPanel>
             </Border>
-        </WrapPanel>
+        </Grid>
 
         <!-- Per device -->
         <Border Classes="card">
@@ -130,6 +123,26 @@
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
+                <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" IsVisible="{Binding ShowSharing}">
+                    <StackPanel Spacing="2">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Text="Internet connection" FontWeight="SemiBold" VerticalAlignment="Center" />
+                            <Border Classes="pill" Padding="8,1"
+                                    Classes.earning="{Binding SharingIsEarning}"
+                                    Classes.paused="{Binding SharingIsPaused}"
+                                    Classes.problem="{Binding SharingIsProblem}">
+                                <TextBlock Text="{Binding SharingLabel}" FontSize="12" />
+                            </Border>
+                        </StackPanel>
+                        <TextBlock Classes="muted" FontSize="12" Text="Unused bandwidth via Proxybase · paid to your wallet in your coin" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" HorizontalAlignment="Right" Spacing="2">
+                        <TextBlock HorizontalAlignment="Right" FontWeight="SemiBold" Text="{Binding SharingPerDay}" />
+                        <TextBlock HorizontalAlignment="Right" Classes="muted" FontSize="12" Text="{Binding SharingDetail}" />
+                    </StackPanel>
+                    <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Margin="0,4,0,0" FontSize="13" TextWrapping="Wrap" Text="{Binding SharingWhat}"
+                               IsVisible="{Binding SharingWhat, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                </Grid>
             </StackPanel>
         </Border>
 
@@ -138,13 +151,15 @@
             <Border Classes="card">
                 <StackPanel Spacing="10">
                     <TextBlock Classes="h2" Text="So far" />
-                    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto" RowSpacing="6">
-                        <TextBlock Classes="muted" Text="Earned (estimate)" />
+                    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="6">
+                        <TextBlock Classes="muted" Text="Mining (estimate)" />
                         <TextBlock Grid.Column="1" Text="{Binding TotalEarned}" FontWeight="SemiBold" />
-                        <TextBlock Grid.Row="1" Classes="muted" Text="Electricity used" />
-                        <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding TotalElectricity}" />
-                        <TextBlock Grid.Row="2" Classes="muted" Text="Today's profit" />
-                        <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding TodayEarned}" />
+                        <TextBlock Grid.Row="1" Classes="muted" Text="Internet sharing" IsVisible="{Binding ShowSharing}" />
+                        <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding SharingEarned}" FontWeight="SemiBold" IsVisible="{Binding ShowSharing}" />
+                        <TextBlock Grid.Row="2" Classes="muted" Text="Electricity used" />
+                        <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding TotalElectricity}" />
+                        <TextBlock Grid.Row="3" Classes="muted" Text="Today's profit" />
+                        <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding TodayEarned}" />
                     </Grid>
                     <TextBlock Classes="muted" FontSize="12" Text="{Binding MiningTime}" TextWrapping="Wrap" />
                 </StackPanel>
@@ -153,7 +168,7 @@
                 <StackPanel Spacing="10">
                     <TextBlock Classes="h2" Text="Your wallet balance at the pool" />
                     <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="6">
-                        <TextBlock Classes="muted" Text="Pending" />
+                        <TextBlock Classes="muted" Text="Confirmed, not paid yet" />
                         <TextBlock Grid.Column="1" Text="{Binding PoolPending}" FontWeight="SemiBold" />
                         <TextBlock Grid.Row="1" Classes="muted" Text="Already paid to you" />
                         <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding PoolPaid}" />
