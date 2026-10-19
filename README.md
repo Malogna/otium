@@ -49,7 +49,8 @@ Iran, China and Egypt).
 - **Watches the price of power.** Otium pauses when electricity would likely cost more than it earns. The price is
   estimated for your country (or enter your own), or follows live hourly prices in Norway, Sweden, Denmark and
   Finland. Grid fees and taxes may not be included, so treat it as an estimate.
-- **Steps aside for you.** Mining runs at the lowest priority, only while you're away. It keeps the computer awake
+- **Steps aside for you.** Mining runs only while you're away and stops within a second when you're back (if you let
+  it mine while you work, it runs at the lowest priority). It keeps the computer awake
   while it earns (the screen still turns off), never keeps a laptop on battery awake, and makes the computer warmer
   and its fans louder.
 - **The best coin for your card.** The graphics card tests the coins it can mine, mines whichever pays most for it

@@ -31,7 +31,8 @@ public sealed record ShareCounts(long Accepted, long Rejected)
 
 public interface IMinerProcessFactory
 {
-    IMinerProcess Start(string binary, IReadOnlyList<string> arguments, int apiPort);
+    /// <param name="lowPriority">Below normal priority, because the user may be at the computer (see ProviderRunOptions).</param>
+    IMinerProcess Start(string binary, IReadOnlyList<string> arguments, int apiPort, bool lowPriority);
 }
 
 internal sealed class SrbMinerProcessFactory(HttpClient http) : IMinerProcessFactory
@@ -39,7 +40,7 @@ internal sealed class SrbMinerProcessFactory(HttpClient http) : IMinerProcessFac
     private const int ErrorVirusInfected = 225;
     private const int ErrorVirusDeleted = 226;
 
-    public IMinerProcess Start(string binary, IReadOnlyList<string> arguments, int apiPort)
+    public IMinerProcess Start(string binary, IReadOnlyList<string> arguments, int apiPort, bool lowPriority)
     {
         var startInfo = new ProcessStartInfo(binary)
         {
@@ -58,7 +59,8 @@ internal sealed class SrbMinerProcessFactory(HttpClient http) : IMinerProcessFac
             MinerLifetime.Adopt(process); // it and its watchdog child die with Otium, even if Otium crashes
             try
             {
-                process.PriorityClass = ProcessPriorityClass.BelowNormal;
+                if (lowPriority)
+                    process.PriorityClass = ProcessPriorityClass.BelowNormal;
             }
             catch (Exception e) when (e is InvalidOperationException or Win32Exception)
             {

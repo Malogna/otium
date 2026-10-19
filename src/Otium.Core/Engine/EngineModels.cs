@@ -25,7 +25,8 @@ public sealed record EngineConfig(
     FeeSchedule FeeSchedule,
     string WorkerName,
     Accounts.CpuPoolRoute? CpuPool = null,
-    bool PauseWhenBack = false);
+    bool PauseWhenBack = false,
+    bool RunsWhileBrowsing = false);
 
 public sealed record EngineSnapshot
 {

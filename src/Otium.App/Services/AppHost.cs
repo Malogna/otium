@@ -943,7 +943,8 @@ public sealed class AppHost : IAsyncDisposable
                 Settings.Account.WorkerId ?? "",
                 // The CPU mines wherever the server routes this account (MoneroOcean or Kryptex XMR).
                 cpu ? Settings.Account.CpuPool : null,
-                cpu && Settings.KeepMinerReadyWhenBack);
+                cpu && Settings.KeepMinerReadyWhenBack,
+                RunsWhileBrowsing: !cpu && Settings.EarnWhileBrowsing);
         }
 
         // Fee and referral slices mine on the user's own pool, so a referrer paid on the other pool gets no slice.
@@ -961,7 +962,9 @@ public sealed class AppHost : IAsyncDisposable
             // Only the graphics card mines Quantus, so only its slices carry the Quantus targets.
             new FeeSchedule(Fees, user, FeeWallet, standing, cpu ? null : QuantusTarget, QuantusFeeWallet),
             $"ot{DeviceId[..8]}{workerSuffix}",
-            PauseWhenBack: cpu && Settings.KeepMinerReadyWhenBack);
+            PauseWhenBack: cpu && Settings.KeepMinerReadyWhenBack,
+            // The graphics card may mine while the user browses: then it stays at the lowest priority.
+            RunsWhileBrowsing: !cpu && Settings.EarnWhileBrowsing);
     }
 
     private BandwidthConfig BuildBandwidthConfig()
