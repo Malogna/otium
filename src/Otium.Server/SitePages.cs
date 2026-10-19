@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net;
 using System.Text.Json;
+using Otium.Core.Bandwidth;
 using Otium.Core.Fees;
 using Otium.Core.Pools;
 using Otium.Core.Switching;
@@ -86,8 +87,8 @@ internal static class SitePages
     }
 
     private static string EstimateLine(CardEstimate e) => e.Day <= 0
-        ? $"At this electricity price an {e.Card} would cost more than it earns, so Otium would wait."
-        : $"{Usd(e.Day)} a day with an {e.Card}, mining {e.Coin} ({e.Note}), after every fee and the power it uses.";
+        ? $"Mining: waits at this power price on an {e.Card}."
+        : $"Mining: {Usd(e.Day)}/day on an {e.Card} ({e.Coin}).";
 
     private static string PayoutLine(double perDay)
     {
@@ -95,7 +96,51 @@ internal static class SitePages
             return "";
         var days = (double)Core.Wallets.PayoutCoins.Usdt.Threshold / perDay;
         var when = days < 1 ? "within a day" : $"in about {Math.Ceiling(days):0} day{(Math.Ceiling(days) == 1 ? "" : "s")}";
-        return $"First payout of 1.5 USDT to your wallet {when}, then daily.";
+        return $"First payout {when}.";
+    }
+
+    /// <summary>What internet sharing pays a visitor from this country per day: Otium users' real median when there is one.</summary>
+    /// <param name="Short">Where the figure comes from, for the hero's line.</param>
+    internal sealed record SharingFigure(string CountryName, double PerDay, bool IsReal, int Computers, double RatePerGb, bool ListedMarket, string Short);
+
+    internal static SharingFigure SharingFor(string? visitorCountry, FeePolicy fees, RealEarnings.RealEarningsSummary? real)
+    {
+        var code = visitorCountry?.Trim().ToUpperInvariant();
+        var market = ProxybaseMarkets.For(code is { Length: 2 } and not ("XX" or "T1") ? code : null);
+        if (real?.SharingByCountry.FirstOrDefault(s => s.Country == code) is { } measured)
+            return new SharingFigure(market.CountryName, measured.UsdPerMonth / 30, true, measured.Computers, market.SellerUsdPerGb, market.Listed,
+                $"median of {measured.Computers} Otium computers in {market.CountryName}");
+        var estimate = ProxybaseMarkets.EstimatedUserUsdPerDay(market, fees.FeePercent / 100);
+        return new SharingFigure(market.CountryName, estimate, false, 0, market.SellerUsdPerGb, market.Listed, "estimate");
+    }
+
+    private static string SharingLine(SharingFigure s) =>
+        $"Internet sharing: +{Usd(s.PerDay)}/day ({E(s.Short)}).";
+
+    /// <summary>"Your unused internet can earn too": the visitor's country, real figures when there are, else the estimate.</summary>
+    private static string SharingSection(SharingFigure s, string fee)
+    {
+        var rate = Usd(s.RatePerGb);
+        var explain = s.IsReal
+            ? $"a month: the median of {s.Computers} Otium computers in {E(s.CountryName)} whose owners shared their numbers, after Otium's {fee}."
+            : (s.ListedMarket
+                  ? $"a month, estimated for {E(s.CountryName)}: Proxybase pays {rate} per GB there"
+                  : $"a month, estimated: Proxybase pays {rate} per GB where it doesn't list a country on its own")
+              + $", and says a home connection carries 1–5 GB a day on average. This assumes 1 GB, after Otium's {fee}. What you really earn depends on how much Proxybase's customers use your connection; the app shows your real numbers after the first hour.";
+        return $"""
+                <section id="sharing" aria-labelledby="sharing-title">
+                  <div class="wrap power">
+                    <div class="reveal">
+                      <span class="label">Internet sharing</span>
+                      <h2 id="sharing-title" style="margin-top:18px">Your unused internet can earn too.</h2>
+                      <p style="margin-top:20px" class="muted">Optional, and off until you tick it. Proxybase's customers, mostly AI agents and businesses that collect public web pages, use some of the internet connection you aren't using. It's paid to your wallet in your coin, like mining.</p>
+                    </div>
+                    <div class="panel reveal">
+                      <p class="keep">{(s.IsReal ? "" : "≈ ")}{UsdWhole(s.PerDay * 30)}<small>{explain}</small></p>
+                    </div>
+                  </div>
+                </section>
+            """;
     }
 
     /// <summary>
@@ -121,6 +166,16 @@ internal static class SitePages
                         <p class="footnote">Medians across computers whose owners chose to share their numbers. Measured hash rates at each hour's prices, after every fee, before electricity. "Per day" is what they actually earned on an average day, at the hours they were away.</p>
                       </div>
             """;
+        var sharingTable = real.SharingByCountry.Count == 0 ? "" : $"""
+                      <div class="panel real-cards">
+                        <table>
+                          <caption>Internet sharing on real computers running Otium, last {real.WindowDays} days</caption>
+                          <thead><tr><th scope="col">Country</th><th scope="col">Computers</th><th scope="col">Per day of sharing</th><th scope="col">Per month</th></tr></thead>
+                          <tbody>{string.Concat(real.SharingByCountry.Select(s => $"<tr><th scope=\"row\">{E(ProxybaseMarkets.For(s.Country).CountryName)}</th><td>{s.Computers}</td><td>{Usd(s.UsdPerSharingDay)}</td><td>{Usd(s.UsdPerMonth)}</td></tr>"))}</tbody>
+                        </table>
+                        <p class="footnote">Medians across computers whose owners chose to share their numbers, after Otium's fee. "Per month" is what they actually earned, at the hours they shared.</p>
+                      </div>
+            """;
         return $"""
                 <section id="real" aria-labelledby="real-title">
                   <div class="wrap">
@@ -131,6 +186,7 @@ internal static class SitePages
                     <div class="real reveal">
                       {(stats.Count == 0 ? "" : $"<div class=\"real-stats\">{string.Concat(stats)}</div>")}
                       {table}
+                      {sharingTable}
                     </div>
                   </div>
                 </section>
@@ -291,9 +347,10 @@ internal static class SitePages
         var coins = string.Concat(new[]
         {
             ("USDT", "TRC-20"), ("BTC", "Bitcoin"), ("LTC", "Litecoin"), ("BNB", "BEP-20"), ("SOL", "Solana"),
-            ("TRX", "TRON"), ("ETH", "Ethereum"), ("XMR", "Monero"), ("QTC", "graphics card"),
+            ("TRX", "TRON"), ("ETH", "Ethereum"), ("XMR", "Monero"),
         }.Select(c => $"""<span class="coin">{c.Item1} <small>{c.Item2}</small></span>"""));
 
+        var sharing = SharingFor(visitorCountry, fees, real);
         var data = JsonSerializer.Serialize(new
         {
             cards = earnings.Select(c => new
@@ -303,6 +360,8 @@ internal static class SitePages
                 coins = c.Coins.Select(x => new { coin = x.Coin, usdPerDay = Math.Round(x.UsdPerDay, 4), watts = x.Watts, note = x.Note }),
             }),
             payoutUsdt = (double)Core.Wallets.PayoutCoins.Usdt.Threshold,
+            sharingPerDay = Math.Round(sharing.PerDay, 4),
+            sharingSource = sharing.Short,
         }).Replace("</", "<\\/", StringComparison.Ordinal);
         var asOf = pricesAt is { } at ? at.UtcDateTime.ToString("d MMMM yyyy, HH:mm 'UTC'", CultureInfo.InvariantCulture) : null;
         var typical = earnings.FirstOrDefault(c => c.Id == TypicalCard) ?? earnings.FirstOrDefault();
@@ -320,8 +379,8 @@ internal static class SitePages
               """
             : $"""
                       <div class="est-head"><span class="label">What your PC could earn</span><span class="live"><i></i>Today's prices</span></div>
-                      <div class="est-figure"><span class="est-amount" id="est-month">{UsdWhole(estimate.Value.Month)}</span><span class="est-per">a month</span></div>
-                      <p class="est-sub" id="est-sub">{EstimateLine(estimate.Value)}</p>
+                      <div class="est-figure"><span class="est-amount" id="est-month">{UsdWhole(estimate.Value.Month + sharing.PerDay * 30)}</span><span class="est-per">a month</span></div>
+                      <p class="est-sub" id="est-sub">{EstimateLine(estimate.Value)}<br><span id="est-share">{SharingLine(sharing)}</span></p>
                       <p class="est-payout" id="est-payout">{PayoutLine(estimate.Value.Day)}</p>
                       <div class="chips" role="group" aria-label="Popular graphics cards">{chips}</div>
                       <label class="card-pick"><span>Your graphics card</span><select id="card">{options}</select></label>
@@ -333,7 +392,7 @@ internal static class SitePages
                         <input id="price" type="range" min="0" max="0.60" step="0.01" value="{priceText}">
                         <output id="price-out" for="price">${priceText} / kWh</output>
                       </div>
-                      <p class="footnote">Today's coin prices from WhatToMine{(asOf is null ? "" : $" ({asOf})")} and typical card speeds. They change daily; the app measures your own computer before you start. The processor adds a few cents a day.</p>
+                      <p class="footnote">Estimate from today's coin prices{(asOf is null ? "" : $" ({asOf})")} and Proxybase's rates. The app measures your own PC before you start.</p>
                       <script type="application/json" id="otium-data">{data}</script>
               """;
 
@@ -353,16 +412,15 @@ internal static class SitePages
                   <div class="wrap">
                     <div class="hero-copy">
                       <h1 id="hero-title">Your computer works the night shift. <span class="shift">You get paid.</span></h1>
-                      <p class="lede">Otium mines with your idle processor and graphics card while you're away, and the pool pays your own wallet directly. It stops the moment you're back, and waits when electricity costs more than it earns.</p>
+                      <p class="lede">Otium earns with your PC while you're away, and pays your own wallet directly.</p>
                       <div class="actions">
                         <a class="button" href="{download}"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M11 3h2v10.2l3.6-3.6 1.4 1.4-6 6-6-6 1.4-1.4 3.6 3.6z"/><path fill="currentColor" d="M5 19h14v2H5z"/></svg><span data-download-label>Download Otium</span></a>
                         <a class="button ghost" href="#night-shift">How it works</a>
                       </div>
                       <ul class="facts">
-                        <li>Pays your wallet, never holds your money</li>
-                        <li><a href="#useful-work">Mines Pearl, built on AI's matrix math</a></li>
-                        <li>Open source</li>
-                        <li>Windows, macOS and Linux</li>
+                        <li>Stops when you're back</li>
+                        <li>Never holds your money</li>
+                        <li>Windows, macOS, Linux</li>
                       </ul>
                     </div>
                     <div class="panel estimator" id="earnings" aria-label="Earnings estimate">
@@ -447,6 +505,7 @@ internal static class SitePages
                   </div>
                 </section>
 
+                {SharingSection(sharing, fee)}
                 <section id="fees" aria-labelledby="fees-title">
                   <div class="wrap fees">
                     <div class="reveal">
@@ -498,6 +557,7 @@ internal static class SitePages
                 </section>
 
                 <section class="closing" aria-labelledby="closing-title">
+                  <pre class="ascii" aria-hidden="true"></pre>
                   <div class="wrap">
                     <h2 id="closing-title">Your computer sleeps eight hours a night. <span>It could be working.</span></h2>
                     <a class="button" href="{download}"><span data-download-label>Download Otium</span></a>
