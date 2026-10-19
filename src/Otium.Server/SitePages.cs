@@ -44,6 +44,13 @@ internal static class SitePages
     /// <summary>Where visitors and users ask for help (the app's Settings links the same page).</summary>
     private const string HelpUrl = Core.AppIdentity.HelpUrl;
 
+    /// <summary>
+    /// The footer's contact link. The email_off comments keep Cloudflare's Email Obfuscation from swapping the address
+    /// for a script, which the pages' Content-Security-Policy would block.
+    /// </summary>
+    private const string ContactLink =
+        $"""<!--email_off--><a href="mailto:{Core.AppIdentity.ContactEmail}">{Core.AppIdentity.ContactEmail}</a><!--/email_off-->""";
+
     /// <summary>The electricity price the page opens with, in $/kWh (the slider changes it).</summary>
     public const double DefaultPricePerKwh = 0.15;
 
@@ -313,7 +320,7 @@ internal static class SitePages
           <footer>
             <div class="wrap">
               <span>Otium · <i>otium</i> is Latin for leisure</span>
-              <nav aria-label="Site">{{string.Concat(legalLinks.Select(p => $"""<a href="/{p}">{Capitalize(p)}</a>"""))}}<a href="{{HelpUrl}}">Help</a><a href="https://github.com/Malogna/otium">Source code</a><a href="https://github.com/Malogna/otium/releases">Releases</a></nav>
+              <nav aria-label="Site">{{string.Concat(legalLinks.Select(p => $"""<a href="/{p}">{Capitalize(p)}</a>"""))}}<a href="{{HelpUrl}}">Help</a><a href="{{Core.AppIdentity.DiscordUrl}}">Discord</a>{{ContactLink}}<a href="https://github.com/Malogna/otium">Source code</a><a href="https://github.com/Malogna/otium/releases">Releases</a></nav>
             </div>
           </footer>
           <script src="{{SiteAssets.Url("site.js")}}" defer></script>

@@ -129,6 +129,14 @@ respond @admin_elsewhere 404
 Behind Cloudflare (`Caddyfile.cloudflare`) write `not client_ip 198.51.100.7` instead: `remote_ip` would be
 Cloudflare's address there.
 
+**Behind Cloudflare, prefer Cloudflare Access** to an address rule (otium.lol does this). In Zero Trust, add a
+self-hosted application for `<domain>/admin` and `<domain>/admin/*` with a policy that allows only your email, signing
+in with a one-time PIN. Cloudflare then asks for a code emailed to you before anyone reaches the dashboard; the
+`Admin__Token` is still needed after that. Access also catches `/ADMIN`, `//admin` and `/%61dmin`, which ASP.NET would
+otherwise route to the same pages. The `curl` check above then needs an Access service token (Zero Trust → Access
+controls → Service credentials, allowed by a Service Auth policy on the same application), sent as
+`-H "CF-Access-Client-Id: …" -H "CF-Access-Client-Secret: …"` next to the `X-Admin-Token`.
+
 Changing the token: edit `Admin__Token` in `.env`, then `docker compose up -d` (it recreates the server container
 with the new value).
 
@@ -193,6 +201,12 @@ docker compose cp backup:/backups ./otium-backups-copy       # copy them all to 
 `BACKUP_RCLONE_REMOTE` in `.env`. Those credentials go to the backup container only. Where the provider allows it,
 give them write-only access and expire old copies with a lifecycle rule, so a compromised server can't delete its own
 backups. Test with `docker compose run --rm backup once`.
+
+On Cloudflare R2 (otium.lol's setup): give the backup container an R2 token with **Object Read & Write** on that one
+bucket only (an Admin token could remove the lock below), and add a **bucket lock** rule (R2 → bucket → Settings →
+Bucket lock) so no copy can be deleted or overwritten until it's 30 days old. Then set `BACKUP_RCLONE_KEEP_DAYS=31`:
+copies older than that are pruned, which the privacy policy relies on ("backups are kept for up to 31 days"), and the
+lock never blocks the pruning.
 
 ### Restore
 
