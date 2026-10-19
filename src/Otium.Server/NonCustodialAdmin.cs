@@ -78,9 +78,39 @@ public static class NonCustodialAdmin
             }
         }
 
+        // What opted-in computers reported over the last week (share analytics), by device kind.
+        var reported = store.EarningsSince(now.AddDays(-7));
+        var analytics = reported.GroupBy(e => e.Kind).OrderBy(g => g.Key).Select(g => new
+        {
+            kind = g.Key,
+            devices = g.Select(e => e.DeviceId).Distinct().Count(),
+            hours = Math.Round(g.Sum(e => e.Seconds) / 3600, 1),
+            userUsd = Math.Round(g.Sum(e => e.UserUsd), 2),
+            electricityUsd = Math.Round(g.Sum(e => e.ElectricityUsd), 2),
+        }).ToList();
+        var (accounts, accountsNew7d) = store.AccountCounts(now.AddDays(-7));
+        var payouts = store.PoolPayoutTotals();
+
         return Results.Ok(new
         {
             custodial = false,
+            activity = new
+            {
+                accounts,
+                accountsNew24h = store.AccountCounts(now.AddDays(-1)).New,
+                accountsNew7d,
+                devices = store.DeviceCount(),
+                devicesActiveNow = store.DevicesSeenSince(now.AddMinutes(-15)),
+                devicesSeenPast24h = store.DevicesSeenSince(now.AddDays(-1)),
+                newDevicesPerDay = store.NewDevicesPerDay(now, 14).Select(d => new { day = d.Day.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture), d.Devices }),
+            },
+            // What the pools have paid users' own addresses (checked by the real-earnings job).
+            poolPayouts = new { paidUsd = Math.Round(payouts.PaidUsd, 2), rewarded30dUsd = Math.Round(payouts.Rewarded30dUsd, 2), paidAccounts = payouts.PaidAccounts },
+            analytics = new
+            {
+                devices = reported.Select(e => e.DeviceId).Distinct().Count(),
+                byKind = analytics,
+            },
             mysterium = new
             {
                 sponsoring = mystSponsoring,
