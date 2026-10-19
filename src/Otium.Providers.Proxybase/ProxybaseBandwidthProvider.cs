@@ -16,6 +16,49 @@ public sealed record ProxybasePayout(DateTimeOffset At, long Microcredits, strin
 /// </summary>
 public sealed record ProxybaseFee(long Reserved = 0, string? Address = null, long Paid = 0);
 
+/// <summary>
+/// What this computer has earned at Proxybase in total (waiting, paid to the user and paid to Otium), sampled at each
+/// balance check, so the app can show the user's share and its recent pace. <paramref name="FeeShare"/> is Otium's
+/// share of payouts as the server last set it (0.02 until the first payout).
+/// </summary>
+public sealed record ProxybaseEarned(IReadOnlyList<ProxybaseEarnedSample> Samples, double FeeShare = 0.02)
+{
+    public static readonly ProxybaseEarned Empty = new([]);
+
+    /// <summary>Everything earned so far, in microcredits ($1 = 1,000,000).</summary>
+    public long GrossMicrocredits => Samples.Count == 0 ? 0 : Samples[^1].GrossMicrocredits;
+
+    /// <summary>The user's share of everything earned so far, after Otium's fee.</summary>
+    public double UserUsd => GrossMicrocredits / ProxybaseBandwidthProvider.MicrocreditsPerUsd * (1 - FeeShare);
+
+    /// <summary>
+    /// The user's share per day at the pace of the last day (or of what's been seen, from an hour on); null before an
+    /// hour of history.
+    /// </summary>
+    public double? UserUsdPerDay(DateTimeOffset now)
+    {
+        if (Samples.Count < 2)
+            return null;
+        var latest = Samples[^1];
+        var from = Samples.LastOrDefault(s => s.At <= now - TimeSpan.FromDays(1)) ?? Samples[0];
+        var hours = (latest.At - from.At).TotalHours;
+        if (hours < 1)
+            return null;
+        return (latest.GrossMicrocredits - from.GrossMicrocredits) / ProxybaseBandwidthProvider.MicrocreditsPerUsd * (1 - FeeShare) / hours * 24;
+    }
+
+    /// <summary>Adds a reading when the total changed or an hour has passed; keeps a week.</summary>
+    public ProxybaseEarned With(DateTimeOffset at, long grossMicrocredits)
+    {
+        if (Samples.Count > 0 && Samples[^1].GrossMicrocredits == grossMicrocredits && at - Samples[^1].At < TimeSpan.FromHours(1))
+            return this;
+        var kept = Samples.Where(s => s.At >= at - TimeSpan.FromDays(8)).Append(new ProxybaseEarnedSample(at, grossMicrocredits)).ToList();
+        return this with { Samples = kept };
+    }
+}
+
+public sealed record ProxybaseEarnedSample(DateTimeOffset At, long GrossMicrocredits);
+
 /// <summary>Asks the Otium server where to send a payout so it reaches the user's own address in their coin.</summary>
 public delegate Task<SharingRoute> SharingRouter(SharingRouteRequest request, CancellationToken ct);
 
@@ -98,6 +141,13 @@ public sealed class ProxybaseBandwidthProvider : IBandwidthProvider
     /// <summary>Otium's fee: what's kept back for it and what it has been paid.</summary>
     public ProxybaseFee Fee => LoadFee();
 
+    private string EarnedFile => Path.Combine(_dataDir, "otium-earned.json");
+
+    /// <summary>What this computer has earned at Proxybase so far, sampled at each balance check.</summary>
+    public ProxybaseEarned Earned => Load(EarnedFile, ProxybaseEarned.Empty);
+
+    public double? LastKnownUserUsd => Earned.UserUsd;
+
     public Task InstallAsync(IProgress<InstallProgress>? progress, CancellationToken ct) =>
         _asset is null
             ? throw new PlatformNotSupportedException("Proxybase has no client for this computer.")
@@ -157,7 +207,8 @@ public sealed class ProxybaseBandwidthProvider : IBandwidthProvider
             _nextBalanceCheck = _time.GetUtcNow() + BalanceInterval;
             await CheckBalanceAndPayAsync(ct);
         }
-        return new BandwidthStatus(BandwidthProviderState.Online, 0, _payoutProblem, EarningsText());
+        var earned = Earned;
+        return new BandwidthStatus(BandwidthProviderState.Online, 0, _payoutProblem, EarningsText(), earned.UserUsd, earned.UserUsdPerDay(_time.GetUtcNow()));
     }
 
     /// <summary>
@@ -170,6 +221,9 @@ public sealed class ProxybaseBandwidthProvider : IBandwidthProvider
         var balance = await _cli.RunAsync(["buyer", "balance"], ct);
         if (ProxybaseOutput.SellerAvailable(balance.Output) is not { } available)
             return; // the backend didn't answer; try again next time
+        // Everything earned so far: what's waiting plus what has been paid out, to the user and to Otium.
+        var gross = available + LoadPayouts().Sum(p => p.Microcredits) + LoadFee().Paid;
+        await Save(EarnedFile, Earned.With(_time.GetUtcNow(), gross), ct);
         available = await PayFeeIfDueAsync(available, ct);
         _available = available;
         var free = available - LoadFee().Reserved; // the user's part; Otium's kept-back fee isn't theirs to convert
@@ -209,6 +263,8 @@ public sealed class ProxybaseBandwidthProvider : IBandwidthProvider
                 var kept = LoadFee();
                 await SaveFeeAsync(kept with { Reserved = kept.Reserved + fee, Address = route.FeeAddress!.ToLowerInvariant() }, ct);
             }
+            // Otium's share as the server set it this time, for showing the user's share of what's still waiting.
+            await Save(EarnedFile, Earned with { FeeShare = (double)fee / (amount + fee) }, ct);
             _available = await PayFeeIfDueAsync(available - amount, ct);
             _payoutProblem = null;
         }
@@ -249,12 +305,32 @@ public sealed class ProxybaseBandwidthProvider : IBandwidthProvider
     internal string? EarningsText()
     {
         var payouts = LoadPayouts();
-        var paid = payouts.Sum(p => p.Microcredits) / MicrocreditsPerUsd;
-        if (_available is null && paid == 0)
+        var earned = Earned;
+        if (earned.Samples.Count == 0 && payouts.Count == 0)
             return null;
-        var waiting = (_available ?? 0) / MicrocreditsPerUsd;
-        var text = FormattableString.Invariant($"${waiting:0.00} waiting at Proxybase; ${paid:0.00} paid out to your wallet so far");
+        var paid = payouts.Sum(p => p.Microcredits) / MicrocreditsPerUsd;
+        var yours = Math.Max(earned.UserUsd, paid);
+        var text = FormattableString.Invariant(
+            $"${yours:0.00} earned so far: ${yours - paid:0.00} waiting at Proxybase, ${paid:0.00} paid out to your wallet");
         return payouts.LastOrDefault()?.ExpectedOutput is { } last ? $"{text} (last: {last})" : text;
+    }
+
+    private T Load<T>(string path, T fallback)
+    {
+        try
+        {
+            return File.Exists(path) ? JsonSerializer.Deserialize<T>(File.ReadAllText(path)) ?? fallback : fallback;
+        }
+        catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException or NotSupportedException)
+        {
+            return fallback;
+        }
+    }
+
+    private async Task Save<T>(string path, T value, CancellationToken ct)
+    {
+        Directory.CreateDirectory(_dataDir);
+        await File.WriteAllTextAsync(path, JsonSerializer.Serialize(value), ct);
     }
 
     private IReadOnlyList<ProxybasePayout> LoadPayouts()

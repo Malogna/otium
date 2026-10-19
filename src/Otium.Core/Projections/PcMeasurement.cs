@@ -55,6 +55,9 @@ public sealed class PcMeasurementRun(DateTimeOffset startedAt)
     /// <summary>Downloading the engines can take a while on a slow connection, but not forever.</summary>
     public static readonly TimeSpan MaximumPreparing = TimeSpan.FromMinutes(10);
 
+    /// <summary>How long an engine may still say "Off" after the test starts before it counts as not running.</summary>
+    public static readonly TimeSpan OffGrace = TimeSpan.FromSeconds(30);
+
     /// <summary>How long the engines are told to keep earning while the user is at the computer.</summary>
     public static TimeSpan RunNowWindow => MaximumPreparing + Maximum + TimeSpan.FromMinutes(1);
 
@@ -103,8 +106,11 @@ public sealed class PcMeasurementRun(DateTimeOffset startedAt)
         {
             if (now - StartedAt >= MaximumPreparing)
                 Finish("The miners didn't start in time, so nothing was measured.");
-            else if (_devices.Count > 0 && _devices.Values.All(x => x.State is EngineState.Error or EngineState.Off or EngineState.PausedUnprofitable))
-                Finish(null); // nothing will run: report what the engines said (e.g. "would cost more than it earns")
+            // Nothing will run: report what the engines said (e.g. "would cost more than it earns"). Engines still say
+            // "Off" for a moment after Start, until their first update, so that only counts after a short grace period.
+            else if (_devices.Count > 0 && _devices.Values.All(x => x.State is EngineState.Error or EngineState.PausedUnprofitable
+                         || (x.State == EngineState.Off && now - StartedAt >= OffGrace)))
+                Finish(null);
             return;
         }
 
