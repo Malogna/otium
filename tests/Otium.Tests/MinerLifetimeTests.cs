@@ -35,7 +35,21 @@ public sealed class MinerLifetimeTests : IDisposable
         start.UseShellExecute = false;
         start.CreateNoWindow = true;
         start.RedirectStandardOutput = true;
-        var process = Process.Start(start)!;
+        // Linux refuses to run a file that a process started in parallel (by another test) briefly inherited while it
+        // was still open for writing ("Text file busy"); that clears within moments.
+        Process process;
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                process = Process.Start(start)!;
+                break;
+            }
+            catch (System.ComponentModel.Win32Exception) when (attempt < 20 && !OperatingSystem.IsWindows())
+            {
+                Thread.Sleep(100);
+            }
+        }
         _started.Add(process);
         return process;
     }
