@@ -143,7 +143,7 @@ public sealed class ProxybaseTests : IDisposable
         _cli.SellerAvailable = 420_000; // $0.42: below Proxybase's minimum, so the server isn't even asked
         await provider.CheckBalanceAndPayAsync(CancellationToken.None);
         Assert.Empty(_routeRequests);
-        Assert.Equal("$0.42 waiting at Proxybase; $0.00 paid out to your wallet so far", provider.EarningsText());
+        Assert.Equal("$0.41 earned so far: $0.41 waiting at Proxybase, $0.00 paid out to your wallet", provider.EarningsText()); // 2% is Otium's
 
         _cli.SellerAvailable = 16_000_000;
         await provider.CheckBalanceAndPayAsync(CancellationToken.None);
@@ -154,7 +154,7 @@ public sealed class ProxybaseTests : IDisposable
         var payout = Assert.Single(provider.Payouts);
         Assert.Equal("po_123", payout.PayoutId);
         Assert.Equal("4.18 USDT (TRON)", payout.ExpectedOutput);
-        Assert.Equal("$0.00 waiting at Proxybase; $16.00 paid out to your wallet so far (last: 4.18 USDT (TRON))", provider.EarningsText());
+        Assert.Equal("$16.00 earned so far: $0.00 waiting at Proxybase, $16.00 paid out to your wallet (last: 4.18 USDT (TRON))", provider.EarningsText());
 
         // The record survives a restart of Otium.
         Assert.Single(Provider().Payouts);
@@ -189,6 +189,29 @@ public sealed class ProxybaseTests : IDisposable
         Assert.Equal(new ProxybaseFee(0, otium, 1_200_000), provider.Fee);
         Assert.Equal(0, _cli.SellerAvailable);
         Assert.Equal(58_800_000, provider.Payouts.Sum(p => p.Microcredits)); // the user's payouts only
+    }
+
+    [Fact]
+    public async Task What_sharing_earned_and_its_pace_are_known_and_survive_a_restart()
+    {
+        var provider = Provider();
+        await provider.StartAsync(new BandwidthRunOptions("w1"), CancellationToken.None);
+        _route = new SharingRoute(SharingRouteDecisions.Wait, Message: "Waiting");
+
+        _cli.SellerAvailable = 1_000_000;
+        await provider.CheckBalanceAndPayAsync(CancellationToken.None);
+        Assert.Null(provider.Earned.UserUsdPerDay(_time.GetUtcNow())); // not an hour of history yet
+
+        _time.Advance(TimeSpan.FromHours(2));
+        _cli.SellerAvailable = 3_000_000;
+        await provider.CheckBalanceAndPayAsync(CancellationToken.None);
+        Assert.Equal(3 * 0.98, provider.Earned.UserUsd, precision: 6); // the user's share, after Otium's 2%
+        Assert.Equal(24 * 0.98, provider.Earned.UserUsdPerDay(_time.GetUtcNow())!.Value, precision: 6); // $2 in 2 hours
+
+        // Status carries the numbers, and a restarted Otium starts from the last known total (the history never dips).
+        var status = await provider.GetStatusAsync(CancellationToken.None);
+        Assert.Equal(3 * 0.98, status.UserUsd!.Value, precision: 6);
+        Assert.Equal(3 * 0.98, ((IBandwidthProvider)Provider()).LastKnownUserUsd!.Value, precision: 6);
     }
 
     [Fact]

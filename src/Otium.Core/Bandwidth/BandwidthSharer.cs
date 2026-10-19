@@ -117,6 +117,10 @@ public sealed class BandwidthSharer : IAsyncDisposable
     private double _bytesPerSecond;
     private string? _note;
     private string? _earnings;
+
+    /// <summary>What a provider that pays the user directly reports: the user's share so far, and its recent pace.</summary>
+    private double _providerUserUsd;
+    private double? _providerUserUsdPerDay;
     private Task? _loop;
 
     public BandwidthSharer(
@@ -136,7 +140,8 @@ public sealed class BandwidthSharer : IAsyncDisposable
         _save = save;
         _time = time ?? TimeProvider.System;
         _lastTick = _lastSave = _time.GetUtcNow();
-        Snapshot = new BandwidthSnapshot { State = BandwidthState.Off, StatusText = "Off" };
+        _providerUserUsd = provider.LastKnownUserUsd ?? 0;
+        Snapshot = new BandwidthSnapshot { State = BandwidthState.Off, StatusText = "Off", TotalUserUsd = _providerUserUsd };
     }
 
     public event Action<BandwidthSnapshot>? SnapshotChanged;
@@ -245,6 +250,9 @@ public sealed class BandwidthSharer : IAsyncDisposable
 
         var status = await _provider.GetStatusAsync(ct);
         _earnings = status.Earnings ?? _earnings;
+        if (status.UserUsd is { } userUsd)
+            _providerUserUsd = Math.Max(_providerUserUsd, userUsd); // a running total: never shown going down
+        _providerUserUsdPerDay = status.UserUsdPerDay ?? _providerUserUsdPerDay;
         switch (status.State)
         {
             case BandwidthProviderState.Online:
@@ -347,9 +355,9 @@ public sealed class BandwidthSharer : IAsyncDisposable
     {
         var config = _config();
         var unreported = _ledger.PeriodBytes + (_ledger.Pending?.Bytes ?? 0);
-        var perDay = state == BandwidthState.Sharing
-            ? _bytesPerSecond * 86_400 / GB * config.UserUsdPerGb + 24 * config.UserUsdPerSharingHour
-            : 0;
+        var perDay = state != BandwidthState.Sharing ? 0
+            : _providerUserUsdPerDay is { } reported ? reported
+            : _bytesPerSecond * 86_400 / GB * config.UserUsdPerGb + 24 * config.UserUsdPerSharingHour;
         Snapshot = new BandwidthSnapshot
         {
             State = state,
@@ -358,7 +366,7 @@ public sealed class BandwidthSharer : IAsyncDisposable
             BytesToday = _ledger.DayBytes,
             TotalBytes = _ledger.TotalBytes,
             UserUsdPerDay = perDay,
-            TotalUserUsd = _ledger.CreditedUsd + unreported / GB * config.UserUsdPerGb,
+            TotalUserUsd = _ledger.CreditedUsd + unreported / GB * config.UserUsdPerGb + _providerUserUsd,
             Note = _note,
             Earnings = _earnings,
             IdleTime = idle,

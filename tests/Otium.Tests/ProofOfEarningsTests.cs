@@ -169,6 +169,26 @@ public sealed class ProofOfEarningsTests
         Assert.Null(run.Result());
     }
 
+    [Fact]
+    public void Engines_still_off_right_after_start_dont_end_the_test()
+    {
+        // Each engine says "Off" until its first update after Start; the test used to end there with nothing measured.
+        var run = new PcMeasurementRun(T0);
+        var off = new EngineSnapshot { State = EngineState.Off };
+        run.Observe(T0 + TimeSpan.FromSeconds(1), [new(DeviceKind.Cpu, "Ryzen 9", off), new(DeviceKind.Gpu, "RTX 3080", off)]);
+        Assert.Equal(MeasurementPhase.Preparing, run.Phase);
+
+        for (var i = 0; i < 16; i++)
+            run.Observe(T0 + TimeSpan.FromSeconds(5 + i * 10), [new(DeviceKind.Cpu, "Ryzen 9", Earning(2000, 0.05, 0.01))]);
+        Assert.Equal(MeasurementPhase.Done, run.Phase);
+        Assert.NotNull(run.Result());
+
+        // Still off well after Start: nothing will run, so the test ends.
+        var stuck = new PcMeasurementRun(T0);
+        stuck.Observe(T0 + PcMeasurementRun.OffGrace, [new(DeviceKind.Cpu, "Ryzen 9", off)]);
+        Assert.Equal(MeasurementPhase.Done, stuck.Phase);
+    }
+
     // ---------- the engine: run now, and pause instead of stop ----------
 
     private sealed class PausableProvider : IComputeProvider, IPausableProvider
