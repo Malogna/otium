@@ -307,17 +307,18 @@ api.MapPost("/devices/{deviceId}/email/verify", (string deviceId, EmailVerifyReq
 // Which GPU algorithms to mine and where; the same for every app, rebuilt from live feeds every few minutes.
 api.MapGet("/gpu-policy", async (GpuPolicyService policy, CancellationToken ct) => Results.Ok(await policy.GetAsync(ct)));
 
-app.MapGet("/r/{code}", (string code, OtiumStore store, IOptions<ReferralOptions> options, IOptions<SiteOptions> site) =>
+app.MapGet("/r/{code}", (string code, HttpRequest request, OtiumStore store, IOptions<ReferralOptions> options, IOptions<SiteOptions> site) =>
 {
     var normalized = ReferralCodes.Normalize(code);
     var exists = ReferralCodes.IsWellFormed(normalized) && store.CodeExists(normalized);
-    return Results.Content(LandingPage.Render(normalized, "/download", exists, SitePages.AvailableLegalPages(site.Value.PagesDirectory)),
+    return Results.Content(LandingPage.Render(normalized, "/download", exists, PublicBase(request, options),
+            SitePages.AvailableLegalPages(site.Value.PagesDirectory)),
         "text/html; charset=utf-8");
 }).RequireRateLimiting("per-ip");
 
 // The public website: the front page (with today's per-card earnings from the GPU policy), the operator's legal pages
 // once their reviewed files are in place, and the site's own embedded files.
-app.MapGet("/", async (HttpRequest request, IOptions<FeeOptions> fees, IOptions<SiteOptions> site,
+app.MapGet("/", async (HttpRequest request, IOptions<FeeOptions> fees, IOptions<SiteOptions> site, IOptions<ReferralOptions> referral,
     GpuPolicyService gpuPolicy, RealEarningsService realEarnings, ILogger<Program> logger, CancellationToken ct) =>
 {
     var policy = Otium.Core.Fees.FeePolicy.FromTerms(fees.Value.ToTerms());
@@ -330,7 +331,7 @@ app.MapGet("/", async (HttpRequest request, IOptions<FeeOptions> fees, IOptions<
     {
         logger.LogWarning(e, "GPU policy unavailable for the front page");
     }
-    var html = SitePages.Home(policy, "/download", SitePages.AvailableLegalPages(site.Value.PagesDirectory),
+    var html = SitePages.Home(policy, "/download", SitePages.AvailableLegalPages(site.Value.PagesDirectory), PublicBase(request, referral),
         SitePages.Earnings(gpu, policy), gpu?.GeneratedAt,
         // Cloudflare's visitor country, for the local electricity price. Only Cloudflare reaches the server in production
         // (Caddyfile.cloudflare turns everyone else away); anyone sending it themselves only changes their own estimate.
@@ -339,15 +340,22 @@ app.MapGet("/", async (HttpRequest request, IOptions<FeeOptions> fees, IOptions<
     return Results.Content(html, "text/html; charset=utf-8");
 }).RequireRateLimiting("per-ip");
 
-app.MapGet("/{page:regex(^(privacy|terms)$)}", (string page, IOptions<SiteOptions> site, IOptions<ReferralOptions> referral) =>
+app.MapGet("/{page:regex(^(privacy|terms)$)}", (string page, HttpRequest request, IOptions<SiteOptions> site, IOptions<ReferralOptions> referral) =>
 {
     var directory = site.Value.PagesDirectory;
     var file = Path.Combine(directory, $"{page}.html");
     return File.Exists(file)
-        ? Results.Content(SitePages.Legal(page, File.ReadAllText(file), SitePages.AvailableLegalPages(directory), "/download"),
+        ? Results.Content(SitePages.Legal(page, File.ReadAllText(file), SitePages.AvailableLegalPages(directory), "/download", PublicBase(request, referral)),
             "text/html; charset=utf-8")
         : Results.NotFound();
 }).RequireRateLimiting("per-ip");
+
+// For search engines: what not to crawl, and the pages worth finding.
+app.MapGet("/robots.txt", (HttpRequest request, IOptions<ReferralOptions> referral) =>
+    Results.Text(SitePages.Robots(PublicBase(request, referral)), "text/plain; charset=utf-8")).RequireRateLimiting("per-ip");
+app.MapGet("/sitemap.xml", (HttpRequest request, IOptions<ReferralOptions> referral, IOptions<SiteOptions> site) =>
+    Results.Text(SitePages.Sitemap(PublicBase(request, referral), SitePages.AvailableLegalPages(site.Value.PagesDirectory)),
+        "application/xml; charset=utf-8")).RequireRateLimiting("per-ip");
 
 app.MapGet("/site/{**path}", (string path, HttpContext context) =>
 {

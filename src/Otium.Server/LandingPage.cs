@@ -5,7 +5,8 @@ namespace Otium.Server;
 /// <summary>The page a shared invite link opens. This is the free-advertising surface, so it sells the app plainly and honestly.</summary>
 internal static class LandingPage
 {
-    public static string Render(string code, string? downloadUrl, bool codeExists, IEnumerable<string>? legalLinks = null)
+    /// <param name="baseUrl">The site's public address, for link previews.</param>
+    public static string Render(string code, string? downloadUrl, bool codeExists, string baseUrl, IEnumerable<string>? legalLinks = null)
     {
         var safeCode = WebUtility.HtmlEncode(code);
         var safeDownload = WebUtility.HtmlEncode(downloadUrl ?? "#");
@@ -32,10 +33,12 @@ internal static class LandingPage
                   </div>
                 </section>
             """;
-        return SitePages.Layout("Otium invite",
+        // One page per code, all saying the same thing: kept out of search results (the front page is the one to find),
+        // but still with a full link preview, since this is the link people share.
+        return SitePages.Layout(codeExists ? "You're invited to Otium" : "Otium invite",
             codeExists
                 ? $"Otium puts your idle computer to work and pays you directly. Join with my code {code} for 30 days fee-free."
                 : "Otium puts your idle computer to work and pays you directly.",
-            body, legalLinks ?? [], downloadUrl);
+            body, legalLinks ?? [], downloadUrl, baseUrl, "/r/" + Uri.EscapeDataString(code), index: false);
     }
 }

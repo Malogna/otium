@@ -185,10 +185,11 @@ public sealed class SitePagesTests : IDisposable
         using var second = await _http.GetAsync("/");
         Assert.NotEqual(first.Headers.GetValues("Content-Security-Policy").Single(), second.Headers.GetValues("Content-Security-Policy").Single());
 
-        // No inline scripts on the site, so script-src 'self' blocks nothing it needs (the JSON data block doesn't run).
+        // No inline scripts on the site, so script-src 'self' blocks nothing it needs (the JSON data blocks, the page's
+        // own and the structured data for search engines, don't run).
         var html = (await Get("/")).Html;
         Assert.DoesNotMatch("<script>", html);
-        Assert.DoesNotMatch("<script(?![^>]*(src=|type=\"application/json\"))", html);
+        Assert.DoesNotMatch("<script(?![^>]*(src=|type=\"application/(ld\\+)?json\"))", html);
     }
 
     [Fact]
@@ -256,7 +257,10 @@ public sealed class SitePagesTests : IDisposable
         var (status, html) = await Get("/privacy");
         Assert.Equal(HttpStatusCode.OK, status);
         Assert.Contains("<h1>Privacy policy</h1><p>Reviewed text.</p>", html);
-        Assert.Contains("<title>Otium: Privacy</title>", html);
+        Assert.Contains("<title>Otium privacy policy</title>", html);
+        Assert.Contains("""<link rel="canonical" href="http://localhost/privacy">""", html);
+        Assert.Contains("<loc>http://localhost/privacy</loc>", (await Get("/sitemap.xml")).Html);
+        Assert.DoesNotContain("/terms", (await Get("/sitemap.xml")).Html);
         Assert.Contains("""href="/privacy">Privacy</a>""", (await Get("/")).Html);
         Assert.DoesNotContain("""href="/terms""", (await Get("/")).Html);
         Assert.Equal(HttpStatusCode.NotFound, (await Get("/terms")).Status);
@@ -275,6 +279,51 @@ public sealed class SitePagesTests : IDisposable
         Assert.Contains("""<a href="https://discord.gg/4FtFDrz97t">Discord</a>""", html);
         // Outside Cloudflare's Email Obfuscation, whose decoding script the pages' CSP would block.
         Assert.Contains("""<!--email_off--><a href="mailto:contact@otium.lol">contact@otium.lol</a><!--/email_off-->""", html);
+        // One page per code: kept out of search results, but shared links still get the full preview.
+        Assert.Contains("""<meta name="robots" content="noindex, follow">""", html);
+        Assert.DoesNotContain("rel=\"canonical\"", html);
+        Assert.Contains("""<meta name="twitter:card" content="summary_large_image">""", html);
+    }
+
+    [Fact]
+    public async Task Search_engines_and_link_previews_get_what_they_need()
+    {
+        // No public base URL is configured in tests, so addresses use the request's host.
+        var (_, html) = await Get("/?utm_source=ad");
+        Assert.Contains("""<link rel="canonical" href="http://localhost/">""", html); // without the ad's query string
+        Assert.DoesNotContain("noindex", html);
+        Assert.Contains("""<meta property="og:url" content="http://localhost/">""", html);
+        var image = System.Text.RegularExpressions.Regex.Match(html, """<meta property="og:image" content="http://localhost(/site/og\.png\?v=[0-9a-f]{10})">""");
+        Assert.True(image.Success);
+        using (var png = await _http.GetAsync(image.Groups[1].Value))
+        {
+            Assert.Equal("image/png", png.Content.Headers.ContentType?.MediaType);
+            var bytes = await png.Content.ReadAsByteArrayAsync();
+            Assert.Equal(1200, System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(bytes.AsSpan(16))); // PNG header width…
+            Assert.Equal(630, System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(bytes.AsSpan(20))); // …and height
+        }
+
+        // Structured data: the app, who makes it, and the same questions the page shows.
+        var json = System.Text.RegularExpressions.Regex.Match(html, """<script type="application/ld\+json">(.*?)</script>""").Groups[1].Value;
+        using var data = System.Text.Json.JsonDocument.Parse(json);
+        var graph = data.RootElement.GetProperty("@graph").EnumerateArray().ToList();
+        Assert.Equal(["Organization", "WebSite", "SoftwareApplication", "FAQPage"], graph.Select(g => g.GetProperty("@type").GetString()));
+        Assert.Equal("Windows, macOS, Linux", graph[2].GetProperty("operatingSystem").GetString());
+        var questions = graph[3].GetProperty("mainEntity").EnumerateArray().ToList();
+        Assert.Equal(System.Text.RegularExpressions.Regex.Matches(html, "<details><summary>").Count, questions.Count);
+        Assert.Equal("Is my money safe?", questions[0].GetProperty("name").GetString());
+        Assert.Contains("<summary>Is my money safe?</summary>", html);
+
+        var robots = (await Get("/robots.txt")).Html;
+        Assert.Contains("Disallow: /admin\n", robots);
+        Assert.Contains("Disallow: /api/\n", robots);
+        Assert.DoesNotContain("/r/", robots); // invite pages must stay crawlable for their noindex to be seen
+        Assert.Contains("Sitemap: http://localhost/sitemap.xml\n", robots);
+
+        var sitemap = (await Get("/sitemap.xml")).Html;
+        Assert.StartsWith("""<?xml version="1.0" encoding="UTF-8"?>""", sitemap);
+        Assert.Contains("<loc>http://localhost/</loc>", sitemap);
+        Assert.DoesNotContain("/privacy", sitemap); // no legal pages yet
     }
 
     [Theory]
