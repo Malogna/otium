@@ -457,7 +457,7 @@ public partial class HomeViewModel : ViewModelBase
             : b.BytesToday > 0 ? $"{InternetSharingViewModel.FormatBytes(b.BytesToday)} today" : "";
         _internetRow.What = b.State switch
         {
-            BandwidthState.Sharing => "Sharing unused bandwidth",
+            BandwidthState.Sharing => b.Activity ?? "Sharing unused bandwidth",
             BandwidthState.WaitingForIdle => "Waiting for you to step away",
             BandwidthState.LimitReached => "Today's data limit reached",
             BandwidthState.Starting => "Connecting…",

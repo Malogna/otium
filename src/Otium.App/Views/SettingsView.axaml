@@ -149,6 +149,8 @@
                         <!-- On: status and limits -->
                         <StackPanel Spacing="10" IsVisible="{Binding IsOn}">
                             <TextBlock TextWrapping="Wrap" Text="{Binding StatusText}" />
+                            <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Text="{Binding NodeText}"
+                                       IsVisible="{Binding NodeText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                             <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Text="{Binding ProjectionText}"
                                        IsVisible="{Binding ProjectionText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                             <ToggleSwitch IsChecked="{Binding OnlyWhenAway}"

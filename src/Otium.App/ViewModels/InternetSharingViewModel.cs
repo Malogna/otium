@@ -57,6 +57,8 @@ public partial class InternetSharingViewModel : ViewModelBase
     /// <summary>"Typically …." for the suggestion card, or nothing when there's no estimate.</summary>
     public string EstimateSentence => EstimateText.Length > 0 ? $"Typically {EstimateText}." : "";
     [ObservableProperty] public partial string StatusText { get; set; } = "";
+    /// <summary>While sharing: what Proxybase says about this connection (buyers now, reachability, pending).</summary>
+    [ObservableProperty] public partial string NodeText { get; set; } = "";
 
     /// <summary>What sharing looks set to earn: the user's own pace once there is one, before that Proxybase's claim.</summary>
     [ObservableProperty] public partial string ProjectionText { get; set; } = "";
@@ -191,6 +193,7 @@ public partial class InternetSharingViewModel : ViewModelBase
                 BandwidthState.Unavailable => snap.StatusText,
                 _ => settings.EarningEnabled ? "Starting…" : "Paused with the rest of Otium",
             };
+        NodeText = IsOn ? snap.Detail ?? "" : "";
         if (snap.Note is { } note && IsOn)
             StatusText += $". {note}";
 
