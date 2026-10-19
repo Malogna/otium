@@ -57,6 +57,9 @@ public partial class InternetSharingViewModel : ViewModelBase
     /// <summary>"Typically …." for the suggestion card, or nothing when there's no estimate.</summary>
     public string EstimateSentence => EstimateText.Length > 0 ? $"Typically {EstimateText}." : "";
     [ObservableProperty] public partial string StatusText { get; set; } = "";
+
+    /// <summary>What sharing looks set to earn: the user's own pace once there is one, before that Proxybase's claim.</summary>
+    [ObservableProperty] public partial string ProjectionText { get; set; } = "";
     [ObservableProperty] public partial string? Error { get; set; }
     [ObservableProperty] public partial bool OnlyWhenAway { get; set; }
     [ObservableProperty] public partial decimal? DailyLimitGb { get; set; }
@@ -177,7 +180,7 @@ public partial class InternetSharingViewModel : ViewModelBase
         StatusText = !IsOn ? "Off"
             : snap.State switch
             {
-                BandwidthState.Sharing when snap.Earnings is { } earnings => $"Sharing · {FormatBytes(snap.BytesToday)} today · {earnings}",
+                BandwidthState.Sharing when snap.Earnings is { } earnings => $"Sharing · {earnings}", // reports money, not traffic
                 BandwidthState.Sharing => $"Sharing · {FormatBytes(snap.BytesToday)} today",
                 BandwidthState.WaitingForIdle => "Waiting for you to step away",
                 BandwidthState.LimitReached => "Today's limit is reached; sharing continues tomorrow",
@@ -188,6 +191,14 @@ public partial class InternetSharingViewModel : ViewModelBase
             };
         if (snap.Note is { } note && IsOn)
             StatusText += $". {note}";
+
+        // Proxybase pays per GB its customers actually use, so the pace depends on their demand where you are, not on
+        // how fast the connection is: a projection from speed would only mislead. Show the real pace once it exists.
+        ProjectionText = !IsOn || !IsProxybase ? ""
+            : snap.UserUsdPerDay > 0
+                ? $"At your recent pace that's about {Format.Usd(snap.UserUsdPerDay * 30)} a month (your share, after Otium's fee)."
+                : "Proxybase says homes typically earn $15–40 a month, depending on location and demand (its own figure, not checked " +
+                  "by Otium). Your real pace shows here after the first hour of earnings.";
     }
 
     partial void OnOnlyWhenAwayChanged(bool value) => Save();

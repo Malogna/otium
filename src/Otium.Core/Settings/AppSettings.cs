@@ -199,6 +199,12 @@ public sealed class AppSettings
 
     /// <summary>Random seed used for the device ID when the OS exposes no machine ID.</summary>
     public string DeviceSeed { get; set; } = "";
+
+    /// <summary>
+    /// The device ID comes from this install's seed, not the machine ID: set when the server already knew this
+    /// computer from an earlier install (whose secret is gone), so this install registers as a new computer.
+    /// </summary>
+    public bool InstallDeviceId { get; set; }
 }
 
 /// <summary>The server-side account as last synced. Cached so the balance shows instantly at startup.</summary>

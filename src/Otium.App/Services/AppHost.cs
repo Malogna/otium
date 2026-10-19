@@ -1003,6 +1003,17 @@ public sealed class AppHost : IAsyncDisposable
             LastServerError = e is AccountRequestException rejected ? rejected.Message : "Can't reach Otium right now.";
             if (e is AccountRequestException { StatusCode: 451 } unavailable)
                 Settings.UnavailableReason = unavailable.Message; // stops mining and sharing until a check from elsewhere passes
+            if (e is AccountRequestException { StatusCode: 401 } && account.WorkerId is null && !Settings.InstallDeviceId)
+            {
+                // The server knows this computer from an earlier install, whose secret went with it. Nobody can prove
+                // they own that account now, so this install registers as a new computer instead (signing in by email
+                // brings the old account's invites back).
+                Settings.InstallDeviceId = true;
+                DeviceId = ComputeDeviceId();
+                SaveSettings();
+                await SyncAccountAsync(ct);
+                return;
+            }
         }
 
         SaveSettings();
@@ -1131,9 +1142,9 @@ public sealed class AppHost : IAsyncDisposable
     }
 
     private string ComputeDeviceId() =>
-        Environment.GetEnvironmentVariable("OTIUM_DEVICE_SEED") is { Length: > 0 } devSeed
-            ? DeviceIdentity.FromSeed(devSeed)
-            : DeviceIdentity.Compute(Settings.DeviceSeed);
+        Environment.GetEnvironmentVariable("OTIUM_DEVICE_SEED") is { Length: > 0 } devSeed ? DeviceIdentity.FromSeed(devSeed)
+        : Settings.InstallDeviceId ? DeviceIdentity.FromSeed("install:" + Settings.DeviceSeed)
+        : DeviceIdentity.Compute(Settings.DeviceSeed);
 
     /// <summary>
     /// Sends a problem report (see <see cref="ProblemReportBuilder"/>). Returns the reference to quote; throws
