@@ -7,6 +7,9 @@ namespace Otium.App;
 
 sealed class Program
 {
+    /// <summary>This Otium's claim on its data folder, held for the whole run (see <see cref="Otium.Core.Platform.SingleInstance"/>).</summary>
+    internal static Otium.Core.Platform.SingleInstance? Instance { get; private set; }
+
     // Initialization code. Don't use any Avalonia, third-party APIs or any
     // SynchronizationContext-reliant code before AppMain is called: things aren't initialized
     // yet and stuff might break.
@@ -27,6 +30,17 @@ sealed class Program
         if (OperatingSystem.IsWindows())
             velopack = velopack.OnBeforeUninstallFastCallback(_ => UninstallCleanup.Run());
         velopack.Run();
+
+        // One Otium per data folder: a second one would mine and share next to the first. Starting Otium again shows
+        // the running one's window instead (it's often only in the tray); a start at sign-in just leaves it be.
+        var root = Otium.Core.Platform.AppPaths.Default.Root;
+        Instance = Otium.Core.Platform.SingleInstance.TryAcquire(root);
+        if (Instance is null)
+        {
+            if (!args.Contains("--minimized"))
+                Otium.Core.Platform.SingleInstance.AskToShow(root, TimeSpan.FromSeconds(3));
+            return;
+        }
 
         try
         {
