@@ -28,17 +28,21 @@ two-minute test on your PC.</sub>
 
 ## How it works
 
-1. **Install and pick Quick start** (everything on) or **Customize** (see what this PC could earn and choose each part).
+1. **Install and pick Quick start** (processor and graphics card on, internet sharing one tick away) or **Customize**
+   (see what this PC could earn and choose each part).
 2. **Paste one wallet address.** USDT on TRON is the default; BTC, LTC, ETH, BNB, SOL, TRX and Monero work too. The app
    checks the address and its network as you type. That address is the only place money goes.
 3. **Press Start earning.** A two-minute test measures what this PC really earns, after fees and electricity. From
    then on Otium earns only while you're away (after 3 minutes without keyboard or mouse) and stops the moment you
    come back.
 4. **The pool pays you.** [unMineable](https://unmineable.com) pays your address once a day after you reach its minimum
-   (for example 1.5 USDT). The app shows how far you are from the next payout. Users in the US are paid in Monero by
-   [MoneroOcean](https://moneroocean.stream), because unMineable doesn't serve US residents.
+   (for example 1.5 USDT). The app shows how far you are from the next payout. US citizens and residents (the app asks)
+   are paid in Monero by [MoneroOcean](https://moneroocean.stream), because unMineable doesn't serve them.
 
 Otium never holds your money. There's no balance to cash out and no account you have to trust with funds.
+
+Otium doesn't run in countries under international sanctions or where crypto mining is banned (for example Russia,
+Iran, China and Egypt).
 
 ## What you get
 
@@ -48,10 +52,12 @@ Otium never holds your money. There's no balance to cash out and no account you 
 - **Steps aside for you.** Mining runs at the lowest priority, only while you're away. It keeps the computer awake
   while it earns (the screen still turns off), never keeps a laptop on battery awake, and makes the computer warmer
   and its fans louder.
-- **The best coin for your card.** The graphics card mines whichever coin pays most for it right now, and moves on if
-  the pool stops crediting one.
+- **The best coin for your card.** The graphics card tests the coins it can mine, mines whichever pays most for it
+  right now, and moves on if the pool stops crediting one. A coin that fails its test is tried again later.
 - **Internet sharing (optional).** Earn from internet you're not using through [Proxybase](https://proxybase.xyz),
-  paid to the same wallet in the same coin. It's off until you agree to it, and the app explains who uses it first.
+  paid to the same wallet in the same coin. It's off until you tick it, and the app explains who uses it first. Until
+  your own numbers come in, the app and otium.lol estimate it from Proxybase's rate where you live (about $62 a month
+  in Norway, for 1 GB a day); then the app shows what it really earns.
 - **Plain reports.** "While you were away: $0.84 in 7 h 40 min", a monthly summary, and notifications for payouts and
   problems. Each can be shared as a picture with your invite code.
 - **Options in Settings:** efficiency mode for NVIDIA cards (70% power while mining), let the graphics card earn while
@@ -78,9 +84,10 @@ start.
   allow it.
 - Otium's server keeps your payout address, your computers and invite codes. An email address is optional (it lets
   you keep your invites when you reinstall). Settings has **Download my data** and **Delete my account**.
-- "Share analytics" is a yes-or-no question at the start (and a switch in Settings). If you say yes,
-  the app sends your graphics card and processor model and what they earned, never your address; otium.lol shows only
-  totals across several PCs. Saying no later deletes what was sent.
+- "Share analytics" is a yes-or-no question at the start (and a switch in Settings). If you say yes, the app sends your
+  graphics card and processor model and what they earned (and, if you share your internet, your country and what
+  sharing earned), never your address. otium.lol shows only figures combined across several PCs. Saying no later
+  deletes what was sent.
 - Uninstalling removes the miners, Otium's scheduled tasks and its downloaded files.
 
 ## Help
