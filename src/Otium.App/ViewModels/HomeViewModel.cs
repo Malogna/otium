@@ -203,6 +203,7 @@ public partial class HomeViewModel : ViewModelBase
         WeekText = projection.PerWeek > 0 ? $"≈ {Format.Usd(projection.PerWeek)}" : "—";
         MonthText = projection.PerMonth > 0 ? $"≈ {Format.Usd(projection.PerMonth)}" : "—";
         var away = settings.OnlyWhenIdle ? " away" : "";
+        var sharingEstimated = InternetSharing.IsOn && InternetSharing.IsProxybase && _host.Bandwidth.Snapshot.UserUsdPerDay <= 0;
         var miningLoses = rate > 0 && mining.PerDay <= 0;
         ProjectionBasis = miningLoses && projection.PerDay <= 0
             ? "At your electricity price, mining currently costs more than it earns, so no profit is projected."
@@ -213,6 +214,8 @@ public partial class HomeViewModel : ViewModelBase
                     : _lastRate > 0 || measured is { Count: > 0 }
                         ? $"Assuming about {projection.HoursPerDay:0} hours a day{away}. Otium learns your real pattern within a day."
                         : $"Estimated from your hardware, about {projection.HoursPerDay:0} hours a day{away}. Real numbers appear once it runs.";
+        if (sharingEstimated && projection.PerDay > 0)
+            ProjectionBasis += " Internet sharing is estimated from Proxybase's rate until your own earnings come in.";
 
         var hours = _host.History.LastHours(DateTimeOffset.Now, 24);
         if (!hours.SequenceEqual(ChartValues))
@@ -407,12 +410,13 @@ public partial class HomeViewModel : ViewModelBase
         var b = _host.Bandwidth.Snapshot;
         _internetRow.IsActive = b.State == BandwidthState.Sharing;
         // Until this computer has its own pace, Proxybase sharing shows the estimate from its rate here (marked as one).
-        var estimate = b.Earnings is not null && b.UserUsdPerDay <= 0 ? InternetSharing.EstimatedUsdPerDay : 0;
+        var directPay = InternetSharing.IsProxybase || b.Earnings is not null;
+        var estimate = directPay && b.UserUsdPerDay <= 0 ? InternetSharing.EstimatedUsdPerDay : 0;
         _internetRow.PerDay = b.State != BandwidthState.Sharing ? ""
             : b.UserUsdPerDay > 0 ? $"{Format.Usd(b.UserUsdPerDay)}/day"
             : estimate > 0 ? $"≈ {Format.Usd(estimate)}/day" : "";
         // Partners that pay the user directly (Proxybase) report money, not traffic: show what it has earned so far.
-        _internetRow.Speed = b.Earnings is not null
+        _internetRow.Speed = directPay
             ? (b.TotalUserUsd > 0 ? $"{Format.Usd(b.TotalUserUsd)} earned so far" : estimate > 0 ? "estimate · nothing earned yet" : "Nothing earned yet")
             : b.BytesToday > 0 ? $"{InternetSharingViewModel.FormatBytes(b.BytesToday)} today" : "";
         _internetRow.What = b.State switch
@@ -434,9 +438,10 @@ public partial class HomeViewModel : ViewModelBase
         if (!InternetSharing.IsOn)
             return 0;
         var b = _host.Bandwidth.Snapshot;
-        // A partner that pays directly reports its pace over whole days already; a per-hour rate covers sharing hours only.
-        if (b.Earnings is not null)
-            return b.UserUsdPerDay;
+        // Proxybase reports its pace over whole days already (a per-hour rate covers sharing hours only); until this
+        // computer has one, the estimate from Proxybase's rate here counts, as the internet row shows it.
+        if (InternetSharing.IsProxybase)
+            return b.UserUsdPerDay > 0 ? b.UserUsdPerDay : InternetSharing.EstimatedUsdPerDay;
         var hours = _host.Settings.BandwidthOnlyWhenIdle ? 8 : 16;
         return b.State == BandwidthState.Sharing && b.UserUsdPerDay > 0 ? b.UserUsdPerDay * hours / 24 : InternetSharing.ExpectedUsdPerDay;
     }
