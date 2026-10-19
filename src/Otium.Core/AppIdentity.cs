@@ -13,6 +13,12 @@ public static class AppIdentity
     /// <summary>Where users ask for help: the project's public issue tracker.</summary>
     public const string HelpUrl = "https://github.com/Malogna/otium/issues";
 
+    /// <summary>Otium's public email address (Cloudflare Email Routing forwards it), named in the terms and privacy policy.</summary>
+    public const string ContactEmail = "contact@otium.lol";
+
+    /// <summary>Otium's community Discord server (a permanent invite link).</summary>
+    public const string DiscordUrl = "https://discord.gg/4FtFDrz97t";
+
     public const string Name = "Otium";
 
     /// <summary>
