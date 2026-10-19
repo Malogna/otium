@@ -1,5 +1,5 @@
 # Backup sidecar: sqlite3 for online backups, rclone for optional off-site copies.
-FROM alpine:3.22
+FROM alpine:3.24
 
 RUN apk add --no-cache sqlite rclone \
     && mkdir -p /backups \
