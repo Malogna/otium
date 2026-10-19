@@ -47,6 +47,13 @@ each visitor's address from Cloudflare's `CF-Connecting-IP` header, trusted only
 `www.<domain>` to the bare domain, so point both at the server. Cloudflare's own AAAA records are fine: Cloudflare
 reaches the server over IPv4.
 
+Requests that reach the server's own address directly, not through Cloudflare, get a `403`: they would skip Cloudflare's
+firewall and could send a made-up `CF-IPCountry` to get around the country checks. Also limit 80/tcp, 443/tcp and
+443/udp to [Cloudflare's IPv4 ranges](https://www.cloudflare.com/ips-v4/) in the VPS provider's firewall (on Lightsail:
+the instance's **Networking** tab, one rule per range). Let's Encrypt still reaches port 80 through Cloudflare. Check
+from your own machine that `curl --resolve <domain>:443:<server IP> https://<domain>/` no longer answers (or answers
+`403`), while `https://<domain>/` still works.
+
 ## 3. Get the code and configure it
 
 ```bash
