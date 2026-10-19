@@ -148,7 +148,7 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         _time = time ?? TimeProvider.System;
         _endpoint = endpoint ?? GpuPoolEndpoint.MoneroOcean;
         _switcher = switcher ?? new ProfitSwitcher();
-        _store = new BenchmarkStore(benchmarkPath, _gpus);
+        _store = new BenchmarkStore(benchmarkPath, _gpus, _time);
         _asset = asset ?? SrbMinerRelease.ForCurrentPlatform();
         _installer = new EngineInstaller(http, Path.Combine(enginesRoot, $"srbminer-{SrbMinerRelease.Version}"), SrbMinerRelease.BinaryName);
     }

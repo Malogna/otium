@@ -37,11 +37,11 @@ public partial class InviteViewModel : ViewModelBase
     public string RewardFriend => $"Your friend mines fee-free for their first {FriendDays} days.";
 
     public string RewardYou => _host.Settings.PayoutMode == Core.Settings.PayoutMode.Balance
-        ? $"You get {(_host.Account?.Balance.ReferralPercent ?? 0):0.#}% of everything they earn for " +
+        ? FormattableString.Invariant($"You get {(_host.Account?.Balance.ReferralPercent ?? 0):0.#}% of everything they earn for ") +
           $"{Fees.ReferrerRewardPeriod.TotalDays / 30:0} months, added to your Otium balance. It comes out of Otium's fee, never out of your friend's earnings."
         :
         $"You get {Fees.ReferrerShareOfFee * 100:0}% of Otium's fee on everything they mine for " +
-        $"{Fees.ReferrerRewardPeriod.TotalDays / 30:0} months ({Fees.ReferrerPercent:0.##}% of their mining time), " +
+        FormattableString.Invariant($"{Fees.ReferrerRewardPeriod.TotalDays / 30:0} months ({Fees.ReferrerPercent:0.##}% of their mining time), ") +
         "mined straight to your own address when the same pool pays you both. It comes out of Otium's fee, never out of your friend's earnings.";
 
     public string RewardBonus =>
