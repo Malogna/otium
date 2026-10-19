@@ -35,8 +35,9 @@ public partial class HomeViewModel : ViewModelBase
     private readonly Action _openAdvanced;
     private readonly CountUp _balance;
     private readonly CountUp _month;
-    private double _lastRate;          // $/day while earning (after fee), remembered for when it's paused
-    private double _lastElectricity;   // $/day of electricity while earning
+    // Each device's last pace while it earned ($/day after the fee, and its electricity), remembered for while it's
+    // paused, waiting or testing coins, so one idle device doesn't drop out of the projection.
+    private readonly Dictionary<DeviceKind, (double User, double Electricity)> _lastRates = [];
     private EarningsEstimate? _estimate;
     private readonly ActivityRow _internetRow;
 
@@ -166,16 +167,21 @@ public partial class HomeViewModel : ViewModelBase
         var snapshots = engines.Select(e => e.Snapshot).ToList();
         var earningNow = snapshots.Where(s => s.State == EngineState.Earning).ToList();
 
-        // Rates: live while earning; otherwise the last live rate; otherwise the test's measurement; otherwise the
-        // hardware estimate. A device the test found unprofitable counts as zero: Otium doesn't run it.
-        if (earningNow.Count > 0)
+        // Rates, per device: live while it earns; otherwise its last live rate; otherwise the test's measurement of it.
+        // Without either for any device, the hardware estimate. A device the test found unprofitable counts as zero:
+        // Otium doesn't run it.
+        foreach (var engine in engines)
         {
-            _lastRate = earningNow.Sum(s => s.UserUsdPerDay);
-            _lastElectricity = earningNow.Sum(s => s.ElectricityUsdPerDay);
+            if (engine.Snapshot is { State: EngineState.Earning, IsCalibrating: false } s)
+                _lastRates[engine.Provider.Device] = (s.UserUsdPerDay, s.ElectricityUsdPerDay);
         }
         var measured = settings.Measurement?.Devices.Where(d => d.NetUsdPerDay > 0).ToList();
-        var (rate, electricity) = _lastRate > 0 ? (_lastRate, _lastElectricity)
-            : measured is { Count: > 0 } ? (measured.Sum(d => d.UserUsdPerDay), measured.Sum(d => d.ElectricityUsdPerDay))
+        var known = engines.Where(e => e.Enabled).Select(e => e.Provider.Device).Distinct()
+            .Select(kind => _lastRates.TryGetValue(kind, out var last) ? last
+                : measured?.FirstOrDefault(d => d.Device == kind) is { } m ? (m.UserUsdPerDay, m.ElectricityUsdPerDay)
+                : ((double User, double Electricity)?)null)
+            .Where(r => r is not null).Select(r => r!.Value).ToList();
+        var (rate, electricity) = known.Count > 0 ? (known.Sum(r => r.User), known.Sum(r => r.Electricity))
             : (_estimate?.GrossUsdPerDay ?? 0, _estimate?.ElectricityUsdPerDay ?? 0);
 
         // Balance
@@ -228,7 +234,7 @@ public partial class HomeViewModel : ViewModelBase
                 ? "Mining doesn't pay at your electricity price, so this comes from internet sharing alone."
                 : projection.HoursAreMeasured
                     ? $"Based on your PC earning about {projection.HoursPerDay:0.#} hours a day, after electricity."
-                    : _lastRate > 0 || measured is { Count: > 0 }
+                    : _lastRates.Count > 0 || measured is { Count: > 0 }
                         ? $"Assuming about {projection.HoursPerDay:0} hours a day{away}. Otium learns your real pattern within a day."
                         : $"Estimated from your hardware, about {projection.HoursPerDay:0} hours a day{away}. Real numbers appear once it runs.";
         if (sharingEstimated && projection.PerDay > 0)
@@ -243,7 +249,9 @@ public partial class HomeViewModel : ViewModelBase
         // Cash-out goal
         CanCashOut = IsBalanceMode && account.AvailableUsd >= minimum && account.AvailableUsd > 0;
         if (!IsBalanceMode)
-            RefreshPoolGoal(settings.EarningEnabled ? rate : 0, engines.Sum(e => e.Totals.UserUsd));
+            // The pool is paid by mining only, at the projected pace (all devices, the hours they earn), not by whatever
+            // happens to be running this minute (a graphics card testing coins earned nothing for a few minutes).
+            RefreshPoolGoal(settings.EarningEnabled ? mining.EarningRatePerDay * mining.HoursPerDay / 24 : 0, engines.Sum(e => e.Totals.UserUsd));
         else if (CanCashOut)
         {
             GoalText = "You can cash out now";
