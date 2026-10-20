@@ -594,7 +594,8 @@ public sealed class SitePagesTests : IDisposable
         Assert.Contains("href=\"#why-fee\"", html);
 
         var robots = (await Get("/robots.txt")).Html;
-        Assert.Contains("Disallow: /admin\n", robots);
+        Assert.DoesNotContain("/admin", robots); // listing it would only advertise it to scanners
+        Assert.DoesNotContain("/dev/", robots);
         Assert.Contains("Disallow: /api/\n", robots);
         Assert.DoesNotContain("/r/", robots); // invite pages must stay crawlable for their noindex to be seen
         Assert.Contains("Sitemap: http://localhost/sitemap.xml\n", robots);

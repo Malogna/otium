@@ -375,17 +375,16 @@ internal static partial class SitePages
     private const string PreviewImageAlt = "Otium: Your computer works the night shift. You get paid. Paid to your own wallet, stops when you're back, for Windows, macOS and Linux.";
 
     /// <summary>
-    /// For search engines: everything public may be crawled except the operator's dashboard, the app's API and feeds,
-    /// and the installer redirects under /download/ (the download page itself is one to find). Invite pages stay
-    /// crawlable so their noindex is seen.
+    /// For search engines: everything public may be crawled except the app's API and feeds, and the installer redirects
+    /// under /download/ (the download page itself is one to find). Invite pages stay crawlable so their noindex is seen.
+    /// The operator's dashboard and /dev/ aren't listed: naming them would only point scanners at them, and neither can
+    /// be indexed anyway (/admin is behind Cloudflare Access, /dev/ answers 404 in production).
     /// </summary>
     public static string Robots(string baseUrl) => $"""
         User-agent: *
-        Disallow: /admin
         Disallow: /api/
         Disallow: /updates/
         Disallow: /download/
-        Disallow: /dev/
 
         Sitemap: {baseUrl.TrimEnd('/')}/sitemap.xml
 
