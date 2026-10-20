@@ -349,7 +349,8 @@ Users can also opt in to sharing unused internet bandwidth. Non-custodial, this 
 SOCKS5 access, mostly to AI agents and scraping/ad-verification jobs, and pays sellers per GB. It needs no account:
 the client makes a wallet key on the computer and signs in with it. Proxybase pays only USDC on the Tempo network, so
 each payout goes **through a one-time conversion to the user's own payout address and coin** (USDT on TRON, BTC, SOL…),
-and users never see Tempo. Otium's cut is a fee inside that conversion. (The earlier
+and users never see Tempo. Otium's cut is paid separately, never from the conversion, and the server checks on Tempo
+that it arrived. (The earlier
 Mysterium node, `src/Otium.Providers.Mysterium`, stays in the code base but isn't offered; its "remove the network
 service" button in Advanced remains for computers that installed it.)
 
@@ -378,15 +379,27 @@ service" button in Advanced remains for computers that installed it.)
   XMR goes Relay → USDC on Base → a ChangeNOW exchange (minimum about 12 USDC). Payouts wait while the network part of
   the cost is above `Sharing:MaxNetworkCostPercent` (5%), up to `Sharing:PayAnywayUsd` ($25): TRON's delivery fee
   (about $0.75 in October 2026) means USDT-on-TRON payouts of about $16.
-- **Otium's cut:** `Sharing:FeeBps` (default: the mining fee, 2% = 200, at most 10%) of each payout, taken as a
-  [Relay app fee](https://docs.relay.link/features/app-fees) in the conversion the server opens, so it's paid whatever
-  the app does (before, the app kept it back and paid it itself, which a modified app or an edited `otium-fee.json`
-  could skip). Relay credits app fees to `Sharing:FeeRecipient` (Otium's 0x address; an EVM address whatever the
-  destination chain) as a USDC balance, claimed in the Relay app or with `/app-fees/{address}/claim`; they aren't paid
-  out on each conversion. For LTC and XMR the fee is on the Relay leg to Base, once; SideShift's commission stays 0 and
-  ChangeNOW's partner commission (from 0.4%) still applies on XMR. The route sends `feeBps` so the app can show the
-  user's share; apps keep nothing back any more, and a fee an earlier version reserved is paid once if it's at least
-  $1, otherwise given back to the user's next payout.
+- **Otium's cut:** `Sharing:FeeBps` (default: the mining fee, 2% = 200, at most 10%) of each payout, kept back at
+  Proxybase (`otium-fee.json`) and paid by the app from the user's sharing earnings to `Sharing:FeeRecipient` (Otium's
+  0x address, on Tempo). Only the rest is converted, with no app fee at Relay and SideShift's commission set to 0, so
+  Otium earns nothing from exchanging coins. ChangeNOW's partner commission (from 0.4%) still applies on XMR.
+- **The server checks the fee arrived** (`SharingFees`), since paying it is otherwise up to the app. A fee payment may
+  come from Proxybase's own wallet, so the sender says nothing about whose it is; instead it's recognised by its
+  **exact amount**. The app tells the server what it keeps back (`reservedFeeMicrocredits` in the route request); from
+  $1 the server answers with `feePaymentMicrocredits`, the fee moved by a few microcredits (+1, −1, +2…, at most 500,
+  never under $1) so that no other payment still on its way has the same amount, records it, and the app pays exactly
+  that. Every 3 minutes the server reads Tempo (`Sharing:TempoRpcUrl`, default `https://rpc.tempo.xyz`, chain 4217) with
+  `eth_getLogs` for the token's ERC-20 `Transfer` events (TIP-20 tokens emit them for every movement) to Otium's
+  address and to recent routes' deposit addresses, from the last block read, `Sharing:TempoBlocksPerQuery` (10,000)
+  blocks per request. A transfer of exactly a payment's amount settles it; a transfer into a deposit address makes
+  that route's fee owed (so payouts that never happened aren't counted). No new route opens while a payment is more
+  than `Sharing:FeeGraceHours` (2) overdue, or while the account owes more than $1 beyond the payout at hand; then the
+  answer is "wait" ("Otium's share of your last sharing payouts hasn't arrived yet…") with the payment to make, out of
+  what's waiting if nothing is kept back. A payment unseen for 3 days lapses and its fee counts as owed again. When
+  Tempo hasn't been read in the last 30 minutes nothing is held: users don't lose payouts to Otium's outage, at the
+  price of a modified app going unchecked meanwhile. Apps from before don't send what they keep back and aren't
+  checked; `Sharing:RequireFeeCheck=true` tells them to update instead (turn it on once the app release that pays
+  this way is out).
 - **Server secrets:** `Sharing:RelayApiKey` (Relay requires one for quotes from October 2026), `Sharing:SideShiftSecret`
   and `Sharing:SideShiftAffiliateId` for LTC, `Sharing:ChangeNowApiKey` for XMR. Without the last two, LTC and XMR users
   are told to pick another coin for sharing.
@@ -394,7 +407,8 @@ service" button in Advanced remains for computers that installed it.)
   sends `proxybaseDisabled`).
 - **Still to verify on a real run:** a node relaying traffic; which token Proxybase actually pays (Relay expects
   Stargate's USDC on Tempo, `0x20c0…8b50`); a first payout through Relay arriving as USDT on TRON; and that Relay's app
-  fee is charged on open deposit addresses, including re-quoted amounts (`/requests/v3` shows `appFees.actual`).
+  fee is charged on open deposit addresses (`/requests/v3` shows `appFees.actual`); and that Proxybase's fee payouts
+  arrive at `Sharing:FeeRecipient` as single transfers of exactly the amount asked for, in that token.
 - **AV and code signing.** Proxyware is a common antivirus "potentially unwanted" category. Keep the sharing state
   visible in the app, and sign the Windows build with an EV certificate.
 

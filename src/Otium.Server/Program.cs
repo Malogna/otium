@@ -111,6 +111,11 @@ builder.Services.AddHttpClient<Otium.Server.Sharing.IRelayApi, Otium.Server.Shar
 builder.Services.AddHttpClient<Otium.Server.Sharing.SideShiftLitecoin>();
 builder.Services.AddHttpClient<Otium.Server.Sharing.ChangeNowMonero>();
 builder.Services.AddSingleton<Otium.Server.Sharing.SharingRouteService>();
+// Otium's sharing fee is paid by the app on Tempo; the server reads Tempo to see that it arrived.
+builder.Services.AddHttpClient<Otium.Server.Sharing.ITempoTransfers, Otium.Server.Sharing.TempoRpcClient>();
+builder.Services.AddSingleton<Otium.Server.Sharing.SharingFees>();
+if (!builder.Configuration.GetValue<bool>("DisableBackgroundJobs"))
+    builder.Services.AddHostedService<Otium.Server.Sharing.SharingFeeWatcher>();
 
 // The website's real numbers: opt-in earnings reports, and what the pools paid users' own addresses.
 builder.Services.Configure<RealEarningsOptions>(builder.Configuration.GetSection(RealEarningsOptions.Section));

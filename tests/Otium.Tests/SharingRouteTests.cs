@@ -20,10 +20,45 @@ namespace Otium.Tests;
 
 /// <summary>
 /// Internet sharing payouts reach the user's own coin: the server opens a one-time conversion from Proxybase's Tempo
-/// USDC (Relay, plus SideShift for LTC or ChangeNOW for XMR), with Otium's share taken inside it as a Relay app fee.
+/// USDC (Relay, plus SideShift for LTC or ChangeNOW for XMR), with no Otium fee in it; Otium's share is paid separately,
+/// the exact amount the server names, and the server holds payouts while a payment is overdue.
 /// </summary>
-public sealed class SharingRouteTests
+public sealed class SharingRouteTests : IDisposable
 {
+    private readonly string _dbPath = Path.Combine(Path.GetTempPath(), $"otium-fees-{Guid.NewGuid():N}.db");
+    private readonly ManualTime _time = new(new DateTimeOffset(2026, 10, 20, 12, 0, 0, TimeSpan.Zero));
+    private readonly FakeTempo _tempo = new();
+    private OtiumStore? _store;
+
+    private OtiumStore Store => _store ??= new OtiumStore($"Data Source={_dbPath};Pooling=False");
+
+    public void Dispose()
+    {
+        if (_store is null)
+            return;
+        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+        foreach (var file in new[] { _dbPath, _dbPath + "-wal", _dbPath + "-shm" })
+            File.Delete(file);
+    }
+
+    /// <summary>Tempo as the fee check reads it: a chain head and the transfers made so far.</summary>
+    private sealed class FakeTempo : ITempoTransfers
+    {
+        public long Head { get; set; } = 1_000_000;
+        public List<TempoTransfer> Transfers { get; } = [];
+        public bool Down { get; set; }
+
+        public void Pay(string to, long amount) => Transfers.Add(new TempoTransfer(to, amount, $"0x{Transfers.Count:x64}:0", ++Head));
+
+        public Task<long> GetBlockNumberAsync(CancellationToken ct) =>
+            Down ? throw new HttpRequestException("Tempo's RPC didn't answer") : Task.FromResult(Head);
+
+        public Task<IReadOnlyList<TempoTransfer>> GetTransfersAsync(string token, IReadOnlyList<string> recipients, long fromBlock, long toBlock, CancellationToken ct) =>
+            Task.FromResult<IReadOnlyList<TempoTransfer>>(Transfers.Where(t => recipients.Contains(t.To) && t.Block >= fromBlock && t.Block <= toBlock).ToList());
+    }
+
+    private SharingFees Fees(SharingOptions? options = null) =>
+        new(Store, _tempo, Options.Create(options ?? new SharingOptions { FeeRecipient = OtiumFee }), _time, NullLogger<SharingFees>.Instance);
     private const string Refund = "0xb956cb455901fba57a330221bb1caa00c3ec7acb";
     private const string OtiumFee = "0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed";
 
@@ -106,13 +141,14 @@ public sealed class SharingRouteTests
 
     private static readonly DateTimeOffset T0 = new(2026, 10, 20, 12, 0, 0, TimeSpan.Zero);
 
-    private static SharingRouteService Service(FakeRelay relay, SharingOptions? options = null, TimeProvider? time = null, HttpMessageHandler? partner = null)
+    private SharingRouteService Service(FakeRelay relay, SharingOptions? options = null, TimeProvider? time = null, HttpMessageHandler? partner = null)
     {
-        time ??= new ManualTime(T0);
-        return new(relay, new SideShiftLitecoin(new HttpClient(partner ?? new HttpClientHandler()), Options.Create(options ?? new SharingOptions())),
-            new ChangeNowMonero(new HttpClient(), Options.Create(options ?? new SharingOptions())),
-            Options.Create(options ?? new SharingOptions { FeeRecipient = OtiumFee }), Options.Create(new FeeOptions { FeePercent = 2 }),
-            Options.Create(new ProxybaseOptions()), new ConnectionQuotas(time), time, NullLogger<SharingRouteService>.Instance);
+        time ??= _time;
+        options ??= new SharingOptions { FeeRecipient = OtiumFee };
+        return new(relay, new SideShiftLitecoin(new HttpClient(partner ?? new HttpClientHandler()), Options.Create(options)),
+            new ChangeNowMonero(new HttpClient(), Options.Create(options)),
+            Options.Create(options), Options.Create(new FeeOptions { FeePercent = 2 }),
+            Options.Create(new ProxybaseOptions()), new ConnectionQuotas(time), Fees(options), time, NullLogger<SharingRouteService>.Instance);
     }
 
     private static Session SessionFor(string payout, string? accountId = null)
@@ -218,14 +254,13 @@ public sealed class SharingRouteTests
         Assert.Equal(728126428, quote.Destination.ChainId);
         Assert.Equal("0xdeposit1", route.DepositAddress);
 
-        // Otium's 2% is a Relay app fee inside the conversion: everything waiting goes in, and the app has no fee of its
-        // own to pay (or to skip).
-        Assert.Equal(20_000_000, quote.Amount);
-        Assert.True(quote.WithAppFee);
-        Assert.Equal(20_000_000, route.AmountMicrocredits);
-        Assert.Equal(0, route.FeeMicrocredits);
-        Assert.Null(route.FeeAddress);
-        Assert.Equal(200, route.FeeBps);
+        // Otium's 2% isn't in the conversion: only the user's part is converted, with no app fee, and the app pays
+        // Otium's share to Otium's own address itself.
+        Assert.Equal(19_600_000, quote.Amount);
+        Assert.False(quote.WithAppFee);
+        Assert.Equal(19_600_000, route.AmountMicrocredits);
+        Assert.Equal(400_000, route.FeeMicrocredits);
+        Assert.Equal(OtiumFee, route.FeeAddress);
 
         server.Time.Advance(SharingRouteService.RouteInterval);
         Assert.Equal(SharingRouteDecisions.Wait, (await server.Route(device, secret, 5_000_000)).Decision);
@@ -234,13 +269,13 @@ public sealed class SharingRouteTests
     }
 
     [Fact]
-    public async Task Without_a_fee_address_the_conversion_carries_no_fee()
+    public async Task Without_a_fee_address_there_is_no_fee()
     {
         var relay = new FakeRelay();
-        var route = await Service(relay, new SharingOptions()).RouteAsync(SessionFor(TestAddresses.Usdt(1)), new SharingRouteRequest(20_000_000, Refund), null, CancellationToken.None);
+        var route = await Service(relay, new SharingOptions()).RouteAsync(SessionFor(TestAddresses.Usdt(1)), new SharingRouteRequest(20_000_000, Refund, 0), null, CancellationToken.None);
         Assert.Equal(SharingRouteDecisions.Pay, route.Decision);
-        Assert.False(Assert.Single(relay.Quotes).WithAppFee);
-        Assert.Equal(0, route.FeeBps);
+        Assert.Equal(20_000_000, Assert.Single(relay.Quotes).Amount);
+        Assert.Equal(0, route.FeeMicrocredits);
     }
 
     [Fact]
@@ -316,8 +351,9 @@ public sealed class SharingRouteTests
         Assert.Equal(SharingRouteDecisions.Pay, route.Decision);
         var (request, _) = Assert.Single(sideShift.Requests);
         Assert.Equal("2001:db8::1234", request.Headers.GetValues("x-user-ip").Single());
-        // Both Relay legs carry Otium's fee once: the estimate (so the shift is sized after it) and the real deposit.
-        Assert.All(relay.Quotes, q => Assert.True(q.WithAppFee));
+        // Neither Relay leg carries an Otium fee: the estimate and the real deposit convert only the user's part.
+        Assert.All(relay.Quotes, q => Assert.False(q.WithAppFee));
+        Assert.All(relay.Quotes, q => Assert.Equal(19_600_000, q.Amount));
         Assert.Equal("0x1111111111111111111111111111111111111111", relay.Quotes[^1].Recipient);
     }
 
@@ -330,6 +366,162 @@ public sealed class SharingRouteTests
         Assert.Equal(SharingRouteDecisions.Unsupported, ltc.Decision);
         Assert.Contains("LTC", ltc.Message);
         Assert.Empty(server.Relay.Quotes);
+    }
+
+    // ---------- Otium's fee: exact amounts, checked on Tempo ----------
+
+    [Fact]
+    public void Each_fee_payment_on_its_way_has_an_amount_of_its_own()
+    {
+        var amounts = Enumerable.Range(0, 4).Select(i => Store.AddSharingFeePayment($"account{i}", 1_200_000, SharingFees.MinimumPaymentMicrocredits,
+            SharingFees.MaxOffsetMicrocredits, _time.GetUtcNow())!.AmountMicro).ToList();
+        Assert.Equal([1_200_001, 1_199_999, 1_200_002, 1_199_998], amounts); // never the bare fee, never twice
+
+        // Never under Proxybase's $1 minimum, and an amount is free again once its payment arrived.
+        Assert.Equal(1_000_001, Store.AddSharingFeePayment("a", 1_000_000, 1_000_000, 500, _time.GetUtcNow())!.AmountMicro);
+        Assert.Equal(1_000_002, Store.AddSharingFeePayment("b", 1_000_000, 1_000_000, 500, _time.GetUtcNow())!.AmountMicro);
+        Assert.True(Store.MatchSharingFeePayment(1_200_001, "0xabc:0", _time.GetUtcNow()));
+        Assert.Equal(1_200_001, Store.AddSharingFeePayment("c", 1_200_000, 1_000_000, 500, _time.GetUtcNow())!.AmountMicro);
+    }
+
+    [Fact]
+    public async Task Tempo_transfers_settle_the_payment_of_exactly_their_amount_and_make_used_routes_owed()
+    {
+        var fees = Fees();
+        fees.RecordRoute("alex", "0xDEPOSIT0000000000000000000000000000000001", 400_000, _time.GetUtcNow());
+        fees.RecordRoute("alex", "0xdeposit0000000000000000000000000000000002", 300_000, _time.GetUtcNow()); // never paid into
+        var alex = Store.AddSharingFeePayment("alex", 1_200_000, 1_000_000, 500, _time.GetUtcNow())!;
+        var sam = Store.AddSharingFeePayment("sam", 1_200_000, 1_000_000, 500, _time.GetUtcNow())!;
+
+        _tempo.Pay("0xdeposit0000000000000000000000000000000001", 19_600_000);
+        _tempo.Pay(OtiumFee, sam.AmountMicro);
+        _tempo.Pay(OtiumFee, 1_200_000); // a payment nobody was asked for: matches no one
+        await fees.ScanAsync(CancellationToken.None);
+        await fees.ScanAsync(CancellationToken.None); // reading again changes nothing
+
+        Assert.Equal((400_000L, 0L), Store.SharingFeeTotals("alex")); // one route went through; Alex's payment isn't there
+        Assert.Equal((0L, sam.AmountMicro), Store.SharingFeeTotals("sam"));
+        Assert.Equal(alex.AmountMicro, Assert.Single(Store.OpenSharingFeePayments("alex")).AmountMicro);
+    }
+
+    [Fact]
+    public async Task Tempo_logs_are_read_as_transfers_to_the_recipients_asked_for()
+    {
+        var handler = new CapturingHandler("""
+            {"jsonrpc":"2.0","id":1,"result":[{"address":"0x20c000000000000000000000b9537d11c60e8b50",
+              "topics":["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+                        "0x000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                        "0x0000000000000000000000005aaeb6053f3e94c9b9a09f33669435e7ef1beaed"],
+              "data":"0x0000000000000000000000000000000000000000000000000000000000124f81",
+              "blockNumber":"0x10","transactionHash":"0xfeed","logIndex":"0x2"}]}
+            """);
+        var client = new TempoRpcClient(new HttpClient(handler), Options.Create(new SharingOptions()));
+        var transfer = Assert.Single(await client.GetTransfersAsync(RelayClient.TempoUsdc, [OtiumFee], 15, 20, CancellationToken.None));
+        Assert.Equal(new TempoTransfer(OtiumFee, 1_200_001, "0xfeed:2", 16), transfer);
+
+        var (request, body) = Assert.Single(handler.Requests);
+        Assert.Equal("https://rpc.tempo.xyz/", request.RequestUri!.ToString());
+        using var doc = JsonDocument.Parse(body);
+        var filter = doc.RootElement.GetProperty("params")[0];
+        Assert.Equal("eth_getLogs", doc.RootElement.GetProperty("method").GetString());
+        Assert.Equal("0xf", filter.GetProperty("fromBlock").GetString());
+        Assert.Equal(RelayClient.TempoUsdc, filter.GetProperty("address").GetString());
+        Assert.Equal(TempoRpcClient.TransferTopic, filter.GetProperty("topics")[0].GetString());
+        Assert.Equal(JsonValueKind.Null, filter.GetProperty("topics")[1].ValueKind);
+        Assert.Equal("0x0000000000000000000000005aaeb6053f3e94c9b9a09f33669435e7ef1beaed", filter.GetProperty("topics")[2][0].GetString());
+    }
+
+    private Task<SharingRoute> Ask(SharingRouteService service, Session session, long available, long reserved) =>
+        service.RouteAsync(session, new SharingRouteRequest(available, Refund, reserved), null, CancellationToken.None);
+
+    [Fact]
+    public async Task Payouts_wait_while_a_fee_payment_is_overdue_and_resume_once_it_arrives()
+    {
+        var relay = new FakeRelay();
+        var service = Service(relay);
+        var fees = Fees();
+        var alex = SessionFor(TestAddresses.Usdt(1));
+        await fees.ScanAsync(CancellationToken.None);
+
+        // A first $20 payout: Otium's $0.40 is kept back, and Proxybase pays the rest into the conversion.
+        var first = await Ask(service, alex, 20_000_000, 0);
+        Assert.Equal((SharingRouteDecisions.Pay, 400_000L, 0L), (first.Decision, first.FeeMicrocredits, first.FeePaymentMicrocredits));
+        _tempo.Pay(first.DepositAddress!, 19_600_000);
+
+        // Later, with $1.20 kept back: the server names the exact amount to pay Otium now, and pays out as usual.
+        _time.Advance(TimeSpan.FromMinutes(10));
+        await fees.ScanAsync(CancellationToken.None);
+        var second = await Ask(service, alex, 20_000_000, 1_200_000);
+        Assert.Equal(SharingRouteDecisions.Pay, second.Decision);
+        Assert.Equal(1_200_001, second.FeePaymentMicrocredits);
+        Assert.Equal(OtiumFee, second.FeeAddress);
+
+        // Three hours on and the payment never arrived: no new payouts, and the app is reminded what to pay.
+        _time.Advance(TimeSpan.FromHours(3));
+        await fees.ScanAsync(CancellationToken.None);
+        var held = await Ask(service, alex, 20_000_000, 1_200_000);
+        Assert.Equal(SharingRouteDecisions.Wait, held.Decision);
+        Assert.Contains("hasn't arrived yet", held.Message);
+        Assert.Equal(1_200_001, held.FeePaymentMicrocredits);
+        var quotes = relay.Quotes.Count;
+
+        // Once it arrives, payouts carry on.
+        _tempo.Pay(OtiumFee, 1_200_001);
+        await fees.ScanAsync(CancellationToken.None);
+        var resumed = await Ask(service, alex, 20_000_000, 0);
+        Assert.Equal(SharingRouteDecisions.Pay, resumed.Decision);
+        Assert.Equal(0, resumed.FeePaymentMicrocredits);
+        Assert.Equal(quotes + 1, relay.Quotes.Count);
+    }
+
+    [Fact]
+    public async Task An_app_that_never_pays_is_held_once_it_owes_more_than_a_dollar_and_asked_for_it()
+    {
+        var service = Service(new FakeRelay());
+        var fees = Fees();
+        var modified = SessionFor(TestAddresses.Usdt(2));
+        for (var i = 0; i < 4; i++)
+        {
+            await fees.ScanAsync(CancellationToken.None);
+            var route = await Ask(service, modified, 20_000_000, 0); // it says it keeps nothing back
+            Assert.Equal(SharingRouteDecisions.Pay, route.Decision);
+            _tempo.Pay(route.DepositAddress!, 19_600_000);
+            _time.Advance(TimeSpan.FromMinutes(10));
+        }
+
+        // $1.60 owed, more than $1 plus this payout's $0.40: held, and asked for the $1.60 from what's waiting.
+        await fees.ScanAsync(CancellationToken.None);
+        var held = await Ask(service, modified, 20_000_000, 0);
+        Assert.Equal(SharingRouteDecisions.Wait, held.Decision);
+        Assert.Equal(1_600_001, held.FeePaymentMicrocredits);
+    }
+
+    [Fact]
+    public async Task When_tempo_cant_be_read_payouts_carry_on_unchecked()
+    {
+        var service = Service(new FakeRelay());
+        var fees = Fees();
+        var alex = SessionFor(TestAddresses.Usdt(1));
+        await fees.ScanAsync(CancellationToken.None);
+        Assert.Equal(1_200_001, (await Ask(service, alex, 20_000_000, 1_200_000)).FeePaymentMicrocredits);
+
+        // The payment is overdue, but Tempo's RPC has been down since: Otium's outage shouldn't cost users their payouts.
+        _tempo.Down = true;
+        _time.Advance(TimeSpan.FromHours(3));
+        await Assert.ThrowsAsync<HttpRequestException>(() => fees.ScanAsync(CancellationToken.None));
+        Assert.Equal(SharingRouteDecisions.Pay, (await Ask(service, alex, 20_000_000, 1_200_000)).Decision);
+    }
+
+    [Fact]
+    public async Task Apps_that_dont_say_what_they_keep_back_are_told_to_update_once_the_check_is_required()
+    {
+        var old = new SharingRouteRequest(20_000_000, Refund);
+        Assert.Equal(SharingRouteDecisions.Pay, (await Service(new FakeRelay()).RouteAsync(SessionFor(TestAddresses.Usdt(1)), old, null, CancellationToken.None)).Decision);
+
+        var required = Service(new FakeRelay(), new SharingOptions { FeeRecipient = OtiumFee, RequireFeeCheck = true });
+        var refused = await required.RouteAsync(SessionFor(TestAddresses.Usdt(1)), old, null, CancellationToken.None);
+        Assert.Equal(SharingRouteDecisions.Unsupported, refused.Decision);
+        Assert.Contains("Update Otium", refused.Message);
     }
 
     [Fact]

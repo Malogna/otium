@@ -18,9 +18,11 @@ namespace Otium.Server.Sharing;
 /// <item>LTC: Relay to USDC on Base, into a SideShift shift that settles in LTC to the user.</item>
 /// <item>XMR: Relay to USDC on Base, into a ChangeNOW exchange that pays XMR to the user.</item>
 /// </list>
-/// Otium's cut (<see cref="FeeBps"/>, the mining fee by default) is a Relay app fee on the conversion the server opens,
-/// credited to <see cref="FeeRecipient"/> in Relay's app-fee balance. Earlier the app kept the fee back and paid it itself,
-/// which only happened if the app chose to; inside the conversion it's taken whatever the app does.
+/// Otium's cut is not part of the conversion: of each payout the app keeps back Otium's share (<see cref="FeeBps"/>, the
+/// mining fee by default) and pays it from the user's Proxybase earnings straight to <see cref="FeeRecipient"/> on Tempo,
+/// the way mining pays Otium a slice of mining time. The conversion carries no Otium fee, so Otium earns nothing from
+/// exchanging anyone's coins. So that paying it isn't up to the app, the server names the exact amount of each fee
+/// payment and opens no new routes while one is overdue (<see cref="SharingFees"/>).
 /// </summary>
 public sealed class SharingOptions
 {
@@ -31,10 +33,7 @@ public sealed class SharingOptions
 
     public string RelayApi { get; set; } = "https://api.relay.link/";
 
-    /// <summary>
-    /// Otium's own 0x address, Relay's app-fee recipient for Otium's sharing fee (Relay keeps app fees as a USDC balance
-    /// this address claims; an EVM address whatever the destination chain). No fee without one.
-    /// </summary>
+    /// <summary>Otium's own 0x address, which the app pays Otium's sharing fee to on Tempo. No fee without one.</summary>
     public string? FeeRecipient { get; set; }
 
     /// <summary>Otium's share of each sharing payout, in basis points (100 = 1%). Defaults to the mining fee.</summary>
@@ -57,6 +56,21 @@ public sealed class SharingOptions
     public string? ChangeNowApiKey { get; set; }
 
     public string ChangeNowApi { get; set; } = "https://api.changenow.io/v2/";
+
+    /// <summary>Tempo's JSON-RPC, read for fee payments arriving at <see cref="FeeRecipient"/> (Tempo's own public node by default).</summary>
+    public string TempoRpcUrl { get; set; } = "https://rpc.tempo.xyz";
+
+    /// <summary>Blocks asked for in one eth_getLogs request.</summary>
+    public int TempoBlocksPerQuery { get; set; } = 10_000;
+
+    /// <summary>How long after the server names a fee payment it may still be on its way before payouts stop.</summary>
+    public double FeeGraceHours { get; set; } = 2;
+
+    /// <summary>
+    /// Apps from before exact fee payments (they don't say what they keep back) get no new routes, so a modified app can't
+    /// skip the check by posing as one. Off until the app version that pays this way is out.
+    /// </summary>
+    public bool RequireFeeCheck { get; set; }
 }
 
 /// <summary>A Relay deposit-address quote: where to pay and what comes out.</summary>
@@ -242,7 +256,7 @@ public sealed class ChangeNowMonero(HttpClient http, IOptions<SharingOptions> op
 /// </summary>
 public sealed class SharingRouteService(
     IRelayApi relay, SideShiftLitecoin litecoin, ChangeNowMonero monero, IOptions<SharingOptions> options, IOptions<FeeOptions> fees,
-    IOptions<ProxybaseOptions> proxybase, ConnectionQuotas quotas, TimeProvider time, ILogger<SharingRouteService> logger)
+    IOptions<ProxybaseOptions> proxybase, ConnectionQuotas quotas, SharingFees sharingFees, TimeProvider time, ILogger<SharingRouteService> logger)
 {
     public static readonly TimeSpan RouteInterval = TimeSpan.FromMinutes(5);
 
@@ -270,31 +284,54 @@ public sealed class SharingRouteService(
         if (target is null)
             return new SharingRoute(SharingRouteDecisions.Unsupported, Message: "Add your payout address in Settings first.");
 
+        var feeRecipient = FeeRecipient;
+        var checksFee = feeRecipient is not null && request.ReservedFeeMicrocredits is not null;
+        if (feeRecipient is not null && request.ReservedFeeMicrocredits is null && options.Value.RequireFeeCheck)
+            return new SharingRoute(SharingRouteDecisions.Unsupported, Message: "Update Otium to keep receiving internet sharing payouts.");
+
         Task<SharingRoute> route;
+        var feePayment = 0L;
+        var accountId = session.Account.AccountId;
         var now = time.GetUtcNow();
         lock (_recent)
         {
             Sweep(now);
-            if (_recent.TryGetValue(session.Account.AccountId, out var last) && now - last.At < RouteInterval && last.Target == target.ToString()
+            if (_recent.TryGetValue(accountId, out var last) && now - last.At < RouteInterval && last.Target == target.ToString()
                 && !last.Route.IsFaulted && !last.Route.IsCanceled)
             {
+                // The same answer, without a fee payment: the app may already have sent the one it was given.
                 route = last.Route;
-            }
-            else if (!quotas.TryTake("sharing-route", client, ConnectionQuotas.SharingRoutesPerDay, TimeSpan.FromDays(1)))
-            {
-                return new SharingRoute(SharingRouteDecisions.Wait,
-                    Message: "Too many payout requests from this internet connection today. Otium tries again tomorrow.");
             }
             else
             {
+                if (checksFee)
+                {
+                    var check = sharingFees.Check(accountId, request.ReservedFeeMicrocredits!.Value, Fee(request.AvailableMicrocredits), now);
+                    feePayment = check.PaymentMicrocredits;
+                    if (check.Blocked)
+                        return new SharingRoute(SharingRouteDecisions.Wait, FeeAddress: feeRecipient, FeePaymentMicrocredits: feePayment,
+                            Message: "Otium's share of your last sharing payouts hasn't arrived yet; payouts continue once it has.");
+                }
+                if (!quotas.TryTake("sharing-route", client, ConnectionQuotas.SharingRoutesPerDay, TimeSpan.FromDays(1)))
+                    return new SharingRoute(SharingRouteDecisions.Wait, FeeAddress: feePayment > 0 ? feeRecipient : null, FeePaymentMicrocredits: feePayment,
+                        Message: "Too many payout requests from this internet connection today. Otium tries again tomorrow.");
+
                 // Not tied to this request: if the app gives up waiting, its retry gets the route once it's ready.
                 route = NewRouteAsync(target, request.AvailableMicrocredits, request.RefundAddress!.Trim(), ClientNetwork.Text(client) ?? "unknown",
-                    CancellationToken.None);
-                _recent[session.Account.AccountId] = new Recent(now, target.ToString(), route);
+                    checksFee ? accountId : null, CancellationToken.None);
+                _recent[accountId] = new Recent(now, target.ToString(), route);
             }
         }
-        return await route.WaitAsync(ct);
+        var answer = await route.WaitAsync(ct);
+        return feePayment > 0 ? answer with { FeeAddress = feeRecipient, FeePaymentMicrocredits = feePayment } : answer;
     }
+
+    /// <summary>Otium's address for its sharing fee, or null when none is configured (no fee then).</summary>
+    private string? FeeRecipient =>
+        CryptoAddresses.TryValidate(AddressFormat.Evm, options.Value.FeeRecipient, out _) ? options.Value.FeeRecipient!.Trim().ToLowerInvariant() : null;
+
+    /// <summary>Otium's share of <paramref name="available"/>.</summary>
+    private long Fee(long available) => FeeRecipient is null ? 0 : (long)Math.Round(available * FeeBps / 10_000d);
 
     /// <summary>Forgets routes past their interval now and then, so the table doesn't grow with every account ever seen.</summary>
     private void Sweep(DateTimeOffset now)
@@ -309,18 +346,23 @@ public sealed class SharingRouteService(
         }
     }
 
-    private async Task<SharingRoute> NewRouteAsync(PayoutTarget target, long amount, string refund, string userIp, CancellationToken ct)
+    /// <param name="feeAccount">The account whose fee on this payout the server tracks (apps that pay it the exact way).</param>
+    private async Task<SharingRoute> NewRouteAsync(PayoutTarget target, long available, string refund, string userIp, string? feeAccount,
+        CancellationToken ct)
     {
         await Task.Yield(); // runs outside the caller's lock
-        var o = options.Value;
-        // Otium's fee is a Relay app fee inside the conversion, so it's taken whatever the app does with the route.
-        var feeRecipient = CryptoAddresses.TryValidate(AddressFormat.Evm, o.FeeRecipient, out _) ? o.FeeRecipient!.Trim().ToLowerInvariant() : null;
-        var feeBps = feeRecipient is null ? 0 : FeeBps;
+        // Otium's share stays at Proxybase for the app to pay Otium directly; only the user's part is converted, fee-free.
+        var fee = Fee(available);
+        var amount = available - fee;
         var usd = amount / 1_000_000d;
         try
         {
-            var route = await ConvertAsync(target, amount, usd, refund, userIp, feeRecipient, feeBps, ct);
-            return route.Decision == SharingRouteDecisions.Pay ? route with { FeeBps = feeBps } : route;
+            var route = await ConvertAsync(target, amount, usd, refund, userIp, ct);
+            if (route.Decision != SharingRouteDecisions.Pay || fee <= 0)
+                return route;
+            if (feeAccount is not null && route.DepositAddress is { } deposit)
+                sharingFees.RecordRoute(feeAccount, deposit, fee, time.GetUtcNow());
+            return route with { FeeAddress = FeeRecipient, FeeMicrocredits = fee };
         }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException or InvalidOperationException or JsonException or KeyNotFoundException
                                     && !ct.IsCancellationRequested)
@@ -330,13 +372,12 @@ public sealed class SharingRouteService(
         }
     }
 
-    /// <summary>The one-time conversion of <paramref name="amount"/> to the user's coin and address, with Otium's fee in it.</summary>
-    private async Task<SharingRoute> ConvertAsync(PayoutTarget target, long amount, double usd, string refund, string userIp, string? feeRecipient,
-        int feeBps, CancellationToken ct)
+    /// <summary>The one-time conversion of <paramref name="amount"/> to the user's coin and address, with no Otium fee in it.</summary>
+    private async Task<SharingRoute> ConvertAsync(PayoutTarget target, long amount, double usd, string refund, string userIp, CancellationToken ct)
     {
         if (RelayClient.DirectFor(target.Coin) is { } destination)
         {
-            var quote = await relay.QuoteDepositAddressAsync(destination, target.Address, amount, refund, feeRecipient, feeBps, ct);
+            var quote = await relay.QuoteDepositAddressAsync(destination, target.Address, amount, refund, null, 0, ct);
             return Decide(quote, usd, $"{quote.OutAmount} {destination.Label}", amount);
         }
 
@@ -347,16 +388,16 @@ public sealed class SharingRouteService(
             return new SharingRoute(SharingRouteDecisions.Unsupported,
                 Message: $"Internet sharing can't pay {target.Coin.Ticker} yet. Choose another payout coin in Settings to get its earnings.");
 
-        // First what Relay would deliver as USDC on Base (after Otium's fee), then a conversion of that to the user's
-        // coin, then the Relay address that delivers into it.
-        var estimate = await relay.QuoteDepositAddressAsync(RelayClient.BaseUsdc, refund, amount, refund, feeRecipient, feeBps, ct);
+        // First what Relay would deliver as USDC on Base, then a conversion of that to the user's coin, then the Relay
+        // address that delivers into it.
+        var estimate = await relay.QuoteDepositAddressAsync(RelayClient.BaseUsdc, refund, amount, refund, null, 0, ct);
         var usdcOut = (decimal)estimate.OutUsd;
         var minimum = hop == monero ? ChangeNowMonero.MinimumUsdc : 3.5m;
         if (usdcOut < minimum)
             return new SharingRoute(SharingRouteDecisions.Wait,
                 Message: FormattableString.Invariant($"Waiting until about ${minimum + 1:0} has built up: converting to {target.Coin.Ticker} needs at least that."));
         var (swapDeposit, _) = await hop.CreateAsync(target.Address, Math.Round(usdcOut, 2), refund, userIp, ct);
-        var quote2 = await relay.QuoteDepositAddressAsync(RelayClient.BaseUsdc, swapDeposit, amount, refund, feeRecipient, feeBps, ct);
+        var quote2 = await relay.QuoteDepositAddressAsync(RelayClient.BaseUsdc, swapDeposit, amount, refund, null, 0, ct);
         return Decide(quote2, usd, $"about {usdcOut:0.00} USDC worth of {target.Coin.Ticker}", amount);
     }
 

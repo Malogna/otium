@@ -357,6 +357,35 @@ public sealed class OtiumStore
         // many accounts share it. Rows from before have none until the next pool check fills it in.
         if (Scalar<long>("SELECT COUNT(*) FROM pragma_table_info('pool_payouts') WHERE name = 'address'") == 0)
             Execute("ALTER TABLE pool_payouts ADD COLUMN address TEXT NULL;");
+        // Also version 13: Otium's internet-sharing fee. The payouts it's owed on (each route's Tempo deposit address, used
+        // once a transfer to it shows up), the exact fee payments the server asked apps for, and how far Tempo was read.
+        Execute("""
+            CREATE TABLE IF NOT EXISTS sharing_routes (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                account_id TEXT NOT NULL,
+                deposit    TEXT NOT NULL,
+                fee_micro  INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                used_at    TEXT NULL
+            );
+            CREATE INDEX IF NOT EXISTS ix_sharing_routes_account ON sharing_routes(account_id);
+            CREATE INDEX IF NOT EXISTS ix_sharing_routes_deposit ON sharing_routes(deposit);
+            CREATE TABLE IF NOT EXISTS sharing_fee_payments (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                account_id   TEXT NOT NULL,
+                amount_micro INTEGER NOT NULL,
+                created_at   TEXT NOT NULL,
+                seen_at      TEXT NULL,
+                transfer     TEXT NULL
+            );
+            CREATE INDEX IF NOT EXISTS ix_sharing_fee_payments_account ON sharing_fee_payments(account_id);
+            CREATE INDEX IF NOT EXISTS ix_sharing_fee_payments_amount ON sharing_fee_payments(amount_micro);
+            CREATE TABLE IF NOT EXISTS chain_scans (
+                name       TEXT PRIMARY KEY,
+                block      INTEGER NOT NULL,
+                through_at TEXT NOT NULL
+            );
+            """);
 
         Execute($"PRAGMA user_version = {SchemaVersion};");
     }
@@ -1036,6 +1065,139 @@ public sealed class OtiumStore
         r.Read();
         return (r.GetDouble(0), r.GetDouble(1), r.GetInt64(2), r.GetInt64(3));
     }
+
+    // ---------- Otium's internet-sharing fee ----------
+
+    public sealed record SharingFeePayment(long Id, string AccountId, long AmountMicro, DateTimeOffset CreatedAt, DateTimeOffset? SeenAt);
+
+    /// <summary>A payout route with Otium's fee on it; the fee is owed once a transfer to <paramref name="deposit"/> shows up.</summary>
+    public void AddSharingRoute(string accountId, string deposit, long feeMicro, DateTimeOffset now) =>
+        Execute("INSERT INTO sharing_routes (account_id, deposit, fee_micro, created_at) VALUES ($a, $d, $f, $c)",
+            ("$a", accountId), ("$d", deposit.ToLowerInvariant()), ("$f", feeMicro), ("$c", Format(now)));
+
+    /// <summary>Deposit addresses of routes made since <paramref name="since"/> that nothing was paid into yet.</summary>
+    public IReadOnlyList<string> UnusedSharingDeposits(DateTimeOffset since)
+    {
+        using var connection = Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT DISTINCT deposit FROM sharing_routes WHERE used_at IS NULL AND created_at > $s";
+        Bind(cmd, [("$s", Format(since))]);
+        using var r = cmd.ExecuteReader();
+        var list = new List<string>();
+        while (r.Read())
+            list.Add(r.GetString(0));
+        return list;
+    }
+
+    public void MarkSharingDepositUsed(string deposit, DateTimeOffset at) =>
+        Execute("UPDATE sharing_routes SET used_at = $t WHERE deposit = $d AND used_at IS NULL", ("$d", deposit.ToLowerInvariant()), ("$t", Format(at)));
+
+    /// <summary>Otium's fee on the account's payouts that went through, and what of it arrived at Otium's address.</summary>
+    public (long Owed, long Paid) SharingFeeTotals(string accountId) =>
+        (Scalar<long>("SELECT COALESCE(SUM(fee_micro), 0) FROM sharing_routes WHERE account_id = $a AND used_at IS NOT NULL", ("$a", accountId)),
+         Scalar<long>("SELECT COALESCE(SUM(amount_micro), 0) FROM sharing_fee_payments WHERE account_id = $a AND seen_at IS NOT NULL", ("$a", accountId)));
+
+    /// <summary>Fee payments the server asked this account for that haven't arrived, oldest first.</summary>
+    public IReadOnlyList<SharingFeePayment> OpenSharingFeePayments(string accountId)
+    {
+        using var connection = Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT id, account_id, amount_micro, created_at FROM sharing_fee_payments WHERE account_id = $a AND seen_at IS NULL ORDER BY id";
+        Bind(cmd, [("$a", accountId)]);
+        using var r = cmd.ExecuteReader();
+        var list = new List<SharingFeePayment>();
+        while (r.Read())
+            list.Add(new SharingFeePayment(r.GetInt64(0), r.GetString(1), r.GetInt64(2), Parse(r.GetString(3)), null));
+        return list;
+    }
+
+    /// <summary>
+    /// Records a fee payment the server asks the account for: <paramref name="baseMicro"/> moved by the smallest offset
+    /// (+1, -1, +2, -2… microcredits, never 0, staying at or above <paramref name="minimumMicro"/>) that no other payment
+    /// still on its way uses, so a transfer of exactly that amount can only be this one. Null if none is free.
+    /// </summary>
+    public SharingFeePayment? AddSharingFeePayment(string accountId, long baseMicro, long minimumMicro, int maxOffset, DateTimeOffset now)
+    {
+        using var connection = Open();
+        using var tx = connection.BeginTransaction(deferred: false);
+        var taken = new HashSet<long>();
+        using (var cmd = connection.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            cmd.CommandText = "SELECT amount_micro FROM sharing_fee_payments WHERE seen_at IS NULL AND amount_micro BETWEEN $lo AND $hi";
+            Bind(cmd, [("$lo", baseMicro - maxOffset), ("$hi", baseMicro + maxOffset)]);
+            using var r = cmd.ExecuteReader();
+            while (r.Read())
+                taken.Add(r.GetInt64(0));
+        }
+        long? amount = null;
+        for (var offset = 1; offset <= maxOffset && amount is null; offset++)
+        {
+            foreach (var candidate in new[] { baseMicro + offset, baseMicro - offset })
+            {
+                if (candidate >= minimumMicro && !taken.Contains(candidate))
+                {
+                    amount = candidate;
+                    break;
+                }
+            }
+        }
+        if (amount is null)
+            return null;
+        using (var insert = connection.CreateCommand())
+        {
+            insert.Transaction = tx;
+            insert.CommandText = "INSERT INTO sharing_fee_payments (account_id, amount_micro, created_at) VALUES ($a, $m, $c); SELECT last_insert_rowid();";
+            Bind(insert, [("$a", accountId), ("$m", amount.Value), ("$c", Format(now))]);
+            var id = (long)insert.ExecuteScalar()!;
+            tx.Commit();
+            return new SharingFeePayment(id, accountId, amount.Value, now, null);
+        }
+    }
+
+    /// <summary>
+    /// A transfer of exactly <paramref name="amountMicro"/> reached Otium's address: marks the oldest payment of that
+    /// amount still on its way as arrived. <paramref name="transfer"/> (transaction and log index) is kept so reading the
+    /// same blocks again doesn't count it twice. Returns whether it matched a payment.
+    /// </summary>
+    public bool MatchSharingFeePayment(long amountMicro, string transfer, DateTimeOffset at)
+    {
+        using var connection = Open();
+        using var tx = connection.BeginTransaction(deferred: false);
+        using var seen = connection.CreateCommand();
+        seen.Transaction = tx;
+        seen.CommandText = "SELECT COUNT(*) FROM sharing_fee_payments WHERE transfer = $t";
+        Bind(seen, [("$t", transfer)]);
+        if ((long)seen.ExecuteScalar()! > 0)
+            return true;
+        using var update = connection.CreateCommand();
+        update.Transaction = tx;
+        update.CommandText = """
+            UPDATE sharing_fee_payments SET seen_at = $at, transfer = $t
+            WHERE id = (SELECT id FROM sharing_fee_payments WHERE amount_micro = $m AND seen_at IS NULL ORDER BY id LIMIT 1)
+            """;
+        Bind(update, [("$at", Format(at)), ("$t", transfer), ("$m", amountMicro)]);
+        var matched = update.ExecuteNonQuery() > 0;
+        tx.Commit();
+        return matched;
+    }
+
+    /// <summary>How far a chain was read: the last block, and the time up to which nothing newer was missed.</summary>
+    public (long Block, DateTimeOffset ThroughAt)? ChainScan(string name)
+    {
+        using var connection = Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT block, through_at FROM chain_scans WHERE name = $n";
+        Bind(cmd, [("$n", name)]);
+        using var r = cmd.ExecuteReader();
+        return r.Read() ? (r.GetInt64(0), Parse(r.GetString(1))) : null;
+    }
+
+    public void SetChainScan(string name, long block, DateTimeOffset throughAt) =>
+        Execute("""
+            INSERT INTO chain_scans (name, block, through_at) VALUES ($n, $b, $t)
+            ON CONFLICT(name) DO UPDATE SET block = $b, through_at = $t
+            """, ("$n", name), ("$b", block), ("$t", Format(throughAt)));
 
     // ---------- fee slices ----------
 
