@@ -54,6 +54,9 @@ public sealed class ServerTests : IDisposable
     {
         public Dictionary<string, double> Hashes { get; } = [];
 
+        /// <summary>The workers MoneroOcean shows for each address.</summary>
+        public Dictionary<string, string[]> Workers { get; } = [];
+
         /// <summary>Simulates the pool API being unreachable.</summary>
         public bool Down { get; set; }
 
@@ -67,7 +70,8 @@ public sealed class ServerTests : IDisposable
             Task.FromResult(new AlgoProfits(new Dictionary<string, double>(), 1, DateTimeOffset.UtcNow));
 
         public Task<IReadOnlyDictionary<string, IReadOnlyList<HashratePoint>>> GetWorkerHistoryAsync(string walletAddress, CancellationToken ct) =>
-            Task.FromResult<IReadOnlyDictionary<string, IReadOnlyList<HashratePoint>>>(new Dictionary<string, IReadOnlyList<HashratePoint>>());
+            Task.FromResult<IReadOnlyDictionary<string, IReadOnlyList<HashratePoint>>>(Workers.GetValueOrDefault(walletAddress, [])
+                .ToDictionary(name => name, IReadOnlyList<HashratePoint> (_) => [new HashratePoint(DateTimeOffset.UtcNow, 1000, 1000)]));
     }
 
     private sealed record Device(string Id, string Secret, string Wallet);
@@ -149,8 +153,15 @@ public sealed class ServerTests : IDisposable
         var carol = NewDevice();
         await Register(carol, aliceCode);
         _pool.Hashes[carol.Wallet] = 600_000_000;
+        _pool.Workers[carol.Wallet] = [$"ot{alice.Id[..8]}"]; // mined by someone else's computer: not carol's doing
+        Assert.Equal(0, (await Summary(alice)).VerifiedCount);
+
+        var dave = NewDevice();
+        await Register(dave, aliceCode);
+        _pool.Hashes[dave.Wallet] = 600_000_000;
+        _pool.Workers[dave.Wallet] = [$"ot{dave.Id[..8]}g"]; // dave's own graphics card
         var summary = await Summary(alice);
-        Assert.Equal(2, summary.InvitedCount);
+        Assert.Equal(3, summary.InvitedCount);
         Assert.Equal(1, summary.VerifiedCount);
         Assert.NotNull(summary.FeeFreeUntil);
         Assert.InRange(summary.FeeFreeUntil!.Value - DateTimeOffset.UtcNow, TimeSpan.FromDays(29.9), TimeSpan.FromDays(30.1));

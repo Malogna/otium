@@ -55,6 +55,7 @@ builder.Services.AddSingleton(_ => new OtiumStore(builder.Configuration.GetConne
 builder.Services.AddSingleton<InviteLinks>();
 builder.Services.AddSingleton<ConnectionQuotas>();
 builder.Services.AddSingleton<ConnectionHashes>();
+builder.Services.AddSingleton<ReferralRedemptions>();
 builder.Services.AddHttpClient<IMoneroPoolApi, MoneroOceanClient>();
 builder.Services.AddHttpClient<IUnmineableApi, UnmineableClient>();
 builder.Services.AddSingleton<IMoneroWallet, MoneroWalletRpc>();
@@ -397,7 +398,7 @@ app.MapGet("/r/{code}", (string code, HttpRequest request, OtiumStore store, Inv
 {
     var normalized = ReferralCodes.Normalize(code);
     var exists = ReferralCodes.IsWellFormed(normalized) && store.CodeExists(normalized);
-    if (exists)
+    if (exists && InviteLinks.IsPageVisit(request.Headers))
         links.Clicked(request.HttpContext.Connection.RemoteIpAddress, normalized); // so Otium installed on this connection fills it in
     return Results.Content(LandingPage.Render(normalized, "/download", exists, PublicBase(request, options),
             SitePages.AvailableLegalPages(site.Value.PagesDirectory)),
