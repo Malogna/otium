@@ -109,6 +109,12 @@ public sealed class AppSettings
     /// </summary>
     public bool UsPerson { get; set; }
 
+    /// <summary>
+    /// The user answered the US question themselves (ticked or unticked it), so <see cref="UsPerson"/> stands even when
+    /// Windows' region says otherwise. Until then the region decides: fresh English installs often say "United States".
+    /// </summary>
+    public bool UsPersonAnswered { get; set; }
+
     /// <summary>Why the Otium server says Otium isn't available where this computer is (sanctions, mining bans), or null.</summary>
     public string? UnavailableReason { get; set; }
 

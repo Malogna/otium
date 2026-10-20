@@ -796,8 +796,8 @@ internal static class SitePages
         var parts = new List<string>();
         if (windows.Count > 0)
             parts.Add(Part("windows", "Windows", os == "windows", $"""
-                <li>Open <span class="code">{E(windows[0].FileName)}</span> from your downloads. If your browser says it isn't commonly downloaded, choose <strong>Keep</strong>.</li>
-                <li>Otium isn't code-signed yet, so Windows says "Windows protected your PC". Choose <strong>More info</strong>, then <strong>Run anyway</strong>.</li>
+                <li>If your browser says the file isn't commonly downloaded, keep it. In Edge: open the download's <strong>…</strong> menu, choose <strong>Keep</strong>, then <strong>Keep anyway</strong> (behind the arrow next to Delete).</li>
+                <li>Open <span class="code">{E(windows[0].FileName)}</span> from your downloads. If Windows says "Windows protected your PC" (Otium isn't code-signed yet), choose <strong>More info</strong>, then <strong>Run anyway</strong>.</li>
                 <li>Setup takes a few seconds and opens Otium. Choose Quick start, and add the wallet address you want to be paid to.</li>
                 <li>If your antivirus stops the miners, Otium tells you and shows the one folder to allow. Don't turn your antivirus off.</li>
                 <li>If Windows says <strong>Smart App Control</strong> blocked it, Otium can't run on that PC yet: Smart App Control only lets through signed apps and ones Microsoft already knows. We don't suggest turning it off for Otium.</li>

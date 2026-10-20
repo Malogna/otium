@@ -49,10 +49,11 @@ public sealed class XmrigProvider : IComputeProvider, IPausableProvider
         IUnmineableApi? unmineable = null,
         string? referralCode = null,
         bool unitedStates = false,
-        Func<string, int, CancellationToken, Task<string?>>? poolBlocked = null)
+        Func<string, int, CancellationToken, Task<string?>>? poolBlocked = null,
+        Func<bool>? isUnitedStates = null)
     {
         _poolBlocked = poolBlocked ?? ((_, _, _) => Task.FromResult<string?>(null));
-        _unitedStates = unitedStates;
+        _unitedStates = isUnitedStates ?? (() => unitedStates);
         _http = http;
         _pool = pool;
         _unmineable = unmineable ?? new UnmineableClient(http);
@@ -63,8 +64,8 @@ public sealed class XmrigProvider : IComputeProvider, IPausableProvider
         _installer = new EngineInstaller(http, _engineDir, XmrigRelease.BinaryName);
     }
 
-    /// <summary>The user is in the US, where Monero mines on MoneroOcean instead of unMineable.</summary>
-    private readonly bool _unitedStates;
+    /// <summary>The user is a US person, whose Monero mines on MoneroOcean instead of unMineable (asked each time: it can change).</summary>
+    private readonly Func<bool> _unitedStates;
 
     public string Id => "xmrig-cpu";
 
@@ -104,7 +105,7 @@ public sealed class XmrigProvider : IComputeProvider, IPausableProvider
 
         _httpPort = FreeLoopbackPort();
         _accessToken = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(16));
-        var config = XmrigConfig.Build(options, _endpoint, _httpPort, _accessToken, _referralCode, unitedStates: _unitedStates);
+        var config = XmrigConfig.Build(options, _endpoint, _httpPort, _accessToken, _referralCode, unitedStates: _unitedStates());
         _poolAddress = XmrigConfig.PoolAddress(config);
         await File.WriteAllTextAsync(ConfigPath, config, ct);
 
@@ -253,7 +254,7 @@ public sealed class XmrigProvider : IComputeProvider, IPausableProvider
 
     public async Task<PayoutBalance?> GetPayoutBalanceAsync(string walletAddress, CancellationToken ct)
     {
-        if (PayoutRouting.PoolFor(walletAddress, _unitedStates) == PayoutPool.Unmineable)
+        if (PayoutRouting.PoolFor(walletAddress, _unitedStates()) == PayoutPool.Unmineable)
             return await UnmineableClient.GetPayoutBalanceAsync(_unmineable, PayoutTarget.ParseOrNull(walletAddress)!, ct);
 
         walletAddress = PayoutRouting.MoneroOceanWallet(walletAddress);

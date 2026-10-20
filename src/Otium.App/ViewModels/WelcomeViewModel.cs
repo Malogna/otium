@@ -37,7 +37,7 @@ public partial class WelcomeViewModel : ViewModelBase
         PayForElectricity = host.Settings.PayForElectricity;
         _ready = true;
         SignIn = new EmailSignInViewModel(host, OnSignedIn);
-        Payout = new PayoutTargetEditor(host.Settings.PayoutAddress, host.Settings.UsPerson, host.SetUsPerson);
+        Payout = new PayoutTargetEditor(host.Settings.PayoutAddress, AppHost.InUnitedStates, host.SetUsPerson);
         Payout.Changed += () =>
         {
             NextCommand.NotifyCanExecuteChanged();

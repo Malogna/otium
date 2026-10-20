@@ -106,7 +106,8 @@ start.
   graphics card and processor model and what they earned (and, if you share your internet, your country and what
   sharing earned), never your address. otium.lol shows only figures combined across several PCs. Saying no later
   deletes what was sent.
-- Uninstalling removes the miners, Otium's scheduled tasks and its downloaded files.
+- Uninstalling removes the miners, Otium's scheduled tasks, its downloaded files and its data folder (settings and
+  earnings history).
 
 ## Help
 

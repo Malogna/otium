@@ -317,7 +317,18 @@
         </Carousel>
 
         <!-- ===== Footer: progress dots and navigation ===== -->
-        <Grid Grid.Row="1" ColumnDefinitions="*,Auto,*" Margin="28,8,28,28" MaxWidth="560">
+        <StackPanel Grid.Row="1">
+        <!-- The last question sits at the bottom of a long page: say why Start earning is waiting. -->
+        <TextBlock Classes="muted" FontSize="12.5" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"
+                   Margin="28,8,28,0" MaxWidth="560" Text="Answer &quot;Share analytics?&quot; at the bottom of this page to start.">
+            <TextBlock.IsVisible>
+                <MultiBinding Converter="{x:Static BoolConverters.And}">
+                    <Binding Path="IsStep3" />
+                    <Binding Path="ShareEarningsUnanswered" />
+                </MultiBinding>
+            </TextBlock.IsVisible>
+        </TextBlock>
+        <Grid ColumnDefinitions="*,Auto,*" Margin="28,8,28,28" MaxWidth="560">
             <Button Classes="link" HorizontalAlignment="Left" IsVisible="{Binding !IsStep0}" AutomationProperties.Name="Back" Command="{Binding BackCommand}">
                 <StackPanel Orientation="Horizontal" Spacing="6">
                     <Path Classes="icon" Data="{StaticResource IconArrowLeft}" Width="16" Height="16" Stroke="{DynamicResource MutedText}" />
@@ -343,5 +354,6 @@
                 </StackPanel>
             </Button>
         </Grid>
+        </StackPanel>
     </Grid>
 </UserControl>

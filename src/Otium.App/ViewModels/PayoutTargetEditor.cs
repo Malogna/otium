@@ -6,8 +6,9 @@ namespace Otium.App.ViewModels;
 
 /// <summary>
 /// Choosing where the pool pays: a coin and the user's own address for it, checked as it's typed. Used by onboarding
-/// and Settings. US persons only get Monero, since unMineable (which pays every other coin) doesn't serve them: computers
-/// in the US region, and anyone who ticks that they're a US citizen or resident.
+/// and Settings. US persons only get Monero, since unMineable (which pays every other coin) doesn't serve them: anyone who
+/// ticks that they're a US citizen or resident. The question always shows; on a computer set to the US region it starts
+/// ticked, and saying otherwise is one click.
 /// </summary>
 public partial class PayoutTargetEditor : ObservableObject
 {
@@ -16,8 +17,8 @@ public partial class PayoutTargetEditor : ObservableObject
     /// <param name="setUsPerson">Records the "US citizen or resident" answer; null hides the question.</param>
     public PayoutTargetEditor(string? current, bool usPerson = false, Action<bool>? setUsPerson = null)
     {
+        UsPerson = usPerson; // before the callback is set: showing the starting answer doesn't record it as the user's
         _setUsPerson = setUsPerson;
-        UsPerson = usPerson;
         Coins = AppHost.InUnitedStates ? [PayoutCoins.Monero] : PayoutCoins.All;
         var existing = PayoutTarget.ParseOrNull(current);
         SelectedCoin = existing is not null && Coins.Contains(existing.Coin) ? existing.Coin : Coins.Contains(PayoutCoins.Default) ? PayoutCoins.Default : Coins[0];
@@ -28,12 +29,15 @@ public partial class PayoutTargetEditor : ObservableObject
 
     public bool IsUnitedStates => AppHost.InUnitedStates;
 
-    /// <summary>The question shows unless the computer is set to the US region (which already counts).</summary>
-    public bool AskUsPerson => _setUsPerson is not null && (UsPerson || !AppHost.InUnitedStates);
+    /// <summary>The question always shows where the answer can be recorded.</summary>
+    public bool AskUsPerson => _setUsPerson is not null;
+
+    /// <summary>Why the box starts ticked: Windows says United States, which many computers elsewhere do too.</summary>
+    public bool ShowRegionNote => _setUsPerson is not null && UsPerson && !AppHost.UsPersonAnswered && AppHost.WindowsRegionIsUs;
 
     /// <summary>"I'm a US citizen or live in the US": unMineable's terms exclude US persons wherever they are.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsUnitedStates), nameof(PoolNote))]
+    [NotifyPropertyChangedFor(nameof(IsUnitedStates), nameof(PoolNote), nameof(ShowRegionNote))]
     public partial bool UsPerson { get; set; }
 
     partial void OnUsPersonChanged(bool value)

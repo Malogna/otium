@@ -79,7 +79,7 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
     private readonly IKryptexAddressApi _kryptex;
 
     /// <summary>The user is in the US, where Monero mines on MoneroOcean instead of unMineable.</summary>
-    private readonly bool _unitedStates;
+    private readonly Func<bool> _unitedStates;
     private readonly string? _referralCode;
     private readonly ProfitSwitcher _switcher;
     private readonly BenchmarkStore _store;
@@ -131,10 +131,11 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         string? referralCode = null,
         IKryptexAddressApi? kryptex = null,
         bool unitedStates = false,
-        Func<string, int, CancellationToken, Task<string?>>? poolBlocked = null)
+        Func<string, int, CancellationToken, Task<string?>>? poolBlocked = null,
+        Func<bool>? isUnitedStates = null)
     {
         _poolBlocked = poolBlocked ?? ((_, _, _) => Task.FromResult<string?>(null));
-        _unitedStates = unitedStates;
+        _unitedStates = isUnitedStates ?? (() => unitedStates);
         _policy = policy ?? (() => null);
         _unmineable = unmineable ?? new UnmineableClient(http);
         _kryptex = kryptex ?? new KryptexAddressClient(http);
@@ -431,9 +432,9 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
 
     public async Task<PayoutBalance?> GetPayoutBalanceAsync(string walletAddress, CancellationToken ct)
     {
-        if (PayoutRouting.PoolFor(walletAddress, _unitedStates) == PayoutPool.Unmineable)
+        if (PayoutRouting.PoolFor(walletAddress, _unitedStates()) == PayoutPool.Unmineable)
             return await UnmineableClient.GetPayoutBalanceAsync(_unmineable, PayoutTarget.ParseOrNull(walletAddress)!, ct);
-        if (PayoutRouting.PoolFor(walletAddress, _unitedStates) == PayoutPool.Kryptex)
+        if (PayoutRouting.PoolFor(walletAddress, _unitedStates()) == PayoutPool.Kryptex)
             return await KryptexAddressClient.GetPayoutBalanceAsync(_kryptex, PayoutTarget.ParseAnyOrNull(walletAddress)!, ct);
 
         walletAddress = PayoutRouting.MoneroOceanWallet(walletAddress);
@@ -651,7 +652,7 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         if (route is { Kind: GpuRoutes.Unmineable })
         {
             // Any payout coin works there, Monero included (the app keeps US users off these routes).
-            if (PayoutRouting.PoolFor(options.Target.WalletAddress, _unitedStates) is null)
+            if (PayoutRouting.PoolFor(options.Target.WalletAddress, _unitedStates()) is null)
                 throw new InvalidOperationException($"{algorithm.PoolName} is paid by unMineable, which needs a payout address with its coin.");
             return PoolLogin.Unmineable(new GpuPoolEndpoint(route.Host, route.Port, route.Tls), options.Target.WalletAddress, options.WorkerName, _referralCode);
         }

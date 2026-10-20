@@ -6,8 +6,9 @@ namespace Otium.App.Services;
 /// <summary>
 /// Runs from the Velopack uninstall hook (Windows only, must finish within 30 seconds, no UI).
 /// Removes what an uninstaller is expected to remove: the downloaded engines, Mysterium's network service (if
-/// internet sharing installed it; Windows asks for permission), and the start-at-sign-in entry. Settings and earnings
-/// history are left in place in case the user reinstalls.
+/// internet sharing installed it; Windows asks for permission), the start-at-sign-in entry, and Otium's data folder
+/// (settings with the payout address and this computer's key, earnings history, logs), as the privacy policy says.
+/// Invites and fee-free days stay with the account on the server, for an email address added to it.
 /// </summary>
 public static class UninstallCleanup
 {
@@ -61,6 +62,36 @@ public static class UninstallCleanup
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             // A running miner may still hold a file; Velopack stops the app before uninstalling, so this is rare.
+        }
+
+        DeleteDataFolder(AppPaths.Default.Root);
+    }
+
+    /// <summary>Everything in Otium's data folder that can go; a file still held open (rare) stays behind.</summary>
+    internal static void DeleteDataFolder(string root)
+    {
+        if (!Directory.Exists(root))
+            return;
+        foreach (var file in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+        {
+            try
+            {
+                File.SetAttributes(file, FileAttributes.Normal);
+                File.Delete(file);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+            }
+        }
+        foreach (var dir in Directory.EnumerateDirectories(root, "*", SearchOption.AllDirectories).OrderByDescending(d => d.Length).Append(root))
+        {
+            try
+            {
+                Directory.Delete(dir);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+            }
         }
     }
 }
