@@ -6,7 +6,11 @@ public interface IAccountClient
 {
     Task<AccountSummary> RegisterAsync(RegisterDeviceRequest request, CancellationToken ct);
 
-    Task<AccountSummary> GetSummaryAsync(string deviceId, string deviceSecret, CancellationToken ct);
+    /// <param name="mined">
+    /// How long this computer's processor and graphics card have mined in all; the server keeps the most it was told and
+    /// signs it back in the fee grant (see Fees.FeeGrant.CpuMiningFloor).
+    /// </param>
+    Task<AccountSummary> GetSummaryAsync(string deviceId, string deviceSecret, CancellationToken ct, MiningTimeReport? mined = null);
 
     Task<CashoutInfo> RequestCashoutAsync(string deviceId, string deviceSecret, CashoutRequest request, CancellationToken ct);
 
@@ -52,9 +56,17 @@ public sealed class AccountRequestException(string message, int statusCode) : Ex
     public int StatusCode { get; } = statusCode;
 }
 
+/// <summary>How long this computer's processor and graphics card have mined in all.</summary>
+public sealed record MiningTimeReport(TimeSpan Cpu, TimeSpan Gpu);
+
 public sealed class AccountClient(HttpClient http) : IAccountClient
 {
     public const string SecretHeader = "X-Device-Secret";
+
+    /// <summary>Query parameters of the account check-in carrying a <see cref="MiningTimeReport"/>, in whole seconds.</summary>
+    public const string CpuMinedParameter = "cpuMined";
+
+    public const string GpuMinedParameter = "gpuMined";
 
     public async Task<AccountSummary> RegisterAsync(RegisterDeviceRequest request, CancellationToken ct)
     {
@@ -62,9 +74,12 @@ public sealed class AccountClient(HttpClient http) : IAccountClient
         return await ReadAsync<AccountSummary>(response, ct);
     }
 
-    public async Task<AccountSummary> GetSummaryAsync(string deviceId, string deviceSecret, CancellationToken ct)
+    public async Task<AccountSummary> GetSummaryAsync(string deviceId, string deviceSecret, CancellationToken ct, MiningTimeReport? mined = null)
     {
-        using var message = new HttpRequestMessage(HttpMethod.Get, $"api/v1/devices/{Uri.EscapeDataString(deviceId)}/account");
+        var query = mined is null
+            ? ""
+            : FormattableString.Invariant($"?{CpuMinedParameter}={Math.Floor(mined.Cpu.TotalSeconds)}&{GpuMinedParameter}={Math.Floor(mined.Gpu.TotalSeconds)}");
+        using var message = new HttpRequestMessage(HttpMethod.Get, $"api/v1/devices/{Uri.EscapeDataString(deviceId)}/account{query}");
         message.Headers.Add(SecretHeader, deviceSecret);
         using var response = await http.SendAsync(message, ct);
         return await ReadAsync<AccountSummary>(response, ct);

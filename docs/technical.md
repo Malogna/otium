@@ -156,7 +156,7 @@ policy.
   can change that.
   - Release builds (the production server baked in, `AppIdentity.IsReleaseBuild`) ignore every developer override:
     `OTIUM_SERVER_URL`, `OTIUM_FEE_WALLET`, `OTIUM_UNMINEABLE_REFERRAL`, `OTIUM_UPDATE_URL`, `OTIUM_SIMULATE`, the pool
-    API overrides and `OTIUM_DEVICE_SEED`. There's no server setting in the app either.
+    API overrides, `OTIUM_DEVICE_SEED`, `OTIUM_HOME` and `OTIUM_HONEYGAIN_KEY`. There's no server setting in the app either.
   - Every account summary carries a **fee grant** for the computer asking (`Fees.FeeGrant`): the fee, the inviter's
     share and address, the fee-free date, and for custodial balance accounts the pool wallet. It's signed by the
     server (`Fees:GrantSigningKey`, ECDSA P-256) and valid for 7 days. Release builds take those values only from a
@@ -165,6 +165,18 @@ policy.
     days and no inviter's slice.
   - The built-in terms are the limits (`FeePolicy.WithinBuiltInLimits`): a grant can't make the fee lower than 2%,
     nor fee-free time or the inviter's share more generous; fee-free dates are capped at 90 days ahead.
+  - **Mining time, which places the slice, can't be rolled back.** It's never negative in `ledger.json` and only
+    grows. The app reports each engine's total with its account check-in (`?cpuMined=&gpuMined=`, seconds); the server
+    keeps the most per device (`devices.cpu_mined_seconds`/`gpu_mined_seconds`, growing no faster than the time between
+    reports) and signs it back as the grant's `CpuMiningFloor`/`GpuMiningFloor`, which release builds raise their
+    ledgers to, so a deleted or edited ledger is undone at the next check-in. Ticks are measured on the monotonic clock
+    and capped at 4 tick intervals (setting the system clock back does nothing), and only count while the miner reports
+    a hashrate (warming up or a suspended miner isn't mining time).
+  - **The miner runs Otium's settings.** XMRig's config has `"watch": false` (an edited config.json isn't reloaded),
+    and every minute Otium reads `GET /1/config` from XMRig's API: a pool or login other than Otium's, a second pool,
+    or an API that refuses Otium restarts XMRig with Otium's config. XMRig and SRBMiner keep their pinned download, and
+    the binary is checked against it before every launch (hashes cached per size and modification time); a changed
+    binary or download makes the app install the engine again.
   - **Fee slices are checked from the server.** The payout checker records which Otium workers (`ot` + 8 hex digits
     of the device id) the pools show working on users' own addresses, and `FeeSliceWatcher` does the same every hour
     for Otium's fee address (`Unmineable:OtiumTarget`). The admin summary's `feeSlicesMissing` lists computers seen
@@ -421,7 +433,7 @@ Honeygain details:
   1. Sign the Honeygain publisher agreement and get an API key.
   2. Put the SDK libraries next to the app: `hgsdk.dll` (Windows), `libhgsdk.so` (Linux), `libhgsdk.dylib` (macOS).
   3. Set the key: the `OTIUM_HONEYGAIN_KEY` secret for release builds (baked in at build time), or the
-     `OTIUM_HONEYGAIN_KEY` environment variable at runtime.
+     `OTIUM_HONEYGAIN_KEY` environment variable at runtime (development builds only).
   4. On the server, set `Bandwidth:Enabled=true`, `PartnerName` and the rates.
   
   Without the library or key, the option stays hidden.

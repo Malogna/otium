@@ -35,7 +35,8 @@ public sealed class AppPaths(string root)
 
     private static string DefaultRoot()
     {
-        var overridden = Environment.GetEnvironmentVariable("OTIUM_HOME");
+        // A developer override only: in release builds a fresh data folder would also be a fresh fee cycle.
+        var overridden = AppIdentity.DevelopmentOverride("OTIUM_HOME");
         if (!string.IsNullOrWhiteSpace(overridden))
             return overridden;
 

@@ -229,11 +229,16 @@ public sealed class AccountService(
         return new Session(device, account);
     }
 
-    public async Task<AccountSummary> GetSummaryAsync(string deviceId, string secret, string publicBaseUrl, CancellationToken ct, System.Net.IPAddress? from = null)
+    /// <param name="cpuMinedSeconds">How long the computer's processor has mined in all, as its app reports (null from older apps).</param>
+    /// <param name="gpuMinedSeconds">The same for its graphics card.</param>
+    public async Task<AccountSummary> GetSummaryAsync(string deviceId, string secret, string publicBaseUrl, CancellationToken ct, System.Net.IPAddress? from = null,
+        double? cpuMinedSeconds = null, double? gpuMinedSeconds = null)
     {
         var session = Authenticate(deviceId, secret);
         // The app's regular check-in (every minute): what the admin dashboard's "online now" and "seen in 24 h" count.
         store.TouchDevice(deviceId, time.GetUtcNow(), TimeSpan.FromMinutes(5));
+        // Kept so the signed fee grant can give it back (see FeeGrant.CpuMiningFloor).
+        store.RecordMiningTime(deviceId, cpuMinedSeconds, gpuMinedSeconds, time.GetUtcNow());
         if (connections.Of(from) is { } network)
             store.RecordAccountNetwork(session.Account.AccountId, network, time.GetUtcNow());
         await RefreshVerificationsAsync(session.Account, ct);
@@ -617,8 +622,10 @@ public sealed class AccountService(
         if (_grantKey.Value is not { } key)
             return summary;
         var policy = Policy;
+        var (cpuMined, gpuMined) = store.MiningTime(deviceId);
         var grant = new FeeGrant(deviceId, policy.FeePercent, policy.ReferrerShareOfFee, summary.ReferrerWallet, summary.ReferredAt,
-            summary.FeeFreeUntil, summary.Custodial && summary.PoolWallet is not null, summary.PoolWallet, now, now + FeeGrant.Lifetime);
+            summary.FeeFreeUntil, summary.Custodial && summary.PoolWallet is not null, summary.PoolWallet, now, now + FeeGrant.Lifetime,
+            cpuMined, gpuMined);
         return summary with { FeeGrant = grant.Payload(), FeeGrantSignature = FeeGrants.Sign(grant, key) };
     }
 

@@ -245,15 +245,15 @@ public sealed class SrbMinerProviderTests : IDisposable
     private readonly FakeFactory _factory = new();
     private readonly FakeMeter _meter = new();
     private readonly SrbMinerGpuProvider _provider;
+    private readonly SrbMinerAsset _asset;
     private static readonly ProviderRunOptions Options = new(new MiningTarget(TestAddresses.Generate(), PayoutRole.User), "sc1234abcdg", 100);
 
     public SrbMinerProviderTests()
     {
-        // A stand-in binary so the provider believes the engine is installed.
+        // A stand-in engine, installed as the installer leaves it (its download kept, to check the binary before each launch).
         var engineDir = Path.Combine(_dir, "engines", $"srbminer-{SrbMinerRelease.Version}");
-        Directory.CreateDirectory(engineDir);
-        File.WriteAllText(Path.Combine(engineDir, SrbMinerRelease.BinaryName), "x");
-        File.WriteAllText(Path.Combine(engineDir, ".verified"), "x");
+        _asset = new SrbMinerAsset("SRBMiner-Multi-3-7-6-win64.zip",
+            FakeEngine.Install(engineDir, "SRBMiner-Multi-3-7-6-win64.zip", $"SRBMiner-Multi-3-7-6/{SrbMinerRelease.BinaryName}"));
 
         // Free electricity, so MoneroOcean's "free power only" algorithms take part (these tests cover switching itself).
         _provider = CreateProvider(policy: null, pricePerKwh: 0, benchmarks: "bench.json");
@@ -263,7 +263,7 @@ public sealed class SrbMinerProviderTests : IDisposable
         IUnmineableApi? unmineable = null, Func<string, int, CancellationToken, Task<string?>>? poolBlocked = null) =>
         new(new HttpClient(), _pool, Path.Combine(_dir, "engines"), Path.Combine(_dir, benchmarks ?? $"bench-{Guid.NewGuid():N}.json"),
             [Rtx3080], _meter, () => pricePerKwh, _factory, _time,
-            asset: SrbMinerRelease.For(OSPlatform.Windows, Architecture.X64), policy: policy, freeMemoryGb: freeMemoryGb, unmineable: unmineable,
+            asset: _asset, policy: policy, freeMemoryGb: freeMemoryGb, unmineable: unmineable,
             poolBlocked: poolBlocked);
 
     [Fact]

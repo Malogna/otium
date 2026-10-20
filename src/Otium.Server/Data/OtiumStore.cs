@@ -353,6 +353,16 @@ public sealed class OtiumStore
             );
             """);
 
+        // Version 11: how long each computer's processor and graphics card have mined in all (seconds, as its app reports
+        // with the account check-in). Only ever grows; the signed fee grant carries it back, so deleting or editing the
+        // app's ledger doesn't move its fee cycle back before Otium's slice.
+        if (Scalar<long>("SELECT COUNT(*) FROM pragma_table_info('devices') WHERE name = 'cpu_mined_seconds'") == 0)
+            Execute("ALTER TABLE devices ADD COLUMN cpu_mined_seconds REAL NOT NULL DEFAULT 0;");
+        if (Scalar<long>("SELECT COUNT(*) FROM pragma_table_info('devices') WHERE name = 'gpu_mined_seconds'") == 0)
+            Execute("ALTER TABLE devices ADD COLUMN gpu_mined_seconds REAL NOT NULL DEFAULT 0;");
+        if (Scalar<long>("SELECT COUNT(*) FROM pragma_table_info('devices') WHERE name = 'mined_reported_at'") == 0)
+            Execute("ALTER TABLE devices ADD COLUMN mined_reported_at TEXT NULL;");
+
         // Version 12: payout addresses and computers that already joined through an invite (keyed hashes, see
         // ReferralRedemptions). Kept when the account is deleted, so deleting it and joining again doesn't repeat the invite.
         Execute("""
@@ -629,6 +639,57 @@ public sealed class OtiumStore
             ("$n", Format(now)), ("$d", deviceId), ("$cut", Format(now - every)));
 
     public long DeviceCount(string accountId) => Scalar<long>("SELECT COUNT(*) FROM devices WHERE account_id = $a", ("$a", accountId));
+
+    /// <summary>The most mining time (seconds) this computer has reported for its processor and graphics card; zeros if none.</summary>
+    public (double Cpu, double Gpu) MiningTime(string deviceId)
+    {
+        using var connection = Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT cpu_mined_seconds, gpu_mined_seconds FROM devices WHERE device_id = $d";
+        Bind(cmd, [("$d", deviceId)]);
+        using var r = cmd.ExecuteReader();
+        return r.Read() ? (r.GetDouble(0), r.GetDouble(1)) : (0, 0);
+    }
+
+    /// <summary>
+    /// Records the mining time a computer reports (null: not reported). The stored figures only grow, and by no more than
+    /// the time since its previous report, since a processor or graphics card can't mine faster than the clock: a
+    /// made-up figure can't jump a fee cycle past Otium's slice. The first report is taken as it is.
+    /// </summary>
+    public (double Cpu, double Gpu) RecordMiningTime(string deviceId, double? cpuSeconds, double? gpuSeconds, DateTimeOffset now)
+    {
+        using var connection = Open();
+        using var tx = connection.BeginTransaction(deferred: false);
+        double cpu, gpu;
+        string? reportedAt;
+        using (var read = connection.CreateCommand())
+        {
+            read.Transaction = tx;
+            read.CommandText = "SELECT cpu_mined_seconds, gpu_mined_seconds, mined_reported_at FROM devices WHERE device_id = $d";
+            Bind(read, [("$d", deviceId)]);
+            using var r = read.ExecuteReader();
+            if (!r.Read())
+                return (0, 0);
+            (cpu, gpu, reportedAt) = (r.GetDouble(0), r.GetDouble(1), r.IsDBNull(2) ? null : r.GetString(2));
+        }
+        if (cpuSeconds is null && gpuSeconds is null)
+            return (cpu, gpu);
+
+        var allowance = reportedAt is null ? double.PositiveInfinity : Math.Max(0, (now - Parse(reportedAt)).TotalSeconds);
+        double Next(double stored, double? reported) =>
+            reported is { } value && double.IsFinite(value) && value > stored ? Math.Min(value, stored + allowance) : stored;
+        (cpu, gpu) = (Next(cpu, cpuSeconds), Next(gpu, gpuSeconds));
+
+        using (var write = connection.CreateCommand())
+        {
+            write.Transaction = tx;
+            write.CommandText = "UPDATE devices SET cpu_mined_seconds = $c, gpu_mined_seconds = $g, mined_reported_at = $n WHERE device_id = $d";
+            Bind(write, [("$c", cpu), ("$g", gpu), ("$n", Format(now)), ("$d", deviceId)]);
+            write.ExecuteNonQuery();
+        }
+        tx.Commit();
+        return (cpu, gpu);
+    }
 
     // ---------- connections and referral shares (anti self-invites; "earned from friends") ----------
 

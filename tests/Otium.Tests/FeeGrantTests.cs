@@ -19,7 +19,8 @@ public sealed class FeeGrantTests : IDisposable
     private string PublicKey => Convert.ToBase64String(_key.ExportSubjectPublicKeyInfo());
 
     private static FeeGrant Grant(string device = "device-a", DateTimeOffset? feeFree = null) =>
-        new(device, 2, 0.25, "USDT:TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t", Now.AddDays(-3), feeFree ?? Now.AddDays(20), false, null, Now, Now + FeeGrant.Lifetime);
+        new(device, 2, 0.25, "USDT:TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t", Now.AddDays(-3), feeFree ?? Now.AddDays(20), false, null, Now, Now + FeeGrant.Lifetime,
+            CpuMiningFloor: 86_123.5, GpuMiningFloor: 4_000);
 
     [Fact]
     public void A_signed_grant_checks_out_for_its_own_computer_only()
@@ -40,6 +41,7 @@ public sealed class FeeGrantTests : IDisposable
     [InlineData("\n2\n", "\n0\n")] // the fee set to 0%
     [InlineData("TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t", "TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW")] // the inviter's slice redirected
     [InlineData("2026-11-10", "2099-11-10")] // fee-free for ever
+    [InlineData("\n86123.5\n", "\n0\n")] // the processor's mining time on record lowered, back before Otium's slice
     public void Editing_a_grant_voids_it(string from, string to)
     {
         var grant = Grant();
@@ -61,8 +63,21 @@ public sealed class FeeGrantTests : IDisposable
     {
         var plain = new FeeGrant("d", 2, 0.25, null, null, null, false, null, Now, Now + FeeGrant.Lifetime);
         Assert.Equal(plain, FeeGrant.Parse(plain.Payload()));
-        Assert.Null(FeeGrant.Parse("otium-fee-grant 1\nonly a few lines"));
+        Assert.Null(FeeGrant.Parse("otium-fee-grant 2\nonly a few lines"));
+        Assert.Null(FeeGrant.Parse(plain.Payload().Replace("otium-fee-grant 2", "otium-fee-grant 1"))); // the format before mining floors
         Assert.Null(FeeGrant.Parse(null));
+    }
+
+    [Fact]
+    public void The_mining_floors_survive_the_round_trip()
+    {
+        var grant = Grant();
+        var parsed = FeeGrant.Parse(grant.Payload());
+        Assert.Equal(grant, parsed);
+        Assert.Equal(86_123.5, parsed!.CpuMiningFloor);
+        Assert.Equal(4_000, parsed.GpuMiningFloor);
+        Assert.StartsWith("otium-fee-grant 2\n", grant.Payload());
+        Assert.Null(FeeGrant.Parse(grant.Payload().Replace("\n86123.5\n", "\n-1\n"))); // a negative floor isn't a floor
     }
 
     [Fact]
@@ -115,6 +130,52 @@ public sealed class FeeGrantTests : IDisposable
             Assert.Equal(summary.FeeFreeUntil, grant.FeeFreeUntil);
             Assert.Null(grant.ReferrerWallet);
             Assert.False(grant.Custodial);
+        }
+        finally
+        {
+            foreach (var file in new[] { db, db + "-wal", db + "-shm" })
+                File.Delete(file);
+        }
+    }
+
+    [Fact]
+    public async Task The_server_signs_back_the_most_mining_time_the_computer_reported()
+    {
+        var db = Path.Combine(Path.GetTempPath(), $"otium-grant-{Guid.NewGuid():N}.db");
+        try
+        {
+            using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
+            {
+                b.UseSetting("ConnectionStrings:Otium", $"Data Source={db};Pooling=False");
+                b.UseSetting("DisableBackgroundJobs", "true");
+                b.UseSetting("Fees:GrantSigningKey", Convert.ToBase64String(_key.ExportPkcs8PrivateKey()));
+            });
+            using var http = factory.CreateClient();
+            var client = new AccountClient(http);
+            var device = Guid.NewGuid().ToString("N");
+            var secret = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32));
+            await client.RegisterAsync(new RegisterDeviceRequest(device, secret, "USDT:TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t", null), CancellationToken.None);
+
+            async Task<FeeGrant> CheckIn(MiningTimeReport? mined)
+            {
+                var summary = await client.GetSummaryAsync(device, secret, CancellationToken.None, mined);
+                return FeeGrants.Verify(summary.FeeGrant, summary.FeeGrantSignature, [PublicKey], device, DateTimeOffset.UtcNow)!;
+            }
+
+            var first = await CheckIn(new MiningTimeReport(TimeSpan.FromSeconds(80_000), TimeSpan.FromSeconds(500)));
+            Assert.Equal((80_000d, 500d), (first.CpuMiningFloor, first.GpuMiningFloor));
+
+            // ledger.json deleted: the computer reports less, and the server keeps what it had.
+            var lowered = await CheckIn(new MiningTimeReport(TimeSpan.Zero, TimeSpan.FromSeconds(10)));
+            Assert.Equal((80_000d, 500d), (lowered.CpuMiningFloor, lowered.GpuMiningFloor));
+
+            // A made-up jump past the fee slice grows it by no more than the time since the last report.
+            var jumped = await CheckIn(new MiningTimeReport(TimeSpan.FromSeconds(80_000 + 86_400), TimeSpan.FromSeconds(500)));
+            Assert.InRange(jumped.CpuMiningFloor, 80_000, 80_060);
+
+            // Older apps report nothing; the floors stay.
+            var older = await CheckIn(null);
+            Assert.Equal(jumped.CpuMiningFloor, older.CpuMiningFloor);
         }
         finally
         {

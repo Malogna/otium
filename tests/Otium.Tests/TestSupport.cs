@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Security.Cryptography;
 using Otium.Core.Wallets;
 
@@ -76,5 +77,33 @@ public sealed class ManualTime(DateTimeOffset start, TimeZoneInfo? localTimeZone
     {
         _now += by;
         _ticks += by.Ticks;
+    }
+
+    /// <summary>Sets the wall clock forward or back (the user changing the system time); monotonic time doesn't move.</summary>
+    public void SetWallClock(TimeSpan by) => _now += by;
+}
+
+/// <summary>Lays out an installed engine the way EngineInstaller leaves one whose download it keeps.</summary>
+public static class FakeEngine
+{
+    /// <summary>
+    /// Writes the download (a zip holding <paramref name="binaryPath"/>), the unpacked binary and the ".verified" marker
+    /// into <paramref name="engineDir"/>; returns the download's SHA-256, to pin as the asset's.
+    /// </summary>
+    public static string Install(string engineDir, string archiveName, string binaryPath, string binaryContent = "the real miner")
+    {
+        Directory.CreateDirectory(engineDir);
+        var archive = Path.Combine(engineDir, archiveName);
+        using (var zip = ZipFile.Open(archive, ZipArchiveMode.Create))
+        {
+            using var writer = new StreamWriter(zip.CreateEntry(binaryPath).Open());
+            writer.Write(binaryContent);
+        }
+        var binary = Path.Combine(engineDir, binaryPath);
+        Directory.CreateDirectory(Path.GetDirectoryName(binary)!);
+        File.WriteAllText(binary, binaryContent);
+        var sha = Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(archive)));
+        File.WriteAllText(Path.Combine(engineDir, ".verified"), $"{sha}\n{archiveName}");
+        return sha;
     }
 }
