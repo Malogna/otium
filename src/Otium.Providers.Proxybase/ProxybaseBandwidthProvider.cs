@@ -64,9 +64,15 @@ public sealed record ProxybaseEarnedSample(DateTimeOffset At, long GrossMicrocre
 /// <param name="LatencyMs">How long Proxybase's checks take to get an answer through it.</param>
 /// <param name="Uptime">The share of Proxybase's checks it answered (0–1).</param>
 /// <param name="PendingMicrocredits">Earned but not yet cleared for payout.</param>
+/// <param name="Pool">Where Proxybase has put this computer: "trial" (new nodes, tested with a few buyers), "production"
+/// (where buyers are sent) or "suspended".</param>
+/// <param name="Network">Buyer sessions open and sellers online across all of Proxybase (<c>health</c>), when known.</param>
 public sealed record ProxybaseNode(int ActiveStreams, int MaxStreams, string? Country, string? Category, double? LatencyMs,
-    double? Uptime, long PendingMicrocredits, string? Pool = null)
+    double? Uptime, long PendingMicrocredits, string? Pool = null, ProxybaseNetwork? Network = null)
 {
+    /// <summary>New computers start here: Proxybase tests them with a few buyers before the production pool.</summary>
+    public bool Trial => string.Equals(Pool, "trial", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>
     /// Proxybase took this computer out of the pool buyers are sent to ("pool": "suspended"), which its servers decide from
     /// their own test requests through it (a node whose tests took ~14 s was suspended; ~1.5 s was in "production").
@@ -77,12 +83,12 @@ public sealed record ProxybaseNode(int ActiveStreams, int MaxStreams, string? Co
     /// A few words for the overview's internet row. Open streams aren't all buyers: Proxybase's own test requests use them
     /// too, so they're called connections.
     /// </summary>
-    public string Activity => Suspended ? "Paused by Proxybase: too slow in its tests" : ActiveStreams switch
+    public string Activity => Suspended ? "Paused by Proxybase: too slow in its tests" : (Trial ? "Trial pool · " : "") + (ActiveStreams switch
     {
-        0 => "Online, waiting for a buyer",
+        0 => Trial ? "waiting for a buyer" : "Online, waiting for a buyer",
         1 => "1 connection open now",
         var n => $"{n} connections open now",
-    };
+    }) + (Network is { } network ? $" · {network.BuyerSessionsText} on Proxybase" : "");
 
     /// <summary>The fuller account for Details and Settings.</summary>
     public string Describe(bool earnedAnything)
@@ -91,6 +97,12 @@ public sealed record ProxybaseNode(int ActiveStreams, int MaxStreams, string? Co
         var kind = Category is { Length: > 0 } c ? $"a {c} connection" : "a connection";
         var parts = new List<string>
         {
+            Trial
+                ? "In Proxybase's trial pool: new computers are tested with a few buyers first, and move to the production pool, " +
+                  "where most buyers are sent, once they've proven fast and reliable. "
+                : "",
+        };
+        parts[0] += (
             Suspended
                 ? "Proxybase has paused this computer, so buyers aren't sent to it: its test requests through it were too slow. " +
                   "Otium keeps it online so Proxybase can test it again and list it once it answers quicker."
@@ -98,8 +110,9 @@ public sealed record ProxybaseNode(int ActiveStreams, int MaxStreams, string? Co
                 ? $"Open now: {ActiveStreams} connection{(ActiveStreams == 1 ? "" : "s")} through this computer, from buyers or Proxybase's own tests."
                 : earnedAnything
                     ? $"Listed for Proxybase's buyers as {kind} in {where}; nobody is using it right now."
-                    : $"Listed for Proxybase's buyers as {kind} in {where}, and waiting for the first one. Nothing sold yet.",
-        };
+                    : $"Listed for Proxybase's buyers as {kind} in {where}, and waiting for the first one. Nothing sold yet.");
+        if (Network is { } network)
+            parts.Add(FormattableString.Invariant($"Across Proxybase right now: {network.BuyerSessionsText} and {network.Sellers:N0} sellers online."));
         var quality = new List<string>();
         if (Uptime is { } up)
             quality.Add(FormattableString.Invariant($"reachable {Math.Floor(up * 10000) / 100:0.##}% of the time"));
@@ -123,6 +136,12 @@ public sealed record ProxybaseNode(int ActiveStreams, int MaxStreams, string? Co
             return code;
         }
     }
+}
+
+/// <summary>All of Proxybase right now (<c>health</c>): open buyer sessions (one buyer can have several) and sellers online.</summary>
+public sealed record ProxybaseNetwork(int BuyerSessions, int Sellers)
+{
+    public string BuyerSessionsText => BuyerSessions == 1 ? "1 buyer session" : FormattableString.Invariant($"{BuyerSessions:N0} buyer sessions");
 }
 
 /// <summary>Asks the Otium server where to send a payout so it reaches the user's own address in their coin.</summary>
@@ -287,7 +306,9 @@ public sealed class ProxybaseBandwidthProvider : IBandwidthProvider
         if (_time.GetUtcNow() >= _nextNodeCheck)
         {
             _nextNodeCheck = _time.GetUtcNow() + NodeInterval;
-            _node = ProxybaseOutput.Node((await _cli.RunAsync(["seller", "status"], ct)).Output) ?? _node;
+            var node = ProxybaseOutput.Node((await _cli.RunAsync(["seller", "status"], ct)).Output);
+            if (node is not null)
+                _node = node with { Network = ProxybaseOutput.Network((await _cli.RunAsync(["health"], ct)).Output) ?? _node?.Network };
         }
         var earned = Earned;
         return new BandwidthStatus(BandwidthProviderState.Online, 0, _payoutProblem, EarningsText(), earned.UserUsd, earned.UserUsdPerDay(_time.GetUtcNow()),
