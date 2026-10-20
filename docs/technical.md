@@ -135,7 +135,7 @@ policy.
   failed, lagging or more than 2-hour-old feed disables a coin automatically.
 - **SRBMiner's statistics API stays off.** It listens on every network interface (3.7.6 has no bind option), answers
   any website (`Access-Control-Allow-Origin: *`) and shows the payout address, so hashrate and shares come from the
-  console's "Total" line instead. XMRig's API is bound to `127.0.0.1`.
+  console's statistics instead (its table's "Hashrate" row in 3.7.6, or an older "Total" line). XMRig's API is bound to `127.0.0.1`.
 - **Guards against a wrong server answer.** Own-wallet graphics cards only connect to the pools' own hosts
   (`*.unmineable.com`, `*.kryptex.network`, `*.moneroocean.stream`; `GpuPolicy.OnlyTrustedHosts`), the referrer's
   share is capped at 1% of mining time, and internet-sharing payouts only go to a well-formed 0x deposit address.
