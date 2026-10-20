@@ -11,6 +11,8 @@ using Otium.Core.Accounts;
 using Otium.Core.Pools;
 using Otium.Core.Wallets;
 using Otium.Server;
+using Otium.Server.Accounts;
+using Otium.Server.Data;
 using Otium.Server.Gpu;
 using Otium.Server.Sharing;
 
@@ -18,7 +20,7 @@ namespace Otium.Tests;
 
 /// <summary>
 /// Internet sharing payouts reach the user's own coin: the server opens a one-time conversion from Proxybase's Tempo
-/// USDC (Relay, plus SideShift for LTC or ChangeNOW for XMR), with no Otium fee in it; Otium's share is paid separately.
+/// USDC (Relay, plus SideShift for LTC or ChangeNOW for XMR), with Otium's share taken inside it as a Relay app fee.
 /// </summary>
 public sealed class SharingRouteTests
 {
@@ -102,11 +104,22 @@ public sealed class SharingRouteTests
         }
     }
 
-    private static SharingRouteService Service(FakeRelay relay, SharingOptions? options = null) =>
-        new(relay, new SideShiftLitecoin(new HttpClient(), Options.Create(options ?? new SharingOptions())),
+    private static readonly DateTimeOffset T0 = new(2026, 10, 20, 12, 0, 0, TimeSpan.Zero);
+
+    private static SharingRouteService Service(FakeRelay relay, SharingOptions? options = null, TimeProvider? time = null, HttpMessageHandler? partner = null)
+    {
+        time ??= new ManualTime(T0);
+        return new(relay, new SideShiftLitecoin(new HttpClient(partner ?? new HttpClientHandler()), Options.Create(options ?? new SharingOptions())),
             new ChangeNowMonero(new HttpClient(), Options.Create(options ?? new SharingOptions())),
             Options.Create(options ?? new SharingOptions { FeeRecipient = OtiumFee }), Options.Create(new FeeOptions { FeePercent = 2 }),
-            Options.Create(new ProxybaseOptions()), NullLogger<SharingRouteService>.Instance);
+            Options.Create(new ProxybaseOptions()), new ConnectionQuotas(time), time, NullLogger<SharingRouteService>.Instance);
+    }
+
+    private static Session SessionFor(string payout, string? accountId = null)
+    {
+        var id = accountId ?? Guid.NewGuid().ToString("N");
+        return new Session(new DeviceRecord(id, "x", id, T0, T0), new AccountRecord(id, "w" + id, null, payout, "c" + id, null, null, null, null, false, null, null, T0));
+    }
 
     [Fact]
     public void Small_payouts_wait_until_the_fixed_network_fee_is_a_small_share()
@@ -137,6 +150,7 @@ public sealed class SharingRouteTests
     {
         private readonly string _dbPath = Path.Combine(Path.GetTempPath(), $"otium-sharing-{Guid.NewGuid():N}.db");
         public FakeRelay Relay { get; } = new();
+        public ManualTime Time { get; } = new(T0);
         public WebApplicationFactory<Program> Factory { get; }
         public HttpClient Http { get; }
 
@@ -161,6 +175,8 @@ public sealed class SharingRouteTests
                     services.AddSingleton<IProfitFeed>(new GpuPolicyTests.FakeFeed());
                     services.RemoveAll<IRelayApi>();
                     services.AddSingleton<IRelayApi>(Relay);
+                    services.RemoveAll<TimeProvider>();
+                    services.AddSingleton<TimeProvider>(Time);
                 });
             });
             Http = Factory.CreateClient();
@@ -202,17 +218,107 @@ public sealed class SharingRouteTests
         Assert.Equal(728126428, quote.Destination.ChainId);
         Assert.Equal("0xdeposit1", route.DepositAddress);
 
-        // Otium's 2% isn't in the conversion: only the user's part is converted, with no app fee, and the app pays
-        // Otium's share to Otium's own address itself.
-        Assert.Equal(19_600_000, quote.Amount);
-        Assert.False(quote.WithAppFee);
-        Assert.Equal(19_600_000, route.AmountMicrocredits);
-        Assert.Equal(400_000, route.FeeMicrocredits);
-        Assert.Equal(OtiumFee, route.FeeAddress);
+        // Otium's 2% is a Relay app fee inside the conversion: everything waiting goes in, and the app has no fee of its
+        // own to pay (or to skip).
+        Assert.Equal(20_000_000, quote.Amount);
+        Assert.True(quote.WithAppFee);
+        Assert.Equal(20_000_000, route.AmountMicrocredits);
+        Assert.Equal(0, route.FeeMicrocredits);
+        Assert.Null(route.FeeAddress);
+        Assert.Equal(200, route.FeeBps);
 
+        server.Time.Advance(SharingRouteService.RouteInterval);
         Assert.Equal(SharingRouteDecisions.Wait, (await server.Route(device, secret, 5_000_000)).Decision);
         Assert.Equal(SharingRouteDecisions.Wait, (await server.Route(device, secret, 500_000)).Decision);
         await Assert.ThrowsAsync<AccountRequestException>(() => server.Route(device, secret, 20_000_000, refund: null));
+    }
+
+    [Fact]
+    public async Task Without_a_fee_address_the_conversion_carries_no_fee()
+    {
+        var relay = new FakeRelay();
+        var route = await Service(relay, new SharingOptions()).RouteAsync(SessionFor(TestAddresses.Usdt(1)), new SharingRouteRequest(20_000_000, Refund), null, CancellationToken.None);
+        Assert.Equal(SharingRouteDecisions.Pay, route.Decision);
+        Assert.False(Assert.Single(relay.Quotes).WithAppFee);
+        Assert.Equal(0, route.FeeBps);
+    }
+
+    [Fact]
+    public async Task Asking_again_within_five_minutes_gets_the_same_route_without_new_quotes()
+    {
+        using var server = new Server();
+        var (device, secret) = await server.Register(TestAddresses.Usdt(3));
+
+        var first = await server.Route(device, secret, 20_000_000);
+        // A modified app asking over and over (claiming any amount) gets the same answer and costs Relay nothing more.
+        for (var i = 0; i < 5; i++)
+            Assert.Equal(first, await server.Route(device, secret, 50_000_000 + i));
+        Assert.Single(server.Relay.Quotes);
+
+        // A new payout address gets its own route straight away; the old one isn't handed out for it.
+        var changed = await server.Http.PostAsJsonAsync("/api/v1/devices", new RegisterDeviceRequest(device, secret, TestAddresses.Usdt(4), null));
+        Assert.Equal(HttpStatusCode.OK, changed.StatusCode);
+        var moved = await server.Route(device, secret, 20_000_000);
+        Assert.Equal(2, server.Relay.Quotes.Count);
+        Assert.Equal(TestAddresses.Usdt(4)["USDT:".Length..], server.Relay.Quotes[^1].Recipient);
+        Assert.Equal("0xdeposit2", moved.DepositAddress);
+
+        // Five minutes on, a new route is made.
+        server.Time.Advance(SharingRouteService.RouteInterval);
+        await server.Route(device, secret, 20_000_000);
+        Assert.Equal(3, server.Relay.Quotes.Count);
+    }
+
+    [Fact]
+    public async Task Each_internet_connection_gets_a_limited_number_of_new_routes_a_day()
+    {
+        var time = new ManualTime(T0);
+        var relay = new FakeRelay();
+        var service = Service(relay, time: time);
+        var connection = System.Net.IPAddress.Parse("2001:db8:1:2::10");
+        for (var i = 0; i < ConnectionQuotas.SharingRoutesPerDay; i++)
+            Assert.Equal(SharingRouteDecisions.Pay,
+                (await service.RouteAsync(SessionFor(TestAddresses.Usdt(1)), new SharingRouteRequest(20_000_000, Refund), connection, CancellationToken.None)).Decision);
+
+        // Fresh accounts on the same connection (another address in its /64) get no more today, and cost no quotes.
+        var quotes = relay.Quotes.Count;
+        var refused = await service.RouteAsync(SessionFor(TestAddresses.Usdt(1)), new SharingRouteRequest(20_000_000, Refund),
+            System.Net.IPAddress.Parse("2001:db8:1:2::99"), CancellationToken.None);
+        Assert.Equal(SharingRouteDecisions.Wait, refused.Decision);
+        Assert.Contains("tomorrow", refused.Message);
+        Assert.Equal(quotes, relay.Quotes.Count);
+
+        // Another connection isn't affected, and the next day the first one can ask again.
+        Assert.Equal(SharingRouteDecisions.Pay, (await service.RouteAsync(SessionFor(TestAddresses.Usdt(1)), new SharingRouteRequest(20_000_000, Refund),
+            System.Net.IPAddress.Parse("198.51.100.7"), CancellationToken.None)).Decision);
+        time.Advance(TimeSpan.FromDays(1));
+        Assert.Equal(SharingRouteDecisions.Pay, (await service.RouteAsync(SessionFor(TestAddresses.Usdt(1)), new SharingRouteRequest(20_000_000, Refund),
+            connection, CancellationToken.None)).Decision);
+    }
+
+    [Theory]
+    [InlineData("2001:db8::1234", "2001:db8::1234")] // IPv6 stays IPv6 (mapping it to IPv4 would make up an address)
+    [InlineData("::ffff:198.51.100.7", "198.51.100.7")]
+    [InlineData("198.51.100.7", "198.51.100.7")]
+    public void The_users_own_address_is_passed_on_as_it_is(string seen, string passed) =>
+        Assert.Equal(passed, ClientNetwork.Text(System.Net.IPAddress.Parse(seen)));
+
+    [Fact]
+    public async Task Sideshift_is_told_the_users_ipv6_address()
+    {
+        var sideShift = new CapturingHandler("""{"depositAddress":"0x1111111111111111111111111111111111111111","depositMin":"3"}""");
+        var relay = new FakeRelay();
+        var service = Service(relay, new SharingOptions { FeeRecipient = OtiumFee, SideShiftSecret = "s", SideShiftAffiliateId = "a" }, partner: sideShift);
+
+        var route = await service.RouteAsync(SessionFor("LTC:ltc1qg42tkwuuxefutzxezdkdel39gfstuap288mfea"), new SharingRouteRequest(20_000_000, Refund),
+            System.Net.IPAddress.Parse("2001:db8::1234"), CancellationToken.None);
+
+        Assert.Equal(SharingRouteDecisions.Pay, route.Decision);
+        var (request, _) = Assert.Single(sideShift.Requests);
+        Assert.Equal("2001:db8::1234", request.Headers.GetValues("x-user-ip").Single());
+        // Both Relay legs carry Otium's fee once: the estimate (so the shift is sized after it) and the real deposit.
+        Assert.All(relay.Quotes, q => Assert.True(q.WithAppFee));
+        Assert.Equal("0x1111111111111111111111111111111111111111", relay.Quotes[^1].Recipient);
     }
 
     [Fact]

@@ -280,34 +280,55 @@ public sealed class ProxybaseTests : IDisposable
     }
 
     [Fact]
-    public async Task Otiums_fee_is_kept_back_and_paid_to_otiums_address_from_one_dollar_never_through_the_conversion()
+    public async Task Otiums_fee_is_taken_in_the_conversion_so_the_app_pays_nothing_to_otium_itself()
     {
         const string otium = "0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed";
-        var provider = new ProxybaseBandwidthProvider(new HttpClient(), _engines, (request, _) =>
-        {
-            _routeRequests.Add(request);
-            var fee = request.AvailableMicrocredits / 50; // 2%, as the server works it out
-            return Task.FromResult(_route with { AmountMicrocredits = request.AvailableMicrocredits - fee, FeeAddress = otium, FeeMicrocredits = fee });
-        }, _cli, new ProxybaseAsset("test.zip", "00"), _time);
+        _route = _route with { FeeBps = 200 };
+        var provider = Provider();
         await provider.StartAsync(new BandwidthRunOptions("w1"), CancellationToken.None);
 
-        // $20: $19.60 goes to the user's conversion; Otium's $0.40 stays at Proxybase, below its $1 minimum.
+        // $20: all of it goes into the conversion, which takes Otium's 2% on the way; nothing is kept back.
         _cli.SellerAvailable = 20_000_000;
         await provider.CheckBalanceAndPayAsync(CancellationToken.None);
-        Assert.Contains($"seller payout create --amount 19600000 --tempo-address {DepositAddress}", _cli.Commands);
-        Assert.DoesNotContain(_cli.Commands, c => c.EndsWith(otium, StringComparison.Ordinal));
-        Assert.Equal(400_000, provider.Fee.Reserved);
-        Assert.Equal(400_000, _cli.SellerAvailable);
-
-        // $40 more: the kept-back $0.40 isn't offered for conversion, and once Otium's share reaches $1.20 it's paid to Otium.
-        _cli.SellerAvailable += 40_000_000;
-        await provider.CheckBalanceAndPayAsync(CancellationToken.None);
-        Assert.Equal(40_000_000, _routeRequests[^1].AvailableMicrocredits);
-        Assert.Contains($"seller payout create --amount 39200000 --tempo-address {DepositAddress}", _cli.Commands);
-        Assert.Contains($"seller payout create --amount 1200000 --tempo-address {otium}", _cli.Commands);
-        Assert.Equal(new ProxybaseFee(0, otium, 1_200_000), provider.Fee);
+        Assert.Contains($"seller payout create --amount 20000000 --tempo-address {DepositAddress}", _cli.Commands);
+        Assert.Equal(new ProxybaseFee(), provider.Fee);
         Assert.Equal(0, _cli.SellerAvailable);
-        Assert.Equal(58_800_000, provider.Payouts.Sum(p => p.Microcredits)); // the user's payouts only
+        var payout = Assert.Single(provider.Payouts);
+        Assert.Equal(400_000, payout.OtiumFeeMicrocredits);
+        Assert.Equal("$19.60 earned so far: $0.00 waiting at Proxybase, $19.60 paid out to your wallet (last: 4.18 USDT (TRON))", provider.EarningsText());
+
+        // An older server still naming a fee for the app to keep back: ignored, the app keeps nothing back for anyone.
+        _route = _route with { FeeAddress = otium, FeeMicrocredits = 200_000, FeeBps = 0 };
+        _cli.SellerAvailable = 10_000_000;
+        await provider.CheckBalanceAndPayAsync(CancellationToken.None);
+        Assert.Contains($"seller payout create --amount 10000000 --tempo-address {DepositAddress}", _cli.Commands);
+        Assert.DoesNotContain(_cli.Commands, c => c.EndsWith(otium, StringComparison.Ordinal));
+        Assert.Equal(new ProxybaseFee(), provider.Fee);
+    }
+
+    [Theory]
+    [InlineData(1_200_000, true)]  // $1.20 kept back by an earlier version: owed to Otium, paid once
+    [InlineData(400_000, false)]   // $0.40 could never reach Proxybase's $1 minimum now: back to the user
+    public async Task A_fee_an_earlier_version_kept_back_is_paid_once_or_given_back(long reserved, bool paidToOtium)
+    {
+        const string otium = "0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed";
+        var data = Path.Combine(_engines, "proxybase-data");
+        Directory.CreateDirectory(data);
+        await File.WriteAllTextAsync(Path.Combine(data, "otium-fee.json"), System.Text.Json.JsonSerializer.Serialize(new ProxybaseFee(reserved, otium, 2_000_000)));
+        var provider = Provider();
+        await provider.StartAsync(new BandwidthRunOptions("w1"), CancellationToken.None);
+
+        _cli.SellerAvailable = 10_000_000 + reserved;
+        await provider.CheckBalanceAndPayAsync(CancellationToken.None);
+        Assert.Equal(paidToOtium, _cli.Commands.Contains($"seller payout create --amount {reserved} --tempo-address {otium}"));
+        Assert.Equal(new ProxybaseFee(0, otium, 2_000_000 + (paidToOtium ? reserved : 0)), provider.Fee);
+        Assert.Equal(paidToOtium ? 10_000_000 : 10_000_000 + reserved, _routeRequests[^1].AvailableMicrocredits);
+        Assert.Equal(0, _cli.SellerAvailable);
+
+        // Once settled, nothing more ever goes to that address.
+        _cli.SellerAvailable = 5_000_000;
+        await provider.CheckBalanceAndPayAsync(CancellationToken.None);
+        Assert.Equal(paidToOtium ? 1 : 0, _cli.Commands.Count(c => c.EndsWith(otium, StringComparison.Ordinal)));
     }
 
     [Fact]

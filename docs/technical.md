@@ -34,8 +34,10 @@ When you come back after a stretch of earning, the overview says what it brought
 7 h 40 min of earning"), and in the first days of a month it sums up the last one. Each can be copied as a message
 with your invite code or saved as a picture to post. If you answer yes to "Share analytics" at the end
 of the welcome screens (or turn it on later in Settings), the app sends a few times a day what each device earned, with the card model and processor name and never your
-address; otium.lol then shows real per-card medians from at least three computers, next to the total the pools have paid
-Otium users (read from unMineable's and MoneroOcean's public APIs, counting only addresses mined by Otium alone).
+address; otium.lol then shows real per-card medians from computers of at least three accounts that are a week old or
+more (each account counting once), next to the total the pools have paid Otium users (read from unMineable's and
+MoneroOcean's public APIs, counting each address once and only addresses mined by Otium alone). A report that overlaps
+one the same computer already sent is refused.
 
 If you tick "Keep the processor miner ready when I come back" (welcome screen or Settings; off by default), the
 processor miner pauses rather than stops when you come back, keeping its 2 GB dataset and pool connection for up to 10
@@ -209,9 +211,11 @@ earnings has legal consequences (see [Before launch](#before-launch)).
 - The first time a computer connects it gets its own account: no sign-up step.
 - An account can have several computers. Each computer authenticates with its own random secret, and the balance, invite
   code and pool worker id belong to the account.
-- **Adding an email** (a 6-digit code, valid 15 minutes, 5 tries, rate-limited, stored only as a salted hash; after 10
-  wrong codes in a day an email address is locked until the next day, with no new code emails) secures the
-  account. Signing in with the same email on another computer attaches that computer to the account. If that computer
+- **Adding an email** (a 6-digit code, valid 15 minutes, 5 tries, stored only as a salted hash; at most 5 codes an hour
+  and 10 a day to one address; after 10 wrong codes in a day from one computer that computer is locked out of that
+  address until the next day, and after 50 from all computers together every computer is, with no new code emails)
+  secures the account. Counting per computer means someone guessing at another person's address locks out only
+  themselves. Signing in with the same email on another computer attaches that computer to the account. If that computer
   had been earning on its own anonymous account, those earnings are merged in, and its old worker id keeps crediting the
   right account.
 - A verified email is required before cashing out.
@@ -324,8 +328,9 @@ Operator endpoints:
 | `POST /admin/cashouts/{id}/mark-paid` | Record a payout you made by hand (`{"note": "PayPal txn ..."}`) |
 
 **Limits.** Requests are capped at 1 MB. Per internet connection (the IPv4 address or the IPv6 /64, counted in memory
-only, never written down): 30 new installs a day, 10 sign-in code emails an hour and 30 a day, and 20 problem reports
-a day (`ConnectionQuotas`); stored problem reports stop at about 200 MB in all. The per-minute rate limiter also
+only, never written down): 30 new installs a day, 10 sign-in code emails an hour and 30 a day, 20 problem reports
+a day and 300 new sharing payout routes a day (`ConnectionQuotas`). Problem reports are also limited to 5 a day per
+computer and per account, and stored ones stay under about 200 MB in all: past it the oldest are deleted. The per-minute rate limiter also
 counts IPv6 per /64.
 
 **Problem reports** (Settings → Send a problem report) carry the app version, settings switches, what each miner is
@@ -344,7 +349,7 @@ Users can also opt in to sharing unused internet bandwidth. Non-custodial, this 
 SOCKS5 access, mostly to AI agents and scraping/ad-verification jobs, and pays sellers per GB. It needs no account:
 the client makes a wallet key on the computer and signs in with it. Proxybase pays only USDC on the Tempo network, so
 each payout goes **through a one-time conversion to the user's own payout address and coin** (USDT on TRON, BTC, SOL…),
-and users never see Tempo. Otium's cut is paid separately, never from the conversion. (The earlier
+and users never see Tempo. Otium's cut is a fee inside that conversion. (The earlier
 Mysterium node, `src/Otium.Providers.Mysterium`, stays in the code base but isn't offered; its "remove the network
 service" button in Advanced remains for computers that installed it.)
 
@@ -363,7 +368,9 @@ service" button in Advanced remains for computers that installed it.)
 - **Payouts.** Every 10 minutes the app reads `buyer balance` (`seller_available`, in microcredits; 1,000,000 = $1).
   From $1 it asks the server (`POST /api/v1/devices/{id}/sharing/route`), which opens a one-time conversion to the
   account's **registered** payout address (the app can't redirect it) and answers "pay" with a Tempo deposit address, or
-  "wait" while the network fee would be a large share. The app then runs `seller payout create --amount …
+  "wait" while the network fee would be a large share. Each account gets at most one new route every 5 minutes (asking
+  again inside that gets the same answer, so a modified app can't burn Relay, SideShift or ChangeNOW quotas), and the
+  user's own IP address (IPv6 as it is) goes to SideShift as `x-user-ip`. The app then runs `seller payout create --amount …
   --tempo-address <deposit address>`; the conversion delivers the user's coin and refunds a failure to the client's own
   wallet on the computer. Payouts are kept in `otium-payouts.json`, so the overview shows what was paid.
 - **Routes** (`src/Otium.Server/Sharing`): [Relay](https://docs.relay.link) deposit addresses (open, from Tempo USDC)
@@ -371,11 +378,15 @@ service" button in Advanced remains for computers that installed it.)
   XMR goes Relay → USDC on Base → a ChangeNOW exchange (minimum about 12 USDC). Payouts wait while the network part of
   the cost is above `Sharing:MaxNetworkCostPercent` (5%), up to `Sharing:PayAnywayUsd` ($25): TRON's delivery fee
   (about $0.75 in October 2026) means USDT-on-TRON payouts of about $16.
-- **Otium's cut:** `Sharing:FeeBps` (default: the mining fee, 2% = 200) of each payout, kept back at Proxybase and,
-  once $1 of it has built up, paid by the app from the user's sharing earnings to `Sharing:FeeRecipient` (Otium's 0x
-  address, on Tempo). Only the rest is converted, with no app fee at Relay and SideShift's commission set to 0, so
-  Otium earns nothing from exchanging coins. ChangeNOW's partner commission (from 0.4%)
-  still applies on XMR.
+- **Otium's cut:** `Sharing:FeeBps` (default: the mining fee, 2% = 200, at most 10%) of each payout, taken as a
+  [Relay app fee](https://docs.relay.link/features/app-fees) in the conversion the server opens, so it's paid whatever
+  the app does (before, the app kept it back and paid it itself, which a modified app or an edited `otium-fee.json`
+  could skip). Relay credits app fees to `Sharing:FeeRecipient` (Otium's 0x address; an EVM address whatever the
+  destination chain) as a USDC balance, claimed in the Relay app or with `/app-fees/{address}/claim`; they aren't paid
+  out on each conversion. For LTC and XMR the fee is on the Relay leg to Base, once; SideShift's commission stays 0 and
+  ChangeNOW's partner commission (from 0.4%) still applies on XMR. The route sends `feeBps` so the app can show the
+  user's share; apps keep nothing back any more, and a fee an earlier version reserved is paid once if it's at least
+  $1, otherwise given back to the user's next payout.
 - **Server secrets:** `Sharing:RelayApiKey` (Relay requires one for quotes from October 2026), `Sharing:SideShiftSecret`
   and `Sharing:SideShiftAffiliateId` for LTC, `Sharing:ChangeNowApiKey` for XMR. Without the last two, LTC and XMR users
   are told to pick another coin for sharing.
@@ -383,7 +394,7 @@ service" button in Advanced remains for computers that installed it.)
   sends `proxybaseDisabled`).
 - **Still to verify on a real run:** a node relaying traffic; which token Proxybase actually pays (Relay expects
   Stargate's USDC on Tempo, `0x20c0…8b50`); a first payout through Relay arriving as USDT on TRON; and that Relay's app
-  fee is charged on open deposit addresses (`/requests/v3` shows `appFees.actual`).
+  fee is charged on open deposit addresses, including re-quoted amounts (`/requests/v3` shows `appFees.actual`).
 - **AV and code signing.** Proxyware is a common antivirus "potentially unwanted" category. Keep the sharing state
   visible in the app, and sign the Windows build with an EV certificate.
 

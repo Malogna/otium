@@ -63,11 +63,24 @@ public sealed class AccountService(
     public const int MaxCodesPerDevicePerHour = 10;
 
     /// <summary>
-    /// Wrong codes allowed for one email address in a day, over all its codes. Each code allows 5 tries and up to 5 codes
-    /// an hour can be sent, so without this someone could keep guessing (about 600 tries a day); with it, guessing a
-    /// 6-digit code takes about 140 years on average.
+    /// Codes emailed to one address in a day, whoever asks: connections and devices are easy to come by, so without it
+    /// an address could be sent over a hundred codes a day.
     /// </summary>
-    public const int MaxWrongCodesPerEmailPerDay = 10;
+    public const int MaxCodesPerEmailPerDay = 10;
+
+    /// <summary>
+    /// Wrong codes one computer may enter for one email address in a day. Counted per computer, so someone guessing at
+    /// another person's address locks out only their own computer, not the owner's.
+    /// </summary>
+    public const int MaxWrongCodesPerEmailPerDevicePerDay = 10;
+
+    /// <summary>
+    /// Wrong codes allowed for one email address in a day over all computers, so guessing spread over many computers
+    /// still stops. Generous, so it takes many computers' worth of wrong codes before the owner is affected; with at most
+    /// <see cref="MaxCodesPerEmailPerDay"/> codes of 5 tries a day there can't be more anyway, and guessing a 6-digit code
+    /// at 50 tries a day takes about 27 years on average.
+    /// </summary>
+    public const int MaxWrongCodesPerEmailPerDay = 50;
 
     /// <summary>The fee and invite terms apps are told about; fee-free periods are granted by the same terms.</summary>
     private FeePolicy Policy => FeePolicy.FromTerms(feeOptions.Value.ToTerms());
@@ -251,10 +264,12 @@ public sealed class AccountService(
             throw new OtiumException(400, "Use the email address this account is signed in with.");
 
         var now = time.GetUtcNow();
-        RequireNotLocked(address, now);
+        RequireNotLocked(address, session.Device.DeviceId, now);
         if (store.EmailCodesSince(address, now - TimeSpan.FromHours(1)) >= MaxCodesPerEmailPerHour
             || store.DeviceEmailCodesSince(session.Device.DeviceId, now - TimeSpan.FromHours(1)) >= MaxCodesPerDevicePerHour)
             throw new OtiumException(429, "Too many codes requested. Please wait a while and try again.");
+        if (store.EmailCodesSince(address, now - TimeSpan.FromDays(1)) >= MaxCodesPerEmailPerDay)
+            throw new OtiumException(429, "Too many codes were sent to this email address today. Please try again tomorrow.");
 
         var code = RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6", System.Globalization.CultureInfo.InvariantCulture);
         var salt = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(16));
@@ -342,7 +357,7 @@ public sealed class AccountService(
     /// </summary>
     public void ConsumeEmailCode(string address, string deviceId, string? code)
     {
-        RequireNotLocked(address, time.GetUtcNow());
+        RequireNotLocked(address, deviceId, time.GetUtcNow());
         var stored = store.LatestEmailCode(address, deviceId, time.GetUtcNow())
                      ?? throw new OtiumException(400, "That code has expired. Request a new one.");
         if (stored.Attempts >= MaxCodeAttempts)
@@ -357,10 +372,15 @@ public sealed class AccountService(
         store.UseEmailCode(stored.Id);
     }
 
-    /// <summary>Refuses codes for an email address that had <see cref="MaxWrongCodesPerEmailPerDay"/> wrong codes in the last day.</summary>
-    private void RequireNotLocked(string address, DateTimeOffset now)
+    /// <summary>
+    /// Refuses codes for an email address on a computer that entered <see cref="MaxWrongCodesPerEmailPerDevicePerDay"/>
+    /// wrong ones for it in the last day, or on any computer once <see cref="MaxWrongCodesPerEmailPerDay"/> were entered.
+    /// </summary>
+    private void RequireNotLocked(string address, string deviceId, DateTimeOffset now)
     {
-        if (store.EmailCodeAttemptsSince(address, now - TimeSpan.FromDays(1)) >= MaxWrongCodesPerEmailPerDay)
+        var dayAgo = now - TimeSpan.FromDays(1);
+        if (store.EmailCodeAttemptsSince(address, deviceId, dayAgo) >= MaxWrongCodesPerEmailPerDevicePerDay
+            || store.EmailCodeAttemptsSince(address, dayAgo) >= MaxWrongCodesPerEmailPerDay)
             throw new OtiumException(429, "Too many wrong codes for this email address today. Please try again tomorrow.");
     }
 

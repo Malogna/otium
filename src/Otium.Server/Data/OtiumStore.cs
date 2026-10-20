@@ -96,7 +96,7 @@ public sealed record EmailCodeRecord(long Id, string Email, string DeviceId, str
 public sealed class OtiumStore
 {
     public const long MicrosPerDollar = 1_000_000;
-    private const int SchemaVersion = 10;
+    private const int SchemaVersion = 13;
 
     private readonly string _connectionString;
 
@@ -352,6 +352,11 @@ public sealed class OtiumStore
                 PRIMARY KEY (worker, place)
             );
             """);
+
+        // Version 13: the payout address each pool payout was read for, so the website counts an address once however
+        // many accounts share it. Rows from before have none until the next pool check fills it in.
+        if (Scalar<long>("SELECT COUNT(*) FROM pragma_table_info('pool_payouts') WHERE name = 'address'") == 0)
+            Execute("ALTER TABLE pool_payouts ADD COLUMN address TEXT NULL;");
 
         Execute($"PRAGMA user_version = {SchemaVersion};");
     }
@@ -710,6 +715,11 @@ public sealed class OtiumStore
     public long EmailCodeAttemptsSince(string email, DateTimeOffset since) =>
         Scalar<long>("SELECT COALESCE(SUM(attempts), 0) FROM email_codes WHERE email = $e AND created_at >= $s", ("$e", email), ("$s", Format(since)));
 
+    /// <summary>Wrong tries over the codes this one computer asked for this email since <paramref name="since"/>.</summary>
+    public long EmailCodeAttemptsSince(string email, string deviceId, DateTimeOffset since) =>
+        Scalar<long>("SELECT COALESCE(SUM(attempts), 0) FROM email_codes WHERE email = $e AND device_id = $d AND created_at >= $s",
+            ("$e", email), ("$d", deviceId), ("$s", Format(since)));
+
     public void UseEmailCode(long id) => Execute("UPDATE email_codes SET used = 1 WHERE id = $id", ("$id", id));
 
     // ---------- bandwidth ----------
@@ -791,6 +801,42 @@ public sealed class OtiumStore
     public long ProblemReportsSince(string deviceId, DateTimeOffset since) =>
         Scalar<long>("SELECT COUNT(*) FROM problem_reports WHERE device_id = $d AND created_at > $s", ("$d", deviceId), ("$s", Format(since)));
 
+    public long AccountProblemReportsSince(string accountId, DateTimeOffset since) =>
+        Scalar<long>("SELECT COUNT(*) FROM problem_reports WHERE account_id = $a AND created_at > $s", ("$a", accountId), ("$s", Format(since)));
+
+    /// <summary>
+    /// Deletes the oldest problem reports until at least <paramref name="characters"/> fewer are stored (or none are left);
+    /// returns how many reports went.
+    /// </summary>
+    public int DeleteOldestProblemReports(long characters)
+    {
+        using var connection = Open();
+        using var tx = connection.BeginTransaction(deferred: false);
+        var oldest = new List<(string Reference, long Size)>();
+        using (var cmd = connection.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            cmd.CommandText = "SELECT reference, LENGTH(details) + COALESCE(LENGTH(note), 0) FROM problem_reports ORDER BY created_at, reference";
+            using var r = cmd.ExecuteReader();
+            long freed = 0;
+            while (freed < characters && r.Read())
+            {
+                oldest.Add((r.GetString(0), r.GetInt64(1)));
+                freed += r.GetInt64(1);
+            }
+        }
+        foreach (var (reference, _) in oldest)
+        {
+            using var delete = connection.CreateCommand();
+            delete.Transaction = tx;
+            delete.CommandText = "DELETE FROM problem_reports WHERE reference = $r";
+            delete.Parameters.AddWithValue("$r", reference);
+            delete.ExecuteNonQuery();
+        }
+        tx.Commit();
+        return oldest.Count;
+    }
+
     /// <summary>The newest reports first, without their details (<see cref="FindProblemReport"/> has those).</summary>
     public IReadOnlyList<ProblemReportRecord> ProblemReports(int limit = 50) =>
         QueryProblemReports("SELECT reference, account_id, device_id, app_version, platform, note, '' AS details, created_at FROM problem_reports ORDER BY created_at DESC LIMIT $l",
@@ -833,12 +879,46 @@ public sealed class OtiumStore
         cmd.ExecuteNonQuery();
     }
 
-    /// <summary>Stores a report's rows. Returns false when this report (device and sequence) was already stored.</summary>
-    public bool AddEarningsReport(string deviceId, string accountId, EarningsReport report, DateTimeOffset now)
+    public enum EarningsReportOutcome
+    {
+        Stored,
+
+        /// <summary>This report (device and sequence) was already stored: a retry, kept once.</summary>
+        AlreadyStored,
+
+        /// <summary>
+        /// Another report of this computer already covers part of this period for the same kind of device. The app's
+        /// reports follow on from each other, so only a forged one overlaps: counting it would add the same hours twice.
+        /// </summary>
+        Overlaps,
+    }
+
+    /// <summary>Stores a report's rows unless it's a retry or overlaps an earlier report (see <see cref="EarningsReportOutcome"/>).</summary>
+    public EarningsReportOutcome AddEarningsReport(string deviceId, string accountId, EarningsReport report, DateTimeOffset now)
     {
         using var connection = Open();
         using var tx = connection.BeginTransaction(deferred: false);
-        var added = 0;
+        using (var seen = connection.CreateCommand())
+        {
+            seen.Transaction = tx;
+            seen.CommandText = "SELECT COUNT(*) FROM earnings_reports WHERE device_id = $d AND seq = $s";
+            Bind(seen, [("$d", deviceId), ("$s", report.Sequence)]);
+            if ((long)seen.ExecuteScalar()! > 0)
+                return EarningsReportOutcome.AlreadyStored;
+        }
+        foreach (var kind in report.Devices.Select(d => d.Kind).Distinct())
+        {
+            using var overlap = connection.CreateCommand();
+            overlap.Transaction = tx;
+            overlap.CommandText = """
+                SELECT COUNT(*) FROM earnings_reports
+                WHERE device_id = $d AND kind = $k AND seq <> $s AND period_start < $pe AND period_end > $ps
+                """;
+            Bind(overlap, [("$d", deviceId), ("$k", kind), ("$s", report.Sequence), ("$ps", Format(report.PeriodStart)), ("$pe", Format(report.PeriodEnd))]);
+            if ((long)overlap.ExecuteScalar()! > 0)
+                return EarningsReportOutcome.Overlaps;
+        }
+
         foreach (var device in report.Devices)
         {
             using var cmd = connection.CreateCommand();
@@ -851,27 +931,45 @@ public sealed class OtiumStore
             Bind(cmd, [("$d", deviceId), ("$s", report.Sequence), ("$k", device.Kind), ("$a", accountId), ("$m", device.Model),
                 ("$ps", Format(report.PeriodStart)), ("$pe", Format(report.PeriodEnd)), ("$sec", device.EarningSeconds),
                 ("$u", device.UserUsd), ("$e", device.ElectricityUsd), ("$c", Format(now))]);
-            added += cmd.ExecuteNonQuery();
+            cmd.ExecuteNonQuery();
         }
         tx.Commit();
-        return added > 0;
+        return EarningsReportOutcome.Stored;
     }
 
-    /// <summary>Per device and model, what was earned in reports ending after <paramref name="since"/>.</summary>
-    public IReadOnlyList<(string DeviceId, string Kind, string Model, double Seconds, double UserUsd, double ElectricityUsd)> EarningsSince(DateTimeOffset since)
+    /// <summary>
+    /// Per device and model, what was earned after <paramref name="since"/>: a report that started earlier counts for the
+    /// share of its period inside the window. Each row carries the account (the surviving one after a merge) and when
+    /// that account was made, so the website can ask for computers of several established accounts.
+    /// </summary>
+    public IReadOnlyList<(string DeviceId, string Kind, string Model, double Seconds, double UserUsd, double ElectricityUsd, string AccountId, DateTimeOffset? AccountCreatedAt)>
+        EarningsSince(DateTimeOffset since)
     {
         using var connection = Open();
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
-            SELECT device_id, kind, model, SUM(seconds), SUM(user_usd), SUM(electricity_usd) FROM earnings_reports
-            WHERE period_end > $s AND model IS NOT NULL GROUP BY device_id, kind, model
+            SELECT r.device_id, r.kind, r.model, r.period_start, r.period_end, r.seconds, r.user_usd, r.electricity_usd,
+                   COALESCE(a.merged_into, r.account_id), a.created_at
+            FROM earnings_reports r LEFT JOIN accounts a ON a.account_id = r.account_id
+            WHERE r.period_end > $s AND r.model IS NOT NULL
             """;
         Bind(cmd, [("$s", Format(since))]);
         using var r = cmd.ExecuteReader();
-        var list = new List<(string, string, string, double, double, double)>();
+        var rows = new List<(string Device, string Kind, string Model, double Share, double Seconds, double User, double Electricity, string Account, DateTimeOffset? Created)>();
         while (r.Read())
-            list.Add((r.GetString(0), r.GetString(1), r.GetString(2), r.GetDouble(3), r.GetDouble(4), r.GetDouble(5)));
-        return list;
+        {
+            var (start, end) = (Parse(r.GetString(3)), Parse(r.GetString(4)));
+            var period = (end - start).TotalSeconds;
+            var inside = (end - (start > since ? start : since)).TotalSeconds;
+            var share = period > 0 ? Math.Clamp(inside / period, 0, 1) : 1;
+            rows.Add((r.GetString(0), r.GetString(1), r.GetString(2), share, r.GetDouble(5), r.GetDouble(6), r.GetDouble(7), r.GetString(8),
+                r.IsDBNull(9) ? null : Parse(r.GetString(9))));
+        }
+        return rows
+            .GroupBy(x => (x.Device, x.Kind, x.Model))
+            .Select(g => (g.Key.Device, g.Key.Kind, g.Key.Model, g.Sum(x => x.Seconds * x.Share), g.Sum(x => x.User * x.Share),
+                g.Sum(x => x.Electricity * x.Share), g.First().Account, g.First().Created))
+            .ToList();
     }
 
     public IReadOnlyList<(string Kind, string? Model, DateTimeOffset PeriodStart, DateTimeOffset PeriodEnd, double Seconds, double UserUsd, double ElectricityUsd)> EarningsReportsFor(string accountId)
@@ -903,26 +1001,36 @@ public sealed class OtiumStore
         return list;
     }
 
-    public void SetPoolPayout(string accountId, string coin, double paid, double paidUsd, double rewarded30dUsd, DateTimeOffset now) =>
+    /// <param name="address">The payout address the pool was read for, in its canonical form ("USDT:T…").</param>
+    public void SetPoolPayout(string accountId, string address, string coin, double paid, double paidUsd, double rewarded30dUsd, DateTimeOffset now) =>
         Execute("""
-            INSERT INTO pool_payouts (account_id, coin, paid, paid_usd, rewarded_30d_usd, checked_at)
-            VALUES ($a, $c, $p, $pu, $r, $t)
-            ON CONFLICT(account_id) DO UPDATE SET coin = $c, paid = $p, paid_usd = $pu, rewarded_30d_usd = $r, checked_at = $t
-            """, ("$a", accountId), ("$c", coin), ("$p", paid), ("$pu", paidUsd), ("$r", rewarded30dUsd), ("$t", Format(now)));
+            INSERT INTO pool_payouts (account_id, address, coin, paid, paid_usd, rewarded_30d_usd, checked_at)
+            VALUES ($a, $ad, $c, $p, $pu, $r, $t)
+            ON CONFLICT(account_id) DO UPDATE SET address = $ad, coin = $c, paid = $p, paid_usd = $pu, rewarded_30d_usd = $r, checked_at = $t
+            """, ("$a", accountId), ("$ad", address), ("$c", coin), ("$p", paid), ("$pu", paidUsd), ("$r", rewarded30dUsd), ("$t", Format(now)));
+
+    /// <summary>The account's address no longer counts for the website (mined elsewhere too, or the pool can't show whose workers).</summary>
+    public void DeletePoolPayout(string accountId) => Execute("DELETE FROM pool_payouts WHERE account_id = $a", ("$a", accountId));
 
     /// <summary>
-    /// What the pools have paid Otium users' own addresses, in dollars at the time of each check, how many were paid, and
-    /// how many the pools have credited or paid at all.
+    /// What the pools have paid Otium users' own addresses, in dollars at the time of each check, how many addresses were
+    /// paid, and how many the pools have credited or paid at all. Each address counts once, however many accounts use it
+    /// (its latest check), so sharing one address between accounts can't multiply the figures.
     /// </summary>
     public (double PaidUsd, double Rewarded30dUsd, long PaidAccounts, long EarningAccounts) PoolPayoutTotals()
     {
         using var connection = Open();
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
-            SELECT COALESCE(SUM(p.paid_usd), 0), COALESCE(SUM(p.rewarded_30d_usd), 0), COALESCE(SUM(CASE WHEN p.paid > 0 THEN 1 ELSE 0 END), 0),
-                   COALESCE(SUM(CASE WHEN p.paid > 0 OR p.rewarded_30d_usd > 0 THEN 1 ELSE 0 END), 0)
-            FROM pool_payouts p JOIN accounts a ON a.account_id = p.account_id
-            WHERE a.merged_into IS NULL AND a.deleted_at IS NULL
+            WITH latest AS (
+                SELECT p.paid, p.paid_usd, p.rewarded_30d_usd,
+                       ROW_NUMBER() OVER (PARTITION BY COALESCE(p.address, 'account:' || p.account_id) ORDER BY p.checked_at DESC) AS n
+                FROM pool_payouts p JOIN accounts a ON a.account_id = p.account_id
+                WHERE a.merged_into IS NULL AND a.deleted_at IS NULL
+            )
+            SELECT COALESCE(SUM(paid_usd), 0), COALESCE(SUM(rewarded_30d_usd), 0), COALESCE(SUM(CASE WHEN paid > 0 THEN 1 ELSE 0 END), 0),
+                   COALESCE(SUM(CASE WHEN paid > 0 OR rewarded_30d_usd > 0 THEN 1 ELSE 0 END), 0)
+            FROM latest WHERE n = 1
             """;
         using var r = cmd.ExecuteReader();
         r.Read();

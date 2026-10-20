@@ -138,14 +138,17 @@ public sealed record SharingRouteRequest(long AvailableMicrocredits, string? Ref
 /// <summary>Where to have Proxybase pay, or why to wait.</summary>
 /// <param name="Decision">One of <see cref="SharingRouteDecisions"/>.</param>
 /// <param name="DepositAddress">With "pay": the Tempo address of a one-time conversion to the user's coin and address.</param>
-/// <param name="AmountMicrocredits">With "pay": how much to send there (what's waiting, less Otium's fee).</param>
+/// <param name="AmountMicrocredits">With "pay": how much to send there (everything waiting; Otium's fee is taken inside
+/// the conversion).</param>
 /// <param name="ExpectedOutput">With "pay": what the user should receive, e.g. "4.23 USDT (TRON)".</param>
-/// <param name="CostPercent">The conversion's own network costs, as a share of the amount converted.</param>
+/// <param name="CostPercent">The conversion's costs (network and Otium's fee), as a share of the amount converted.</param>
 /// <param name="Message">With "wait" or "unsupported": why, in plain words.</param>
-/// <param name="FeeAddress">With "pay": Otium's own address on Tempo, where the app pays Otium's fee itself.</param>
-/// <param name="FeeMicrocredits">With "pay": Otium's fee on this payout (its mining share of the amount), kept back at
-/// Proxybase and paid to <paramref name="FeeAddress"/> once at least $1 of it has built up. It never goes through the
-/// conversion.</param>
+/// <param name="FeeAddress">No longer sent: servers before Otium's fee moved into the conversion named the address apps
+/// paid it to.</param>
+/// <param name="FeeMicrocredits">No longer sent (always 0): servers before Otium's fee moved into the conversion had apps
+/// keep it back and pay it themselves, which an app didn't have to do.</param>
+/// <param name="FeeBps">With "pay": Otium's share of this payout in basis points (200 = 2%), which the conversion takes
+/// on its way to the user; the app uses it to show the user's share.</param>
 public sealed record SharingRoute(
     string Decision,
     string? DepositAddress = null,
@@ -155,7 +158,8 @@ public sealed record SharingRoute(
     string? Message = null,
     string? RequestId = null,
     string? FeeAddress = null,
-    long FeeMicrocredits = 0);
+    long FeeMicrocredits = 0,
+    int FeeBps = 0);
 
 public static class SharingRouteDecisions
 {
