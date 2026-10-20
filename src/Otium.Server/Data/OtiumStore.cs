@@ -96,7 +96,7 @@ public sealed record EmailCodeRecord(long Id, string Email, string DeviceId, str
 public sealed class OtiumStore
 {
     public const long MicrosPerDollar = 1_000_000;
-    private const int SchemaVersion = 13;
+    private const int SchemaVersion = 14;
 
     private readonly string _connectionString;
 
@@ -404,6 +404,16 @@ public sealed class OtiumStore
                 name       TEXT PRIMARY KEY,
                 block      INTEGER NOT NULL,
                 through_at TEXT NOT NULL
+            );
+            """);
+
+        // Version 14: the last good price for each coin from the profitability feed, so GPUs keep mining on it through a
+        // feed outage (and a server restart during one) instead of every coin being switched off.
+        Execute("""
+            CREATE TABLE IF NOT EXISTS feed_prices (
+                coin_id     INTEGER PRIMARY KEY,
+                usd_per_hps REAL NOT NULL,
+                updated_at  TEXT NOT NULL
             );
             """);
 
@@ -1336,6 +1346,25 @@ public sealed class OtiumStore
             INSERT INTO chain_scans (name, block, through_at) VALUES ($n, $b, $t)
             ON CONFLICT(name) DO UPDATE SET block = $b, through_at = $t
             """, ("$n", name), ("$b", block), ("$t", Format(throughAt)));
+
+    // ---------- profitability feed ----------
+
+    /// <summary>The last good revenue the feed gave for a coin (USD per H/s per day, and the feed's own timestamp), or null.</summary>
+    public (double UsdPerHashPerSecondDay, DateTimeOffset UpdatedAt)? FeedPrice(int coinId)
+    {
+        using var connection = Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT usd_per_hps, updated_at FROM feed_prices WHERE coin_id = $c";
+        Bind(cmd, [("$c", coinId)]);
+        using var r = cmd.ExecuteReader();
+        return r.Read() ? (r.GetDouble(0), Parse(r.GetString(1))) : null;
+    }
+
+    public void SetFeedPrice(int coinId, double usdPerHashPerSecondDay, DateTimeOffset updatedAt) =>
+        Execute("""
+            INSERT INTO feed_prices (coin_id, usd_per_hps, updated_at) VALUES ($c, $u, $t)
+            ON CONFLICT(coin_id) DO UPDATE SET usd_per_hps = $u, updated_at = $t
+            """, ("$c", coinId), ("$u", usdPerHashPerSecondDay), ("$t", Format(updatedAt)));
 
     // ---------- fee slices ----------
 

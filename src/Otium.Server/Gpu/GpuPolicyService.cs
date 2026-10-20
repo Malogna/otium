@@ -173,10 +173,10 @@ public sealed class GpuPolicyService(
 
         if (revenue is null || revenue.UsdPerHashPerSecondDay <= 0)
             return new GpuAlgorithmPolicy(algo, GpuTiers.Disabled, route, 0, feePercent, "Profitability data unavailable");
-        if (revenue.Lagging || now - revenue.UpdatedAt > MaxFeedAge)
+        if (TooOld(revenue, now))
             return new GpuAlgorithmPolicy(algo, GpuTiers.Disabled, route, revenue.UsdPerHashPerSecondDay, feePercent, "Profitability data is out of date");
         return new GpuAlgorithmPolicy(algo, tier, route, revenue.UsdPerHashPerSecondDay, feePercent,
-            tier == GpuTiers.FreePowerOnly ? "Usually costs more in electricity than it earns" : null);
+            tier == GpuTiers.FreePowerOnly ? "Usually costs more in electricity than it earns" : LastGoodNote(revenue));
     }
 
     private async Task<GpuAlgorithmPolicy> KryptexAlgorithmAsync(string algo, KryptexCoin coin, string route, DateTimeOffset now, CancellationToken ct)
@@ -196,8 +196,18 @@ public sealed class GpuPolicyService(
 
         if (revenue is null || revenue.UsdPerHashPerSecondDay <= 0)
             return new GpuAlgorithmPolicy(algo, GpuTiers.Disabled, route, 0, fee, "Profitability data unavailable");
-        if (revenue.Lagging || now - revenue.UpdatedAt > MaxFeedAge)
+        if (TooOld(revenue, now))
             return new GpuAlgorithmPolicy(algo, GpuTiers.Disabled, route, revenue.UsdPerHashPerSecondDay, fee, "Profitability data is out of date");
-        return new GpuAlgorithmPolicy(algo, GpuTiers.Primary, route, revenue.UsdPerHashPerSecondDay, fee);
+        return new GpuAlgorithmPolicy(algo, GpuTiers.Primary, route, revenue.UsdPerHashPerSecondDay, fee, LastGoodNote(revenue));
     }
+
+    /// <summary>
+    /// A live price must be recent (<see cref="MaxFeedAge"/>); while the feed is down, its last good price stands in for
+    /// up to <see cref="LastGoodProfitFeed.MaxAge"/>, so a feed outage doesn't stop every GPU.
+    /// </summary>
+    private static bool TooOld(CoinRevenue revenue, DateTimeOffset now) =>
+        revenue.Lagging || now - revenue.UpdatedAt > (revenue.LastGood ? LastGoodProfitFeed.MaxAge : MaxFeedAge);
+
+    private static string? LastGoodNote(CoinRevenue revenue) =>
+        revenue.LastGood ? "Price source is down; using its last price" : null;
 }

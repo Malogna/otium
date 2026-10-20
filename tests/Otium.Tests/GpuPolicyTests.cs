@@ -131,6 +131,72 @@ public sealed class GpuPolicyTests
     }
 
     [Fact]
+    public async Task While_the_feed_is_down_its_last_good_price_keeps_the_coin_on_for_a_day()
+    {
+        FreshFeeds();
+        _feed.Coins[469] = new CoinRevenue(3.4e-14, false, _time.GetUtcNow() - TimeSpan.FromHours(10), LastGood: true);
+        var pearl = (await Service().BuildAsync(CancellationToken.None)).For("pearlhash")!;
+        Assert.Equal(GpuTiers.Primary, pearl.Tier);
+        Assert.Equal(3.4e-14, pearl.UsdPerHashPerSecondDay);
+        Assert.Equal("Price source is down; using its last price", pearl.Note);
+
+        _feed.Coins[469] = new CoinRevenue(3.4e-14, false, _time.GetUtcNow() - LastGoodProfitFeed.MaxAge - TimeSpan.FromMinutes(1), LastGood: true);
+        Assert.Equal(GpuTiers.Disabled, (await Service().BuildAsync(CancellationToken.None)).For("pearlhash")!.Tier);
+    }
+
+    [Fact]
+    public async Task The_last_good_price_is_kept_in_the_database_and_used_when_whattomine_fails()
+    {
+        var db = Path.Combine(Path.GetTempPath(), $"otium-feed-{Guid.NewGuid():N}.db");
+        try
+        {
+            var handler = new WhatToMineStub();
+            var store = new Otium.Server.Data.OtiumStore($"Data Source={db};Pooling=False");
+            LastGoodProfitFeed Feed() => new(new WhatToMineClient(new HttpClient(handler), Options.Create(new KryptexOptions())),
+                store, NullLogger<LastGoodProfitFeed>.Instance);
+
+            var live = (await Feed().GetAsync(469, CancellationToken.None))!;
+            Assert.False(live.LastGood);
+
+            handler.Down = true; // 502s and timeouts, as in October 2026; a fresh feed (as after a restart) still has the price
+            var kept = (await Feed().GetAsync(469, CancellationToken.None))!;
+            Assert.True(kept.LastGood);
+            Assert.Equal(live.UsdPerHashPerSecondDay, kept.UsdPerHashPerSecondDay, tolerance: 1e-24);
+            Assert.Equal(live.UpdatedAt, kept.UpdatedAt);
+            Assert.Equal(3, handler.Calls); // one success, then a failure tried twice
+
+            await Assert.ThrowsAsync<HttpRequestException>(() => Feed().GetAsync(473, CancellationToken.None)); // no price ever seen
+        }
+        finally
+        {
+            foreach (var file in new[] { db, db + "-wal", db + "-shm" })
+                File.Delete(file);
+        }
+    }
+
+    private sealed class WhatToMineStub : HttpMessageHandler
+    {
+        public bool Down { get; set; }
+
+        public int Calls { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Calls++;
+            return Task.FromResult(Down
+                ? new HttpResponseMessage(System.Net.HttpStatusCode.BadGateway)
+                : new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                {
+                    Content = new StringContent("""
+                        {"id":469,"tag":"PRL","block_time":"177.0","block_reward":2252.15,"block_reward24":2253.5035898742476,
+                         "nethash":57388423882767740112,"exchange_rate":0.0000228306,"exchange_rate24":0.000021986250087198342,
+                         "revenue":"$6.86","btc_revenue":"0.00008330","lagging":false,"timestamp":1792112561}
+                        """),
+                });
+        }
+    }
+
+    [Fact]
     public async Task Without_a_kryptex_account_only_moneroocean_and_kryptex_address_logins_are_offered()
     {
         FreshFeeds();

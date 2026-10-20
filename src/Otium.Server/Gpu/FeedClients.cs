@@ -1,11 +1,13 @@
 using System.Globalization;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
+using Otium.Server.Data;
 
 namespace Otium.Server.Gpu;
 
 /// <summary>Live revenue for one coin: USD per day earned by 1 H/s, from network data and the market price.</summary>
-public sealed record CoinRevenue(double UsdPerHashPerSecondDay, bool Lagging, DateTimeOffset UpdatedAt);
+/// <param name="LastGood">The feed is down and this is the last price it gave (see <see cref="LastGoodProfitFeed"/>).</param>
+public sealed record CoinRevenue(double UsdPerHashPerSecondDay, bool Lagging, DateTimeOffset UpdatedAt, bool LastGood = false);
 
 public interface IProfitFeed
 {
@@ -19,13 +21,29 @@ public interface IProfitFeed
 /// </summary>
 public sealed class WhatToMineClient(HttpClient http, IOptions<KryptexOptions> options) : IProfitFeed
 {
+    /// <summary>How long one try may take: the policy is built coin by coin while apps wait for it.</summary>
+    public static readonly TimeSpan Timeout = TimeSpan.FromSeconds(15);
+
     public async Task<CoinRevenue?> GetAsync(int whatToMineId, CancellationToken ct)
     {
         var url = new Uri(new Uri(options.Value.WhatToMineBase.TrimEnd('/') + "/"), $"coins/{whatToMineId}.json");
-        using var response = await http.GetAsync(url, ct);
-        response.EnsureSuccessStatusCode();
-        using var doc = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(ct));
-        return Parse(doc.RootElement);
+        // WhatToMine sits behind Cloudflare and answers 502/504 or nothing now and then: try twice.
+        for (var attempt = 1; ; attempt++)
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(Timeout);
+            try
+            {
+                using var response = await http.GetAsync(url, timeout.Token);
+                response.EnsureSuccessStatusCode();
+                using var doc = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(timeout.Token));
+                return Parse(doc.RootElement);
+            }
+            catch (Exception e) when (attempt < 2 && !ct.IsCancellationRequested && e is HttpRequestException or TaskCanceledException)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(2), ct);
+            }
+        }
     }
 
     internal static CoinRevenue? Parse(JsonElement coin)
@@ -58,6 +76,34 @@ public sealed class WhatToMineClient(HttpClient http, IOptions<KryptexOptions> o
                 NumberStyles.Float, CultureInfo.InvariantCulture, out var d))
             return d;
         return null;
+    }
+}
+
+/// <summary>
+/// The profitability feed with its last good price kept (in the database, so a restart doesn't lose it). WhatToMine
+/// went down for hours in October 2026 and every GPU coin was switched off with it, so GPUs stopped mining even for
+/// users who don't pay for power. While the feed is down, the last price stands in for up to <see cref="MaxAge"/>.
+/// </summary>
+public sealed class LastGoodProfitFeed(WhatToMineClient live, OtiumStore store, ILogger<LastGoodProfitFeed> logger) : IProfitFeed
+{
+    /// <summary>How old the last good price may be (by the feed's own timestamp) to stand in for a feed that's down.</summary>
+    public static readonly TimeSpan MaxAge = TimeSpan.FromHours(24);
+
+    public async Task<CoinRevenue?> GetAsync(int whatToMineId, CancellationToken ct)
+    {
+        try
+        {
+            var revenue = await live.GetAsync(whatToMineId, ct);
+            if (revenue is { UsdPerHashPerSecondDay: > 0, Lagging: false })
+                store.SetFeedPrice(whatToMineId, revenue.UsdPerHashPerSecondDay, revenue.UpdatedAt);
+            return revenue;
+        }
+        catch (Exception e) when (!ct.IsCancellationRequested && e is HttpRequestException or TaskCanceledException or JsonException
+                                  && store.FeedPrice(whatToMineId) is { } last)
+        {
+            logger.LogWarning(e, "Profitability feed for coin {Coin} unavailable; using its last price from {UpdatedAt}", whatToMineId, last.UpdatedAt);
+            return new CoinRevenue(last.UsdPerHashPerSecondDay, false, last.UpdatedAt, LastGood: true);
+        }
     }
 }
 

@@ -767,6 +767,29 @@ public sealed class SrbMinerProviderTests : IDisposable
         Assert.Empty(_factory.Launches);
     }
 
+    [Theory]
+    [InlineData("Profitability data unavailable", 0, "Graphics card is waiting for coin prices: Otium's price source is down right now. It starts as soon as they're back.")]
+    [InlineData("Turned off by Otium", 0, "Graphics card isn't mining: none of the coins it can mine pays right now. Otium checks again regularly.")]
+    [InlineData("Turned off by Otium", 0.15, "Graphics card isn't mining: no coin it can mine pays more than its electricity right now.")]
+    public async Task With_nothing_to_mine_the_card_gives_the_real_reason(string pearlNote, double pricePerKwh, string expected)
+    {
+        // October 2026: the price source went down, Pearl was switched off, and users who don't pay for power were told
+        // electricity was the reason.
+        var policy = new GpuPolicy(DateTimeOffset.UtcNow,
+            [
+                new GpuAlgorithmPolicy("pearlhash", GpuTiers.Disabled, "unmineable-pearl", 0, 0.75, pearlNote),
+                new GpuAlgorithmPolicy("autolykos2", GpuTiers.Disabled, GpuRoutes.MoneroOcean, 0, 1, "MoneroOcean isn't paying for it right now"),
+            ],
+            [
+                new GpuPoolRoute("unmineable-pearl", GpuRoutes.Unmineable, "pearlpow.unmineable.com", 443, null, Tls: true),
+                new GpuPoolRoute(GpuRoutes.MoneroOcean, GpuRoutes.MoneroOcean, "gulf.moneroocean.stream", 10128, null),
+            ]);
+        var provider = CreateProvider(() => policy, pricePerKwh);
+        var refused = await Assert.ThrowsAsync<ProviderProblemException>(() => provider.StartAsync(Options, CancellationToken.None));
+        Assert.Equal(expected, refused.Message);
+        Assert.Empty(_factory.Launches);
+    }
+
     [Fact]
     public void The_last_policy_is_kept_on_disk_and_used_at_startup_for_a_day()
     {
