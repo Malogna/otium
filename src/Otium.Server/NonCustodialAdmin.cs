@@ -126,6 +126,9 @@ public static class NonCustodialAdmin
             verifiedReferrals = verified,
             otium,
             otiumError,
+            // Computers the pools showed mining for days without a single fee slice on Otium's address (a modified app?).
+            feeSlicesMissing = store.FeeSliceGaps(now, TimeSpan.FromDays(7), TimeSpan.FromDays(2))
+                .Select(g => new { g.DeviceId, g.AccountId, miningSeen = g.MiningSeen, feeSliceSeen = g.FeeSeen }),
             // Pearl's FP8 fork (PIP-3): once active, only Hopper and Blackwell cards mine Pearl.
             pearlFork = pearlFork is null ? null : await pearlFork.GetAsync(ct),
         });

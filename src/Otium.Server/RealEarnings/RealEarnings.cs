@@ -216,6 +216,9 @@ public sealed class PoolPayoutChecker(
         if (address.Uuid is { } uuid)
         {
             var workers = await unmineable.GetWorkersAsync(uuid, ct);
+            // Which computers are mining (for the fee-slice check), before mixed addresses are left out of the totals.
+            foreach (var worker in Working(workers))
+                store.RecordWorkerSighting(worker, "own", time.GetUtcNow());
             if (workers.Any(w => !IsOtiumWorker(w.Name)))
                 return;
             var stats = await unmineable.GetStatsAsync(uuid, ct);
@@ -227,10 +230,57 @@ public sealed class PoolPayoutChecker(
             store.SetPoolPayout(accountId, "XMR", mo.PaidXmr, mo.PaidXmr * price, 0, time.GetUtcNow());
     }
 
+    /// <summary>The computers (8 hex digits of the device id) whose Otium workers the pool shows working.</summary>
+    internal static IEnumerable<string> Working(IEnumerable<UnmineableWorker> workers) =>
+        workers.Where(w => IsOtiumWorker(w.Name) && (w.Online || w.CalculatedHps > 0 || w.ReportedHps > 0))
+            .Select(w => w.Name[2..10]).Distinct();
+
     /// <summary>Otium names workers "ot" + 8 hex digits of the device id, plus "g" for the graphics card.</summary>
     internal static bool IsOtiumWorker(string name) =>
         name.Length is 10 or 11 && name.StartsWith("ot", StringComparison.Ordinal)
         && name[2..10].All(Uri.IsHexDigit) && (name.Length == 10 || name[10] == 'g');
+}
+
+/// <summary>
+/// Every hour, which computers' miners Otium's own fee address shows working: the fee slice is about 29 minutes per day
+/// of mining, so a computer that mines for days without ever appearing here isn't mining Otium's fee (a modified app).
+/// The admin dashboard lists those (<see cref="OtiumStore.FeeSliceGaps"/>).
+/// </summary>
+public sealed class FeeSliceWatcher(OtiumStore store, IUnmineableApi unmineable, IOptions<UnmineableOptions> options, TimeProvider time,
+    ILogger<FeeSliceWatcher> logger) : BackgroundService
+{
+    /// <summary>How long sightings are kept (beyond the dashboard's 7-day window).</summary>
+    public static readonly TimeSpan Memory = TimeSpan.FromDays(30);
+
+    public async Task CheckAsync(CancellationToken ct)
+    {
+        if (PayoutTarget.ParseOrNull(options.Value.OtiumTarget) is not { } target || target.Coin == PayoutCoins.Monero)
+            return;
+        var address = await unmineable.GetAddressAsync(target, ct);
+        if (address.Uuid is not { } uuid)
+            return;
+        var now = time.GetUtcNow();
+        foreach (var worker in PoolPayoutChecker.Working(await unmineable.GetWorkersAsync(uuid, ct)))
+            store.RecordWorkerSighting(worker, "fee", now);
+        store.DeleteWorkerSightingsBefore(now - Memory);
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        await Task.Delay(TimeSpan.FromMinutes(3), time, stoppingToken);
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                await CheckAsync(stoppingToken);
+            }
+            catch (Exception e) when (!stoppingToken.IsCancellationRequested)
+            {
+                logger.LogWarning(e, "Fee slice check failed");
+            }
+            await Task.Delay(TimeSpan.FromHours(1), time, stoppingToken);
+        }
+    }
 }
 
 public sealed class PoolPayoutService(PoolPayoutChecker checker, IOptions<RealEarningsOptions> options, TimeProvider time, ILogger<PoolPayoutService> logger)

@@ -33,6 +33,13 @@ public sealed class FeeOptions
 
     public double MaxFeeFreeDays { get; set; } = Core.Fees.FeePolicy.Default.MaxFeeHoliday.TotalDays;
 
+    /// <summary>
+    /// The key fee grants are signed with (base64 PKCS#8, ECDSA P-256): release builds of the app only take fee-free
+    /// days, the inviter's slice and the fee itself from a grant signed by a key in AppIdentity.FeeGrantKeys. Without
+    /// it no grants are sent, and those apps pay the built-in fee with no fee-free days.
+    /// </summary>
+    public string? GrantSigningKey { get; set; }
+
     public Core.Accounts.FeeTerms ToTerms() =>
         new(FeePercent, ReferrerShareOfFee, ReferrerRewardDays, RefereeFeeFreeDays, ReferrerFeeFreeDaysPerFriend, MaxFeeFreeDays);
 }

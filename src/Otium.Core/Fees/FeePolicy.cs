@@ -65,6 +65,23 @@ public sealed record FeePolicy
         };
     }
 
+    /// <summary>
+    /// These terms within what this build was released with: the fee no lower than the built-in one, and fee-free time
+    /// and the inviter's share no more generous. Release builds apply it to whatever the server sends, so lowering the
+    /// fee takes a new release, not a server or a settings file.
+    /// </summary>
+    public FeePolicy WithinBuiltInLimits() => this with
+    {
+        FeePercent = Math.Max(FeePercent, Default.FeePercent),
+        ReferrerShareOfFee = Math.Min(ReferrerShareOfFee, Default.ReferrerShareOfFee),
+        ReferrerRewardPeriod = Min(ReferrerRewardPeriod, Default.ReferrerRewardPeriod),
+        RefereeFeeHoliday = Min(RefereeFeeHoliday, Default.RefereeFeeHoliday),
+        ReferrerFeeHolidayPerVerifiedFriend = Min(ReferrerFeeHolidayPerVerifiedFriend, Default.ReferrerFeeHolidayPerVerifiedFriend),
+        MaxFeeHoliday = Min(MaxFeeHoliday, Default.MaxFeeHoliday),
+    };
+
+    private static TimeSpan Min(TimeSpan a, TimeSpan b) => a < b ? a : b;
+
     public Accounts.FeeTerms ToTerms() => new(
         FeePercent,
         ReferrerShareOfFee,

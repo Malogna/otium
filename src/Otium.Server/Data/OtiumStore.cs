@@ -96,7 +96,7 @@ public sealed record EmailCodeRecord(long Id, string Email, string DeviceId, str
 public sealed class OtiumStore
 {
     public const long MicrosPerDollar = 1_000_000;
-    private const int SchemaVersion = 9;
+    private const int SchemaVersion = 10;
 
     private readonly string _connectionString;
 
@@ -341,6 +341,18 @@ public sealed class OtiumStore
             CREATE INDEX IF NOT EXISTS ix_referral_shares_account ON referral_shares(account_id);
             """);
 
+        // Version 10: when the pools last showed each computer's miners working, on the user's own address ("own") and
+        // on Otium's fee address ("fee"), so computers that mine but never send Otium's fee slice stand out.
+        Execute("""
+            CREATE TABLE IF NOT EXISTS worker_sightings (
+                worker     TEXT NOT NULL,
+                place      TEXT NOT NULL,
+                first_seen TEXT NOT NULL,
+                last_seen  TEXT NOT NULL,
+                PRIMARY KEY (worker, place)
+            );
+            """);
+
         Execute($"PRAGMA user_version = {SchemaVersion};");
     }
 
@@ -509,6 +521,7 @@ public sealed class OtiumStore
             Run("DELETE FROM worker_progress WHERE worker_id = $w OR worker_id LIKE '%:' || $w", ("$w", worker));
             Run("DELETE FROM email_codes WHERE email = $e OR device_id IN (SELECT device_id FROM devices WHERE account_id = $a)",
                 ("$e", email), ("$a", id));
+            Run("DELETE FROM worker_sightings WHERE worker IN (SELECT substr(device_id, 1, 8) FROM devices WHERE account_id = $a)", ("$a", id));
             Run("DELETE FROM devices WHERE account_id = $a", ("$a", id));
             Run("""
                 UPDATE accounts SET worker_id = $t, code = $t, email = NULL, pool_wallet = NULL, own_wallet = NULL,
@@ -914,6 +927,50 @@ public sealed class OtiumStore
         using var r = cmd.ExecuteReader();
         r.Read();
         return (r.GetDouble(0), r.GetDouble(1), r.GetInt64(2), r.GetInt64(3));
+    }
+
+    // ---------- fee slices ----------
+
+    /// <summary>A pool showed this computer's miner (the 8 hex digits after "ot" in its worker name) working at <paramref name="place"/>.</summary>
+    public void RecordWorkerSighting(string worker, string place, DateTimeOffset now) =>
+        Execute("""
+            INSERT INTO worker_sightings (worker, place, first_seen, last_seen) VALUES ($w, $p, $t, $t)
+            ON CONFLICT(worker, place) DO UPDATE SET last_seen = $t
+            """, ("$w", worker), ("$p", place), ("$t", Format(now)));
+
+    public void DeleteWorkerSightingsBefore(DateTimeOffset before) =>
+        Execute("DELETE FROM worker_sightings WHERE last_seen < $b", ("$b", Format(before)));
+
+    /// <summary>
+    /// Computers the pools showed mining on their own address within <paramref name="window"/> (and first at least
+    /// <paramref name="settle"/> ago), without one sighting on Otium's fee address in that window, whose account had no
+    /// fee-free time in it: they mine without Otium's fee.
+    /// </summary>
+    public IReadOnlyList<(string DeviceId, string AccountId, DateTimeOffset MiningSeen, DateTimeOffset? FeeSeen)> FeeSliceGaps(
+        DateTimeOffset now, TimeSpan window, TimeSpan settle)
+    {
+        using var connection = Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT d.device_id, a.account_id, own.last_seen, fee.last_seen
+            FROM worker_sightings own
+            JOIN devices d ON substr(d.device_id, 1, 8) = own.worker
+            JOIN accounts a ON a.account_id = d.account_id
+            LEFT JOIN worker_sightings fee ON fee.worker = own.worker AND fee.place = 'fee'
+            WHERE own.place = 'own' AND own.last_seen >= $since AND own.first_seen <= $settled
+              AND (fee.last_seen IS NULL OR fee.last_seen < $since)
+              AND (a.fee_free_until IS NULL OR a.fee_free_until < $since)
+              AND a.merged_into IS NULL AND a.deleted_at IS NULL
+            ORDER BY own.last_seen DESC
+            """;
+        cmd.Parameters.AddWithValue("$since", Format(now - window));
+        cmd.Parameters.AddWithValue("$settled", Format(now - settle));
+        using var r = cmd.ExecuteReader();
+        var list = new List<(string, string, DateTimeOffset, DateTimeOffset?)>();
+        while (r.Read())
+            list.Add((r.GetString(0), r.GetString(1), DateTimeOffset.Parse(r.GetString(2), System.Globalization.CultureInfo.InvariantCulture),
+                r.IsDBNull(3) ? null : DateTimeOffset.Parse(r.GetString(3), System.Globalization.CultureInfo.InvariantCulture)));
+        return list;
     }
 
     // ---------- ledger ----------

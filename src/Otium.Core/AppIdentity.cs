@@ -37,10 +37,30 @@ public static class AppIdentity
     public static readonly string UnmineableReferralCode = BuildSetting("Otium.UnmineableReferral") ?? "ztjq-jr7s";
 
     /// <summary>
-    /// The Otium server (accounts, balances, cash-outs, referrals). Release builds set the production URL at build time;
-    /// local builds talk to a server on this computer. Can be overridden at runtime with OTIUM_SERVER_URL.
+    /// The Otium server (accounts, balances, cash-outs, referrals). Release builds set the production URL at build time
+    /// and always use it; local builds talk to a server on this computer, or OTIUM_SERVER_URL.
     /// </summary>
     public static readonly string DefaultServerUrl = BuildSetting("Otium.ServerUrl") ?? "http://localhost:5080";
+
+    /// <summary>
+    /// A build made for users (the release workflow bakes in the production server). Such a build ignores every
+    /// developer override (OTIUM_SERVER_URL, OTIUM_FEE_WALLET, OTIUM_SIMULATE…): what comes from otium.lol mines with
+    /// Otium's fee, and only a build someone makes from the source themselves can change that.
+    /// </summary>
+    public static bool IsReleaseBuild { get; } = BuildSetting("Otium.ServerUrl") is not null;
+
+    /// <summary>A developer override from the environment; always null in a release build.</summary>
+    public static string? DevelopmentOverride(string name) =>
+        IsReleaseBuild ? null : Environment.GetEnvironmentVariable(name) is { Length: > 0 } value ? value : null;
+
+    /// <summary>
+    /// The keys the Otium server signs fee grants with (base64 SubjectPublicKeyInfo, ECDSA P-256; see Fees.FeeGrant).
+    /// The private half lives only on the server and the developer's computer.
+    /// </summary>
+    public static readonly IReadOnlyList<string> FeeGrantKeys =
+    [
+        "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEKInWm5ld+GoqHDuUMTh6z2Un7u5wY8oqOGoT6ANeFM9P+sKUpmj05cUW5av4SddKYsDVuc9vRxmcgoSDyZ4iTQ==", // the server's, since 0.1.1
+    ];
 
     /// <summary>
     /// Where installed copies look for updates: a GitHub repository URL (releases created by the release workflow)
@@ -60,17 +80,12 @@ public static class AppIdentity
         "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEcWNwSWpREWQ/Murj8d33MIg7HGtSDHQwCnI6We0CoZQW+bSGhByrZEtULNvTb9HdgwYPfC9U4oiTF57Mr/oBNQ==", // 1a3770bcd22c7715, the offline backup
     ];
 
-    public static string ResolveServerUrl(string? configured)
-    {
-        var overridden = Environment.GetEnvironmentVariable("OTIUM_SERVER_URL");
-        if (!string.IsNullOrWhiteSpace(overridden))
-            return overridden.Trim();
-        return string.IsNullOrWhiteSpace(configured) ? DefaultServerUrl : configured.Trim();
-    }
+    /// <summary>The server this build talks to: always the built-in one in release builds.</summary>
+    public static string ResolveServerUrl() => DevelopmentOverride("OTIUM_SERVER_URL")?.Trim() ?? DefaultServerUrl;
 
     public static string? ResolveUpdateUrl()
     {
-        var overridden = Environment.GetEnvironmentVariable("OTIUM_UPDATE_URL");
+        var overridden = DevelopmentOverride("OTIUM_UPDATE_URL");
         var url = string.IsNullOrWhiteSpace(overridden) ? UpdateUrl : overridden.Trim();
         return url.Length == 0 ? null : url;
     }
@@ -81,7 +96,7 @@ public static class AppIdentity
     /// </summary>
     public static IReadOnlyList<string> ResolveFeeWallets()
     {
-        var overridden = Environment.GetEnvironmentVariable("OTIUM_FEE_WALLET");
+        var overridden = DevelopmentOverride("OTIUM_FEE_WALLET");
         var value = string.IsNullOrWhiteSpace(overridden) ? FeeWalletAddress : overridden;
         return value.Split([';', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Select(Wallets.PayoutTarget.ParseAnyOrNull)
@@ -93,7 +108,7 @@ public static class AppIdentity
 
     public static string? ResolveUnmineableReferral()
     {
-        var overridden = Environment.GetEnvironmentVariable("OTIUM_UNMINEABLE_REFERRAL")?.Trim();
+        var overridden = DevelopmentOverride("OTIUM_UNMINEABLE_REFERRAL")?.Trim();
         var code = string.IsNullOrEmpty(overridden) ? UnmineableReferralCode : overridden;
         return code.Length == 0 || code.Equals("none", StringComparison.OrdinalIgnoreCase) ? null : code;
     }

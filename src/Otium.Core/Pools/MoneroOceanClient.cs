@@ -47,7 +47,7 @@ public sealed class MoneroOceanClient(HttpClient http, TimeProvider? time = null
     public static readonly Uri MoneroOceanApi = new("https://api.moneroocean.stream/");
 
     /// <summary>The pool API in use: MoneroOcean, or a simulated pool when OTIUM_POOL_API is set (dev mode).</summary>
-    public static Uri ApiBase { get; } = Environment.GetEnvironmentVariable("OTIUM_POOL_API") is { Length: > 0 } custom
+    public static Uri ApiBase { get; } = AppIdentity.DevelopmentOverride("OTIUM_POOL_API") is { Length: > 0 } custom
         ? new Uri(custom.TrimEnd('/') + "/")
         : MoneroOceanApi;
     public const double AtomicUnitsPerXmr = 1e12;

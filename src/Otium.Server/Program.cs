@@ -118,6 +118,7 @@ builder.Services.AddSingleton<EarningsReportService>();
 builder.Services.AddSingleton<Otium.Server.Support.ProblemReportService>();
 builder.Services.AddHttpClient<ICoinPrices, CoinGeckoPrices>();
 builder.Services.AddSingleton<PoolPayoutChecker>();
+builder.Services.AddSingleton<FeeSliceWatcher>();
 builder.Services.AddSingleton<RealEarningsService>();
 if (!builder.Configuration.GetValue<bool>("DisableBackgroundJobs"))
 {
@@ -125,7 +126,10 @@ if (!builder.Configuration.GetValue<bool>("DisableBackgroundJobs"))
     builder.Services.AddHostedService(sp => sp.GetRequiredService<IndexNowService>());
 }
 if (!builder.Configuration.GetValue<bool>("DisableBackgroundJobs") && builder.Configuration.GetValue($"{RealEarningsOptions.Section}:CheckPools", true))
+{
     builder.Services.AddHostedService<PoolPayoutService>();
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<FeeSliceWatcher>());
+}
 
 builder.Services.AddSingleton<CashoutMethodCatalog>();
 builder.Services.AddSingleton<CashoutService>();

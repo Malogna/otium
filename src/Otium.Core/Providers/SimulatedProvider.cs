@@ -21,7 +21,7 @@ public sealed class SimulatedProvider(
     Func<GpuPolicy?>? policy = null,
     bool unitedStates = false) : IComputeProvider
 {
-    public static bool IsEnabled => Environment.GetEnvironmentVariable("OTIUM_SIMULATE") is "1" or "true";
+    public static bool IsEnabled => AppIdentity.DevelopmentOverride("OTIUM_SIMULATE") is "1" or "true";
 
     /// <summary>Simulated speeds (H/s) for Kryptex coins, like an RTX 3080.</summary>
     private static readonly Dictionary<string, double> KryptexSpeeds = new(StringComparer.OrdinalIgnoreCase)
