@@ -216,7 +216,7 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         if (eligible.Count == 0 && _policy() is { IsNotYetFetched: true })
             throw new ProviderProblemException("Graphics card is waiting for today's coin prices from Otium's server; it starts as soon as they arrive.");
         if (eligible.Count == 0)
-            throw new ProviderProblemException("Graphics card isn't mining: no coin it can mine pays more than its electricity right now.");
+            throw new ProviderProblemException(NothingPaysReason());
 
         var pending = eligible.Where(a => !_store.Has(a.PoolName)).ToList();
         if (pending.Count > 0)
@@ -658,6 +658,21 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         var problem = NotMining().Message;
         _notice = null;
         return new ProviderStatus(ProviderState.Error, 0, problem, _current?.PoolName, Problem: problem);
+    }
+
+    /// <summary>
+    /// Why no coin is on offer: the server has no prices for the coins this card mines (the price source is down), none
+    /// pays at all, or (only for users who pay for power) none pays more than its electricity.
+    /// </summary>
+    internal string NothingPaysReason()
+    {
+        var policy = _policy();
+        var mineable = GpuAlgorithms.All.Where(a => a.Supports(_gpus)).Select(a => policy?.For(a.PoolName)).OfType<GpuAlgorithmPolicy>().ToList();
+        if (mineable.Any(p => p.Tier == GpuTiers.Disabled && p.Note?.StartsWith("Profitability data", StringComparison.Ordinal) == true))
+            return "Graphics card is waiting for coin prices: Otium's price source is down right now. It starts as soon as they're back.";
+        return _pricePerKwh() <= 0
+            ? "Graphics card isn't mining: none of the coins it can mine pays right now. Otium checks again regularly."
+            : "Graphics card isn't mining: no coin it can mine pays more than its electricity right now.";
     }
 
     /// <summary>Plain-words reason that no algorithm can run now, with when Otium tries again.</summary>
