@@ -20,7 +20,8 @@ building, dev mode and releasing. The short version for users is the [README](..
    unMineable · paid out at 1.5 USDT", with an estimate of when) and warns you if the pool won't pay on its own, for
    example when unMineable's "Auto pay" switch is off for your address (new TRC-20 addresses start with it off), with a
    link to your address page there.
-5. Share your invite code. Friends mine fee-free for 30 days, and part of Otium's fee is mined for you. The Invites page
+5. Share your invite code. You and the friend both get 30 days without Otium's fee, and for 6 months 25% of Otium's fee
+   on their mining is mined to your address ("Earned from friends" on the Invites page). The Invites page
    has ready-made messages (short, explained, for gamers) that you can edit, one-click sharing to WhatsApp, Discord and
    email, and a monthly leaderboard of top inviters, counted by friends who actually started earning. A friend who opens
    your link (otium.lol/r/CODE) and installs Otium on the same internet connection within a week finds your code already
@@ -62,7 +63,10 @@ Everything technical lives under **Advanced**:
   from your next sign-in.
 - Internet sharing (Proxybase): on/off, only while away, and its status and payouts.
 - Your payout coin and address.
-- Updates.
+- Updates: a downloaded update installs itself once you've been away 10 minutes with the window closed ("Install
+  updates while I'm away", on by default), or with "Restart to update".
+- Help: "Send a problem report", "Join our Discord" and contact@otium.lol (Settings → About; the overview's footer
+  links them too).
 
 ## How it works
 
@@ -92,8 +96,8 @@ policy.
 - CPU: XMRig on `rx.unmineable.com:443` with TLS (unMineable's only RandomX port that works). GPU: SRBMiner on the
   routes in the server's GPU policy: unMineable for **Pearl** (the best-paying coin for NVIDIA cards in October 2026),
   plus Xelis (`xelishashv3`), which only runs on free power since it loses money at normal prices; all
-  with `--tls true`, priced from WhatToMine minus unMineable's 0.75%. unMineable's Pearl is NVIDIA-only (its own
-  support article), so the policy marks it that way and AMD cards skip it. US users' graphics cards stay on
+  with `--tls true`, priced from WhatToMine minus unMineable's 0.75% (FishHash was dropped in October 2026: Pearl
+  pays more on every card, and it never started hashing on an RTX 3080). US users' graphics cards stay on
   MoneroOcean, whose GPU algorithms are "free power only". Without the server's policy, unMineable users' GPUs wait
   (unMineable's prices come from the server) and US Monero users fall back to MoneroOcean's own rates.
 - **One wallet only.** Everything is paid to the single payout address the user gives. Quantus, which Kryptex pays
@@ -128,6 +132,12 @@ policy.
   inviter's summary carries the total (`ReferralEarnedUsd`, "Earned from friends").
 - The **kill switch** still works: `GpuPolicy:Disabled` turns an algorithm off for every app at the next refresh, and a
   failed, lagging or more than 2-hour-old feed disables a coin automatically.
+- **SRBMiner's statistics API stays off.** It listens on every network interface (3.7.6 has no bind option), answers
+  any website (`Access-Control-Allow-Origin: *`) and shows the payout address, so hashrate and shares come from the
+  console's "Total" line instead. XMRig's API is bound to `127.0.0.1`.
+- **Guards against a wrong server answer.** Own-wallet graphics cards only connect to the pools' own hosts
+  (`*.unmineable.com`, `*.kryptex.network`, `*.moneroocean.stream`; `GpuPolicy.OnlyTrustedHosts`), the referrer's
+  share is capped at 1% of mining time, and internet-sharing payouts only go to a well-formed 0x deposit address.
 
 Spike results behind these choices (logins, TLS ports, the referral code on workers, auto-pay, the worker API) are in
 [docs/non-custodial-plan.md](non-custodial-plan.md).
@@ -180,7 +190,8 @@ earnings has legal consequences (see [Before launch](#before-launch)).
 - The first time a computer connects it gets its own account: no sign-up step.
 - An account can have several computers. Each computer authenticates with its own random secret, and the balance, invite
   code and pool worker id belong to the account.
-- **Adding an email** (a 6-digit code, valid 15 minutes, 5 tries, rate-limited, stored only as a salted hash) secures the
+- **Adding an email** (a 6-digit code, valid 15 minutes, 5 tries, rate-limited, stored only as a salted hash; after 10
+  wrong codes in a day an email address is locked until the next day, with no new code emails) secures the
   account. Signing in with the same email on another computer attaches that computer to the account. If that computer
   had been earning on its own anonymous account, those earnings are merged in, and its old worker id keeps crediting the
   right account.
@@ -292,6 +303,17 @@ Operator endpoints:
 | `POST /admin/cashouts/{id}/reject` | Reject it; the amount goes back to the balance (`{"note": "..."}`) |
 | `POST /admin/cashouts/{id}/mark-paid` | Record a payout you made by hand (`{"note": "PayPal txn ..."}`) |
 
+**Limits.** Requests are capped at 1 MB. Per internet connection (the IPv4 address or the IPv6 /64, counted in memory
+only, never written down): 30 new installs a day, 10 sign-in code emails an hour and 30 a day, and 20 problem reports
+a day (`ConnectionQuotas`); stored problem reports stop at about 200 MB in all. The per-minute rate limiter also
+counts IPv6 per /64.
+
+**Problem reports** (Settings → Send a problem report) carry the app version, settings switches, what each miner is
+doing and its recent messages, GPU test results, sharing status, the pool balance and the antivirus name. Before
+sending, the app removes payout and email addresses, keys, the device secret, saved cash-out addresses, and the
+computer and user names, including in file paths (`Otium.Core.Support.ReportScrubber`). The server answers with a
+reference; the operator reads it at `/admin/problem-reports/<reference>`.
+
 The app finds the server through `AppIdentity.DefaultServerUrl`, which is overridable with `OTIUM_SERVER_URL`.
 
 ### Internet sharing (bandwidth)
@@ -314,6 +336,9 @@ service" button in Advanced remains for computers that installed it.)
   `seller start --foreground` in direct mode only (this connection, no resold proxies; `seller_config.json` says so), dies
   with Otium, and keeps its wallet key, session and config in `engines/proxybase-data` (`PROXYBASE_DIR`). The key never
   leaves the computer and Otium never shows or stores its recovery phrase; only unpaid credits (under $1) depend on it.
+  The client gets only an allow-list of Otium's environment (system folders, `PATH`, temp, language, proxy settings
+  and its own data folder), not tokens or `PROXYBASE_*` overrides. Otium never replaces an existing wallet: when a
+  wallet file is there but can't be read, sharing pauses with an explanation instead of creating a new one.
 - **Payouts.** Every 10 minutes the app reads `buyer balance` (`seller_available`, in microcredits; 1,000,000 = $1).
   From $1 it asks the server (`POST /api/v1/devices/{id}/sharing/route`), which opens a one-time conversion to the
   account's **registered** payout address (the app can't redirect it) and answers "pay" with a Tempo deposit address, or
@@ -389,7 +414,7 @@ The draft privacy policy is in [docs/privacy.md](privacy.md) and **still needs l
 | Email codes: salted hash, expiry, attempts | Sign-in; useless after 15 minutes |
 
 The desktop app keeps its settings, a cached copy of the account summary and local earnings stats in its data folder
-(Advanced → About → Open data folder). Mining pools (unMineable, MoneroOcean, and Kryptex in custodial mode), the email provider and the
+(Advanced → Settings → About → Open data folder). Mining pools (unMineable, MoneroOcean, and Kryptex in custodial mode), the email provider and the
 bandwidth partner see what they need to do their part; [docs/privacy.md](privacy.md) lists them.
 
 **Export** (Advanced → Settings → Your data → Download my data)
@@ -440,7 +465,7 @@ You need the .NET 10 SDK. On this machine it's installed per-user, so add it to 
 $env:PATH = "$env:LOCALAPPDATA\Microsoft\dotnet;$env:PATH"
 ```
 
-Run the tests (370, covering payout addresses (TRON, Litecoin and the other coins' checksums) and unMineable logins, fee slices and the non-custodial server, accounts and sign-in, data export and deletion, crediting on MoneroOcean and Kryptex, CPU pool routing, crypto payouts (addresses, the Bitcoin treasury, THORChain swaps, sanctions screening) and receipts, the operator dashboard, the reverse proxy, invites and the leaderboard, fraud rules, GPU profit switching, policy and stall failover, internet sharing, live electricity prices, the simulated pool, wallet checksums and the engine):
+Run the tests (covering payout addresses (TRON, Litecoin and the other coins' checksums) and unMineable logins, fee slices and the non-custodial server, accounts and sign-in, data export and deletion, crediting on MoneroOcean and Kryptex, CPU pool routing, crypto payouts (addresses, the Bitcoin treasury, THORChain swaps, sanctions screening) and receipts, the operator dashboard, the reverse proxy, invites and the leaderboard, fraud rules, GPU profit switching, policy and stall failover, internet sharing, live electricity prices, signed updates and the update feed, problem-report scrubbing, the simulated pool, wallet checksums and the engine):
 
 ```bash
 dotnet test
@@ -504,10 +529,13 @@ pwsh build/package.ps1
 
 **Releasing:** push a tag such as `v0.1.0`. A tag with a suffix (`v0.1.0-rc.1`) is published as a GitHub
 pre-release, which only release-candidate installs follow; see [release-candidate.md](release-candidate.md). `.github/workflows/release.yml` checks the release settings, tests, builds
-every platform and publishes one GitHub release, which is also the auto-update feed (`AppIdentity.UpdateUrl`). The
-production server URL is baked in at build time from the `OTIUM_SERVER_URL` repository variable (locally:
-`pwsh build/package.ps1 -ServerUrl https://...`); the workflow won't release without it. Step by step, including the
-first release: [docs/releasing.md](releasing.md). Signing: [docs/code-signing.md](code-signing.md).
+every platform and publishes one GitHub release. Installed copies read it through the server's `/updates/{stable|pre}/`
+feed, with GitHub itself (`AppIdentity.UpdateUrl`) as the fallback, and the website's `/download` page offers its
+installers. Then sign the release's update feeds on the developer's PC (below); until then installed copies stay on
+the previous signed release. The production server URL is baked in at build time from the `OTIUM_SERVER_URL`
+repository variable (locally: `pwsh build/package.ps1 -ServerUrl https://...`); the workflow won't release without
+it. Step by step, including the first release: [docs/releasing.md](releasing.md). Code signing (Authenticode,
+Developer ID): [docs/code-signing.md](code-signing.md).
 
 **Signed updates.** Every release's update feeds (`releases.<rid>.json`, which list each package with its SHA-256) are
 signed on the developer's PC with an ECDSA P-256 key that never goes to GitHub or the server
@@ -528,10 +556,12 @@ src/Otium.Providers.Proxybase internet sharing through Proxybase's client, conve
 src/Otium.Providers.Mysterium internet sharing as a Mysterium node (earlier choice, not offered now)
 src/Otium.Providers.Honeygain internet sharing through the Honeygain SDK (custodial servers; loaded at runtime)
 src/Otium.App                desktop app (Welcome → Home ⇄ Advanced), Velopack updates
-src/Otium.Server             accounts and email sign-in, referrals, GPU policy, landing page, admin API; custodial
-                             crediting and cash-outs
+src/Otium.Server             accounts and email sign-in, referrals, GPU policy, website (front page, /download,
+                             invite pages), signed update feed, admin API; custodial crediting and cash-outs
 src/Otium.DevPool            simulated MoneroOcean, unMineable, Kryptex Pool and WhatToMine for dev mode
 tests/Otium.Tests            unit and API tests
+tools/Otium.UpdateSigner     signs each release's update feeds on the developer's PC (keygen, sign, verify, check)
+tools/Otium.Screenshots      draws the README's pictures without opening a window
 build/                       dev.ps1 (dev mode), package.ps1 (installers), icon generator, icons
 ```
 
@@ -559,9 +589,9 @@ build/                       dev.ps1 (dev mode), package.ps1 (installers), icon 
   account's BTC into it weekly. The admin dashboard shows its balance and warns when it's below the open cash-outs.
 - **Code signing** for Windows and macOS: see [docs/code-signing.md](code-signing.md) (Azure Artifact Signing or
   a cloud-HSM certificate for Windows, Developer ID and notarization for macOS).
-- **Real-machine run:** mostly done; see [docs/real-mining-run.md](real-mining-run.md). SRBMiner's stats format,
-  H/s units (including `pearlhash`/`quantus` on Kryptex), NVML power, stall failover and miners dying with the app are
-  confirmed. On an RTX 3080 the Kryptex coins earn through Otium; MoneroOcean's GPU algorithms fail in SRBMiner's OpenCL
+- **Real-machine run:** mostly done; see [docs/real-mining-run.md](real-mining-run.md). SRBMiner's console "Total"
+  line (its stats API is no longer used), H/s units (including `pearlhash`/`quantus` on Kryptex), NVML power, stall
+  failover and miners dying with the app are confirmed. On an RTX 3080 the Kryptex coins earn through Otium; MoneroOcean's GPU algorithms fail in SRBMiner's OpenCL
   path there. Still open: other NVIDIA machines, and the Kryptex account setting on the deployed server.
 - **Kryptex (custodial only):** confirm in writing that one operator account may aggregate an app's whole install base, and ask how Pearl's
   August 2026 "rank-penalty" softfork treats a large pooled account. Kryptex runs a competing consumer app, so keep

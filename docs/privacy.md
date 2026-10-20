@@ -33,7 +33,7 @@ and computers. We treat it with the same care as your email.
 | **Invite links opened:** when you open a friend's invite link (otium.lol/r/…), the invite code and a keyed one-way hash of your internet connection (your IPv4 address, or the first half of your IPv6 address), never the address itself | Filling in your friend's invite code when you install Otium on the same connection, so you don't have to type it. You can change or clear it during setup | Legitimate interest in making invites work for the people who use them (art. 6(1)(f)) |
 | **What the pools paid your address:** the coin, the total the pool reports as paid to your address and its last 30 days, read about twice a day from the pools' public APIs | Showing on otium.lol the total paid to Otium users (one sum over everyone, never per person) | Legitimate interest in showing what Otium is worth. Source: the pools' public APIs (art. 14) |
 | **Earnings statistics**, only if you answer yes to "Share analytics": every few hours, your graphics card model, processor name, how long each mined, what it earned and the electricity it used, and, if you share your internet, your country, how long it shared and what sharing earned, linked to your computer's device id. Never your address | Publishing real per-card and per-country sharing earnings on otium.lol, only as medians across at least 3 computers | Consent (GDPR art. 6(1)(a)). You can withdraw it in Settings at any time; we then delete that computer's statistics. The app records when you answered |
-| **Problem reports**, only when you press "Send a problem report": the app version and operating system, your settings switches, what each miner is doing and its recent messages, your graphics card's test results, internet sharing's status, your pool balance and the name of your antivirus, with payout addresses, email addresses, keys, the device secret and your user name in file paths removed, plus any note you write | Finding out why Otium isn't working for you, when you ask for help | Contract (support you asked for) |
+| **Problem reports**, only when you press "Send a problem report": the app version and operating system, your settings switches, what each miner is doing and its recent messages, your graphics card's test results, internet sharing's status, your pool balance and the name of your antivirus, with payout addresses, email addresses, keys, the device secret, your computer's name and your user name (also in file paths) removed, plus any note you write | Finding out why Otium isn't working for you, when you ask for help | Contract (support you asked for) |
 | **Server logs:** IP addresses and request details. Counts of requests per internet connection, kept in memory for at most a day and never written down | Security, troubleshooting and limiting abuse (for example how many sign-in emails or new accounts one connection can ask for) | Legitimate interest |
 
 We don't collect your name, address, phone number or browsing history, and we don't use your data for advertising or
@@ -64,7 +64,7 @@ years) in its data folder (Settings → About → Open data folder). Uninstallin
 | **Amazon Web Services** (Lightsail, London) | Everything on the server | Hosting (our processor) |
 | **Cloudflare** | Your IP address and requests to otium.lol | Protecting and delivering the website and API (our processor) |
 | **Cloudflare** (R2 storage, Europe) | Copies of the server database, encrypted at rest | Backups (our processor) |
-| **GitHub** | Your computer's IP address when the app checks for updates and downloads the miners | Updates and miner downloads |
+| **GitHub** | Your computer's IP address when the app downloads updates and the miners (and when it checks for updates there, if otium.lol can't be reached) | Updates and miner downloads |
 | **Electricity price services** where your area has one (today the Nordic countries: hvakosterstrommen.no, elprisetjustnu.se, elprisenligenu.dk, sahkotin.fi); elsewhere the app uses a typical price for your country or the one you enter | Your computer's IP address when the app fetches today's prices for your price area (no account data) | Pausing in expensive hours |
 | **CoinGecko** | Nothing about you: the server asks it for today's coin prices | Converting what the pools paid into dollars for otium.lol |
 | **Authorities** | What the law requires us to hand over | Legal obligations |
@@ -85,8 +85,9 @@ The mining pools are reached directly by your computer, not by Otium.
 - **While you have an account**, we keep the account data above.
 - **When you delete your account**, we delete or anonymise everything that identifies you straight away: your email,
   payout address, invite code, the link between you and your mining worker, your computers and their keys, your
-  sign-in codes, your problem reports, the earnings statistics you shared and the record of what the pools paid your
-  address. What the pools themselves keep about your address is up to them.
+  sign-in codes, your problem reports, the earnings statistics you shared, the hashes of your internet connections, your
+  app's reports of what it mined for the person who invited you, and the record of what the pools paid your address.
+  What the pools themselves keep about your address is up to them.
 - **Sign-in codes** stop working after 15 minutes.
 - **Invite links opened** are deleted after 7 days, and **internet connections your computers used** after 30.
 - **Server logs** are deleted as they rotate (at most 50 MB are kept), usually within a few weeks.

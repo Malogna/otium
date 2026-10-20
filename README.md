@@ -4,7 +4,8 @@
 card mine the best-paying coin, and the mining pool pays **your own wallet**, in the coin you choose. Otium sets it all
 up, switches coins for you and steps aside the moment you touch the mouse.
 
-**[Download at otium.lol](https://otium.lol)** · Windows · macOS and Linux (beta)
+**[Download at otium.lol](https://otium.lol/download)** (it starts the installer for your system) · Windows · macOS and
+Linux (beta)
 
 <table>
   <tr>
@@ -32,9 +33,10 @@ two-minute test on your PC.</sub>
    (see what this PC could earn and choose each part).
 2. **Paste one wallet address.** USDT on TRON is the default; BTC, LTC, ETH, BNB, SOL, TRX and Monero work too. The app
    checks the address and its network as you type. That address is the only place money goes.
-3. **Press Start earning.** A two-minute test measures what this PC really earns, after fees and electricity. From
-   then on Otium earns only while you're away (after 3 minutes without keyboard or mouse) and stops the moment you
-   come back.
+3. **Press Start earning.** A two-minute test measures what this PC really earns, after fees and electricity (if the
+   graphics card earns at least ten times what the processor would, it leaves the processor off; Settings turns it
+   back on). From then on Otium earns only while you're away (after 3 minutes without keyboard or mouse) and stops the
+   moment you come back.
 4. **The pool pays you.** [unMineable](https://unmineable.com) pays your address once a day after you reach its minimum
    (for example 1.5 USDT). The app shows how far you are from the next payout. US citizens and residents (the app asks)
    are paid in Monero by [MoneroOcean](https://moneroocean.stream), because unMineable doesn't serve them.
@@ -63,7 +65,11 @@ Iran, China and Egypt).
   problems. Each can be shared as a picture with your invite code.
 - **Options in Settings:** efficiency mode for NVIDIA cards (70% power while mining), let the graphics card earn while
   you browse (stops for games and full-screen video), and keep the miner ready so it starts again instantly.
-- **Invites.** Friends you invite mine fee-free for 30 days, and part of Otium's fee is mined to you for 6 months.
+- **Invites.** Bring a friend and you both get 30 days without Otium's fee. Then, for 6 months, 25% of Otium's fee on
+  their mining is mined straight to your address (shown as "Earned from friends" on the Invites page). Your days start
+  once the friend has mined for a day, up to 90 at a time, and friends on your own internet connection don't count. A
+  friend who opens your invite link (otium.lol/r/CODE) and installs Otium on the same connection finds your code
+  already filled in.
 
 ## What it costs
 
@@ -82,9 +88,12 @@ start.
 - Otium runs well-known miners, [XMRig](https://github.com/xmrig/xmrig) (open source) and
   [SRBMiner-Multi](https://github.com/doktor83/SRBMiner-Multi), downloaded from their official releases and checked
   against fixed SHA-256 hashes. Some antivirus tools flag any miner; the app tells you if yours blocks it and how to
-  allow it.
-- Otium's server keeps your payout address, your computers and invite codes. An email address is optional (it lets
-  you keep your invites when you reinstall). Settings has **Download my data** and **Delete my account**.
+  allow it. The miners only make outgoing connections.
+- **Signed updates.** Otium updates itself while you're away, and only installs a version signed with the developer's
+  key, which never goes to GitHub or Otium's server. Someone who took over either couldn't push an update to your computer.
+- Otium's server keeps your payout address, your computers and invite codes (and, to keep invites fair, one-way hashes
+  of the internet connections your computers used in the last 30 days). An email address is optional (it lets you
+  keep your invites when you reinstall). Settings has **Download my data** and **Delete my account**.
 - "Share analytics" is a yes-or-no question at the start (and a switch in Settings). If you say yes, the app sends your
   graphics card and processor model and what they earned (and, if you share your internet, your country and what
   sharing earned), never your address. otium.lol shows only figures combined across several PCs. Saying no later
@@ -94,8 +103,10 @@ start.
 ## Help
 
 Something not working? In the app, go to **Settings → Send a problem report**. It sends what each miner is doing and
-their recent messages, with your addresses and keys taken out, and gives you a reference. Then
-[open an issue](https://github.com/Malogna/otium/issues) and mention it.
+their recent messages, with your addresses, email, keys and user name taken out, and gives you a reference. Then
+mention it in an [issue](https://github.com/Malogna/otium/issues), on [Discord](https://discord.gg/4FtFDrz97t) or by
+email to [contact@otium.lol](mailto:contact@otium.lol). The app links both under Settings → About and at the bottom of
+the overview.
 
 ## For developers
 
@@ -105,10 +116,16 @@ pwsh build/dev.ps1                       # dev mode: app, server and a simulated
 dotnet run --project src/Otium.App       # the app on its own
 ```
 
-The app is .NET 10 with Avalonia, and the server is ASP.NET Core with SQLite. How everything works, the server's
-settings, building installers and releasing are in [docs/technical.md](docs/technical.md). Also:
-[deploying](docs/deploying.md), [releasing](docs/releasing.md), [release candidates](docs/release-candidate.md),
-[privacy policy draft](docs/privacy.md), [terms of use draft](docs/terms.md).
+The app is .NET 10 with Avalonia, and the server is ASP.NET Core with SQLite (it also serves the website and the
+update feed). How everything works, the server's settings, building installers and releasing are in
+[docs/technical.md](docs/technical.md).
+
+**Releasing:** push a tag (`v0.1.0`, or `v0.1.0-rc.1` for a release candidate); the release workflow tests, builds
+every platform and publishes a GitHub release. Then sign its update feeds on the developer's PC with
+`tools/Otium.UpdateSigner` (`sign <tag> --key <file>`) and `check` that otium.lol serves them: installed copies only
+take signed releases. Step by step in [releasing](docs/releasing.md) and
+[release candidates](docs/release-candidate.md). Also: [deploying](docs/deploying.md),
+[code signing](docs/code-signing.md), [privacy policy draft](docs/privacy.md), [terms of use draft](docs/terms.md).
 
 ## License
 

@@ -24,7 +24,11 @@
         a: Math.random() * 0.5 + 0.15, s: Math.random() * 0.8 + 0.2, p: Math.random() * Math.PI * 2,
       }));
     }
+    let last = 0;
     function frame(t) {
+      // 30 frames a second: the twinkle and the parallax are slow, so it looks the same for half the work.
+      if (t - last < 32 && !still) { requestAnimationFrame(frame); return; }
+      last = t;
       ctx.clearRect(0, 0, w, h);
       const scroll = scrollY * 0.05;
       for (const s of stars) {
@@ -216,8 +220,8 @@
     let shown = Number(month.textContent.replace(/[^0-9.]/g, "")) || 0;
     let tween = 0;
 
-    function animateTo(value) {
-      const from = shown, start = performance.now(), length = still ? 0 : 650;
+    function animateTo(value, length = still ? 0 : 650) {
+      const from = shown, start = performance.now();
       cancelAnimationFrame(tween);
       (function step(now) {
         const t = length ? Math.min(1, (now - start) / length) : 1;
@@ -257,6 +261,71 @@
     select?.addEventListener("change", () => choose(select.value));
     hours.addEventListener("input", render);
     price.addEventListener("input", render);
+    // On arrival the month's figure counts up to what the server already wrote there. It starts on the first frame, so
+    // where frames don't run (a hidden tab, a page preview) the figure stays as written instead of showing "$0".
+    if (!still && shown > 0) {
+      const target = shown;
+      requestAnimationFrame(() => { if (shown === target) { shown = 0; animateTo(target, 1100); } });
+    }
+  }
+
+  // ---------- Big figures count up when they come into view ----------
+  // "$96.25" and "≈ $62": the first number in the element's own text counts up from zero once, keeping its decimals.
+  // ---------- Questions and "See the breakdown and adjust" open and close smoothly ----------
+  // The box's height slides between closed and open (in every browser); clicking again midway turns it around.
+  function smoothDetails() {
+    if (still || !Element.prototype.animate) return;
+    $$(".est-more-body > *").forEach((el, i) => el.style.setProperty("--n", i));
+    for (const d of $$("details")) {
+      const summary = d.querySelector(":scope > summary");
+      if (!summary) continue;
+      let anim = null;
+      summary.addEventListener("click", e => {
+        e.preventDefault();
+        const closing = d.open && !d.classList.contains("closing");
+        const from = d.getBoundingClientRect().height;
+        anim?.cancel();
+        if (closing) d.classList.add("closing");
+        else { d.classList.remove("closing"); d.open = true; }
+        const to = closing ? summary.getBoundingClientRect().height + d.offsetHeight - d.clientHeight : d.getBoundingClientRect().height;
+        d.style.overflow = "hidden";
+        const duration = closing ? 280 : 380, mine = d.animate({ height: [`${from}px`, `${to}px`] }, { duration, easing: "cubic-bezier(.2,.8,.2,1)" });
+        anim = mine;
+        const done = () => {
+          if (anim !== mine) return;
+          anim = null;
+          mine.cancel();
+          d.style.overflow = "";
+          if (closing) { d.open = false; d.classList.remove("closing"); }
+        };
+        mine.onfinish = done;
+        // Where frames don't run (a hidden tab), the box still ends up open or closed.
+        setTimeout(done, duration + 150);
+      });
+    }
+  }
+
+  function countUps() {
+    const items = $$("[data-count]");
+    if (still || !items.length || !("IntersectionObserver" in window)) return;
+    const io = new IntersectionObserver(entries => {
+      for (const e of entries) {
+        if (!e.isIntersecting) continue;
+        io.unobserve(e.target);
+        const text = [...e.target.childNodes].find(n => n.nodeType === Node.TEXT_NODE && /\d/.test(n.textContent));
+        const match = text?.textContent.match(/(\d+(?:\.\d+)?)/);
+        if (!text || !match) continue;
+        const original = text.textContent, target = Number(match[1]), decimals = (match[1].split(".")[1] || "").length;
+        let start = null;
+        requestAnimationFrame(function step(now) {
+          start ??= now;
+          const t = Math.min(1, (now - start) / 1100), value = target * (1 - Math.pow(1 - t, 3));
+          text.textContent = t < 1 ? original.replace(match[1], value.toFixed(decimals)) : original;
+          if (t < 1) requestAnimationFrame(step);
+        });
+      }
+    }, { rootMargin: "0px 0px -10% 0px" });
+    for (const item of items) io.observe(item);
   }
 
   // ---------- Scroll details ----------
@@ -265,7 +334,13 @@
     if (still || !("IntersectionObserver" in window)) return;
     const fold = innerHeight * 0.92;
     const io = new IntersectionObserver(entries => {
-      for (const e of entries) if (e.isIntersecting) { e.target.classList.add("shown"); e.target.classList.remove("pending"); io.unobserve(e.target); }
+      // Blocks that come into view together (a heading and the panel beside it) arrive one after the other.
+      entries.filter(e => e.isIntersecting).forEach((e, i) => {
+        e.target.style.transitionDelay = `${i * 110}ms`;
+        e.target.classList.add("shown");
+        e.target.classList.remove("pending");
+        io.unobserve(e.target);
+      });
     }, { rootMargin: "0px 0px -8% 0px" });
     for (const item of items) {
       if (item.getBoundingClientRect().top > fold) { item.classList.add("pending"); io.observe(item); }
@@ -327,5 +402,5 @@
     }, 140);
   }
 
-  sky(); dial(); earnings(); reveal(); shiftLine(); spotlights(); platform(); hashField();
+  sky(); dial(); earnings(); reveal(); countUps(); smoothDetails(); shiftLine(); spotlights(); platform(); hashField();
 })();
