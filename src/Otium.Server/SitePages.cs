@@ -33,12 +33,13 @@ public sealed record CardCoin(string Coin, double UsdPerDay, double Watts, strin
 public sealed record CardEarnings(string Id, string Name, string Detail, IReadOnlyList<CardCoin> Coins, string Group = "");
 
 /// <summary>
-/// The public website: the front page that ads and invite links lead to, and the operator's legal pages. The front page
+/// The public website: the front page that ads and invite links lead to, the download page, what each graphics card
+/// earns (SitePages.Mining.cs), and the operator's legal pages. The front page
 /// tells the night-shift story (the computer works while you're away), with live per-card earnings from the server's
 /// GPU policy and the same cost breakdown the app shows, generated from the server's fee terms so the two can't
 /// disagree. Styles, script, logo and fonts are embedded (<see cref="SiteAssets"/>); nothing loads from other hosts.
 /// </summary>
-internal static class SitePages
+internal static partial class SitePages
 {
     public static readonly string[] LegalPages = ["privacy", "terms"];
 
@@ -344,6 +345,7 @@ internal static class SitePages
               <nav class="nav-links" aria-label="Sections">
                 <a href="/#night-shift">How it works</a>
                 <a href="/#earnings">Earnings</a>
+                <a href="/mining">Graphics cards</a>
                 <a href="/#fees">Fees</a>
                 <a href="/#questions">Questions</a>
               </nav>
@@ -370,25 +372,26 @@ internal static class SitePages
 
     /// <summary>
     /// For search engines: everything public may be crawled except the operator's dashboard, the app's API and feeds,
-    /// and the download redirects. Invite pages stay crawlable so their noindex is seen.
+    /// and the installer redirects under /download/ (the download page itself is one to find). Invite pages stay
+    /// crawlable so their noindex is seen.
     /// </summary>
     public static string Robots(string baseUrl) => $"""
         User-agent: *
         Disallow: /admin
         Disallow: /api/
         Disallow: /updates/
-        Disallow: /download
+        Disallow: /download/
         Disallow: /dev/
 
         Sitemap: {baseUrl.TrimEnd('/')}/sitemap.xml
 
         """.ReplaceLineEndings("\n");
 
-    /// <summary>The pages worth finding: the front page and whichever legal pages exist.</summary>
+    /// <summary>The pages worth finding: the front page, the download page, every mining page and whichever legal pages exist.</summary>
     public static string Sitemap(string baseUrl, IEnumerable<string> legalLinks)
     {
         var root = baseUrl.TrimEnd('/');
-        var urls = new[] { "/" }.Concat(legalLinks.Select(p => "/" + p))
+        var urls = new[] { "/", "/download" }.Concat(MiningPaths).Concat(legalLinks.Select(p => "/" + p))
             .Select(p => $"  <url><loc>{System.Security.SecurityElement.Escape(root + p)}</loc></url>\n");
         return $"""
             <?xml version="1.0" encoding="UTF-8"?>
@@ -462,6 +465,7 @@ internal static class SitePages
                       <div class="est-figure"><span class="est-amount" id="est-month">{UsdWhole(estimate.Value.Month + sharing.PerDay * 30)}</span><span class="est-per">a month</span></div>
                       <p class="est-summary" id="est-summary">{SummaryLine(estimate.Value, DefaultHoursAway, sharing)}</p>
                       <label class="card-pick"><span>Your graphics card</span><select id="card">{options}</select></label>
+                      <a class="est-all" href="/mining">What every graphics card earns</a>
                       <details class="est-more">
                         <summary>See the breakdown and adjust</summary>
                         <div class="est-more-body">
@@ -666,12 +670,12 @@ internal static class SitePages
 
     /// <summary>
     /// The front page's schema.org description for search engines: who makes Otium (with its GitHub and Discord), the
-    /// app itself, and the questions. JSON's default escaping turns &lt; into <, so nothing in it can end the script.
+    /// app itself, and the questions.
     /// </summary>
     private static string StructuredData(string baseUrl, string description)
     {
         var root = baseUrl.TrimEnd('/');
-        var graph = new JsonArray(
+        return JsonLd(
             new JsonObject
             {
                 ["@type"] = "Organization",
@@ -702,18 +706,7 @@ internal static class SitePages
                 ["downloadUrl"] = $"{root}/download",
                 ["publisher"] = new JsonObject { ["@id"] = $"{root}/#organization" },
             },
-            new JsonObject
-            {
-                ["@type"] = "FAQPage",
-                ["mainEntity"] = new JsonArray(Faq.Select(q => (JsonNode)new JsonObject
-                {
-                    ["@type"] = "Question",
-                    ["name"] = q.Question,
-                    ["acceptedAnswer"] = new JsonObject { ["@type"] = "Answer", ["text"] = q.AnswerHtml },
-                }).ToArray()),
-            });
-        var json = new JsonObject { ["@context"] = "https://schema.org", ["@graph"] = graph }.ToJsonString();
-        return $"""<script type="application/ld+json">{json}</script>""";
+            FaqPage(Faq.Select(q => (q.Question, q.AnswerHtml))));
     }
 
     private static readonly Dictionary<string, (string Title, string Description)> LegalMeta = new()

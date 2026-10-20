@@ -355,21 +355,28 @@ app.MapGet("/r/{code}", (string code, HttpRequest request, OtiumStore store, Inv
         "text/html; charset=utf-8");
 }).RequireRateLimiting("per-ip");
 
-// The public website: the front page (with today's per-card earnings from the GPU policy), the operator's legal pages
-// once their reviewed files are in place, and the site's own embedded files.
+// The public website: the front page (with today's per-card earnings from the GPU policy), what each graphics card
+// earns, the operator's legal pages once their reviewed files are in place, and the site's own embedded files.
+
+// Today's GPU prices for the website, or null when they can't be read (the pages then say so instead of showing numbers).
+async Task<Otium.Core.Switching.GpuPolicy?> SiteGpuPolicy(GpuPolicyService gpuPolicy, ILogger logger, CancellationToken ct)
+{
+    try
+    {
+        return await gpuPolicy.GetAsync(ct);
+    }
+    catch (Exception e) when (e is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException && !ct.IsCancellationRequested)
+    {
+        logger.LogWarning(e, "GPU policy unavailable for the website");
+        return null;
+    }
+}
+
 app.MapGet("/", async (HttpRequest request, IOptions<FeeOptions> fees, IOptions<SiteOptions> site, IOptions<ReferralOptions> referral,
     GpuPolicyService gpuPolicy, RealEarningsService realEarnings, ILogger<Program> logger, CancellationToken ct) =>
 {
     var policy = Otium.Core.Fees.FeePolicy.FromTerms(fees.Value.ToTerms());
-    Otium.Core.Switching.GpuPolicy? gpu = null;
-    try
-    {
-        gpu = await gpuPolicy.GetAsync(ct);
-    }
-    catch (Exception e) when (e is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException && !ct.IsCancellationRequested)
-    {
-        logger.LogWarning(e, "GPU policy unavailable for the front page");
-    }
+    var gpu = await SiteGpuPolicy(gpuPolicy, logger, ct);
     var html = SitePages.Home(policy, "/download", SitePages.AvailableLegalPages(site.Value.PagesDirectory), PublicBase(request, referral),
         SitePages.Earnings(gpu, policy), gpu?.GeneratedAt,
         // Cloudflare's visitor country, for the local electricity price. Only Cloudflare reaches the server in production
@@ -377,6 +384,30 @@ app.MapGet("/", async (HttpRequest request, IOptions<FeeOptions> fees, IOptions<
         request.Headers["CF-IPCountry"].ToString(),
         realEarnings.Get());
     return Results.Content(html, "text/html; charset=utf-8");
+}).RequireRateLimiting("per-ip");
+
+// What each graphics card earns mining: one page comparing them all, and one per card (/mining/rtx-4090; a card's id,
+// /mining/rtx4090, moves to its page for good).
+app.MapGet("/mining", async (HttpRequest request, IOptions<FeeOptions> fees, IOptions<SiteOptions> site, IOptions<ReferralOptions> referral,
+    GpuPolicyService gpuPolicy, ILogger<Program> logger, CancellationToken ct) =>
+{
+    var policy = Otium.Core.Fees.FeePolicy.FromTerms(fees.Value.ToTerms());
+    var gpu = await SiteGpuPolicy(gpuPolicy, logger, ct);
+    return Results.Content(SitePages.MiningIndex(policy, SitePages.Earnings(gpu, policy), gpu?.GeneratedAt,
+        SitePages.AvailableLegalPages(site.Value.PagesDirectory), PublicBase(request, referral)), "text/html; charset=utf-8");
+}).RequireRateLimiting("per-ip");
+app.MapGet("/mining/{card}", async (string card, HttpRequest request, IOptions<FeeOptions> fees, IOptions<SiteOptions> site,
+    IOptions<ReferralOptions> referral, GpuPolicyService gpuPolicy, ILogger<Program> logger, CancellationToken ct) =>
+{
+    if (SitePages.MiningSlug(card) is not { } slug)
+        return Results.NotFound();
+    if (slug != card)
+        return Results.Redirect($"/mining/{slug}", permanent: true);
+    var policy = Otium.Core.Fees.FeePolicy.FromTerms(fees.Value.ToTerms());
+    var gpu = await SiteGpuPolicy(gpuPolicy, logger, ct);
+    return Results.Content(SitePages.MiningCard(slug, policy, SitePages.Earnings(gpu, policy), gpu?.GeneratedAt,
+        request.Headers["CF-IPCountry"].ToString(), SitePages.AvailableLegalPages(site.Value.PagesDirectory), PublicBase(request, referral)),
+        "text/html; charset=utf-8");
 }).RequireRateLimiting("per-ip");
 
 app.MapGet("/{page:regex(^(privacy|terms)$)}", (string page, HttpRequest request, IOptions<SiteOptions> site, IOptions<ReferralOptions> referral) =>
