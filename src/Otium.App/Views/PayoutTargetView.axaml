@@ -28,6 +28,8 @@
         <CheckBox IsChecked="{Binding UsPerson}" IsVisible="{Binding AskUsPerson}" AutomationProperties.Name="I'm a US citizen or live in the US">
             <TextBlock FontSize="13" TextWrapping="Wrap" Text="I'm a US citizen or live in the US" />
         </CheckBox>
+        <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap" IsVisible="{Binding ShowRegionNote}"
+                   Text="Ticked because Windows is set to the United States. Untick it if you're not a US citizen and don't live in the US." />
         <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap" IsVisible="{Binding IsUnitedStates}"
                    Text="US citizens and residents are paid in Monero by MoneroOcean: unMineable, which pays other coins, doesn't serve them." />
     </StackPanel>

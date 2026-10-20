@@ -50,7 +50,7 @@ public sealed class AppHost : IAsyncDisposable
         Settings = _settingsStore.Load();
         _gpuPolicyStore = new JsonFileStore<CachedGpuPolicy>(Paths.GpuPolicyFile);
         _gpuPolicy = _gpuPolicyStore.Load().UsableAt(DateTimeOffset.UtcNow);
-        UsPersonDeclared = Settings.UsPerson;
+        UsPersonAnswer = Settings.UsPersonAnswered ? Settings.UsPerson : Settings.UsPerson ? true : null;
         EnsureDeviceSecrets();
 
         DeviceId = ComputeDeviceId();
@@ -76,7 +76,7 @@ public sealed class AppHost : IAsyncDisposable
             (await Antivirus.InspectAsync(enginesDir, ct))?.Products.Where(p => p.Enabled && !p.IsMicrosoftDefender).Select(p => p.Name).ToList() ?? []);
 
         // CPU
-        Provider = new XmrigProvider(_http, Pool, Paths.EnginesDir, referralCode: ReferralCode, unitedStates: InUnitedStates,
+        Provider = new XmrigProvider(_http, Pool, Paths.EnginesDir, referralCode: ReferralCode, isUnitedStates: () => InUnitedStates,
             poolBlocked: PoolReachability.BlockedReasonAsync);
         PowerModel = CpuPowerModel.ForThisMachine(Settings.CpuFullLoadWatts);
         PowerMeter = RaplPowerMeter.IsAvailable() ? new RaplPowerMeter(() => PowerModel) : new EstimatedCpuPowerMeter(() => PowerModel);
@@ -96,7 +96,7 @@ public sealed class AppHost : IAsyncDisposable
             policy: () => EffectiveGpuPolicy,
             freeMemoryGb: gpu => gpu.Vendor == GpuVendor.Nvidia ? _nvml?.ReadFreeMemoryGb(gpu.Index) : null,
             referralCode: ReferralCode,
-            unitedStates: InUnitedStates,
+            isUnitedStates: () => InUnitedStates,
             poolBlocked: PoolReachability.BlockedReasonAsync);
         if (IsSimulated)
         {
@@ -597,17 +597,27 @@ public sealed class AppHost : IAsyncDisposable
     /// <summary>The fee and invite terms in force: the server's, clamped, or the built-in defaults until it has answered.</summary>
     public FeePolicy Fees => FeePolicy.FromTerms(Settings.Account.Fees);
 
-    /// <summary>unMineable's terms exclude US persons, so US users are paid in Monero by MoneroOcean instead.</summary>
-    public static bool InUnitedStates => UsPersonDeclared || System.Globalization.RegionInfo.CurrentRegion.TwoLetterISORegionName == "US";
+    /// <summary>
+    /// unMineable's terms exclude US persons, so US users are paid in Monero by MoneroOcean instead. The user's own answer
+    /// wins; until they've given one, Windows' region decides (and the question shows, ticked, so they can say otherwise).
+    /// </summary>
+    public static bool InUnitedStates => UsPersonAnswer ?? WindowsRegionIsUs;
 
-    /// <summary>The user said they're a US citizen or resident (onboarding or Settings); see <see cref="SetUsPerson"/>.</summary>
-    private static bool UsPersonDeclared { get; set; }
+    /// <summary>Windows is set to the United States region: only the default answer, since many installs elsewhere are too.</summary>
+    public static bool WindowsRegionIsUs => System.Globalization.RegionInfo.CurrentRegion.TwoLetterISORegionName == "US";
+
+    /// <summary>The user answered the US question themselves.</summary>
+    public static bool UsPersonAnswered => UsPersonAnswer is not null;
+
+    /// <summary>The user's answer to "I'm a US citizen or live in the US" (onboarding or Settings), or null before they answered.</summary>
+    private static bool? UsPersonAnswer { get; set; }
 
     /// <summary>Records whether the user is a US citizen or resident, which decides their pool and payout coin.</summary>
     public void SetUsPerson(bool usPerson)
     {
         Settings.UsPerson = usPerson;
-        UsPersonDeclared = usPerson;
+        Settings.UsPersonAnswered = true;
+        UsPersonAnswer = usPerson;
         SaveSettings();
     }
 

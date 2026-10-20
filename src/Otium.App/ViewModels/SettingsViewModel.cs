@@ -51,7 +51,7 @@ public partial class SettingsViewModel : ViewModelBase
         var country = SpotPriceZone.Find(s.ElectricityZone)?.Country ?? RegionCountry();
         Zones = SpotPriceZone.ForCountry(country);
         SelectedZone = SpotPriceZone.Find(s.ElectricityZone);
-        Payout = new PayoutTargetEditor(s.PayoutAddress, s.UsPerson, host.SetUsPerson);
+        Payout = new PayoutTargetEditor(s.PayoutAddress, AppHost.InUnitedStates, host.SetUsPerson);
         Payout.Changed += () => SavePayoutCommand.NotifyCanExecuteChanged();
         ServerUrl = Core.AppIdentity.ResolveServerUrl(s.ServerUrl);
         StartWithSystem = AutoStart.IsEnabled();
