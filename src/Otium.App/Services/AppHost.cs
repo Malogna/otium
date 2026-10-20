@@ -1066,6 +1066,7 @@ public sealed class AppHost : IAsyncDisposable
             if (Settings.DeleteSharedEarnings && !Settings.ShareEarningsStats)
                 await DeleteSharedEarningsAsync();
             await RefreshGpuPolicyAsync(client, ct);
+            await ReportReferralShareAsync(client, ct);
         }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException or UriFormatException or InvalidOperationException or AccountRequestException)
         {
@@ -1112,6 +1113,34 @@ public sealed class AppHost : IAsyncDisposable
                                        or System.Text.Json.JsonException)
         {
             return null; // asked again on the first check-in
+        }
+    }
+
+    private double _referralShareSent = -1;
+    private DateTimeOffset _referralShareSentAt = DateTimeOffset.MinValue;
+
+    /// <summary>
+    /// For a user who joined through a friend's invite: tells the server how much of Otium's fee this computer has mined
+    /// for that friend (an estimate from its own records), so the friend can see what inviting earns. At most hourly,
+    /// and only when it has grown.
+    /// </summary>
+    private async Task ReportReferralShareAsync(AccountClient client, CancellationToken ct)
+    {
+        if (Settings.Referral.ReferredAt is null)
+            return;
+        var total = Engines.Sum(e => e.Totals.ReferrerUsd);
+        var now = DateTimeOffset.UtcNow;
+        if (total <= _referralShareSent + 0.0001 || now - _referralShareSentAt < TimeSpan.FromHours(1))
+            return;
+        try
+        {
+            await client.ReportReferralShareAsync(DeviceId, Settings.DeviceSecret, new ReferralShareReport(total), ct);
+            _referralShareSent = total;
+            _referralShareSentAt = now;
+        }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or AccountRequestException)
+        {
+            // Sent again at the next check-in.
         }
     }
 
@@ -1286,6 +1315,7 @@ public sealed class AppHost : IAsyncDisposable
         referral.FeeFreeUntil = summary.FeeFreeUntil;
         referral.InvitedCount = summary.InvitedCount;
         referral.VerifiedCount = summary.VerifiedCount;
+        referral.EarnedFromFriendsUsd = summary.ReferralEarnedUsd;
         referral.LastSyncedAt = DateTimeOffset.UtcNow;
         if (summary.ReferralCodeError is not null)
         {

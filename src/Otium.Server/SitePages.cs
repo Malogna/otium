@@ -414,6 +414,10 @@ internal static class SitePages
         var referrerShare = Percent(fees.ReferrerShareOfFee * 100);
         var referrerMonths = (fees.ReferrerRewardPeriod.TotalDays / 30).ToString("0", CultureInfo.InvariantCulture);
         var perFriend = fees.ReferrerFeeHolidayPerVerifiedFriend.TotalDays.ToString("0", CultureInfo.InvariantCulture);
+        var maxFeeFree = fees.MaxFeeHoliday.TotalDays.ToString("0", CultureInfo.InvariantCulture);
+        var bothFeeFree = perFriend == feeFreeDays
+            ? $"you both get {feeFreeDays} days without Otium's fee"
+            : $"your friend gets {feeFreeDays} days without Otium's fee, and you get {perFriend}";
 
         // Of every $100 the processor mines, with Otium's referral code on unMineable: what each party keeps.
         var poolPct = CostBreakdown.PoolPercent(PayoutPool.Unmineable, referralCode: true);
@@ -609,13 +613,14 @@ internal static class SitePages
                     <div class="panel invite reveal">
                       <div>
                         <span class="label">Invite friends</span>
-                        <h2 id="invite-title" style="margin-top:14px">Bring a friend, and part of Otium's fee on their mining goes to you.</h2>
-                        <p>Friends who join with your invite code pay no Otium fee for their first {feeFreeDays} days. For {referrerMonths} months after that, {referrerShare} of Otium's fee on their mining is mined straight to your address, and each friend who starts mining gives you another {perFriend} fee-free days.</p>
+                        <h2 id="invite-title" style="margin-top:14px">Bring a friend, and {bothFeeFree}.</h2>
+                        <p>Then, for {referrerMonths} months, {referrerShare} of Otium's fee on their mining is mined straight to your address.</p>
+                        <p class="muted" style="font-size:0.88rem">Your fee-free days start once your friend has mined for a day (up to {maxFeeFree} days at a time). Friends on your own internet connection don't count.</p>
                       </div>
                       <div class="ticket" aria-hidden="true">
                         <span class="label">Invite</span>
                         <div class="big">{feeFreeDays} days fee-free</div>
-                        <p>for your friend, plus {referrerShare} of Otium's fee to you</p>
+                        <p>{(perFriend == feeFreeDays ? "for you both" : "for your friend")}, plus {referrerShare} of Otium's fee to you</p>
                       </div>
                     </div>
                   </div>

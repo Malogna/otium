@@ -34,19 +34,23 @@ public partial class InviteViewModel : ViewModelBase
         _ = LoadLeaderboardAsync();
     }
 
-    public string RewardFriend => $"Your friend mines fee-free for their first {FriendDays} days.";
+    public string RewardFriend => FriendDays == YourDays
+        ? $"You and your friend each get {FriendDays} days without Otium's fee."
+        : $"Your friend gets {FriendDays} days without Otium's fee, and you get {YourDays}.";
 
     public string RewardYou => _host.Settings.PayoutMode == Core.Settings.PayoutMode.Balance
         ? FormattableString.Invariant($"You get {(_host.Account?.Balance.ReferralPercent ?? 0):0.#}% of everything they earn for ") +
           $"{Fees.ReferrerRewardPeriod.TotalDays / 30:0} months, added to your Otium balance. It comes out of Otium's fee, never out of your friend's earnings."
         :
-        $"You get {Fees.ReferrerShareOfFee * 100:0}% of Otium's fee on everything they mine for " +
-        FormattableString.Invariant($"{Fees.ReferrerRewardPeriod.TotalDays / 30:0} months ({Fees.ReferrerPercent:0.##}% of their mining time), ") +
-        "mined straight to your own address when the same pool pays you both. It comes out of Otium's fee, never out of your friend's earnings.";
+        FormattableString.Invariant($"Then, for {Fees.ReferrerRewardPeriod.TotalDays / 30:0} months, {Fees.ReferrerShareOfFee * 100:0}% of Otium's fee on their mining ") +
+        "is mined straight to your address. It comes out of Otium's fee, never out of your friend's earnings.";
 
+    /// <summary>The small print: when the inviter's days start, their cap, and who counts.</summary>
     public string RewardBonus =>
-        $"Each friend who actually starts mining adds {Fees.ReferrerFeeHolidayPerVerifiedFriend.TotalDays:0} fee-free days for you " +
-        $"(up to {Fees.MaxFeeHoliday.TotalDays:0} days at a time).";
+        $"Your fee-free days start once your friend has mined for a day (up to {Fees.MaxFeeHoliday.TotalDays:0} days at a time). " +
+        "Friends on your own internet connection don't count.";
+
+    private string YourDays => Fees.ReferrerFeeHolidayPerVerifiedFriend.TotalDays.ToString("0", CultureInfo.InvariantCulture);
 
     private FeePolicy Fees => _host.Fees;
 
@@ -57,6 +61,9 @@ public partial class InviteViewModel : ViewModelBase
     [ObservableProperty] public partial string ShareUrl { get; set; } = "";
     [ObservableProperty] public partial string InvitedCount { get; set; } = "0";
     [ObservableProperty] public partial string VerifiedCount { get; set; } = "0";
+
+    /// <summary>Estimated: what friends' mining has paid to the user's address so far.</summary>
+    [ObservableProperty] public partial string EarnedFromFriends { get; set; } = "$0.00";
     [ObservableProperty] public partial string FeeFreeText { get; set; } = "";
     [ObservableProperty] public partial string? ErrorText { get; set; }
     [ObservableProperty] public partial string? CodeErrorText { get; set; }
@@ -133,6 +140,7 @@ public partial class InviteViewModel : ViewModelBase
         ShareUrl = r.ShareUrl ?? "";
         InvitedCount = r.InvitedCount.ToString(CultureInfo.InvariantCulture);
         VerifiedCount = r.VerifiedCount.ToString(CultureInfo.InvariantCulture);
+        EarnedFromFriends = Format.Usd(r.EarnedFromFriendsUsd);
         FeeFreeText = r.FeeFreeUntil is { } until && until > DateTimeOffset.UtcNow
             ? $"You're fee-free until {Format.Date(until)}"
             : "";

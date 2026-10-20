@@ -5,7 +5,8 @@ using Otium.Core.Settings;
 namespace Otium.Core.Projections;
 
 /// <summary>A device's running totals, which only grow (mining time, the user's share, electricity).</summary>
-public readonly record struct EarningsTotals(TimeSpan MiningTime, double UserUsd, double ElectricityUsd);
+/// <param name="ReferrerUsd">Estimated, mined for the friend who invited the user (their share of Otium's fee).</param>
+public readonly record struct EarningsTotals(TimeSpan MiningTime, double UserUsd, double ElectricityUsd, double ReferrerUsd = 0);
 
 /// <summary>One device as the reports see it: "cpu" or "gpu", its model, and its totals now.</summary>
 public sealed record ReportedDevice(string Kind, string? Model, EarningsTotals Totals);
