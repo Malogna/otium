@@ -504,6 +504,14 @@ production server URL is baked in at build time from the `OTIUM_SERVER_URL` repo
 `pwsh build/package.ps1 -ServerUrl https://...`); the workflow won't release without it. Step by step, including the
 first release: [docs/releasing.md](releasing.md). Signing: [docs/code-signing.md](code-signing.md).
 
+**Signed updates.** Every release's update feeds (`releases.<rid>.json`, which list each package with its SHA-256) are
+signed on the developer's PC with an ECDSA P-256 key that never goes to GitHub or the server
+(`tools/Otium.UpdateSigner`, see [release-candidate.md](release-candidate.md)). The app (`SignedUpdateSource`, over
+`Otium.Core.Updates.SignedUpdates`) only uses a feed whose `.sig` checks out against `AppIdentity.UpdateSigningKeys`,
+from otium.lol or GitHub alike, and only downloads packages that feed lists, keeping each one only if its SHA-256
+matches. The server's `/updates/` feed offers only the newest release with a valid signature
+(`UpdateFeed.SignedFeedAsync`) and redirects only to packages of signed releases.
+
 ## Project layout
 
 ```

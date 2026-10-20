@@ -1,8 +1,10 @@
 using System.Net;
+using System.Security.Cryptography;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Otium.Core.Pools;
+using Otium.Core.Updates;
 using Otium.Server.Gpu;
 
 namespace Otium.Tests;
@@ -15,6 +17,8 @@ public sealed class SitePagesTests : IDisposable
     private readonly ManualTime _time = new(new DateTimeOffset(2026, 10, 18, 15, 0, 0, TimeSpan.Zero));
     private readonly GpuPolicyTests.FakeFeed _feed = new();
     private readonly FakeReleaseList _releaseList = new();
+    /// <summary>Signs these tests' update feeds; the server trusts it instead of Otium's real keys.</summary>
+    private readonly ECDsa _signingKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
     private readonly WebApplicationFactory<Program> _factory;
     private readonly HttpClient _http;
 
@@ -43,6 +47,8 @@ public sealed class SitePagesTests : IDisposable
                 services.AddSingleton<IPearlPipFeed>(new GpuPolicyTests.FakePip());
                 services.RemoveAll<Otium.Server.IReleaseList>();
                 services.AddSingleton<Otium.Server.IReleaseList>(_releaseList);
+                services.RemoveAll<Otium.Server.UpdateSigningKeys>();
+                services.AddSingleton(new Otium.Server.UpdateSigningKeys([Convert.ToBase64String(_signingKey.ExportSubjectPublicKeyInfo())]));
                 services.RemoveAll<TimeProvider>();
                 services.AddSingleton<TimeProvider>(_time);
             });
@@ -421,12 +427,10 @@ public sealed class SitePagesTests : IDisposable
         const string gh = "https://github.com/Malogna/otium/releases/download";
         _releaseList.Releases =
         [
-            new("v0.1.0-rc.9", true, [new("releases.win-x64.json", $"{gh}/v0.1.0-rc.9/releases.win-x64.json"),
-                new("Otium.Desktop-0.1.0-rc.9-win-x64-full.nupkg", $"{gh}/v0.1.0-rc.9/Otium.Desktop-0.1.0-rc.9-win-x64-full.nupkg")]),
-            new("v0.0.9", false, [new("releases.win-x64.json", $"{gh}/v0.0.9/releases.win-x64.json")]),
+            Signed("v0.1.0-rc.9", true, "releases.win-x64.json", """{"Assets":[{"Version":"0.1.0-rc.9"}]}""",
+                new("Otium.Desktop-0.1.0-rc.9-win-x64-full.nupkg", $"{gh}/v0.1.0-rc.9/Otium.Desktop-0.1.0-rc.9-win-x64-full.nupkg")),
+            Signed("v0.0.9", false, "releases.win-x64.json", """{"Assets":[{"Version":"0.0.9"}]}"""),
         ];
-        _releaseList.Texts[$"{gh}/v0.1.0-rc.9/releases.win-x64.json"] = """{"Assets":[{"Version":"0.1.0-rc.9"}]}""";
-        _releaseList.Texts[$"{gh}/v0.0.9/releases.win-x64.json"] = """{"Assets":[{"Version":"0.0.9"}]}""";
 
         // Release candidates follow the newest pre-release; stable installs only see releases.
         var (preStatus, pre) = await Get("/updates/pre/releases.win-x64.json?localVersion=0.1.0-rc.8");
@@ -448,10 +452,8 @@ public sealed class SitePagesTests : IDisposable
     {
         // GitHub lists releases by tag name, so rc.10 comes after rc.1 and rc.2 there; the feed must still pick it.
         const string gh = "https://github.com/Malogna/otium/releases/download";
-        Otium.Server.PublishedRelease Rc(string tag) => new(tag, true, [new("releases.win-x64.json", $"{gh}/{tag}/releases.win-x64.json")]);
+        Otium.Server.PublishedRelease Rc(string tag) => Signed(tag, true, "releases.win-x64.json", $$"""{"Assets":[{"Version":"{{tag[1..]}}"}]}""");
         _releaseList.Releases = [Rc("v0.1.0-rc.9"), Rc("v0.1.0-rc.2"), Rc("v0.1.0-rc.10"), Rc("v0.1.0-rc.1")];
-        foreach (var r in _releaseList.Releases)
-            _releaseList.Texts[r.Assets[0].Url] = $$"""{"Assets":[{"Version":"{{r.Tag[1..]}}"}]}""";
 
         var (_, feed) = await Get("/updates/pre/releases.win-x64.json");
         Assert.Contains("0.1.0-rc.10", feed);
@@ -465,9 +467,9 @@ public sealed class SitePagesTests : IDisposable
     [InlineData("v0.1.0-rc.2", "v0.1.0-beta.9")]
     public void Release_tags_order_by_version(string newer, string older)
     {
-        Assert.True(Otium.Server.ReleaseVersion.Compare(newer, older) > 0);
-        Assert.True(Otium.Server.ReleaseVersion.Compare(older, newer) < 0);
-        Assert.Equal(0, Otium.Server.ReleaseVersion.Compare(newer, newer));
+        Assert.True(Otium.Core.Updates.ReleaseVersion.Compare(newer, older) > 0);
+        Assert.True(Otium.Core.Updates.ReleaseVersion.Compare(older, newer) < 0);
+        Assert.Equal(0, Otium.Core.Updates.ReleaseVersion.Compare(newer, newer));
     }
 
     [Fact]
@@ -486,6 +488,57 @@ public sealed class SitePagesTests : IDisposable
         Assert.Equal("https://x/a.nupkg", Assert.Single(releases[0].Assets).Url);
     }
 
+    [Fact]
+    public async Task Only_releases_signed_with_a_trusted_key_are_offered_to_installed_apps()
+    {
+        const string gh = "https://github.com/Malogna/otium/releases/download";
+        using var stranger = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var rc14 = Signed("v0.1.0-rc.14", true, "releases.win-x64.json", """{"Assets":[{"Version":"0.1.0-rc.14"}]}""",
+            new("Otium.Desktop-0.1.0-rc.14-win-x64-full.nupkg", $"{gh}/v0.1.0-rc.14/pkg"));
+        // Published but not signed yet (or by someone who got into the GitHub account): skipped.
+        var unsigned = new Otium.Server.PublishedRelease("v0.1.0-rc.16", true,
+            [new("releases.win-x64.json", $"{gh}/v0.1.0-rc.16/releases.win-x64.json"), new("Otium.Desktop-0.1.0-rc.16-win-x64-full.nupkg", $"{gh}/v0.1.0-rc.16/pkg")]);
+        _releaseList.Texts[$"{gh}/v0.1.0-rc.16/releases.win-x64.json"] = """{"Assets":[{"Version":"0.1.0-rc.16"}]}""";
+        // Signed with a key Otium doesn't trust: skipped too.
+        var forged = Signed("v0.1.0-rc.15", true, "releases.win-x64.json", """{"Assets":[{"Version":"0.1.0-rc.15"}]}""",
+            new("Otium.Desktop-0.1.0-rc.15-win-x64-full.nupkg", $"{gh}/v0.1.0-rc.15/pkg"), key: stranger);
+        _releaseList.Releases = [unsigned, forged, rc14];
+
+        var (_, feed) = await Get("/updates/pre/releases.win-x64.json");
+        Assert.Contains("0.1.0-rc.14", feed);
+        var (status, signature) = await Get("/updates/pre/releases.win-x64.json.sig");
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.True(UpdateSignature.Verify("releases.win-x64.json", System.Text.Encoding.UTF8.GetBytes(feed), signature,
+            [Convert.ToBase64String(_signingKey.ExportSubjectPublicKeyInfo())])); // the same release's signature, byte for byte
+
+        // Packages only from signed releases.
+        using var noRedirect = _factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        using (var ok = await noRedirect.GetAsync("/updates/pre/Otium.Desktop-0.1.0-rc.14-win-x64-full.nupkg"))
+            Assert.Equal($"{gh}/v0.1.0-rc.14/pkg", ok.Headers.Location?.ToString());
+        foreach (var refused in new[] { "Otium.Desktop-0.1.0-rc.15-win-x64-full.nupkg", "Otium.Desktop-0.1.0-rc.16-win-x64-full.nupkg" })
+        {
+            using var response = await noRedirect.GetAsync($"/updates/pre/{refused}");
+            Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        }
+
+        // With nothing signed at all, there's no feed.
+        _releaseList.Releases = [unsigned];
+        _time.Advance(Otium.Server.UpdateFeed.CacheFor);
+        Assert.Equal(HttpStatusCode.NotFound, (await Get("/updates/pre/releases.win-x64.json")).Status);
+    }
+
+    /// <summary>A release with a feed signed by <paramref name="key"/> (the key the server trusts by default) and its other files.</summary>
+    private Otium.Server.PublishedRelease Signed(string tag, bool prerelease, string feedFile, string feed, Otium.Server.ReleaseAsset? package = null, ECDsa? key = null)
+    {
+        var dl = $"https://github.com/Malogna/otium/releases/download/{tag}";
+        _releaseList.Texts[$"{dl}/{feedFile}"] = feed;
+        _releaseList.Texts[$"{dl}/{feedFile}.sig"] = UpdateSignature.Sign(key ?? _signingKey, feedFile, System.Text.Encoding.UTF8.GetBytes(feed));
+        List<Otium.Server.ReleaseAsset> assets = [new(feedFile, $"{dl}/{feedFile}"), new($"{feedFile}.sig", $"{dl}/{feedFile}.sig")];
+        if (package is not null)
+            assets.Add(package);
+        return new(tag, prerelease, assets);
+    }
+
     private sealed class FakeReleaseList : Otium.Server.IReleaseList
     {
         public IReadOnlyList<Otium.Server.PublishedRelease> Releases { get; set; } = [];
@@ -493,7 +546,7 @@ public sealed class SitePagesTests : IDisposable
 
         public Task<IReadOnlyList<Otium.Server.PublishedRelease>> GetRecentAsync(CancellationToken ct) => Task.FromResult(Releases);
 
-        public Task<string> GetTextAsync(string url, CancellationToken ct) => Task.FromResult(Texts[url]);
+        public Task<byte[]> GetBytesAsync(string url, CancellationToken ct) => Task.FromResult(System.Text.Encoding.UTF8.GetBytes(Texts[url]));
     }
 
     public void Dispose()

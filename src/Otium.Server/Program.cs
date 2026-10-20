@@ -78,6 +78,7 @@ builder.Services.AddHttpClient<IPearlPipFeed, PearlPipClient>();
 builder.Services.AddSingleton<PearlForkWatcher>();
 builder.Services.AddSingleton<ReleaseDownloads>();
 builder.Services.AddHttpClient<IReleaseList, GitHubReleaseList>();
+builder.Services.AddSingleton(new UpdateSigningKeys(Otium.Core.AppIdentity.UpdateSigningKeys));
 builder.Services.AddSingleton<UpdateFeed>();
 builder.Services.AddSingleton<GpuPolicyService>();
 builder.Services.AddSingleton<KryptexCreditor>();
@@ -428,8 +429,13 @@ app.MapGet("/updates/{track}/{file}", async (string track, string file, UpdateFe
 {
     if (track is not ("pre" or "stable"))
         return Results.NotFound();
+    // Only signed feeds, byte for byte (the signature covers the exact bytes), and their signatures from the same release.
     if (UpdateFeed.IsFeed(file))
-        return await feed.FeedAsync(file, track == "pre", ct) is { } json ? Results.Content(json, "application/json") : Results.NotFound();
+        return await feed.SignedFeedAsync(file, track == "pre", ct) is { } signed ? Results.Bytes(signed.Feed, "application/json") : Results.NotFound();
+    if (UpdateFeed.IsSignature(file))
+        return await feed.SignedFeedAsync(file[..^".sig".Length], track == "pre", ct) is { } signed
+            ? Results.Text(signed.Signature, "text/plain; charset=utf-8")
+            : Results.NotFound();
     return await feed.DownloadUrlAsync(file, ct) is { } url ? Results.Redirect(url) : Results.NotFound();
 }).RequireRateLimiting("per-ip");
 

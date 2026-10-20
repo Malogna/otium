@@ -10,6 +10,9 @@
     <Project Path="src/Otium.Providers.XMRig/Otium.Providers.XMRig.csproj" />
     <Project Path="src/Otium.Server/Otium.Server.csproj" />
   </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/Otium.UpdateSigner/Otium.UpdateSigner.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Otium.Tests/Otium.Tests.csproj" />
   </Folder>
