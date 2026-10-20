@@ -90,6 +90,7 @@ public sealed class AppHost : IAsyncDisposable
         _nvml = Nvml.TryOpen();
         Gpus = new GpuDetector(_nvml).Detect();
         GpuPowerMeter = new GpuPowerMeter(_nvml, () => Settings.GpuWatts, Gpus);
+        Hardware = new HardwareMonitor(_nvml);
         _gpuConfig = BuildConfig(100, "g");
         var gpuProvider = new SrbMinerGpuProvider(
             _http, Pool, Paths.EnginesDir, Paths.GpuBenchmarksFile, Gpus, GpuPowerMeter, EffectivePricePerKwh,
@@ -526,6 +527,9 @@ public sealed class AppHost : IAsyncDisposable
     public IReadOnlyList<string> FeeWallets { get; }
 
     /// <summary>The fee target on the user's pool, or null when the build has none for it (the fee then stays with the user).</summary>
+    /// <summary>Processor and graphics card stats (load, temperature, fan…) for Details.</summary>
+    public HardwareMonitor Hardware { get; }
+
     public string? FeeWallet => PayoutRouting.FeeTargetFor(OwnPayoutTarget, FeeWallets, InUnitedStates);
 
     /// <summary>Otium's unMineable referral code, added to every unMineable login.</summary>

@@ -28,6 +28,9 @@ public partial class DeviceViewModel(string title, string subtitle, EarningsEngi
     [ObservableProperty] public partial string EarnPerDay { get; set; } = "";
     [ObservableProperty] public partial string PowerText { get; set; } = "";
 
+    /// <summary>Load, temperature and the like right now ("98% load · 62 °C · fan 54%…"), one line per card; empty if unknown.</summary>
+    [ObservableProperty] public partial string Stats { get; set; } = "";
+
     public bool HasNumbers => Snapshot.State is EngineState.Earning or EngineState.PausedUnprofitable;
 
     public void Apply(EngineSnapshot s)
