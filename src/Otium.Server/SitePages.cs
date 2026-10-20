@@ -303,11 +303,15 @@ internal static partial class SitePages
     /// saying the same thing. Indexed pages name their address without query strings as canonical.
     /// </param>
     /// <param name="head">Extra tags for the page's head (the front page's structured data).</param>
+    /// <param name="image">The page's own 1200×630 link-preview picture (a /site/ address) and what it says, instead of Site/og.png.</param>
     public static string Layout(string title, string description, string body, IEnumerable<string> legalLinks, string? downloadUrl,
-        string baseUrl, string path, bool index = true, string? head = null)
+        string baseUrl, string path, bool index = true, string? head = null, (string Path, string Alt)? image = null)
     {
         var url = E(baseUrl.TrimEnd('/') + path);
-        var image = E(baseUrl.TrimEnd('/') + SiteAssets.Url("og.png"));
+        var imagePath = image?.Path ?? SiteAssets.Url("og.png");
+        var imageUrl = E(baseUrl.TrimEnd('/') + imagePath);
+        var imageType = imagePath.Split('?')[0].EndsWith(".jpg", StringComparison.Ordinal) ? "image/jpeg" : "image/png";
+        var imageAlt = E(image?.Alt ?? PreviewImageAlt);
         return $$"""
         <!doctype html>
         <html lang="en">
@@ -324,11 +328,11 @@ internal static partial class SitePages
           <meta property="og:type" content="website">
           <meta property="og:url" content="{{url}}">
           <meta property="og:locale" content="en_US">
-          <meta property="og:image" content="{{image}}">
-          <meta property="og:image:type" content="image/png">
+          <meta property="og:image" content="{{imageUrl}}">
+          <meta property="og:image:type" content="{{imageType}}">
           <meta property="og:image:width" content="1200">
           <meta property="og:image:height" content="630">
-          <meta property="og:image:alt" content="{{E(PreviewImageAlt)}}">
+          <meta property="og:image:alt" content="{{imageAlt}}">
           <meta name="twitter:card" content="summary_large_image">
           <link rel="icon" href="{{SiteAssets.Url("otium.svg")}}" type="image/svg+xml">
           <link rel="apple-touch-icon" href="{{SiteAssets.Url("icon.png")}}">

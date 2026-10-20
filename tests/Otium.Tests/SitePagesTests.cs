@@ -442,6 +442,33 @@ public sealed class SitePagesTests : IDisposable
     }
 
     [Fact]
+    public async Task Every_mining_page_has_its_own_preview_picture()
+    {
+        // tools/render-site-previews.ps1 draws one per mining page; a card added without running it fails here.
+        var sitemap = (await Get("/sitemap.xml")).Html;
+        var paths = System.Text.RegularExpressions.Regex.Matches(sitemap, "<loc>http://localhost(/mining[^<]*)</loc>").Select(m => m.Groups[1].Value).ToList();
+        Assert.Equal(31, paths.Count);
+        foreach (var path in paths)
+        {
+            var html = (await Get(path)).Html;
+            var name = path == "/mining" ? "mining" : path.Split('/')[^1];
+            var image = System.Text.RegularExpressions.Regex.Match(html, $$"""<meta property="og:image" content="http://localhost(/site/previews/{{name}}\.jpg\?v=[0-9a-f]{10})">""");
+            Assert.True(image.Success, path);
+            Assert.Contains("""<meta property="og:image:type" content="image/jpeg">""", html);
+            using var jpeg = await _http.GetAsync(image.Groups[1].Value);
+            Assert.Equal("image/jpeg", jpeg.Content.Headers.ContentType?.MediaType);
+        }
+        Assert.Contains("""<meta property="og:image:alt" content="RTX 4090: 310 TH/s, 400 W. What it earns mining today, on otium.lol">""", (await Get("/mining/rtx-4090")).Html);
+        // Other pages keep the site's own picture.
+        Assert.Contains("/site/og.png?v=", (await Get("/pearl")).Html);
+
+        // The pages the pictures are drawn from (development only).
+        Assert.Contains("<h1>RTX 4090</h1>", (await Get("/dev/preview/mining/rtx-4090")).Html);
+        Assert.Contains("""<h1 class="long">What every graphics card earns</h1>""", (await Get("/dev/preview/mining")).Html);
+        Assert.Equal(HttpStatusCode.NotFound, (await Get("/dev/preview/mining/rtx-2060")).Status);
+    }
+
+    [Fact]
     public async Task Only_known_comparisons_exist()
     {
         Assert.Equal(HttpStatusCode.NotFound, (await Get("/compare/kryptex")).Status);
