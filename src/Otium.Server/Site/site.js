@@ -246,6 +246,11 @@
       const raw = (data.payoutUsdt || 1.5) / day, days = Math.ceil(raw);
       $("#est-payout").textContent = day <= 0 ? ""
         : `First payout ${raw < 1 ? "within a day" : `in about ${days} day${days === 1 ? "" : "s"}`}.`;
+      // How calculators and comparison sites count (24 hours a day, no electricity), for comparing like for like.
+      const compare = $("#est-compare"), gross = Math.max(0, ...card.coins.map(c => c.usdPerDay));
+      if (compare) compare.textContent = gross > 0
+        ? `Mining around the clock, before electricity: $${Math.round(gross * 30)} a month, the way most comparison sites count it.`
+        : "";
     }
     for (const chip of chips) chip.addEventListener("click", () => choose(chip.dataset.card));
     select?.addEventListener("change", () => choose(select.value));

@@ -98,6 +98,16 @@ internal static class SitePages
         ? $"Mining: waits at this power price on an {e.Card}."
         : $"Mining: {Usd(e.Day)}/day on an {e.Card} ({e.Coin}).";
 
+    /// <summary>
+    /// The card's best coin over a 30-day month mined around the clock, before electricity (after fees): how mining
+    /// calculators and comparison sites count, so visitors can compare like for like. Otium's own estimate counts only the
+    /// hours the computer is left alone, less its electricity.
+    /// </summary>
+    internal static string AroundTheClockLine(CardEarnings card) =>
+        card.Coins.Count == 0
+            ? ""
+            : $"Mining around the clock, before electricity: {UsdWhole(card.Coins.Max(c => c.UsdPerDay) * 30)} a month, the way most comparison sites count it.";
+
     private static string PayoutLine(double perDay)
     {
         if (perDay <= 0)
@@ -447,6 +457,7 @@ internal static class SitePages
                       <div class="est-figure"><span class="est-amount" id="est-month">{UsdWhole(estimate.Value.Month + sharing.PerDay * 30)}</span><span class="est-per">a month</span></div>
                       <p class="est-sub" id="est-sub">{EstimateLine(estimate.Value)}<br><span id="est-share">{SharingLine(sharing)}</span></p>
                       <p class="est-payout" id="est-payout">{PayoutLine(estimate.Value.Day)}</p>
+                      <p class="est-compare" id="est-compare">{AroundTheClockLine(typical!)}</p>
                       <div class="chips" role="group" aria-label="Popular graphics cards">{chips}</div>
                       <label class="card-pick"><span>Your graphics card</span><select id="card">{options}</select></label>
                       <div class="est-sliders">

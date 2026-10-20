@@ -95,6 +95,8 @@ public sealed class SitePagesTests : IDisposable
         Assert.Contains("Internet sharing: +$1.46/day (estimate).", html);
         Assert.Contains("\"sharingPerDay\":1.455", html);
         Assert.Contains("First payout within a day.", html);
+        // Like for like with mining calculators and comparison sites: $9.94 a day around the clock, no electricity.
+        Assert.Contains("""<p class="est-compare" id="est-compare">Mining around the clock, before electricity: $298 a month, the way most comparison sites count it.</p>""", html);
         Assert.Contains("""<input id="hours" type="range" min="2" max="24" step="1" value="16">""", html);
         Assert.Contains("""<input id="price" type="range" min="0" max="0.60" step="0.01" value="0.15">""", html);
         Assert.DoesNotContain("typical in", html);
