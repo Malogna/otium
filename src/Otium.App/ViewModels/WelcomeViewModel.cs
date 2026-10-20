@@ -83,7 +83,7 @@ public partial class WelcomeViewModel : ViewModelBase
 
     public bool HasGpu => _host.GpuEngine is not null;
 
-    public string GpuName => _host.GpuProvider?.Gpus.FirstOrDefault()?.Name ?? (_host.IsSimulated ? "simulated graphics card" : "graphics card");
+    public string GpuName => Otium.Core.Gpu.GpuInfo.NamesOf(_host.GpuProvider?.Gpus ?? []) ?? (_host.IsSimulated ? "simulated graphics card" : "graphics card");
 
     public bool IsSimulated => _host.IsSimulated;
 
@@ -213,7 +213,9 @@ public partial class WelcomeViewModel : ViewModelBase
         {
             var list = new List<string> { "Your processor mines while you're away." };
             if (HasGpu)
-                list.Add($"Your {GpuName} mines the best-paying coin while you're away.");
+                list.Add((_host.GpuProvider?.Gpus.Count ?? 1) > 1
+                    ? $"Your graphics cards ({GpuName}) mine the best-paying coin each can mine while you're away."
+                    : $"Your {GpuName} mines the best-paying coin while you're away.");
             list.Add("The processor miner pauses instead of closing when you come back, so it earns again the moment you leave (it keeps about 2.5 GB of memory for up to 10 minutes).");
             return list;
         }

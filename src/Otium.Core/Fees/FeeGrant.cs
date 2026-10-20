@@ -13,6 +13,12 @@ namespace Otium.Core.Fees;
 /// <param name="ReferrerWallet">The inviter's payout target, or null.</param>
 /// <param name="PoolWallet">Custodial balance accounts only: the wallet the server credits from; null otherwise.</param>
 /// <param name="ExpiresAt">After this the grant is ignored: a computer cut off from otium.lol for long pays the full fee.</param>
+/// <param name="CpuMiningFloor">
+/// Seconds of processor mining this computer has reported to the server so far (the most it ever reported). The fee
+/// slice comes at the end of each cycle of mining time, so release builds never count less than this: deleting or
+/// editing the mining record on the computer doesn't move it back before Otium's slice.
+/// </param>
+/// <param name="GpuMiningFloor">The same for the graphics card.</param>
 public sealed record FeeGrant(
     string DeviceId,
     double FeePercent,
@@ -23,9 +29,11 @@ public sealed record FeeGrant(
     bool Custodial,
     string? PoolWallet,
     DateTimeOffset IssuedAt,
-    DateTimeOffset ExpiresAt)
+    DateTimeOffset ExpiresAt,
+    double CpuMiningFloor = 0,
+    double GpuMiningFloor = 0)
 {
-    public const string Header = "otium-fee-grant 1";
+    public const string Header = "otium-fee-grant 2";
 
     /// <summary>How long a grant counts without a fresh one from the server.</summary>
     public static readonly TimeSpan Lifetime = TimeSpan.FromDays(7);
@@ -42,20 +50,29 @@ public sealed record FeeGrant(
         Custodial ? "custodial" : "own-wallet",
         PoolWallet ?? "-",
         Date(IssuedAt),
-        Date(ExpiresAt));
+        Date(ExpiresAt),
+        Seconds(CpuMiningFloor),
+        Seconds(GpuMiningFloor));
 
     public static FeeGrant? Parse(string? payload)
     {
         var l = (payload ?? "").Split('\n');
-        if (l.Length != 11 || l[0] != Header || l[1].Length == 0)
+        if (l.Length != 13 || l[0] != Header || l[1].Length == 0)
             return null;
         if (!double.TryParse(l[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var fee)
             || !double.TryParse(l[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var share)
             || l[7] is not ("custodial" or "own-wallet")
-            || ParseDate(l[9]) is not { } issued || ParseDate(l[10]) is not { } expires)
+            || ParseDate(l[9]) is not { } issued || ParseDate(l[10]) is not { } expires
+            || ParseSeconds(l[11]) is not { } cpuFloor || ParseSeconds(l[12]) is not { } gpuFloor)
             return null;
-        return new FeeGrant(l[1], fee, share, Text(l[4]), ParseDate(l[5]), ParseDate(l[6]), l[7] == "custodial", Text(l[8]), issued, expires);
+        return new FeeGrant(l[1], fee, share, Text(l[4]), ParseDate(l[5]), ParseDate(l[6]), l[7] == "custodial", Text(l[8]), issued, expires,
+            cpuFloor, gpuFloor);
     }
+
+    private static string Seconds(double s) => s.ToString("R", CultureInfo.InvariantCulture);
+
+    private static double? ParseSeconds(string s) =>
+        double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var v) && double.IsFinite(v) && v >= 0 ? v : null;
 
     private static string Date(DateTimeOffset? d) => d?.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture) ?? "-";
 

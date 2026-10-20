@@ -55,6 +55,7 @@ builder.Services.AddSingleton(_ => new OtiumStore(builder.Configuration.GetConne
 builder.Services.AddSingleton<InviteLinks>();
 builder.Services.AddSingleton<ConnectionQuotas>();
 builder.Services.AddSingleton<ConnectionHashes>();
+builder.Services.AddSingleton<ReferralRedemptions>();
 builder.Services.AddHttpClient<IMoneroPoolApi, MoneroOceanClient>();
 builder.Services.AddHttpClient<IUnmineableApi, UnmineableClient>();
 builder.Services.AddSingleton<IMoneroWallet, MoneroWalletRpc>();
@@ -289,8 +290,14 @@ api.MapPost("/devices", async (RegisterDeviceRequest body, HttpRequest request, 
 api.MapGet("/devices/{deviceId}/account", async (string deviceId, HttpRequest request, AccountService accounts, IOptions<ReferralOptions> options, CancellationToken ct) =>
 {
     CheckCountry(request);
-    return Results.Ok(await accounts.GetSummaryAsync(deviceId, Secret(request), PublicBase(request, options), ct, request.HttpContext.Connection.RemoteIpAddress));
+    // Apps since the fee grant's mining floors also say how long they've mined (seconds); older apps send nothing.
+    return Results.Ok(await accounts.GetSummaryAsync(deviceId, Secret(request), PublicBase(request, options), ct, request.HttpContext.Connection.RemoteIpAddress,
+        Seconds(request.Query[AccountClient.CpuMinedParameter]), Seconds(request.Query[AccountClient.GpuMinedParameter])));
 });
+
+static double? Seconds(string? value) =>
+    double.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var s)
+    && double.IsFinite(s) && s >= 0 ? s : null;
 
 api.MapGet("/devices/{deviceId}/invites/leaderboard", async (string deviceId, HttpRequest request, AccountService accounts, CancellationToken ct) =>
     Results.Ok(await accounts.GetLeaderboardAsync(deviceId, Secret(request), ct)));
@@ -403,7 +410,7 @@ app.MapGet("/r/{code}", (string code, HttpRequest request, OtiumStore store, Inv
 {
     var normalized = ReferralCodes.Normalize(code);
     var exists = ReferralCodes.IsWellFormed(normalized) && store.CodeExists(normalized);
-    if (exists)
+    if (exists && InviteLinks.IsPageVisit(request.Headers))
         links.Clicked(request.HttpContext.Connection.RemoteIpAddress, normalized); // so Otium installed on this connection fills it in
     return Results.Content(LandingPage.Render(normalized, "/download", exists, PublicBase(request, options),
             SitePages.AvailableLegalPages(site.Value.PagesDirectory)),

@@ -1,6 +1,5 @@
 using System.Collections.Concurrent;
 using System.ComponentModel;
-using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Sockets;
@@ -27,18 +26,23 @@ public sealed class XmrigProvider : IComputeProvider, IPausableProvider
     private readonly PoolEndpoint _endpoint;
     private readonly IUnmineableApi _unmineable;
     private readonly string? _referralCode;
-    private readonly XmrigAsset? _asset;
     private readonly EngineInstaller _installer;
     private readonly ConcurrentQueue<string> _log = new();
-    private Process? _process;
+    private IXmrigProcess? _process;
     private int _httpPort;
     private string _accessToken = "";
     private DateTimeOffset _startedAt;
     private (string Host, int Port)? _poolAddress;
+    private ProviderRunOptions? _options;
+    private (string Url, string User) _poolLogin;
+    private DateTimeOffset _lastConfigCheck;
     private readonly Func<string, int, CancellationToken, Task<string?>> _poolBlocked;
 
     /// <summary>How long the miner may stay unconnected before Otium checks whether something blocks the pool.</summary>
     public static readonly TimeSpan ConnectGrace = TimeSpan.FromMinutes(2);
+
+    /// <summary>How often Otium asks the running miner which pool and login it uses (see <see cref="GetStatusAsync"/>).</summary>
+    public static readonly TimeSpan ConfigCheckInterval = TimeSpan.FromSeconds(60);
 
     /// <param name="referralCode">Otium's unMineable referral code, added to unMineable logins.</param>
     public XmrigProvider(
@@ -60,9 +64,18 @@ public sealed class XmrigProvider : IComputeProvider, IPausableProvider
         _referralCode = referralCode;
         _engineDir = Path.Combine(enginesRoot, $"xmrig-{XmrigRelease.Version}");
         _endpoint = endpoint ?? PoolEndpoint.MoneroOcean;
-        _asset = XmrigRelease.ForCurrentPlatform();
-        _installer = new EngineInstaller(http, _engineDir, XmrigRelease.BinaryName);
+        _installer = new EngineInstaller(http, _engineDir, XmrigRelease.BinaryName, keepArchive: true);
     }
+
+    /// <summary>The XMRig download for this computer (tests use their own).</summary>
+    internal XmrigAsset? Asset { get; init; } = XmrigRelease.ForCurrentPlatform();
+
+    /// <summary>Starts XMRig with the given arguments, sending its output to the log (tests use a stand-in).</summary>
+    internal Func<string, IReadOnlyList<string>, Action<string?>, IXmrigProcess> Launch { get; init; } = XmrigProcess.Start;
+
+    internal TimeProvider Time { get; init; } = TimeProvider.System;
+
+    internal EngineInstaller Installer => _installer;
 
     /// <summary>The user is a US person, whose Monero mines on MoneroOcean instead of unMineable (asked each time: it can change).</summary>
     private readonly Func<bool> _unitedStates;
@@ -75,7 +88,7 @@ public sealed class XmrigProvider : IComputeProvider, IPausableProvider
 
     public string PayoutCurrency => "XMR";
 
-    public bool IsSupportedOnThisPlatform => _asset is not null;
+    public bool IsSupportedOnThisPlatform => Asset is not null;
 
     public string EngineDirectory => _engineDir;
 
@@ -91,9 +104,9 @@ public sealed class XmrigProvider : IComputeProvider, IPausableProvider
 
     public Task InstallAsync(IProgress<InstallProgress>? progress, CancellationToken ct)
     {
-        if (_asset is null)
+        if (Asset is not { } asset)
             throw new PlatformNotSupportedException("XMRig has no official build for this operating system and processor.");
-        return _installer.InstallAsync($"XMRig {XmrigRelease.Version}", _asset.DownloadUrl, _asset.FileName, _asset.Sha256, progress, ct);
+        return _installer.InstallAsync($"XMRig {XmrigRelease.Version}", asset.DownloadUrl, asset.FileName, asset.Sha256, progress, ct);
     }
 
     public async Task StartAsync(ProviderRunOptions options, CancellationToken ct)
@@ -101,40 +114,31 @@ public sealed class XmrigProvider : IComputeProvider, IPausableProvider
         if (_process is { HasExited: false })
             await StopAsync(ct);
 
-        var binary = _installer.FindBinary() ?? throw new EngineBlockedException("The mining engine is missing — antivirus software may have removed it.", _engineDir);
+        // Checked against the download (pinned in code) before every launch, not only at install: a binary swapped for
+        // one that ignores the pool settings would skip Otium's fee slice.
+        var asset = Asset ?? throw new PlatformNotSupportedException("XMRig has no official build for this operating system and processor.");
+        var binary = await _installer.VerifiedBinaryAsync("The mining engine", asset.FileName, asset.Sha256, ct)
+                     ?? throw new EngineBlockedException("The mining engine is missing — antivirus software may have removed it.", _engineDir);
 
         _httpPort = FreeLoopbackPort();
         _accessToken = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(16));
         var config = XmrigConfig.Build(options, _endpoint, _httpPort, _accessToken, _referralCode, unitedStates: _unitedStates());
         _poolAddress = XmrigConfig.PoolAddress(config);
+        _poolLogin = XmrigConfig.PoolLogin(config);
         await File.WriteAllTextAsync(ConfigPath, config, ct);
-
-        var startInfo = new ProcessStartInfo(binary)
-        {
-            WorkingDirectory = Path.GetDirectoryName(binary)!,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-        };
-        startInfo.ArgumentList.Add($"--config={ConfigPath}");
-        startInfo.ArgumentList.Add("--no-color");
 
         try
         {
-            _process = Process.Start(startInfo) ?? throw new InvalidOperationException("Could not start the mining engine.");
-            MinerLifetime.Adopt(_process); // dies with Otium, even if Otium crashes
+            _process = Launch(binary, [$"--config={ConfigPath}", "--no-color"], AppendLog);
         }
         catch (Win32Exception e) when (e.NativeErrorCode is ErrorVirusInfected or ErrorVirusDeleted)
         {
             throw new EngineBlockedException("Windows Security blocked the mining engine from starting.", _engineDir);
         }
 
-        _startedAt = DateTimeOffset.UtcNow;
-        _process.OutputDataReceived += (_, e) => AppendLog(e.Data);
-        _process.ErrorDataReceived += (_, e) => AppendLog(e.Data);
-        _process.BeginOutputReadLine();
-        _process.BeginErrorReadLine();
+        _options = options;
+        _startedAt = Time.GetUtcNow();
+        _lastConfigCheck = _startedAt;
     }
 
     public async Task StopAsync(CancellationToken ct)
@@ -144,24 +148,7 @@ public sealed class XmrigProvider : IComputeProvider, IPausableProvider
         if (process is null)
             return;
 
-        try
-        {
-            if (!process.HasExited)
-            {
-                process.Kill(entireProcessTree: true);
-                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                timeout.CancelAfter(TimeSpan.FromSeconds(10));
-                await process.WaitForExitAsync(timeout.Token);
-            }
-        }
-        catch (InvalidOperationException)
-        {
-            // Already exited.
-        }
-        finally
-        {
-            process.Dispose();
-        }
+        await process.DisposeAsync();
     }
 
     public async Task<ProviderStatus> GetStatusAsync(CancellationToken ct)
@@ -176,6 +163,17 @@ public sealed class XmrigProvider : IComputeProvider, IPausableProvider
             return new ProviderStatus(ProviderState.Error, 0, $"The mining engine exited (code {process.ExitCode}). {lastLines}".Trim());
         }
 
+        if (Time.GetUtcNow() - _lastConfigCheck >= ConfigCheckInterval && _options is { } options)
+        {
+            _lastConfigCheck = Time.GetUtcNow();
+            if (await PoolSettingsChangedAsync(ct))
+            {
+                AppendLog("[Otium] Warning: the mining engine's pool settings were changed outside Otium. Restarting it with Otium's settings.");
+                await StartAsync(options, ct); // stops it and writes Otium's config afresh
+                return new ProviderStatus(ProviderState.Starting, 0, "Restarting the mining engine…");
+            }
+        }
+
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, $"http://127.0.0.1:{_httpPort}/2/summary");
@@ -186,7 +184,7 @@ public sealed class XmrigProvider : IComputeProvider, IPausableProvider
             response.EnsureSuccessStatusCode();
             var summary = XmrigSummary.Parse(await response.Content.ReadAsStringAsync(ct));
             var message = summary.PoolConnected ? null : "Connecting to the pool…";
-            if (!summary.PoolConnected && DateTimeOffset.UtcNow - _startedAt >= ConnectGrace && _poolAddress is { } pool
+            if (!summary.PoolConnected && Time.GetUtcNow() - _startedAt >= ConnectGrace && _poolAddress is { } pool
                 && await _poolBlocked(pool.Host, pool.Port, ct) is { } blocked)
             {
                 var problem = $"Processor isn't mining: {blocked}.";
@@ -196,9 +194,35 @@ public sealed class XmrigProvider : IComputeProvider, IPausableProvider
         }
         catch (Exception e) when (e is HttpRequestException or OperationCanceledException or System.Text.Json.JsonException && !ct.IsCancellationRequested)
         {
-            // The API isn't up yet during the first seconds after launch.
-            var state = DateTimeOffset.UtcNow - _startedAt < TimeSpan.FromMinutes(1) ? ProviderState.Starting : ProviderState.Running;
+            // The API isn't up yet during the first seconds after launch. No hashrate is reported, so none of this counts
+            // as mining time (a suspended miner doesn't answer either).
+            var state = Time.GetUtcNow() - _startedAt < TimeSpan.FromMinutes(1) ? ProviderState.Starting : ProviderState.Running;
             return new ProviderStatus(state, 0, "Waiting for the engine to report…");
+        }
+    }
+
+    /// <summary>
+    /// Whether the running miner no longer mines only to the pool and login Otium configured. XMRig's API is unrestricted
+    /// (pause and resume need it) and its token is in config.json, so anyone on this computer could change the pool
+    /// through it (PUT /1/config); "watch": false stops edits to the file itself from being picked up. An API answering
+    /// with an error (e.g. restricted, or a different token) counts as changed; one that doesn't answer doesn't.
+    /// </summary>
+    private async Task<bool> PoolSettingsChangedAsync(CancellationToken ct)
+    {
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"http://127.0.0.1:{_httpPort}/1/config");
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(TimeSpan.FromSeconds(3));
+            using var response = await _http.SendAsync(request, timeout.Token);
+            if (!response.IsSuccessStatusCode)
+                return true;
+            return !XmrigConfig.MinesOnlyTo(await response.Content.ReadAsStringAsync(ct), _poolLogin.Url, _poolLogin.User);
+        }
+        catch (Exception e) when (e is HttpRequestException or OperationCanceledException && !ct.IsCancellationRequested)
+        {
+            return false;
         }
     }
 

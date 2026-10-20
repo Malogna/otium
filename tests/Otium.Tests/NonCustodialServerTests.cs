@@ -87,7 +87,7 @@ public sealed class NonCustodialServerTests : IDisposable
         Assert.Null(summary.Bandwidth);
         Assert.Empty(summary.Balance.Methods ?? []);
 
-        // An app that hasn't chosen an address yet can still register (and redeem an invite in its first week).
+        // An app that hasn't chosen an address yet can still register (and redeem an invite in its first week, once it has one).
         var later = await RegisterOk(null);
         Assert.Null(later.PoolWallet);
     }
@@ -123,7 +123,8 @@ public sealed class NonCustodialServerTests : IDisposable
     {
         var referrer = await Register(Usdt);
         var referrerSummary = (await referrer.Response.Content.ReadFromJsonAsync<AccountSummary>())!;
-        var friend = await RegisterOk(BnbMixedCase, referrerSummary.Code);
+        var (friendDevice, _, friendResponse) = await Register(BnbMixedCase, referrerSummary.Code);
+        var friend = (await friendResponse.Content.ReadFromJsonAsync<AccountSummary>())!;
 
         Assert.Null(friend.ReferralCodeError);
         Assert.Equal(Usdt, friend.ReferrerWallet);
@@ -140,8 +141,9 @@ public sealed class NonCustodialServerTests : IDisposable
         _unmineable.Rewarded[friendTarget] = 0.0002m;
         Assert.Equal(0, (await Refresh()).VerifiedCount);
 
-        // Credited in an earlier accounting too: at least a day of real mining.
+        // Credited in an earlier accounting too: at least a day of real mining, by the friend's own Otium computer.
         _unmineable.CreditedBefore[friendTarget] = 0.0003m;
+        _unmineable.Workers[friendTarget] = [$"ot{friendDevice[..8]}"];
         _time.Advance(TimeSpan.FromHours(2)); // the pool is asked again at most hourly
         var refreshed = await Refresh();
         Assert.Equal(1, refreshed.InvitedCount);
@@ -431,8 +433,22 @@ public sealed class NonCustodialServerTests : IDisposable
         /// <summary>Rewarded before the last day too (another daily accounting), per target.</summary>
         public Dictionary<string, decimal> CreditedBefore { get; } = [];
 
-        public Task<UnmineableAddress> GetAddressAsync(PayoutTarget target, CancellationToken ct) =>
-            Task.FromResult(new UnmineableAddress(target.ToString(), 0.1m, 0.1m, target.Coin.Threshold, true, true, "TRX", [], null));
+        /// <summary>The names of the workers the pool shows mining, per target.</summary>
+        public Dictionary<string, string[]> Workers { get; } = [];
+
+        /// <summary>How long the workers take to arrive, as a slow pool would.</summary>
+        public TimeSpan Delay { get; set; }
+
+        private int _addressLookups;
+
+        /// <summary>How often an address was looked up.</summary>
+        public int AddressLookups => Volatile.Read(ref _addressLookups);
+
+        public Task<UnmineableAddress> GetAddressAsync(PayoutTarget target, CancellationToken ct)
+        {
+            Interlocked.Increment(ref _addressLookups);
+            return Task.FromResult(new UnmineableAddress(target.ToString(), 0.1m, 0.1m, target.Coin.Threshold, true, true, "TRX", [], null));
+        }
 
         public Task<UnmineableStats> GetStatsAsync(string uuid, CancellationToken ct)
         {
@@ -442,8 +458,12 @@ public sealed class NonCustodialServerTests : IDisposable
             return Task.FromResult(new UnmineableStats(coin, 0.1m, 0.5m, 0.6m, rewarded, week, week, 0, null, 1.5m));
         }
 
-        public Task<IReadOnlyList<UnmineableWorker>> GetWorkersAsync(string uuid, CancellationToken ct) =>
-            Task.FromResult<IReadOnlyList<UnmineableWorker>>([]);
+        public async Task<IReadOnlyList<UnmineableWorker>> GetWorkersAsync(string uuid, CancellationToken ct)
+        {
+            if (Delay > TimeSpan.Zero)
+                await Task.Delay(Delay, ct);
+            return Workers.GetValueOrDefault(uuid, []).Select(name => new UnmineableWorker("rx", name, true, 1000, 1000)).ToList();
+        }
 
         public Task<IReadOnlyList<UnmineablePayment>> GetPaymentsAsync(string uuid, CancellationToken ct) =>
             Task.FromResult<IReadOnlyList<UnmineablePayment>>([]);

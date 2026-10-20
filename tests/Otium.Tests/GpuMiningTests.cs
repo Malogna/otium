@@ -165,6 +165,31 @@ public class SrbMinerTests
     }
 
     [Fact]
+    public void Real_srbminer_376_statistics_table_is_read()
+    {
+        // What SRBMiner 3.7.6 printed mining Pearl on an RTX 3080 on 20 October 2026: a table, its total row labelled
+        // "Hashrate" (no "Total" line). Reading only "Total" lines made every graphics card look stalled after 3 minutes.
+        string[] lines =
+        [
+            "[2026-10-20 21:19:59] ------------------------------------[ SRBMiner-MULTI v3.7.6 - Statistics ]------------------------------------",
+            "[2026-10-20 21:19:59] ----------------------------------------------[ A0 - pearlhash ]----------------------------------------------",
+            "[2026-10-20 21:19:59]  ID Name                         Hashrate    Power     Eff     Fan  Temp   CClk   MClk       A       R      HW",
+            "[2026-10-20 21:19:59] --------------------------------------------------------------------------------------------------------------",
+            "[2026-10-20 21:19:59] #0  RTX 3080                   74.32 TH/s   348.7W   0.213     68%   75C   1875   9451       3       1       0",
+            "[2026-10-20 21:19:59] --------------------------------------------------------------------------------------------------------------",
+            "[2026-10-20 21:19:59]     Hashrate                   74.32 TH/s   348.7W   0.213                                   3       1       0",
+            "[2026-10-20 21:19:59] --------------------------------------------------------------------------------------------------------------",
+            "[2026-10-20 21:19:59]     1 min                      61.92 TH/s",
+            "[2026-10-20 21:19:59]     15 min                     61.92 TH/s",
+            "[2026-10-20 21:19:59] ---------------------------------------------------------------------------------- Share stats [75.00% / 25.00%]",
+        ];
+        Assert.Equal(74.32e12, SrbMinerStats.ParseConsoleHashrate(lines, new DateTime(2026, 10, 20, 21, 19, 0))!.Value, precision: 0);
+        Assert.Equal(new ShareCounts(3, 1), SrbMinerStats.ParseConsoleShares(lines));
+        Assert.Null(SrbMinerStats.ParseConsoleHashrate(lines, new DateTime(2026, 10, 20, 21, 22, 0))); // stale: frozen miner
+        Assert.Null(SrbMinerStats.ParseConsoleHashrate(lines.Take(3).ToArray())); // the header row's "Hashrate" isn't a figure
+    }
+
+    [Fact]
     public void Console_hashrate_fallback_normalises_units()
     {
         string[] lines = ["[2026-10-15 22:00:01] GPU0 : 24.88 MH/s", "[2026-10-15 22:00:31] Total: 25.12 MH/s", "noise"];
@@ -220,15 +245,15 @@ public sealed class SrbMinerProviderTests : IDisposable
     private readonly FakeFactory _factory = new();
     private readonly FakeMeter _meter = new();
     private readonly SrbMinerGpuProvider _provider;
+    private readonly SrbMinerAsset _asset;
     private static readonly ProviderRunOptions Options = new(new MiningTarget(TestAddresses.Generate(), PayoutRole.User), "sc1234abcdg", 100);
 
     public SrbMinerProviderTests()
     {
-        // A stand-in binary so the provider believes the engine is installed.
+        // A stand-in engine, installed as the installer leaves it (its download kept, to check the binary before each launch).
         var engineDir = Path.Combine(_dir, "engines", $"srbminer-{SrbMinerRelease.Version}");
-        Directory.CreateDirectory(engineDir);
-        File.WriteAllText(Path.Combine(engineDir, SrbMinerRelease.BinaryName), "x");
-        File.WriteAllText(Path.Combine(engineDir, ".verified"), "x");
+        _asset = new SrbMinerAsset("SRBMiner-Multi-3-7-6-win64.zip",
+            FakeEngine.Install(engineDir, "SRBMiner-Multi-3-7-6-win64.zip", $"SRBMiner-Multi-3-7-6/{SrbMinerRelease.BinaryName}"));
 
         // Free electricity, so MoneroOcean's "free power only" algorithms take part (these tests cover switching itself).
         _provider = CreateProvider(policy: null, pricePerKwh: 0, benchmarks: "bench.json");
@@ -238,7 +263,7 @@ public sealed class SrbMinerProviderTests : IDisposable
         IUnmineableApi? unmineable = null, Func<string, int, CancellationToken, Task<string?>>? poolBlocked = null) =>
         new(new HttpClient(), _pool, Path.Combine(_dir, "engines"), Path.Combine(_dir, benchmarks ?? $"bench-{Guid.NewGuid():N}.json"),
             [Rtx3080], _meter, () => pricePerKwh, _factory, _time,
-            asset: SrbMinerRelease.For(OSPlatform.Windows, Architecture.X64), policy: policy, freeMemoryGb: freeMemoryGb, unmineable: unmineable,
+            asset: _asset, policy: policy, freeMemoryGb: freeMemoryGb, unmineable: unmineable,
             poolBlocked: poolBlocked);
 
     [Fact]

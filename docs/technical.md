@@ -125,19 +125,32 @@ policy.
   changes for a slice. Builds set Otium's fee address with `-FeeWallet 'USDT:T…'`: one USDT address covers every user
   outside the US. Adding `;XMR:4…` also takes the fee from US users, whose Monero mines on MoneroOcean; without a fee
   address for a pool, the slice is mined for the user.
-- **Referral checks.** An invited friend counts as verified once their pool shows real mining: MoneroOcean hashes for
-  Monero addresses, or unMineable having credited their address in two daily accountings (or paid it), so at least a
-  day of mining. The same address typed differently (case, with or without the coin) can't invite itself. Nobody can
+- **Referral checks.** An invited friend counts as verified once their pool shows real mining by one of their own
+  Otium computers (a worker named "ot" + 8 hex digits of one of their device ids): MoneroOcean hashes and worker
+  history for Monero addresses, or unMineable having credited their address in two daily accountings (or paid it), so
+  at least a day of mining, with such a worker in its list. The flip to verified is one conditional `UPDATE`, so check-ins
+  arriving together reward the inviter once; at most 10 friends' pools are asked per check-in, and friends invited
+  under the code of an account merged into this one (email sign-in) count too. Wallets are compared by address alone,
+  so the same address under another coin (TRX/USDT, BNB/ETH) or typed differently can't invite itself. A code is
+  bound only once the account has a payout address (without custody). Each payout address and each computer joins
+  through an invite once, ever: `referral_redemptions` keeps HMAC hashes of the address and of the app's hardware id
+  (`HardwareId`, a SHA-256 of the machine id, sent even when the install uses its own device id), and keeps them when
+  the account is deleted. A referred account that later moves to an address that already joined through another invite
+  (re-registering, or a computer joining it by email sign-in) loses what's left of its 30 fee-free days. Nobody can
   invite themselves from a second computer: an invite doesn't count when the new computer is on an internet
-  connection one of the inviter's computers used in the last 30 days (kept as HMAC hashes, `account_networks`), and a
-  friend can't later switch to the inviter's payout address (nor the inviter to a friend's). Invited friends' apps
-  report the share of Otium's fee they mined for the inviter (`/referral-share`, at most $0.50 a day each); the
-  inviter's summary carries the total (`ReferralEarnedUsd`, "Earned from friends").
+  connection one of the inviter's computers used in the last 30 days (kept as HMAC hashes, `account_networks`), a
+  friend isn't verified while their computers and the inviter's used the same connection in the last 30 days, and a
+  friend can't later switch to the inviter's payout address (nor the inviter to a friend's). Invite links
+  (`/r/CODE`) are remembered only for page loads (`Sec-Fetch-Dest: document`, `Sec-Fetch-Mode: navigate` when the
+  browser sends them), the first link on a connection wins for the week, and the app only shows the code on the
+  welcome screen to keep or clear, never using it unseen. Invited friends' apps report the share of Otium's fee they
+  mined for the inviter (`/referral-share`, at most $0.50 a day each, ignored after the 6 months); the inviter's
+  summary carries the total for verified friends (`ReferralEarnedUsd`, "Earned from friends").
 - The **kill switch** still works: `GpuPolicy:Disabled` turns an algorithm off for every app at the next refresh, and a
   failed, lagging or more than 2-hour-old feed disables a coin automatically.
 - **SRBMiner's statistics API stays off.** It listens on every network interface (3.7.6 has no bind option), answers
   any website (`Access-Control-Allow-Origin: *`) and shows the payout address, so hashrate and shares come from the
-  console's "Total" line instead. XMRig's API is bound to `127.0.0.1`.
+  console's statistics instead (its table's "Hashrate" row in 3.7.6, or an older "Total" line). XMRig's API is bound to `127.0.0.1`.
 - **Guards against a wrong server answer.** Own-wallet graphics cards only connect to the pools' own hosts
   (`*.unmineable.com`, `*.kryptex.network`, `*.moneroocean.stream`; `GpuPolicy.OnlyTrustedHosts`), the referrer's
   share is capped at 1% of mining time, and internet-sharing payouts only go to a well-formed 0x deposit address.
@@ -145,7 +158,7 @@ policy.
   can change that.
   - Release builds (the production server baked in, `AppIdentity.IsReleaseBuild`) ignore every developer override:
     `OTIUM_SERVER_URL`, `OTIUM_FEE_WALLET`, `OTIUM_UNMINEABLE_REFERRAL`, `OTIUM_UPDATE_URL`, `OTIUM_SIMULATE`, the pool
-    API overrides and `OTIUM_DEVICE_SEED`. There's no server setting in the app either.
+    API overrides, `OTIUM_DEVICE_SEED`, `OTIUM_HOME` and `OTIUM_HONEYGAIN_KEY`. There's no server setting in the app either.
   - Every account summary carries a **fee grant** for the computer asking (`Fees.FeeGrant`): the fee, the inviter's
     share and address, the fee-free date, and for custodial balance accounts the pool wallet. It's signed by the
     server (`Fees:GrantSigningKey`, ECDSA P-256) and valid for 7 days. Release builds take those values only from a
@@ -154,6 +167,18 @@ policy.
     days and no inviter's slice.
   - The built-in terms are the limits (`FeePolicy.WithinBuiltInLimits`): a grant can't make the fee lower than 2%,
     nor fee-free time or the inviter's share more generous; fee-free dates are capped at 90 days ahead.
+  - **Mining time, which places the slice, can't be rolled back.** It's never negative in `ledger.json` and only
+    grows. The app reports each engine's total with its account check-in (`?cpuMined=&gpuMined=`, seconds); the server
+    keeps the most per device (`devices.cpu_mined_seconds`/`gpu_mined_seconds`, growing no faster than the time between
+    reports) and signs it back as the grant's `CpuMiningFloor`/`GpuMiningFloor`, which release builds raise their
+    ledgers to, so a deleted or edited ledger is undone at the next check-in. Ticks are measured on the monotonic clock
+    and capped at 4 tick intervals (setting the system clock back does nothing), and only count while the miner reports
+    a hashrate (warming up or a suspended miner isn't mining time).
+  - **The miner runs Otium's settings.** XMRig's config has `"watch": false` (an edited config.json isn't reloaded),
+    and every minute Otium reads `GET /1/config` from XMRig's API: a pool or login other than Otium's, a second pool,
+    or an API that refuses Otium restarts XMRig with Otium's config. XMRig and SRBMiner keep their pinned download, and
+    the binary is checked against it before every launch (hashes cached per size and modification time); a changed
+    binary or download makes the app install the engine again.
   - **Fee slices are checked from the server.** The payout checker records which Otium workers (`ot` + 8 hex digits
     of the device id) the pools show working on users' own addresses, and `FeeSliceWatcher` does the same every hour
     for Otium's fee address (`Unmineable:OtiumTarget`). The admin summary's `feeSlicesMissing` lists computers seen
@@ -433,7 +458,7 @@ Honeygain details:
   1. Sign the Honeygain publisher agreement and get an API key.
   2. Put the SDK libraries next to the app: `hgsdk.dll` (Windows), `libhgsdk.so` (Linux), `libhgsdk.dylib` (macOS).
   3. Set the key: the `OTIUM_HONEYGAIN_KEY` secret for release builds (baked in at build time), or the
-     `OTIUM_HONEYGAIN_KEY` environment variable at runtime.
+     `OTIUM_HONEYGAIN_KEY` environment variable at runtime (development builds only).
   4. On the server, set `Bandwidth:Enabled=true`, `PartnerName` and the rates.
   
   Without the library or key, the option stays hidden.

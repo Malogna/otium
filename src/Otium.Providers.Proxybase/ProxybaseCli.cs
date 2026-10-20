@@ -226,6 +226,14 @@ public static partial class ProxybaseOutput
             Text(json, "pool"));
     }
 
+    /// <summary>Buyer sessions and sellers across Proxybase, from <c>health</c>; null when the backend didn't answer.</summary>
+    public static ProxybaseNetwork? Network(string output) =>
+        Json(output) is { ValueKind: JsonValueKind.Object } json
+        && json.TryGetProperty("active_sessions", out var sessions) && sessions.TryGetInt32(out var buyers)
+        && json.TryGetProperty("connected_sellers", out var connected) && connected.TryGetInt32(out var sellers)
+            ? new ProxybaseNetwork(buyers, sellers)
+            : null;
+
     /// <summary>The payout id from <c>seller payout create</c>, or null when it wasn't created.</summary>
     public static string? PayoutId(string output) =>
         Json(output) is { ValueKind: JsonValueKind.Object } json && json.TryGetProperty("payout_id", out var v) && v.ValueKind == JsonValueKind.String

@@ -5,8 +5,18 @@ namespace Otium.Core.Engine;
 /// <summary>Running totals. Revenue figures are estimates; the pool's own balance is the source of truth.</summary>
 public sealed class EarningsLedger
 {
-    /// <summary>Total time spent mining, across all sessions. Drives the fee cycle position.</summary>
-    public TimeSpan MiningTime { get; set; }
+    /// <summary>
+    /// Total time spent mining, across all sessions. Drives the fee cycle position, so it is never negative: a negative
+    /// value edited into ledger.json would otherwise keep the position before Otium's slice for ever. It only grows
+    /// (see <see cref="Record"/> and <see cref="RaiseMiningTimeTo"/>).
+    /// </summary>
+    public TimeSpan MiningTime
+    {
+        get => _miningTime;
+        set => _miningTime = value < TimeSpan.Zero ? TimeSpan.Zero : value;
+    }
+
+    private TimeSpan _miningTime;
 
     public double EstimatedUserUsd { get; set; }
 
@@ -27,6 +37,19 @@ public sealed class EarningsLedger
 
     public double TodayElectricityUsd { get; set; }
 
+    /// <summary>
+    /// Raises <see cref="MiningTime"/> to <paramref name="floor"/> when it's below it (never lowers it): the mining time
+    /// this computer already reported to Otium's server, so a deleted or edited ledger doesn't skip the fee slice.
+    /// </summary>
+    /// <returns>Whether it changed.</returns>
+    public bool RaiseMiningTimeTo(TimeSpan floor)
+    {
+        if (floor <= MiningTime)
+            return false;
+        MiningTime = floor;
+        return true;
+    }
+
     public void Record(PayoutRole role, double revenueUsd, double kwh, double costUsd, TimeSpan elapsed, DateOnly today)
     {
         if (Day != today)
@@ -36,7 +59,8 @@ public sealed class EarningsLedger
             TodayElectricityUsd = 0;
         }
 
-        MiningTime += elapsed;
+        if (elapsed > TimeSpan.Zero)
+            MiningTime += elapsed;
         EnergyKwh += kwh;
         ElectricityCostUsd += costUsd;
         TodayElectricityUsd += costUsd;

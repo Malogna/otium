@@ -22,6 +22,18 @@ public static class DeviceIdentity
         return Convert.ToHexStringLower(hash);
     }
 
+    /// <summary>
+    /// This computer's hardware id for invites: a hash of the OS machine id, also when this install uses a device id of
+    /// its own, so reinstalling (or deleting the account) doesn't make an invite code usable again on the same computer.
+    /// Null when the OS has no machine id.
+    /// </summary>
+    public static string? HardwareId() =>
+        ReadMachineId() is { Length: > 0 } machineId ? HardwareIdFromSeed(machineId) : null;
+
+    /// <summary>A hardware id from a seed (dev mode, where one PC runs several "computers").</summary>
+    public static string HardwareIdFromSeed(string seed) =>
+        Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes("otium-hw:" + seed.Trim())));
+
     private static string? ReadMachineId()
     {
         try

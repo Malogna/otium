@@ -43,7 +43,8 @@ public sealed class AccountService(
     MystSponsorService mystSponsor,
     IOptions<FeeOptions> feeOptions,
     IOptions<ProxybaseOptions> proxybaseOptions,
-    ConnectionHashes connections)
+    ConnectionHashes connections,
+    ReferralRedemptions redemptions)
 {
     /// <summary>
     /// How long a connection one of an account's computers used still counts as theirs: an invite from a computer on it
@@ -56,6 +57,12 @@ public sealed class AccountService(
     /// makes about $0.05 of it); higher reports are cut to this, so they can't inflate what the inviter sees.
     /// </summary>
     public const double MaxReferralShareUsdPerDay = 0.5;
+
+    /// <summary>
+    /// Most invited friends whose pool is asked about per check-in (the rest wait for the next ones), so an inviter with
+    /// many made-up friends can't make every check-in send a crowd of requests to the pools.
+    /// </summary>
+    public const int MaxPoolLookupsPerRefresh = 10;
 
     public static readonly TimeSpan CodeLifetime = TimeSpan.FromMinutes(15);
     public const int MaxCodeAttempts = 5;
@@ -121,6 +128,9 @@ public sealed class AccountService(
                 throw new OtiumException(400, addressError!);
             ownWallet = StoredWallet(target);
         }
+        if (request.HardwareId is { Length: > 128 })
+            throw new OtiumException(400, "Invalid hardware id.");
+        var hardwareId = string.IsNullOrWhiteSpace(request.HardwareId) ? null : request.HardwareId.Trim();
 
         var now = time.GetUtcNow();
         AccountRecord account;
@@ -136,7 +146,10 @@ public sealed class AccountService(
             RequireSecret(device, request.DeviceSecret);
             account = store.Resolve(store.FindAccount(device.AccountId)) ?? throw new OtiumException(404, "Account not found.");
             RefuseInvitersWallet(account, ownWallet);
+            var previousWallet = account.OwnWallet;
             account = account with { OwnWallet = ownWallet };
+            if (!ReferralRedemptions.SameAddress(previousWallet, ownWallet))
+                account = CheckRefereeWallet(account, ownWallet, now);
             device = device with { AccountId = account.AccountId, LastSeenAt = now };
         }
 
@@ -150,7 +163,7 @@ public sealed class AccountService(
         // ReferredAt stays set when the referrer deleted their account, so the invite can't be swapped for another one.
         if (!string.IsNullOrWhiteSpace(request.ReferralCode) && account.ReferredByCode is null && account.ReferredAt is null)
         {
-            codeError = TryBind(ref account, ReferralCodes.Normalize(request.ReferralCode), now, network);
+            codeError = TryBind(ref account, ReferralCodes.Normalize(request.ReferralCode), now, network, hardwareId);
             if (codeError is not null)
                 logger.LogInformation("Referral code rejected for {Account}: {Reason}", account.AccountId, codeError);
         }
@@ -173,12 +186,39 @@ public sealed class AccountService(
     {
         if (ownWallet is null)
             return;
+        // By address alone: the same address under another coin (TRX and USDT, BNB and ETH) is the same person's.
         if (account.ReferredByCode is { } code && store.Resolve(store.FindAccountByCode(code)) is { } inviter
-            && string.Equals(inviter.OwnWallet, ownWallet, StringComparison.Ordinal))
+            && ReferralRedemptions.SameAddress(inviter.OwnWallet, ownWallet))
             throw new OtiumException(400, "That's the payout address of the friend who invited you. Use an address of your own.");
-        if (store.FindReferees(account.Code).Any(f => string.Equals(f.OwnWallet, ownWallet, StringComparison.Ordinal)))
+        if (RefereesOf(account).Any(f => ReferralRedemptions.SameAddress(f.OwnWallet, ownWallet)))
             throw new OtiumException(400, "That's the payout address of a friend you invited. Use an address of your own.");
     }
+
+    /// <summary>
+    /// A referred account's payout address changed (re-registered with another one, or a computer with its own address
+    /// joined it by email sign-in). An address that already joined through another invite ends the fee-free days this
+    /// invite gave, else joining with a fresh address and switching back would get round "one invite per address"; a
+    /// new address is recorded as this invite's.
+    /// </summary>
+    private AccountRecord CheckRefereeWallet(AccountRecord account, string? wallet, DateTimeOffset now)
+    {
+        if (wallet is null || account.ReferredAt is not { } referredAt)
+            return account;
+        if (store.ClaimRedemption(redemptions.OfWallet(wallet), account.AccountId, now))
+            return account;
+        logger.LogInformation("Referred account {Account} moved to an address that already joined through an invite", account.AccountId);
+        return account.FeeFreeUntil is { } until && until > now && now - referredAt <= Policy.RefereeFeeHoliday
+            ? account with { FeeFreeUntil = now }
+            : account;
+    }
+
+    /// <summary>
+    /// Friends invited with this account's code, or with the code of an account merged into it (they keep counting
+    /// for the account they were merged into).
+    /// </summary>
+    private List<AccountRecord> RefereesOf(AccountRecord account) => InviteCodesOf(account).SelectMany(store.FindReferees).ToList();
+
+    private List<string> InviteCodesOf(AccountRecord account) => [account.Code, .. store.MergedAccounts(account.AccountId).Select(a => a.Code)];
 
     /// <summary>A referred friend's computer reports what it has mined for its inviter so far; see <see cref="MaxReferralShareUsdPerDay"/>.</summary>
     public void ReportReferralShare(Session session, ReferralShareReport report)
@@ -187,6 +227,9 @@ public sealed class AccountService(
         if (account.ReferredByCode is null || account.ReferredAt is not { } since || !double.IsFinite(report.EstimatedUsd))
             return;
         var now = time.GetUtcNow();
+        // The inviter's share ends after 6 months, so nothing mined later is for them.
+        if (now - since > Policy.ReferrerRewardPeriod)
+            return;
         var cap = MaxReferralShareUsdPerDay * Math.Max(1, (now - since).TotalDays);
         store.SetReferralShare(session.Device.DeviceId, account.AccountId, Math.Clamp(report.EstimatedUsd, 0, cap), now);
     }
@@ -199,11 +242,16 @@ public sealed class AccountService(
         return new Session(device, account);
     }
 
-    public async Task<AccountSummary> GetSummaryAsync(string deviceId, string secret, string publicBaseUrl, CancellationToken ct, System.Net.IPAddress? from = null)
+    /// <param name="cpuMinedSeconds">How long the computer's processor has mined in all, as its app reports (null from older apps).</param>
+    /// <param name="gpuMinedSeconds">The same for its graphics card.</param>
+    public async Task<AccountSummary> GetSummaryAsync(string deviceId, string secret, string publicBaseUrl, CancellationToken ct, System.Net.IPAddress? from = null,
+        double? cpuMinedSeconds = null, double? gpuMinedSeconds = null)
     {
         var session = Authenticate(deviceId, secret);
         // The app's regular check-in (every minute): what the admin dashboard's "online now" and "seen in 24 h" count.
         store.TouchDevice(deviceId, time.GetUtcNow(), TimeSpan.FromMinutes(5));
+        // Kept so the signed fee grant can give it back (see FeeGrant.CpuMiningFloor).
+        store.RecordMiningTime(deviceId, cpuMinedSeconds, gpuMinedSeconds, time.GetUtcNow());
         if (connections.Of(from) is { } network)
             store.RecordAccountNetwork(session.Account.AccountId, network, time.GetUtcNow());
         await RefreshVerificationsAsync(session.Account, ct);
@@ -336,6 +384,12 @@ public sealed class AccountService(
         if (owner.AccountId == current.AccountId)
             return Summarize(current, publicBaseUrl, null, deviceId);
 
+        // This computer will mine for the signed-in account to its own payout address: one that already joined through
+        // another invite can't also have this account's invite.
+        if (!ReferralRedemptions.SameAddress(current.OwnWallet, owner.OwnWallet)
+            && CheckRefereeWallet(owner, current.OwnWallet, now) is { } checkedOwner && checkedOwner.FeeFreeUntil != owner.FeeFreeUntil)
+            store.SetFeeFreeUntil(owner.AccountId, checkedOwner.FeeFreeUntil);
+
         // The email belongs to another account: this computer joins it. If the computer had only an anonymous
         // account of its own, fold that into the signed-in account so nothing it earned is lost.
         if (current.Email is null && store.DeviceCount(current.AccountId) <= 1)
@@ -386,27 +440,46 @@ public sealed class AccountService(
 
     // ---------- referrals ----------
 
-    private string? TryBind(ref AccountRecord account, string code, DateTimeOffset now, string? network = null)
+    private string? TryBind(ref AccountRecord account, string code, DateTimeOffset now, string? network, string? hardwareId)
     {
         if (!ReferralCodes.IsWellFormed(code))
             return "That invite code doesn't look right.";
         if (now - account.CreatedAt > _referral.RedeemWindow)
             return "Invite codes can only be used in your first week.";
+        // Without custody every account mines to its own address. Bound before there is one, the checks on the address
+        // below would be skipped, and an address that already joined through an invite could be added afterwards.
+        if (account.OwnWallet is null && !_custodial)
+            return "Add your payout address to use an invite code.";
 
         var referrer = store.Resolve(store.FindAccountByCode(code));
         if (referrer is null)
             return "We couldn't find that invite code.";
         if (referrer.AccountId == account.AccountId || referrer.Code == account.Code)
             return "You can't use your own invite code.";
-        if (account.OwnWallet is not null && string.Equals(referrer.OwnWallet, account.OwnWallet, StringComparison.Ordinal))
+        if (account.OwnWallet is not null && ReferralRedemptions.SameAddress(referrer.OwnWallet, account.OwnWallet))
             return "You can't invite a device that pays out to your own wallet.";
         if (referrer.ReferredByCode == account.Code)
             return "Two people can't invite each other.";
         // One person inviting themselves from a second computer (with a second wallet) would collect both rewards.
         if (network is not null && store.AccountUsedNetwork(referrer.AccountId, network, now - ConnectionMemory))
             return "Invites only count for friends on a different internet connection.";
-        if (account.OwnWallet is not null && store.WalletAlreadyReferred(account.OwnWallet, account.AccountId))
+        if (account.OwnWallet is not null && store.WalletAlreadyReferred(ReferralRedemptions.Address(account.OwnWallet), account.AccountId))
             return "This wallet has already joined through an invite.";
+
+        // Each address and computer joins through one invite, ever: these stay recorded after an account is deleted, so
+        // deleting it and joining again (or two households re-inviting each other) doesn't repeat the rewards.
+        var walletKey = account.OwnWallet is null ? null : redemptions.OfWallet(account.OwnWallet);
+        var hardwareKey = hardwareId is null ? null : redemptions.OfHardware(hardwareId);
+        if (hardwareKey is not null && store.RedemptionHolder(hardwareKey) is { } holder && holder != account.AccountId)
+            return "This computer has already joined through an invite.";
+        if (walletKey is not null && !store.ClaimRedemption(walletKey, account.AccountId, now))
+            return "This wallet has already joined through an invite.";
+        if (hardwareKey is not null && !store.ClaimRedemption(hardwareKey, account.AccountId, now))
+        {
+            if (walletKey is not null)
+                store.ReleaseRedemption(walletKey, account.AccountId); // the same computer, a moment ago, with another address
+            return "This computer has already joined through an invite.";
+        }
 
         account = account with
         {
@@ -419,28 +492,37 @@ public sealed class AccountService(
 
     /// <summary>
     /// Marks invited friends as verified once they have really contributed (balance accounts: credited earnings;
-    /// Monero addresses: hashes reported by MoneroOcean; other coins: rewards from unMineable) and gives the referrer
-    /// fee-free time.
+    /// Monero addresses: hashes reported by MoneroOcean; other coins: rewards from unMineable; in both cases mined by one
+    /// of the friend's own Otium computers) and gives the referrer fee-free time.
     /// </summary>
     private async Task RefreshVerificationsAsync(AccountRecord referrer, CancellationToken ct)
     {
         var now = time.GetUtcNow();
-        foreach (var referee in store.FindReferees(referrer.Code).Where(r => !r.Verified))
+        var due = RefereesOf(referrer)
+            .Where(r => !r.Verified && (r.LastCheckedAt is not { } checkedAt || now - checkedAt >= _referral.VerificationRecheck))
+            .OrderBy(r => r.LastCheckedAt ?? DateTimeOffset.MinValue); // the longest waiting first, when there are many
+        var lookups = 0;
+        foreach (var referee in due)
         {
-            if (referee.LastCheckedAt is { } checkedAt && now - checkedAt < _referral.VerificationRecheck)
-                continue;
-
             bool verified;
-            if (referee.IsBalanceAccount)
+            if (store.AccountsSharedNetwork(referee.AccountId, referrer.AccountId, now - ConnectionMemory))
+            {
+                // The friend's and the inviter's computers used the same internet connection lately: most likely one
+                // person with two wallets, who joined from elsewhere. Asked again later, once that's a month ago.
+                verified = false;
+            }
+            else if (referee.IsBalanceAccount)
             {
                 // Without custody this is an account that hasn't set a payout address, so it hasn't mined anything.
                 verified = _custodial && store.LifetimeEarningMicros(referee.AccountId) >= ToMicros(_referral.VerificationUsd);
             }
             else
             {
+                if (++lookups > MaxPoolLookupsPerRefresh)
+                    continue;
                 try
                 {
-                    verified = await PoolConfirmsMiningAsync(referee.OwnWallet!, ct);
+                    verified = await PoolConfirmsMiningAsync(referee, ct);
                 }
                 catch (Exception e) when (e is HttpRequestException or TaskCanceledException or InvalidOperationException or System.Text.Json.JsonException && !ct.IsCancellationRequested)
                 {
@@ -449,23 +531,39 @@ public sealed class AccountService(
                 }
             }
 
-            store.Upsert(referee with { Verified = verified, LastCheckedAt = now });
-            if (verified)
+            // Only the call that marks the friend verified rewards the inviter: check-ins arriving together (several
+            // computers, the Invites page) each see the friend unverified and would otherwise each add 30 days.
+            if (!verified)
+                store.MarkReferralChecked(referee.AccountId, now);
+            else if (store.MarkReferralVerified(referee.AccountId, now))
             {
                 var current = store.FindAccount(referrer.AccountId)!;
-                store.Upsert(current with { FeeFreeUntil = ExtendHoliday(current.FeeFreeUntil, Policy.ReferrerFeeHolidayPerVerifiedFriend, now) });
+                store.SetFeeFreeUntil(referrer.AccountId, ExtendHoliday(current.FeeFreeUntil, Policy.ReferrerFeeHolidayPerVerifiedFriend, now));
             }
         }
     }
 
-    /// <summary>Whether the pool that pays this stored wallet shows real mining by it.</summary>
-    private async Task<bool> PoolConfirmsMiningAsync(string wallet, CancellationToken ct)
+    /// <summary>
+    /// Whether the pool that pays the friend's address shows real mining by one of the friend's own Otium computers
+    /// (workers named "ot" + 8 hex digits of a device id of theirs): any address with some pool history isn't enough,
+    /// nor one mined by someone else's computers.
+    /// </summary>
+    private async Task<bool> PoolConfirmsMiningAsync(AccountRecord friend, CancellationToken ct)
     {
+        var wallet = friend.OwnWallet!;
+        var computers = store.DevicesFor(friend.AccountId)
+            .Where(d => d.DeviceId.Length >= 8)
+            .Select(d => d.DeviceId[..8])
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        bool FriendsWorker(string name) => RealEarnings.PoolPayoutChecker.IsOtiumWorker(name) && computers.Contains(name[2..10]);
+
         var target = PayoutTarget.ParseOrNull(wallet);
         if (target is null || target.Coin == PayoutCoins.Monero)
         {
-            var stats = await pool.GetMinerStatsAsync(target?.Address ?? wallet, ct);
-            if (stats is not null && stats.TotalHashes >= _referral.VerificationHashes)
+            var address = target?.Address ?? wallet;
+            var stats = await pool.GetMinerStatsAsync(address, ct);
+            if (stats is not null && stats.TotalHashes >= _referral.VerificationHashes
+                && (await pool.GetWorkerHistoryAsync(address, ct)).Keys.Any(FriendsWorker))
                 return true;
             // Outside the US a Monero user's graphics card mines on unMineable, paid in XMR there.
             if (target is null)
@@ -473,15 +571,16 @@ public sealed class AccountService(
         }
         if (!_referral.VerifyUnmineableByRewards)
             return false;
-        var address = await unmineable.GetAddressAsync(target, ct);
-        if (address.Uuid is not { } uuid)
+        var account = await unmineable.GetAddressAsync(target, ct);
+        if (account.Uuid is not { } uuid)
             return false;
         var mined = await unmineable.GetStatsAsync(uuid, ct);
         // Credited in two of unMineable's daily accountings (or paid out): at least a day of real mining, not a few
         // minutes on a spare wallet to unlock the inviter's fee-free days.
-        return mined.Paid > 0
-               || (mined.Rewarded24h > 0 && mined.Rewarded7d > mined.Rewarded24h)
-               || (mined.Rewarded7d > 0 && mined.Rewarded30d > mined.Rewarded7d);
+        var credited = mined.Paid > 0
+                       || (mined.Rewarded24h > 0 && mined.Rewarded7d > mined.Rewarded24h)
+                       || (mined.Rewarded7d > 0 && mined.Rewarded30d > mined.Rewarded7d);
+        return credited && (await unmineable.GetWorkersAsync(uuid, ct)).Any(w => FriendsWorker(w.Name));
     }
 
     // ---------- summary ----------
@@ -491,7 +590,8 @@ public sealed class AccountService(
     {
         var now = time.GetUtcNow();
         var referrer = account.ReferredByCode is null ? null : store.Resolve(store.FindAccountByCode(account.ReferredByCode));
-        var referees = store.FindReferees(account.Code);
+        var codes = InviteCodesOf(account);
+        var referees = codes.SelectMany(store.FindReferees).ToList();
         var totals = store.Balance(account.AccountId, now);
         var cashouts = store.CashoutsFor(account.AccountId).Select(ToInfo).ToList();
         // Without custody nothing can be cashed out, so no methods are offered (the app hides the balance UI).
@@ -529,7 +629,7 @@ public sealed class AccountService(
             mystSponsor.IsAvailable,
             Policy.ToTerms(),
             !proxybaseOptions.Value.Enabled,
-            store.ReferralShareTotal(account.Code));
+            store.ReferralShareTotal(codes));
         return deviceId is null ? summary : WithFeeGrant(summary, deviceId, now);
     }
 
@@ -542,8 +642,10 @@ public sealed class AccountService(
         if (_grantKey.Value is not { } key)
             return summary;
         var policy = Policy;
+        var (cpuMined, gpuMined) = store.MiningTime(deviceId);
         var grant = new FeeGrant(deviceId, policy.FeePercent, policy.ReferrerShareOfFee, summary.ReferrerWallet, summary.ReferredAt,
-            summary.FeeFreeUntil, summary.Custodial && summary.PoolWallet is not null, summary.PoolWallet, now, now + FeeGrant.Lifetime);
+            summary.FeeFreeUntil, summary.Custodial && summary.PoolWallet is not null, summary.PoolWallet, now, now + FeeGrant.Lifetime,
+            cpuMined, gpuMined);
         return summary with { FeeGrant = grant.Payload(), FeeGrantSignature = FeeGrants.Sign(grant, key) };
     }
 

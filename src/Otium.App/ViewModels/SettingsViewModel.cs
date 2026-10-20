@@ -111,9 +111,13 @@ public partial class SettingsViewModel : ViewModelBase
 
     public bool GpuPowerMeasured => _host.GpuPowerMeter.CanMeasure;
 
-    public string GpuPowerNote => GpuPowerMeasured
-        ? "Your graphics card reports its own power draw, so electricity is measured."
-        : $"Your graphics card can't report its power draw. Enter roughly how many extra watts it uses while mining (default {GpuPowerMeter.DefaultEstimatedWatts:0} W).";
+    public string GpuPowerNote => (_host.GpuProvider?.Gpus.Count ?? 1) > 1
+        ? GpuPowerMeasured
+            ? "Your graphics cards report their own power draw, so electricity is measured."
+            : $"Your graphics cards can't all report their power draw. Enter roughly how many extra watts all of them use together while mining (default {GpuPowerMeter.DefaultEstimatedWatts:0} W per card)."
+        : GpuPowerMeasured
+            ? "Your graphics card reports its own power draw, so electricity is measured."
+            : $"Your graphics card can't report its power draw. Enter roughly how many extra watts it uses while mining (default {GpuPowerMeter.DefaultEstimatedWatts:0} W).";
 
     public ObservableCollection<BenchmarkRow> Benchmarks { get; } = [];
 

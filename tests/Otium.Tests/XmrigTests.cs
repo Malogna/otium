@@ -30,6 +30,9 @@ public class XmrigTests
         Assert.False(root.GetProperty("http").GetProperty("restricted").GetBoolean()); // pause and resume need it; loopback and token-only
         Assert.Equal(1, root.GetProperty("donate-level").GetInt32());
         Assert.False(root.GetProperty("opencl").GetBoolean());
+        // An edited config.json (another pool login) isn't reloaded, and XMRig never writes its own changes back.
+        Assert.False(root.GetProperty("watch").GetBoolean());
+        Assert.False(root.GetProperty("autosave").GetBoolean());
     }
 
     [Fact]

@@ -70,6 +70,13 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
 
     private readonly IMoneroPoolApi _pool;
     private readonly IReadOnlyList<GpuInfo> _gpus;
+
+    /// <summary>Reads SRBMiner's card numbers (by PCI address) with the installed binary.</summary>
+    private readonly Func<string, IReadOnlyDictionary<string, int>?> _listDevices;
+
+    private readonly bool _listDevicesGiven;
+    private IReadOnlyDictionary<string, int>? _deviceIds;
+    private bool _deviceIdsRead;
     private readonly IPowerMeter _meter;
     private readonly Func<double> _pricePerKwh;
     private readonly IMinerProcessFactory _factory;
@@ -132,8 +139,11 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         IKryptexAddressApi? kryptex = null,
         bool unitedStates = false,
         Func<string, int, CancellationToken, Task<string?>>? poolBlocked = null,
-        Func<bool>? isUnitedStates = null)
+        Func<bool>? isUnitedStates = null,
+        Func<string, IReadOnlyDictionary<string, int>?>? listDevices = null)
     {
+        _listDevices = listDevices ?? ListDevices;
+        _listDevicesGiven = listDevices is not null;
         _poolBlocked = poolBlocked ?? ((_, _, _) => Task.FromResult<string?>(null));
         _unitedStates = isUnitedStates ?? (() => unitedStates);
         _policy = policy ?? (() => null);
@@ -151,7 +161,7 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         _switcher = switcher ?? new ProfitSwitcher();
         _store = new BenchmarkStore(benchmarkPath, _gpus, _time);
         _asset = asset ?? SrbMinerRelease.ForCurrentPlatform();
-        _installer = new EngineInstaller(http, Path.Combine(enginesRoot, $"srbminer-{SrbMinerRelease.Version}"), SrbMinerRelease.BinaryName);
+        _installer = new EngineInstaller(http, Path.Combine(enginesRoot, $"srbminer-{SrbMinerRelease.Version}"), SrbMinerRelease.BinaryName, keepArchive: true);
     }
 
     public string Id => "srbminer-gpu";
@@ -402,18 +412,18 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
     internal async Task<IReadOnlyList<(GpuAlgorithm Algorithm, AlgorithmQuote Quote)>> QuotesAsync(CancellationToken ct)
     {
         var freePower = _pricePerKwh() <= 0;
+        // A coin counts when at least one card can mine it and the miner can be told to use just those cards.
         var supported = GpuAlgorithms.All.Where(a => a.Supports(_gpus));
 
         if (_policy() is { } policy)
         {
             var list = new List<(GpuAlgorithm, AlgorithmQuote)>();
-            var names = _gpus.Select(g => g.Name).ToList();
             foreach (var a in supported)
             {
                 // A card the coin no longer accepts (OnlyGpus, e.g. after Pearl's fork) skips it.
                 // Quantus goes to a Quantus wallet, so it's left out of slices that have none (Otium's and the referrer's).
                 if (policy.For(a.PoolName) is { UsdPerHashPerSecondDay: > 0 } p && Usable(p.Tier, freePower) && policy.Route(p.Route) is { } route
-                    && p.Allows(names)
+                    && Selectable(CardsFor(a, p))
                     && !(route.Kind == GpuRoutes.KryptexAddress && _options is { Target.QuantusTarget: null }))
                     list.Add((a, new AlgorithmQuote(a.PoolName, p.UsdPerHashPerSecondDay, a.DevFeePercent, p.PoolFeePercent)));
             }
@@ -422,6 +432,7 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
 
         var profits = await _pool.GetAlgoProfitsAsync(ct);
         return supported
+            .Where(a => Selectable(CardsFor(a, null)))
             .Where(a => a.DefaultRoute == GpuRoutes.MoneroOcean && Usable(a.DefaultTier, freePower) && profits.For(a.PoolName) > 0)
             .Select(a => (a, new AlgorithmQuote(a.PoolName, profits.For(a.PoolName) * profits.XmrPriceUsd, a.DevFeePercent)))
             .ToList();
@@ -429,6 +440,59 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
 
     private static bool Usable(string tier, bool freePower) =>
         tier == GpuTiers.Primary || (tier == GpuTiers.FreePowerOnly && freePower);
+
+    /// <summary>The cards that can mine this algorithm: the right vendor and memory, and accepted by the coin.</summary>
+    internal IReadOnlyList<GpuInfo> CardsFor(GpuAlgorithm algorithm, GpuAlgorithmPolicy? policy) =>
+        _gpus.Where(g => algorithm.Fits(g) && (policy?.AllowsCard(g.Name) ?? true)).ToList();
+
+    private bool Selectable(IReadOnlyList<GpuInfo> cards) => SrbMinerArgs.CanSelect(cards, _gpus, DeviceIds(cards));
+
+    /// <summary>SRBMiner's card numbers, read once from the installed binary, and only when a selection needs them.</summary>
+    private IReadOnlyDictionary<string, int>? DeviceIds(IReadOnlyList<GpuInfo>? cards = null)
+    {
+        if (cards is not null && SrbMinerArgs.CanSelect(cards, _gpus, null))
+            return null; // the vendor switches are enough
+        if (!_deviceIdsRead && (_installer.FindBinary() ?? (_listDevicesGiven ? "" : null)) is { } binary)
+        {
+            _deviceIdsRead = true;
+            _deviceIds = _listDevices(binary);
+        }
+        return _deviceIds;
+    }
+
+    private static IReadOnlyDictionary<string, int>? ListDevices(string binary)
+    {
+        try
+        {
+            using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(binary, "--list-devices")
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            });
+            if (process is null)
+                return null;
+            var output = process.StandardOutput.ReadToEndAsync();
+            if (!process.WaitForExit(30_000))
+            {
+                process.Kill(entireProcessTree: true);
+                return null;
+            }
+            var ids = SrbMinerArgs.ParseDeviceList(output.Result);
+            return ids.Count > 0 ? ids : null;
+        }
+        catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException or IOException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>The cards to mine this algorithm with now: those that fit it and have enough free memory.</summary>
+    private IReadOnlyList<GpuInfo> RunnableCards(GpuAlgorithm algorithm) =>
+        CardsFor(algorithm, _policy()?.For(algorithm.PoolName))
+            .Where(g => !(_freeMemoryGb(g) is { } free && free + 0.25 < algorithm.MinMemoryGb))
+            .ToList();
 
     public async Task<PayoutBalance?> GetPayoutBalanceAsync(string walletAddress, CancellationToken ct)
     {
@@ -560,13 +624,19 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         return null;
     }
 
-    /// <summary>Why the free graphics memory is too small for this algorithm, or null if it fits (or is unknown).</summary>
+    /// <summary>
+    /// Why no card has enough free graphics memory for this algorithm, or null when at least one does (a card that
+    /// doesn't is left out of this run on a computer with several).
+    /// </summary>
     private string? MemoryShortfall(GpuAlgorithm algorithm)
     {
-        foreach (var gpu in _gpus)
+        var runnable = RunnableCards(algorithm);
+        if (runnable.Count > 0 && Selectable(runnable))
+            return null;
+        foreach (var gpu in CardsFor(algorithm, _policy()?.For(algorithm.PoolName)))
         {
             if (_freeMemoryGb(gpu) is { } free && free + 0.25 < algorithm.MinMemoryGb)
-                return $"other apps are using most of the graphics card's memory ({free:0.0} GB of {gpu.MemoryGb:0} GB free, "
+                return $"other apps are using most of {(_gpus.Count > 1 ? $"the {gpu.Name}'s" : "the graphics card's")} memory ({free:0.0} GB of {gpu.MemoryGb:0} GB free, "
                        + $"{algorithm.PoolName} needs about {algorithm.MinMemoryGb:0} GB). Closing games or 3D apps frees it";
         }
         return null;
@@ -609,7 +679,10 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         _meter.CaptureBaseline();
 
         var options = _options ?? throw new InvalidOperationException("StartAsync must be called first.");
-        var binary = _installer.FindBinary()
+        // Checked against the download (pinned in code) before every launch, not only at install: a binary swapped for one
+        // that ignores the pool settings would skip Otium's fee slice. Hashes are remembered, so switching coins doesn't rehash.
+        var asset = _asset ?? throw new PlatformNotSupportedException("SRBMiner has no build for this operating system.");
+        var binary = await _installer.VerifiedBinaryAsync("The GPU miner", asset.FileName, asset.Sha256, ct)
                      ?? throw new EngineBlockedException("The GPU miner is missing. Antivirus software may have removed it.", _installer.EngineDirectory);
 
         var now = _time.GetUtcNow();
@@ -627,7 +700,8 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
 
         var login = LoginFor(algorithm, options);
         _currentPool = login.Pool;
-        var args = SrbMinerArgs.Build(algorithm, login, _gpus, options.LowPriority);
+        var cards = RunnableCards(algorithm) is { Count: > 0 } runnable ? runnable : CardsFor(algorithm, _policy()?.For(algorithm.PoolName));
+        var args = SrbMinerArgs.Build(algorithm, login, cards, options.LowPriority, _gpus, DeviceIds(cards));
         ct.ThrowIfCancellationRequested();
         _process = _factory.Start(binary, args, options.LowPriority);
     }

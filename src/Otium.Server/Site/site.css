@@ -428,6 +428,10 @@ section { padding-block: 104px 0; }
 .split-legend .sw-waits { background: repeating-linear-gradient(0deg, var(--amber) 0 3px, transparent 3px 6px); }
 .fee-why { margin-top: 22px; max-width: 32em; font-size: 0.95rem; }
 .fee-why a { color: var(--emerald); white-space: nowrap; }
+.payouts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+.payouts h3 { margin-bottom: 14px; }
+.pay-steps { margin: 0; padding-left: 22px; display: grid; gap: 12px; color: var(--mist); }
+.pay-steps strong { color: var(--ink); font-weight: 600; }
 .costs { margin: 0; display: grid; }
 .costs div { display: grid; grid-template-columns: 9rem minmax(0, 1fr); gap: 18px; padding: 14px 0; border-top: 1px solid var(--line); }
 .costs div:first-child { border-top: 0; padding-top: 0; }
@@ -557,7 +561,7 @@ details.folding summary::after { transform: none; }
 .real-cards .footnote { margin-top: 14px; font-size: 0.78rem; line-height: 1.5; color: var(--mist); }
 
 @media (max-width: 960px) {
-  .hero .wrap, .section-head, .power, .fees, .invite, .night { grid-template-columns: minmax(0, 1fr); }
+  .hero .wrap, .section-head, .power, .fees, .invite, .night, .payouts { grid-template-columns: minmax(0, 1fr); }
   .hero { padding-block: 36px 40px; }
   /* On one column the estimate comes right after the headline, so the numbers are the first thing you see. */
   .hero .wrap { gap: 24px; }

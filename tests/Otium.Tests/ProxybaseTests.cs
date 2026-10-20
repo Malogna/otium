@@ -143,6 +143,34 @@ public sealed class ProxybaseTests : IDisposable
     }
 
     [Fact]
+    public void The_trial_pool_and_buyers_across_Proxybase_are_shown()
+    {
+        // What `health` printed on 20 October 2026, and the same Norwegian node in Proxybase's trial pool.
+        var network = ProxybaseOutput.Network("""
+            {
+              "active_sessions": 4,
+              "connected_sellers": 788,
+              "status": "ok",
+              "uptime_seconds": 1792519824
+            }
+            """);
+        Assert.Equal(new ProxybaseNetwork(4, 788), network);
+        Assert.Null(ProxybaseOutput.Network("Error: backend unreachable"));
+
+        var trial = new ProxybaseNode(0, 200, "NO", "residential", 3668, 0.9999, 0, "trial", network);
+        Assert.True(trial.Trial);
+        Assert.Equal("Trial pool · waiting for a buyer · 4 buyer sessions on Proxybase", trial.Activity);
+        var text = trial.Describe(earnedAnything: false);
+        Assert.StartsWith("In Proxybase's trial pool: new computers are tested with a few buyers first", text);
+        Assert.Contains("Across Proxybase right now: 4 buyer sessions and 788 sellers online.", text);
+
+        var production = trial with { Pool = "production", ActiveStreams = 1, Network = new ProxybaseNetwork(1, 790) };
+        Assert.Equal("1 connection open now · 1 buyer session on Proxybase", production.Activity);
+        Assert.DoesNotContain("trial pool", production.Describe(earnedAnything: false));
+        Assert.Equal("Paused by Proxybase: too slow in its tests", (trial with { Pool = "suspended" }).Activity);
+    }
+
+    [Fact]
     public void A_node_Proxybase_suspended_says_so_instead_of_waiting_for_buyers()
     {
         // The same node in Norway later that day: Proxybase's tests through it took 13.9 s and it left the buyers' pool.
