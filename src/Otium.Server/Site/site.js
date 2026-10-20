@@ -207,12 +207,10 @@
     const data = JSON.parse($("#otium-data")?.textContent || "{}");
     const hours = $("#hours"), price = $("#price"), month = $("#est-month");
     if (!hours || !price || !month || !data.cards?.length) return;
-    const chips = $$(".chip[data-card]"), select = $("#card");
-    let cardId = select?.value ?? chips.find(c => c.getAttribute("aria-pressed") === "true")?.dataset.card ?? data.cards[0].id;
+    const select = $("#card");
+    let cardId = select?.value ?? data.cards[0].id;
     function choose(id) {
       cardId = id;
-      if (select) select.value = id;
-      for (const c of chips) c.setAttribute("aria-pressed", String(c.dataset.card === id));
       render();
     }
     let shown = Number(month.textContent.replace(/[^0-9.]/g, "")) || 0;
@@ -240,6 +238,10 @@
       // Internet sharing adds the same whatever the card or power price (it uses next to no power).
       const sharing = data.sharingPerDay || 0;
       animateTo((day + sharing) * 30);
+      const summary = $("#est-summary");
+      if (summary) summary.textContent = day <= 0
+        ? `An ${card.name} would mostly wait at this electricity price${sharing > 0 ? "; internet sharing still earns" : ""}.`
+        : `An ${card.name} mining while you're away (${h} h a day)${sharing > 0 ? ", plus internet sharing" : ""}.`;
       $("#est-sub").firstChild.textContent = day <= 0
         ? `Mining: waits at this power price on an ${card.name}.`
         : `Mining: $${day.toFixed(2)}/day on an ${card.name} (${best.coin}).`;
@@ -252,7 +254,6 @@
         ? `Mining around the clock, before electricity: $${Math.round(gross * 30)} a month, the way most comparison sites count it.`
         : "";
     }
-    for (const chip of chips) chip.addEventListener("click", () => choose(chip.dataset.card));
     select?.addEventListener("change", () => choose(select.value));
     hours.addEventListener("input", render);
     price.addEventListener("input", render);

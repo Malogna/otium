@@ -265,17 +265,13 @@ p { margin: 0; text-wrap: pretty; }
 .est-sub { color: color-mix(in oklab, var(--ink) 82%, var(--mist)); }
 .est-payout { font: 500 0.88rem var(--mono); color: var(--amber); min-height: 1.3em; }
 .est-compare { font-size: 0.82rem; color: var(--mist); margin-top: -4px; }
-.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
-.chip {
-  display: inline-flex; flex-direction: column; align-items: flex-start; gap: 1px;
-  padding: 8px 12px; border-radius: 12px; cursor: pointer;
-  font: 600 0.92rem var(--body); color: var(--ink);
-  background: var(--night-3); border: 1px solid var(--line);
-  transition: border-color .2s, background .2s, transform .2s;
-}
-.chip small { font: 400 0.75rem var(--mono); color: var(--mist); }
-.chip:hover { border-color: var(--mist); transform: translateY(-1px); }
-.chip[aria-pressed="true"] { border-color: var(--emerald); background: color-mix(in oklab, var(--emerald) 14%, var(--night-3)); box-shadow: 0 0 0 1px var(--emerald) inset; }
+/* First sight is one figure, one sentence and one choice; the breakdown and the sliders are one click away. */
+.est-summary { color: var(--mist); font-size: 0.98rem; margin-top: -4px; }
+.estimator .est-more { border-top: 1px solid var(--line); border-bottom: 0; }
+.estimator .est-more > summary { padding: 14px 0 0; font: 500 0.95rem/1.35 var(--body); color: var(--mist); }
+.estimator .est-more > summary:hover { color: var(--ink); }
+.estimator .est-more p { padding: 0; max-width: none; }
+.est-more-body { display: grid; gap: 12px; padding-top: 14px; }
 .est-sliders { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px 16px; margin-top: 4px; }
 .est-sliders label { font-size: 0.92rem; color: var(--mist); }
 .est-sliders label small { display: block; font: 400 0.72rem var(--mono); color: color-mix(in oklab, var(--mist) 80%, transparent); }
