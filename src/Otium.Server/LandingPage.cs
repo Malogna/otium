@@ -15,7 +15,7 @@ internal static class LandingPage
             : """<p class="lead">This invite code isn't valid any more, but you can still join.</p>""";
 
         var body = $"""
-                <div class="glow" aria-hidden="true"></div>
+                <div class="glow-frame" aria-hidden="true"><div class="glow"></div></div>
                 <section class="page">
                   <div class="wrap">
                     <div class="panel">

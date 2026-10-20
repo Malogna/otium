@@ -37,8 +37,10 @@
 }
 
 * { box-sizing: border-box; }
-/* The scrollbar's space is kept from the first paint, so the page doesn't jump sideways when it appears; and overflow
-   is clipped, not hidden, so wide decorations (the hero glow) can never let the browser scroll the page sideways. */
+/* The scrollbar's space is kept from the first paint, so the page doesn't jump sideways when it appears. Clipping the
+   page's own overflow isn't enough for wide decorations: on the root it counts as "hidden", which still lets the browser
+   scroll sideways (it restored a sideways position on reload, so the whole page jumped left). They clip themselves
+   instead (.glow-frame). */
 html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; scrollbar-gutter: stable; overflow-x: clip; }
 body {
   margin: 0;
@@ -101,9 +103,12 @@ p { margin: 0; text-wrap: pretty; }
   z-index: -1;
   pointer-events: none;
 }
+/* The glow is wider than the page and drifts, so a frame as wide as the page clips it sideways (only sideways: it
+   still reaches down over the hero). */
+.glow-frame { position: absolute; inset: 0 0 auto; height: 0; overflow: clip visible; z-index: -1; pointer-events: none; }
 .glow {
   position: absolute;
-  inset: -20% -10% auto;
+  inset: -20vh -10% auto;
   height: 900px;
   z-index: -1;
   pointer-events: none;
