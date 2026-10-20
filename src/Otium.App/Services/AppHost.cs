@@ -1366,12 +1366,18 @@ public sealed class AppHost : IAsyncDisposable
         return result.Reference;
     }
 
-    private AccountClient CreateClient() =>
-        new(new HttpClient
+    private AccountClient CreateClient()
+    {
+        var http = new HttpClient
         {
             BaseAddress = new Uri(AppIdentity.ResolveServerUrl().TrimEnd('/') + "/"),
             Timeout = TimeSpan.FromSeconds(20),
-        });
+        };
+        // The server can require a minimum version (older ones trusted their settings file for the fee).
+        if (AppVersions.Of(typeof(AppHost).Assembly) is { } version)
+            http.DefaultRequestHeaders.TryAddWithoutValidation(AppVersions.Header, version);
+        return new(http);
+    }
 
     private void Apply(AccountSummary summary)
     {

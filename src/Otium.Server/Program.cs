@@ -276,6 +276,26 @@ void CheckCountry(HttpRequest request)
 
 var api = app.MapGroup("/api/v1").RequireRateLimiting("per-ip");
 
+// App:MinimumVersion (off by default): once a fixed version is out, older apps (which trusted their settings file for
+// the fee and honoured developer overrides; before 0.1.1 they sent no version at all) are told to update. Deleting or
+// exporting an account, signing in by email (which deletion may need) and problem reports stay open to every version,
+// and the update feed lives outside /api/v1, so an old app can always update itself.
+var minimumAppVersion = builder.Configuration["App:MinimumVersion"];
+if (Otium.Core.AppVersions.Parse(minimumAppVersion) is not null)
+{
+    string[] openToEveryVersion = ["/account/export", "/account/delete", "/earnings/delete", "/email/code", "/email/verify", "/problem-report"];
+    api.AddEndpointFilter(async (context, next) =>
+    {
+        var request = context.HttpContext.Request;
+        var path = request.Path.Value ?? "";
+        if (!openToEveryVersion.Any(p => path.EndsWith(p, StringComparison.OrdinalIgnoreCase))
+            && !Otium.Core.AppVersions.AtLeast(request.Headers[Otium.Core.AppVersions.Header].ToString(), minimumAppVersion!))
+            throw new OtiumException(StatusCodes.Status426UpgradeRequired,
+                $"This version of Otium is too old. Please update to {minimumAppVersion} or newer: it updates itself while you're away, or download it at otium.lol/download.");
+        return await next(context);
+    });
+}
+
 api.MapPost("/devices", async (RegisterDeviceRequest body, HttpRequest request, AccountService accounts, OtiumStore store, ConnectionQuotas quotas,
     IOptions<ReferralOptions> options, CancellationToken ct) =>
 {
