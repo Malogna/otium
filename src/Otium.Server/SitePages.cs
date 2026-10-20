@@ -483,7 +483,7 @@ internal static class SitePages
         string Seg(string cls, double pct) => $"""<span class="{cls}" style="width:{pct.ToString("0.##", CultureInfo.InvariantCulture)}%"></span>""";
 
         var body = $"""
-                <div class="glow" aria-hidden="true"></div>
+                <div class="glow-frame" aria-hidden="true"><div class="glow"></div></div>
                 <section class="hero" aria-labelledby="hero-title">
                   <div class="wrap">
                     <div class="hero-copy">
@@ -756,7 +756,7 @@ internal static class SitePages
         var others = string.Join("", release.Installers.Where(i => i != mine)
             .Select(i => $"""<a class="button ghost" href="/download/{E(i.Os)}">{E(i.Label)}</a>"""));
         var body = $"""
-                <div class="glow" aria-hidden="true"></div>
+                <div class="glow-frame" aria-hidden="true"><div class="glow"></div></div>
                 <section class="page">
                   <div class="wrap">
                     <div class="panel">
