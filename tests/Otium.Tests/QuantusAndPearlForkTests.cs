@@ -175,7 +175,7 @@ public sealed class QuantusAndPearlForkTests
         Assert.DoesNotContain(await Algorithms(Policy(blackwellAndHopper), Rtx3080), a => a == "pearlhash");
         Assert.Contains(await Algorithms(Policy(blackwellAndHopper), Rtx3080), a => a == "quantus"); // the fallback
         Assert.Contains(await Algorithms(Policy(blackwellAndHopper), Rtx5090), a => a == "pearlhash");
-        // Every card in the computer has to qualify, since one miner drives them all.
+        // Without SRBMiner's card numbers it can't be told to mine Pearl on the 5090 alone (MultiGpuTests covers that case).
         Assert.DoesNotContain(await Algorithms(Policy(blackwellAndHopper), Rtx5090, Rtx3080), a => a == "pearlhash");
 
         var policy = new GpuAlgorithmPolicy("pearlhash", GpuTiers.Primary, "r", 1, 1, OnlyGpus: ["(unclosed"]);

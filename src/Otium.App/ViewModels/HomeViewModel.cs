@@ -52,7 +52,7 @@ public partial class HomeViewModel : ViewModelBase
 
         Activity.Add(new ActivityRow { Icon = Icon("IconCpu"), Title = "Processor" });
         if (host.GpuEngine is not null)
-            Activity.Add(new ActivityRow { Icon = Icon("IconGpu"), Title = host.GpuProvider?.Gpus.FirstOrDefault()?.Name ?? "Graphics card" });
+            Activity.Add(new ActivityRow { Icon = Icon("IconGpu"), Title = Otium.Core.Gpu.GpuInfo.NamesOf(host.GpuProvider?.Gpus ?? []) ?? "Graphics card" });
 
         Results = new ResultsViewModel(host);
         host.MeasurementChanged += () => Dispatcher.UIThread.Post(Refresh);
