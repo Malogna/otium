@@ -18,6 +18,10 @@ public sealed class Nvml : IDisposable
     private readonly GetHandleDelegate _getHandle;
     private readonly GetNameDelegate _getName;
     private readonly GetPciInfoDelegate? _getPciInfo;
+    private readonly GetTemperatureDelegate? _getTemperature;
+    private readonly GetUtilizationDelegate? _getUtilization;
+    private readonly GetFanSpeedDelegate? _getFanSpeed;
+    private readonly GetClockDelegate? _getClock;
     private readonly GetMemoryDelegate _getMemory;
     private readonly GetPowerDelegate _getPower;
     private readonly GetPowerDelegate? _getDefaultLimit;
@@ -34,6 +38,17 @@ public sealed class Nvml : IDisposable
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetPciInfoDelegate(IntPtr device, byte[] pciInfo);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetMemoryDelegate(IntPtr device, out MemoryInfo memory);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetPowerDelegate(IntPtr device, out uint milliwatts);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetTemperatureDelegate(IntPtr device, int sensor, out uint celsius);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetUtilizationDelegate(IntPtr device, out Utilization rates);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetFanSpeedDelegate(IntPtr device, out uint percent);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetClockDelegate(IntPtr device, int clockType, out uint mhz);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct Utilization
+    {
+        public uint Gpu;
+        public uint Memory;
+    }
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetConstraintsDelegate(IntPtr device, out uint minMilliwatts, out uint maxMilliwatts);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int SetLimitDelegate(IntPtr device, uint milliwatts);
 
@@ -54,6 +69,10 @@ public sealed class Nvml : IDisposable
         _getHandle = Load<GetHandleDelegate>("nvmlDeviceGetHandleByIndex_v2");
         _getName = Load<GetNameDelegate>("nvmlDeviceGetName");
         _getPciInfo = TryLoad<GetPciInfoDelegate>("nvmlDeviceGetPciInfo_v3");
+        _getTemperature = TryLoad<GetTemperatureDelegate>("nvmlDeviceGetTemperature");
+        _getUtilization = TryLoad<GetUtilizationDelegate>("nvmlDeviceGetUtilizationRates");
+        _getFanSpeed = TryLoad<GetFanSpeedDelegate>("nvmlDeviceGetFanSpeed");
+        _getClock = TryLoad<GetClockDelegate>("nvmlDeviceGetClockInfo");
         _getMemory = Load<GetMemoryDelegate>("nvmlDeviceGetMemoryInfo");
         _getPower = Load<GetPowerDelegate>("nvmlDeviceGetPowerUsage");
         // Power limits: in every current driver, but optional so an old one still gives names and power.
@@ -172,6 +191,30 @@ public sealed class Nvml : IDisposable
                     set++;
             }
             return set;
+        }
+    }
+
+    /// <summary>
+    /// One card's temperature, load, fan, power, graphics clock and memory right now (by NVML index), each null where
+    /// the driver doesn't report it (some cards have no fan reading, laptops often no power reading).
+    /// </summary>
+    public GpuStats? ReadStats(int index)
+    {
+        lock (_lock)
+        {
+            if (_disposed || _getHandle((uint)index, out var device) != Success)
+                return null;
+            double? Read(Func<(int Result, uint Value)> read) => read() is (Success, var v) ? v : null;
+            var memory = _getMemory(device, out var m) == Success ? m : (MemoryInfo?)null;
+            return new GpuStats(
+                "",
+                _getTemperature is null ? null : Read(() => (_getTemperature(device, 0, out var c), c)), // NVML_TEMPERATURE_GPU
+                _getUtilization is null ? null : _getUtilization(device, out var u) == Success ? u.Gpu : null,
+                _getFanSpeed is null ? null : Read(() => (_getFanSpeed(device, out var f), f)),
+                Read(() => (_getPower(device, out var mw), mw)) / 1000,
+                _getClock is null ? null : Read(() => (_getClock(device, 0, out var mhz), mhz)), // NVML_CLOCK_GRAPHICS
+                memory?.Used / 1024.0 / 1024 / 1024,
+                memory?.Total / 1024.0 / 1024 / 1024);
         }
     }
 

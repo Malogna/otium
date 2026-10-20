@@ -102,6 +102,25 @@ public sealed class MultiGpuTests
     }
 
     [Fact]
+    public void Hardware_stats_read_as_one_short_line_whatever_the_language()
+    {
+        var previous = System.Globalization.CultureInfo.CurrentCulture;
+        System.Globalization.CultureInfo.CurrentCulture = new System.Globalization.CultureInfo("nb-NO"); // decimal comma
+        try
+        {
+            // What an RTX 3080 reported through NVML on 20 October 2026.
+            var card = new GpuStats("NVIDIA GeForce RTX 3080", 61, 38, 36, 50, 285, 1.5, 12);
+            Assert.Equal("61 °C · 38% load · fan 36% · 50 W · 285 MHz · 1.5 of 12 GB memory", card.Describe());
+            Assert.Equal("98% load", new CpuStats(98.4, null).Describe()); // no temperature on Windows
+            Assert.Null(new GpuStats("AMD Radeon RX 6700 XT", null, null, null, null, null, null, 12).Describe());
+        }
+        finally
+        {
+            System.Globalization.CultureInfo.CurrentCulture = previous;
+        }
+    }
+
+    [Fact]
     public void Several_cards_are_named_and_reported_as_a_whole_computer()
     {
         Assert.Equal("NVIDIA GeForce RTX 3080", GpuInfo.NamesOf([Rtx3080]));
