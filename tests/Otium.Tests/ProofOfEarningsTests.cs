@@ -494,13 +494,15 @@ public sealed class ProofOfEarningsTests
         public WebApplicationFactory<Program> Factory { get; }
         public HttpClient Http { get; }
 
-        public Server()
+        public Server(params (string Key, string Value)[] settings)
         {
             Factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             {
                 builder.UseSetting("ConnectionStrings:Otium", $"Data Source={_dbPath};Pooling=False");
                 builder.UseSetting("DisableBackgroundJobs", "true");
                 builder.UseSetting("RealEarnings:PoolRequestDelaySeconds", "0");
+                foreach (var (key, value) in settings)
+                    builder.UseSetting(key, value);
                 builder.ConfigureServices(services =>
                 {
                     services.RemoveAll<IMoneroPoolApi>();
@@ -550,7 +552,8 @@ public sealed class ProofOfEarningsTests
     [Fact]
     public async Task The_site_shows_real_per_card_numbers_only_with_enough_computers()
     {
-        using var server = new Server();
+        // The section's own thresholds (users and dollars earned) are tested below; here only the per-card one counts.
+        using var server = new Server(("RealEarnings:MinimumEarnedUsd", "0"), ("RealEarnings:MinimumUsers", "0"));
         var computers = new List<(string Device, string Secret)>();
         for (var i = 0; i < 3; i++)
         {
@@ -582,7 +585,7 @@ public sealed class ProofOfEarningsTests
     [Fact]
     public async Task Internet_sharing_figures_by_country_come_from_three_computers_and_reach_the_page()
     {
-        using var server = new Server();
+        using var server = new Server(("RealEarnings:MinimumEarnedUsd", "0"), ("RealEarnings:MinimumUsers", "0"));
         for (var i = 0; i < 3; i++)
         {
             var (device, secret, _) = await server.Register(TestAddresses.Usdt(i));
@@ -663,8 +666,26 @@ public sealed class ProofOfEarningsTests
         Assert.Equal(6, summary.PaidUsd, precision: 6); // one address, 6 USDT paid
         Assert.Equal(1, summary.PaidUsers);
         Assert.Equal(3, summary.Rewarded30dUsd, precision: 6);
+        Assert.False(summary.ShowSection); // $6 from one user: far from $100 and 50 users
         Assert.NotNull(otiumOnly);
         Assert.NotNull(mixed);
+    }
+
+    [Theory]
+    [InlineData(10, 1, false)] // $6 paid (and $3 in 30 days) is less than $10
+    [InlineData(5, 2, false)]  // enough dollars, but only one user has earned
+    [InlineData(5, 1, true)]
+    public async Task Real_numbers_appear_only_once_enough_users_have_earned_enough(double minimumUsd, int minimumUsers, bool shown)
+    {
+        using var server = new Server(("RealEarnings:MinimumEarnedUsd", minimumUsd.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+            ("RealEarnings:MinimumUsers", minimumUsers.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        await server.Register(TestAddresses.Usdt(0));
+        server.Unmineable.Workers[TestAddresses.Usdt(0)] = [new UnmineableWorker("randomx", "ot1234abcd", true, 9000, 9000)];
+        await server.Factory.Services.GetRequiredService<PoolPayoutChecker>().CheckAllAsync(CancellationToken.None);
+
+        Assert.Equal(shown, server.Factory.Services.GetRequiredService<RealEarningsService>().Compute(server.Time.GetUtcNow()).ShowSection);
+        server.Time.Advance(TimeSpan.FromMinutes(11)); // past the page's cache
+        Assert.Equal(shown, (await server.Http.GetStringAsync("/")).Contains("id=\"real\""));
     }
 
     [Theory]

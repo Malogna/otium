@@ -32,6 +32,15 @@ public sealed class RealEarningsOptions
 
     /// <summary>A computer counts for its card once it earned this many hours in the window.</summary>
     public double MinimumHours { get; set; } = 1;
+
+    /// <summary>
+    /// "Real numbers" stays off the front page until Otium users have earned at least this much (paid so far, or credited
+    /// in the last 30 days, whichever is more), so it never shows a figure like "$1".
+    /// </summary>
+    public double MinimumEarnedUsd { get; set; } = 100;
+
+    /// <summary>... and until at least this many users have been credited or paid by the pools.</summary>
+    public int MinimumUsers { get; set; } = 50;
 }
 
 /// <summary>One graphics card model as real Otium computers ran it.</summary>
@@ -49,8 +58,10 @@ public sealed record RealSharing(string Country, int Computers, double UsdPerSha
 /// <param name="PaidUsd">Paid by the pools to Otium users' own addresses, in dollars at the time of each check.</param>
 /// <param name="PaidUsers">Users whose address has received at least one payout.</param>
 /// <param name="Rewarded30dUsd">Credited to those addresses by the pools in the last 30 days.</param>
+/// <param name="ShowSection">Enough users have earned enough for the front page's "Real numbers" (the per-country sharing
+/// medians are used either way).</param>
 public sealed record RealEarningsSummary(double PaidUsd, long PaidUsers, double Rewarded30dUsd, IReadOnlyList<RealCard> Cards, int WindowDays,
-    IReadOnlyList<RealSharing>? Sharing = null)
+    IReadOnlyList<RealSharing>? Sharing = null, bool ShowSection = true)
 {
     public IReadOnlyList<RealSharing> SharingByCountry => Sharing ?? [];
 
@@ -271,7 +282,8 @@ public sealed class RealEarningsService(OtiumStore store, IOptions<RealEarningsO
     internal RealEarningsSummary Compute(DateTimeOffset now)
     {
         var o = options.Value;
-        var (paidUsd, rewarded, paidUsers) = store.PoolPayoutTotals();
+        var (paidUsd, rewarded, paidUsers, earningUsers) = store.PoolPayoutTotals();
+        var showSection = Math.Max(paidUsd, rewarded) >= o.MinimumEarnedUsd && earningUsers >= o.MinimumUsers;
         var rows = store.EarningsSince(now - TimeSpan.FromDays(o.WindowDays));
         var cards = rows
             .Where(r => r.Kind == "gpu" && r.Seconds >= o.MinimumHours * 3600)
@@ -296,7 +308,7 @@ public sealed class RealEarningsService(OtiumStore store, IOptions<RealEarningsO
                 Median(g.Select(r => r.UserUsd / o.WindowDays * 30))))
             .OrderByDescending(s => s.UsdPerMonth)
             .ToList();
-        return new RealEarningsSummary(paidUsd, paidUsers, rewarded, cards, o.WindowDays, sharing);
+        return new RealEarningsSummary(paidUsd, paidUsers, rewarded, cards, o.WindowDays, sharing, showSection);
     }
 
     internal static double Median(IEnumerable<double> values)

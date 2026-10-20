@@ -165,11 +165,12 @@ internal static class SitePages
 
     /// <summary>
     /// "Real numbers": what the pools have paid Otium users, and what real computers earned per graphics card (only from
-    /// users who chose to share, and only cards with several computers). Nothing at all until there is something real.
+    /// users who chose to share, and only cards with several computers). Nothing at all until enough users have earned
+    /// enough (<see cref="RealEarnings.RealEarningsOptions.MinimumEarnedUsd"/>, <see cref="RealEarnings.RealEarningsOptions.MinimumUsers"/>).
     /// </summary>
     internal static string RealSection(RealEarnings.RealEarningsSummary? real)
     {
-        if (real is null || real.IsEmpty)
+        if (real is null || real.IsEmpty || !real.ShowSection)
             return "";
         var stats = new List<string>();
         if (real.PaidUsd >= 1)
