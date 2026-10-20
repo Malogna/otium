@@ -27,6 +27,12 @@ public sealed class EarningsEngine : IAsyncDisposable
     public static readonly TimeSpan ReturnCheck = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan LedgerSaveInterval = TimeSpan.FromMinutes(1);
 
+    /// <summary>
+    /// The most one tick adds to the mining time. Ticks come every <see cref="TickInterval"/>; a longer gap (the computer
+    /// slept, or a slow network call) isn't counted as mining, so the fee cycle can't be pushed along by anything but mining.
+    /// </summary>
+    public static readonly TimeSpan MaxTickElapsed = TickInterval * 4;
+
     private readonly IComputeProvider _provider;
     private readonly IPowerMeter _meter;
     private readonly IIdleDetector _idle;
@@ -41,13 +47,16 @@ public sealed class EarningsEngine : IAsyncDisposable
     private volatile bool _enabled;
     private ProviderRunOptions? _running;
     private DateTimeOffset _runningSince;
-    private DateTimeOffset _lastTick;
+    // Monotonic timestamps (TimeProvider.GetTimestamp), not the wall clock: turning the system clock back while mining
+    // would otherwise make a tick's elapsed time hugely negative and move the fee cycle back before Otium's slice.
+    private long _lastTick;
+    private long _lastLedgerSave;
+    private long _miningFloorTicks;
     private DateTimeOffset? _lossSince;
     private DateTimeOffset? _pausedUntil;
     private DateTimeOffset? _retryAt;
     private DateTimeOffset? _runNowUntil;
     private DateTimeOffset? _suspendedSince;
-    private DateTimeOffset _lastLedgerSave;
     private string? _lastError;
     private string? _lastProblem;
     private EngineBlockedException? _blocked;
@@ -69,7 +78,7 @@ public sealed class EarningsEngine : IAsyncDisposable
         _ledger = ledger;
         _saveLedger = saveLedger;
         _time = time ?? TimeProvider.System;
-        _lastLedgerSave = _time.GetUtcNow();
+        _lastLedgerSave = _time.GetTimestamp();
         Snapshot = new EngineSnapshot { State = EngineState.Off, StatusText = "Off" };
     }
 
@@ -98,6 +107,22 @@ public sealed class EarningsEngine : IAsyncDisposable
     public void Disable()
     {
         _enabled = false;
+        _wake.Release();
+    }
+
+    /// <summary>
+    /// The mining time Otium's server has on record for this engine (from the signed fee grant): the ledger is raised to it
+    /// at the next tick if it's lower, e.g. because ledger.json was deleted or edited. Never lowers it.
+    /// </summary>
+    public void RaiseMiningTimeTo(TimeSpan floor)
+    {
+        var ticks = floor.Ticks;
+        long current;
+        while (ticks > (current = Interlocked.Read(ref _miningFloorTicks)))
+        {
+            if (Interlocked.CompareExchange(ref _miningFloorTicks, ticks, current) == current)
+                break;
+        }
         _wake.Release();
     }
 
@@ -199,7 +224,14 @@ public sealed class EarningsEngine : IAsyncDisposable
     private async Task TickCoreAsync(CancellationToken ct)
     {
         var now = _time.GetUtcNow();
+        var stamp = _time.GetTimestamp();
         var config = _config();
+
+        if (_ledger.RaiseMiningTimeTo(TimeSpan.FromTicks(Interlocked.Read(ref _miningFloorTicks))))
+        {
+            _saveLedger(_ledger);
+            _lastLedgerSave = stamp;
+        }
 
         if (!_enabled)
         {
@@ -269,7 +301,7 @@ public sealed class EarningsEngine : IAsyncDisposable
             if (_running == desired && _provider is IPausableProvider pausable && await pausable.ResumeAsync(ct))
             {
                 _suspendedSince = null;
-                _lastTick = now; // the paused time earned nothing
+                _lastTick = stamp; // the paused time earned nothing
                 _lossSince = null;
                 Publish(EngineState.Starting, "Back to earning…");
                 return;
@@ -287,7 +319,7 @@ public sealed class EarningsEngine : IAsyncDisposable
             await _provider.StartAsync(desired, ct);
             _running = desired;
             _runningSince = now;
-            _lastTick = now;
+            _lastTick = stamp;
             _lossSince = null;
             Publish(EngineState.Starting, "Starting up…");
             return;
@@ -301,8 +333,8 @@ public sealed class EarningsEngine : IAsyncDisposable
             throw new InvalidOperationException(status.Message ?? "The mining engine stopped unexpectedly.");
         }
 
-        var elapsed = now - _lastTick;
-        _lastTick = now;
+        var elapsed = Clamp(_time.GetElapsedTime(_lastTick, stamp));
+        _lastTick = stamp;
 
         var power = _meter.Read(_running.UsagePercent);
         var feeFraction = config.FeeSchedule.EffectiveFeePercent(now) / 100.0;
@@ -311,12 +343,16 @@ public sealed class EarningsEngine : IAsyncDisposable
             : new RevenueEstimate(0, 0, _provider.PayoutCurrency);
 
         var kwh = Electricity.KilowattHours(power.ExtraWatts, elapsed);
+        // Only time the miner actually hashes moves the fee cycle along: warming up, or a miner that was suspended (its
+        // API stops answering, so it reports no hashrate), uses electricity but isn't mining time. Otherwise suspending
+        // the miner through Otium's slice would let the cycle run past it.
+        var mined = status.HashrateHps > 0 ? elapsed : TimeSpan.Zero;
         _ledger.Record(
             _running.Target.Role,
             estimate.UsdPerDay * elapsed.TotalDays,
             kwh,
             kwh * config.PricePerKwh,
-            elapsed,
+            mined,
             DateOnly.FromDateTime(_time.GetLocalNow().DateTime));
 
         // While a provider calibrates (e.g. benchmarking GPU algorithms), its numbers aren't representative.
@@ -343,10 +379,10 @@ public sealed class EarningsEngine : IAsyncDisposable
             _lossSince = null;
         }
 
-        if (now - _lastLedgerSave >= LedgerSaveInterval)
+        if (_time.GetElapsedTime(_lastLedgerSave, stamp) >= LedgerSaveInterval)
         {
             _saveLedger(_ledger);
-            _lastLedgerSave = now;
+            _lastLedgerSave = stamp;
         }
 
         var stateText = status.HashrateHps > 0
@@ -385,7 +421,7 @@ public sealed class EarningsEngine : IAsyncDisposable
         {
             _suspendedSince = now;
             _saveLedger(_ledger);
-            _lastLedgerSave = now;
+            _lastLedgerSave = _time.GetTimestamp();
             return;
         }
         await StopRunningAsync(ct);
@@ -451,8 +487,12 @@ public sealed class EarningsEngine : IAsyncDisposable
         _suspendedSince = null;
         await _provider.StopAsync(ct);
         _saveLedger(_ledger);
-        _lastLedgerSave = _time.GetUtcNow();
+        _lastLedgerSave = _time.GetTimestamp();
     }
+
+    /// <summary>A tick's elapsed time, kept between zero and <see cref="MaxTickElapsed"/>.</summary>
+    internal static TimeSpan Clamp(TimeSpan elapsed) =>
+        elapsed < TimeSpan.Zero ? TimeSpan.Zero : elapsed > MaxTickElapsed ? MaxTickElapsed : elapsed;
 
     private void Publish(
         EngineState state,

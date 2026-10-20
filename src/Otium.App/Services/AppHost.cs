@@ -111,6 +111,7 @@ public sealed class AppHost : IAsyncDisposable
             var gpuLedger = new JsonFileStore<EarningsLedger>(Paths.GpuLedgerFile);
             GpuEngine = new EarningsEngine(gpuProvider, GpuPowerMeter, gpuIdle, () => _gpuConfig, gpuLedger.Load(), gpuLedger.Save);
         }
+        ApplyMiningFloors();
 
         // Internet sharing (opt-in). Proxybase's client earns per GB; the server routes each payout through a conversion
         // to the user's own payout address and coin;
@@ -609,6 +610,19 @@ public sealed class AppHost : IAsyncDisposable
     public FeeGrant? FeeGrant =>
         FeeGrants.Verify(Settings.Referral.FeeGrant, Settings.Referral.FeeGrantSignature, AppIdentity.FeeGrantKeys, DeviceId, DateTimeOffset.UtcNow);
 
+    /// <summary>
+    /// Release builds: each engine's mining time is at least what the server has on record for this computer (the signed
+    /// grant's floors), so deleting or editing ledger.json is undone at the next check-in instead of skipping Otium's fee
+    /// slice. Development builds run without a server and keep their own ledgers.
+    /// </summary>
+    private void ApplyMiningFloors()
+    {
+        if (!AppIdentity.IsReleaseBuild || FeeGrant is not { } grant)
+            return;
+        Engine.RaiseMiningTimeTo(TimeSpan.FromSeconds(grant.CpuMiningFloor));
+        GpuEngine?.RaiseMiningTimeTo(TimeSpan.FromSeconds(grant.GpuMiningFloor));
+    }
+
     /// <summary>Fee-free time no further out than the most the built-in terms allow at once.</summary>
     private static DateTimeOffset? Capped(DateTimeOffset? feeFreeUntil) =>
         feeFreeUntil is { } until && until > DateTimeOffset.UtcNow + FeePolicy.Default.MaxFeeHoliday
@@ -1095,9 +1109,11 @@ public sealed class AppHost : IAsyncDisposable
                                 || (referral.CodeUsed is not null && referral.ReferredAt is null);
             var summary = needsRegister
                 ? await client.RegisterAsync(new RegisterDeviceRequest(DeviceId, Settings.DeviceSecret, ownWallet, referral.CodeUsed), ct)
-                : await client.GetSummaryAsync(DeviceId, Settings.DeviceSecret, ct);
+                : await client.GetSummaryAsync(DeviceId, Settings.DeviceSecret, ct,
+                    new MiningTimeReport(Engine.Totals.MiningTime, GpuEngine?.Totals.MiningTime ?? TimeSpan.Zero));
 
             Apply(summary);
+            ApplyMiningFloors();
             referral.RegisteredPayoutAddress = ownWallet;
             LastServerError = null;
             Settings.UnavailableReason = null;

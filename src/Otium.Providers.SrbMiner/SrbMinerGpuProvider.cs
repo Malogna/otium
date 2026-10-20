@@ -151,7 +151,7 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         _switcher = switcher ?? new ProfitSwitcher();
         _store = new BenchmarkStore(benchmarkPath, _gpus, _time);
         _asset = asset ?? SrbMinerRelease.ForCurrentPlatform();
-        _installer = new EngineInstaller(http, Path.Combine(enginesRoot, $"srbminer-{SrbMinerRelease.Version}"), SrbMinerRelease.BinaryName);
+        _installer = new EngineInstaller(http, Path.Combine(enginesRoot, $"srbminer-{SrbMinerRelease.Version}"), SrbMinerRelease.BinaryName, keepArchive: true);
     }
 
     public string Id => "srbminer-gpu";
@@ -609,7 +609,10 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         _meter.CaptureBaseline();
 
         var options = _options ?? throw new InvalidOperationException("StartAsync must be called first.");
-        var binary = _installer.FindBinary()
+        // Checked against the download (pinned in code) before every launch, not only at install: a binary swapped for one
+        // that ignores the pool settings would skip Otium's fee slice. Hashes are remembered, so switching coins doesn't rehash.
+        var asset = _asset ?? throw new PlatformNotSupportedException("SRBMiner has no build for this operating system.");
+        var binary = await _installer.VerifiedBinaryAsync("The GPU miner", asset.FileName, asset.Sha256, ct)
                      ?? throw new EngineBlockedException("The GPU miner is missing. Antivirus software may have removed it.", _installer.EngineDirectory);
 
         var now = _time.GetUtcNow();

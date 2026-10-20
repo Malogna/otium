@@ -52,6 +52,9 @@ internal static class XmrigConfig
 
         var config = new JsonObject
         {
+            // XMRig would otherwise reload this file whenever it changes (watch) and write its own changes back (autosave):
+            // editing the pool login in it must not take effect. Otium writes it afresh at every start.
+            ["watch"] = false,
             ["autosave"] = false,
             ["background"] = false,
             ["colors"] = false,
@@ -95,6 +98,43 @@ internal static class XmrigConfig
     }
 
     internal static string SanitizeWorker(string worker) => PayoutRouting.SanitizeWorker(worker);
+
+    /// <summary>The first pool's url and login in a built config.</summary>
+    internal static (string Url, string User) PoolLogin(string config)
+    {
+        var pool = JsonNode.Parse(config)?["pools"]?[0];
+        return (pool?["url"]?.GetValue<string>() ?? "", pool?["user"]?.GetValue<string>() ?? "");
+    }
+
+    /// <summary>
+    /// Whether the config XMRig's API reports (GET /1/config) still mines only to Otium's pool and login: every enabled
+    /// pool has <paramref name="url"/> and <paramref name="user"/>. A pool login changed through the API (or a second pool
+    /// to fail over to) would mine Otium's fee slice elsewhere.
+    /// </summary>
+    internal static bool MinesOnlyTo(string apiConfig, string url, string user)
+    {
+        try
+        {
+            if (JsonNode.Parse(apiConfig)?["pools"] is not JsonArray pools)
+                return false;
+            var enabled = pools.Where(p => p?["enabled"]?.GetValueKind() != JsonValueKind.False).ToList();
+            return enabled.Count > 0 && enabled.All(p =>
+                string.Equals(BareUrl(p?["url"]?.ToString()), BareUrl(url), StringComparison.OrdinalIgnoreCase)
+                && p?["user"]?.ToString() == user);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>"host:port", without a scheme XMRig may add ("stratum+ssl://") or a trailing slash.</summary>
+    private static string BareUrl(string? url)
+    {
+        url ??= "";
+        var scheme = url.IndexOf("://", StringComparison.Ordinal);
+        return (scheme >= 0 ? url[(scheme + 3)..] : url).TrimEnd('/');
+    }
 
     /// <summary>The pool host and port a built config connects to ("host:port" in its first pool's url).</summary>
     internal static (string Host, int Port)? PoolAddress(string config)

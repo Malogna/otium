@@ -284,8 +284,14 @@ api.MapPost("/devices", async (RegisterDeviceRequest body, HttpRequest request, 
 api.MapGet("/devices/{deviceId}/account", async (string deviceId, HttpRequest request, AccountService accounts, IOptions<ReferralOptions> options, CancellationToken ct) =>
 {
     CheckCountry(request);
-    return Results.Ok(await accounts.GetSummaryAsync(deviceId, Secret(request), PublicBase(request, options), ct, request.HttpContext.Connection.RemoteIpAddress));
+    // Apps since the fee grant's mining floors also say how long they've mined (seconds); older apps send nothing.
+    return Results.Ok(await accounts.GetSummaryAsync(deviceId, Secret(request), PublicBase(request, options), ct, request.HttpContext.Connection.RemoteIpAddress,
+        Seconds(request.Query[AccountClient.CpuMinedParameter]), Seconds(request.Query[AccountClient.GpuMinedParameter])));
 });
+
+static double? Seconds(string? value) =>
+    double.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var s)
+    && double.IsFinite(s) && s >= 0 ? s : null;
 
 api.MapGet("/devices/{deviceId}/invites/leaderboard", async (string deviceId, HttpRequest request, AccountService accounts, CancellationToken ct) =>
     Results.Ok(await accounts.GetLeaderboardAsync(deviceId, Secret(request), ct)));

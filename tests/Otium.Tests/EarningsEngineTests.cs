@@ -387,4 +387,72 @@ public class EarningsEngineTests
         var start = Assert.Single(h.Provider.Starts);
         Assert.True(start.LowPriority);
     }
+
+    [Fact]
+    public async Task Turning_the_clock_back_while_mining_never_moves_the_fee_cycle_back()
+    {
+        var h = new Harness();
+        h.Engine.Enable();
+        await h.TickFor(TimeSpan.FromMinutes(10));
+        var before = h.Ledger.MiningTime;
+
+        h.Time.SetWallClock(-TimeSpan.FromDays(30)); // the user sets the system clock a month back
+        await h.TickFor(TimeSpan.FromMinutes(1));
+
+        Assert.Equal(before + TimeSpan.FromMinutes(1), h.Ledger.MiningTime); // measured on the monotonic clock
+    }
+
+    [Fact]
+    public async Task A_long_gap_between_ticks_counts_as_at_most_a_few_tick_intervals()
+    {
+        var h = new Harness();
+        h.Engine.Enable();
+        await h.TickFor(TimeSpan.FromMinutes(1));
+        var before = h.Ledger.MiningTime;
+
+        h.Time.Advance(TimeSpan.FromHours(2)); // e.g. the computer slept, and the miner with it
+        await h.Engine.TickAsync(CancellationToken.None);
+
+        Assert.Equal(before + EarningsEngine.MaxTickElapsed, h.Ledger.MiningTime);
+        Assert.Equal(TimeSpan.Zero, EarningsEngine.Clamp(TimeSpan.FromHours(-5)));
+    }
+
+    [Fact]
+    public async Task Only_time_the_miner_hashes_moves_the_fee_cycle()
+    {
+        // Warming up, or a miner suspended so its API stops answering: it reports no hashrate, so no mining time passes,
+        // and suspending it through Otium's slice doesn't run the cycle past the slice.
+        var h = new Harness();
+        h.Provider.Hashrate = 0;
+        h.Engine.Enable();
+        await h.TickFor(TimeSpan.FromMinutes(10));
+        Assert.Equal(TimeSpan.Zero, h.Ledger.MiningTime);
+        Assert.True(h.Ledger.EnergyKwh > 0); // the electricity it used still counts
+        Assert.Equal(EngineState.Starting, h.Engine.Snapshot.State);
+
+        h.Provider.Hashrate = 5000;
+        await h.TickFor(TimeSpan.FromMinutes(1));
+        Assert.Equal(TimeSpan.FromMinutes(1), h.Ledger.MiningTime);
+    }
+
+    [Fact]
+    public async Task The_mining_time_the_server_has_on_record_raises_the_ledger_but_never_lowers_it()
+    {
+        // ledger.json deleted near the end of a cycle: the server's floor puts the cycle back where it was, in Otium's slice.
+        var h = new Harness();
+        h.Engine.Enable();
+        await h.TickFor(TimeSpan.FromMinutes(1));
+        Assert.Equal(PayoutRole.User, h.Provider.Starts[^1].Target.Role);
+
+        var floor = FeePolicy.Default.CycleLength * 0.99;
+        h.Engine.RaiseMiningTimeTo(floor);
+        await h.TickFor(TimeSpan.FromSeconds(10));
+        Assert.True(h.Ledger.MiningTime >= floor);
+        Assert.Equal(PayoutRole.App, h.Provider.Starts[^1].Target.Role);
+
+        var now = h.Ledger.MiningTime;
+        h.Engine.RaiseMiningTimeTo(TimeSpan.FromMinutes(5));
+        await h.TickFor(EarningsEngine.TickInterval);
+        Assert.True(h.Ledger.MiningTime >= now);
+    }
 }

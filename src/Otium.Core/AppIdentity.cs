@@ -115,7 +115,8 @@ public static class AppIdentity
 
     /// <summary>
     /// Honeygain SDK publisher key for internet sharing, from the Honeygain developer dashboard. Empty means internet
-    /// sharing is unavailable in this build. Release builds can set it here or via OTIUM_HONEYGAIN_KEY.
+    /// sharing is unavailable in this build. Release builds set it at build time; development builds can also use the
+    /// OTIUM_HONEYGAIN_KEY environment variable.
     /// </summary>
     public static readonly string HoneygainApiKey = BuildSetting("Otium.HoneygainKey") ?? "";
 
@@ -129,7 +130,7 @@ public static class AppIdentity
 
     public static string? ResolveHoneygainApiKey()
     {
-        var overridden = Environment.GetEnvironmentVariable("OTIUM_HONEYGAIN_KEY");
+        var overridden = DevelopmentOverride("OTIUM_HONEYGAIN_KEY");
         var key = string.IsNullOrWhiteSpace(overridden) ? HoneygainApiKey : overridden.Trim();
         return key.Length == 0 ? null : key;
     }
