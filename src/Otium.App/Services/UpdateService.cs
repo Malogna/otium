@@ -1,5 +1,6 @@
 using System.Reflection;
 using Otium.Core;
+using Otium.Core.Updates;
 using Velopack;
 using Velopack.Exceptions;
 using Velopack.Sources;
@@ -32,12 +33,20 @@ public sealed class UpdateService
         // installs only ever see stable releases.
         var version = typeof(UpdateService).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "";
         var followPrereleases = version.Split('+')[0].Contains('-');
-        // GitHub releases are read through Otium's server (its /updates feed), with GitHub itself as the fallback.
-        var manager = Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase)
-            ? new UpdateManager(new FallbackUpdateSource(
-                new SimpleWebSource(ServerFeedUrl(followPrereleases)),
-                new GithubSource(url, null, followPrereleases)))
-            : new UpdateManager(url);
+        // Every update must be signed with a key built into Otium (see UpdateSignature), wherever it comes from: GitHub
+        // releases are read through Otium's server (its /updates feed), with GitHub itself as the fallback; any other
+        // update address is read as a feed folder.
+        var feeds = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+        feeds.DefaultRequestHeaders.UserAgent.ParseAdd($"{AppIdentity.Name}-Updater");
+        var packages = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
+        packages.DefaultRequestHeaders.UserAgent.ParseAdd($"{AppIdentity.Name}-Updater");
+        var updates = new SignedUpdates(packages, AppIdentity.UpdateSigningKeys);
+        IUpdateSource source = Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase)
+            ? new FallbackUpdateSource(
+                new SignedUpdateSource(updates, new ServerUpdateOrigin(feeds, ServerFeedUrl(followPrereleases))),
+                new SignedUpdateSource(updates, new GitHubUpdateOrigin(feeds, uri.AbsolutePath.Trim('/'), followPrereleases)))
+            : new SignedUpdateSource(updates, new ServerUpdateOrigin(feeds, url));
+        var manager = new UpdateManager(source);
 
         return manager.IsInstalled
             ? new UpdateService(manager, "")
@@ -81,7 +90,8 @@ public sealed class UpdateService
             _ready = update;
             SetStatus($"Version {update.TargetFullRelease.Version} is ready. Restart Otium to finish updating.");
         }
-        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or ChecksumFailedException or AcquireLockFailedException or NotInstalledException or IOException)
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or ChecksumFailedException or AcquireLockFailedException or NotInstalledException
+                                       or IOException or UpdateVerificationException)
         {
             SetStatus(e is HttpRequestException or TaskCanceledException
                 ? "Couldn't reach the update server just now. Otium tries again in a few hours."

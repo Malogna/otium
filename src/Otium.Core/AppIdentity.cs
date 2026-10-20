@@ -49,6 +49,17 @@ public static class AppIdentity
     /// </summary>
     public const string UpdateUrl = "https://github.com/Malogna/otium";
 
+    /// <summary>
+    /// The keys update feeds must be signed with (base64 SubjectPublicKeyInfo, ECDSA P-256; see Updates.UpdateSignature):
+    /// the developer's signing key, then a backup key kept offline in case that one is lost. Their private halves never
+    /// go to GitHub or Otium's server, so neither can make an installed Otium run code the developer didn't sign.
+    /// </summary>
+    public static readonly IReadOnlyList<string> UpdateSigningKeys =
+    [
+        "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE7DHZKuimCgYHszCOTw3NvTcWOaup2Krt0cQdzvDiIpeLynmq+Ze5cOzr4sdsclk/grOgbwFWQkKLkIYESYSykw==", // f963b01b1bd06365, on the developer's computer
+        "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEcWNwSWpREWQ/Murj8d33MIg7HGtSDHQwCnI6We0CoZQW+bSGhByrZEtULNvTb9HdgwYPfC9U4oiTF57Mr/oBNQ==", // 1a3770bcd22c7715, the offline backup
+    ];
+
     public static string ResolveServerUrl(string? configured)
     {
         var overridden = Environment.GetEnvironmentVariable("OTIUM_SERVER_URL");

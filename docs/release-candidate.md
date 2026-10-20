@@ -5,6 +5,28 @@ Before v0.1.0, a release candidate is installed on a real Windows PC and checked
 installs ignore. Until there is a stable release, the website's download page (otium.lol/download) offers the newest
 release candidate; once there is one, it offers the newest stable release instead.
 
+## Signing a release (every release, on the developer's PC)
+
+Installed copies (from rc.15) only update from a feed signed with a key built into Otium
+(`AppIdentity.UpdateSigningKeys`), and otium.lol only offers signed releases, even to older copies. The key never goes to
+GitHub or the server, so taking over either can't push code to users. After the release workflow has published the
+release, sign it on the PC that holds the key:
+
+```bash
+GH_PATH="C:/Program Files/GitHub CLI/gh.exe" dotnet run --project tools/Otium.UpdateSigner -- sign v0.1.0-rc.15 --key 'D:\otium-private\keys\update-signing.key'
+dotnet run --project tools/Otium.UpdateSigner -- check https://otium.lol/updates/pre/
+```
+
+`sign` downloads the release's four `releases.*.json` feeds, signs them and uploads the `.sig` files next to them, then
+checks them again. `check` confirms the update server serves feeds that verify (the server reads GitHub every 10
+minutes). Until a release is signed, copies stay on the previous signed one.
+
+The key file is protected with Windows DPAPI, so it only opens for the Windows account that made it. The **backup key**
+(`update-signing-backup.pem`, trusted too) belongs offline: a USB stick or password manager, not this PC. If the PC or
+its Windows account is lost, sign with the backup (`--key <backup>.pem`), then make a new key pair with
+`keygen <folder>` and ship a release that trusts the new keys. If a key may have leaked, remove it from
+`AppIdentity.UpdateSigningKeys` in the next release, signed with the other one.
+
 ## Before the first candidate
 
 - [ ] `OTIUM_FEE_WALLET` and `OTIUM_SERVER_URL` are set as GitHub variables (done: USDT and XMR fee addresses, otium.lol).
