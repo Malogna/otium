@@ -54,6 +54,7 @@ builder.Services.ConfigureHttpClientDefaults(http => http.ConfigureHttpClient(cl
 builder.Services.AddSingleton(_ => new OtiumStore(builder.Configuration.GetConnectionString("Otium") ?? "Data Source=otium.db"));
 builder.Services.AddSingleton<InviteLinks>();
 builder.Services.AddSingleton<ConnectionQuotas>();
+builder.Services.AddSingleton<ConnectionHashes>();
 builder.Services.AddHttpClient<IMoneroPoolApi, MoneroOceanClient>();
 builder.Services.AddHttpClient<IUnmineableApi, UnmineableClient>();
 builder.Services.AddSingleton<IMoneroWallet, MoneroWalletRpc>();
@@ -228,13 +229,13 @@ api.MapPost("/devices", async (RegisterDeviceRequest body, HttpRequest request, 
     if (store.FindDevice(body.DeviceId ?? "") is null
         && !quotas.TryTake("new-device", request.HttpContext.Connection.RemoteIpAddress, ConnectionQuotas.NewDevicesPerDay, TimeSpan.FromDays(1)))
         throw new OtiumException(StatusCodes.Status429TooManyRequests, "Too many new installs from this internet connection today. Please try again tomorrow.");
-    return Results.Ok(await accounts.RegisterAsync(body, PublicBase(request, options), ct));
+    return Results.Ok(await accounts.RegisterAsync(body, PublicBase(request, options), ct, request.HttpContext.Connection.RemoteIpAddress));
 });
 
 api.MapGet("/devices/{deviceId}/account", async (string deviceId, HttpRequest request, AccountService accounts, IOptions<ReferralOptions> options, CancellationToken ct) =>
 {
     CheckCountry(request);
-    return Results.Ok(await accounts.GetSummaryAsync(deviceId, Secret(request), PublicBase(request, options), ct));
+    return Results.Ok(await accounts.GetSummaryAsync(deviceId, Secret(request), PublicBase(request, options), ct, request.HttpContext.Connection.RemoteIpAddress));
 });
 
 api.MapGet("/devices/{deviceId}/invites/leaderboard", async (string deviceId, HttpRequest request, AccountService accounts, CancellationToken ct) =>
@@ -287,6 +288,13 @@ api.MapPost("/devices/{deviceId}/problem-report", (string deviceId, ProblemRepor
     if (!quotas.TryTake("problem-report", request.HttpContext.Connection.RemoteIpAddress, ConnectionQuotas.ProblemReportsPerDay, TimeSpan.FromDays(1)))
         throw new OtiumException(StatusCodes.Status429TooManyRequests, "Several problem reports already came from this internet connection today. Please try again tomorrow.");
     return Results.Ok(reports.Report(session, body));
+});
+
+// A referred friend's app: the share of Otium's fee it has mined for the inviter so far, which the inviter sees.
+api.MapPost("/devices/{deviceId}/referral-share", (string deviceId, ReferralShareReport body, HttpRequest request, AccountService accounts) =>
+{
+    accounts.ReportReferralShare(accounts.Authenticate(deviceId, Secret(request)), body);
+    return Results.NoContent();
 });
 
 // Opt-in earnings reports for the website's real-earnings table (custodial or not).

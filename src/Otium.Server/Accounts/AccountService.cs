@@ -42,8 +42,21 @@ public sealed class AccountService(
     IOptions<CustodyOptions> custodyOptions,
     MystSponsorService mystSponsor,
     IOptions<FeeOptions> feeOptions,
-    IOptions<ProxybaseOptions> proxybaseOptions)
+    IOptions<ProxybaseOptions> proxybaseOptions,
+    ConnectionHashes connections)
 {
+    /// <summary>
+    /// How long a connection one of an account's computers used still counts as theirs: an invite from a computer on it
+    /// doesn't count (one person inviting themselves from a second computer and wallet would collect both rewards).
+    /// </summary>
+    public static readonly TimeSpan ConnectionMemory = TimeSpan.FromDays(30);
+
+    /// <summary>
+    /// Most a friend's computer can plausibly mine for its inviter in a day (a top graphics card mining around the clock
+    /// makes about $0.05 of it); higher reports are cut to this, so they can't inflate what the inviter sees.
+    /// </summary>
+    public const double MaxReferralShareUsdPerDay = 0.5;
+
     public static readonly TimeSpan CodeLifetime = TimeSpan.FromMinutes(15);
     public const int MaxCodeAttempts = 5;
     public const int MaxCodesPerEmailPerHour = 5;
@@ -71,7 +84,7 @@ public sealed class AccountService(
 
     // ---------- registration & authentication ----------
 
-    public async Task<AccountSummary> RegisterAsync(RegisterDeviceRequest request, string publicBaseUrl, CancellationToken ct)
+    public async Task<AccountSummary> RegisterAsync(RegisterDeviceRequest request, string publicBaseUrl, CancellationToken ct, System.Net.IPAddress? from = null)
     {
         if (string.IsNullOrWhiteSpace(request.DeviceId) || request.DeviceId.Length > 128)
             throw new OtiumException(400, "Invalid device id.");
@@ -99,6 +112,7 @@ public sealed class AccountService(
         {
             RequireSecret(device, request.DeviceSecret);
             account = store.Resolve(store.FindAccount(device.AccountId)) ?? throw new OtiumException(404, "Account not found.");
+            RefuseInvitersWallet(account, ownWallet);
             account = account with { OwnWallet = ownWallet };
             device = device with { AccountId = account.AccountId, LastSeenAt = now };
         }
@@ -109,17 +123,49 @@ public sealed class AccountService(
             account = account with { PoolWallet = await allocator.AssignAsync(ct) };
 
         string? codeError = null;
+        var network = connections.Of(from);
         // ReferredAt stays set when the referrer deleted their account, so the invite can't be swapped for another one.
         if (!string.IsNullOrWhiteSpace(request.ReferralCode) && account.ReferredByCode is null && account.ReferredAt is null)
         {
-            codeError = TryBind(ref account, ReferralCodes.Normalize(request.ReferralCode), now);
+            codeError = TryBind(ref account, ReferralCodes.Normalize(request.ReferralCode), now, network);
             if (codeError is not null)
                 logger.LogInformation("Referral code rejected for {Account}: {Reason}", account.AccountId, codeError);
         }
 
         store.Upsert(account);
         store.Upsert(device);
+        if (network is not null)
+        {
+            store.DeleteAccountNetworksBefore(now - ConnectionMemory);
+            store.RecordAccountNetwork(account.AccountId, network, now);
+        }
         return Summarize(account, publicBaseUrl, codeError);
+    }
+
+    /// <summary>
+    /// A friend can't switch their payout address to the inviter's, nor an inviter to a friend's: that's one person
+    /// inviting themselves, which the checks when the code was entered would have refused.
+    /// </summary>
+    private void RefuseInvitersWallet(AccountRecord account, string? ownWallet)
+    {
+        if (ownWallet is null)
+            return;
+        if (account.ReferredByCode is { } code && store.Resolve(store.FindAccountByCode(code)) is { } inviter
+            && string.Equals(inviter.OwnWallet, ownWallet, StringComparison.Ordinal))
+            throw new OtiumException(400, "That's the payout address of the friend who invited you. Use an address of your own.");
+        if (store.FindReferees(account.Code).Any(f => string.Equals(f.OwnWallet, ownWallet, StringComparison.Ordinal)))
+            throw new OtiumException(400, "That's the payout address of a friend you invited. Use an address of your own.");
+    }
+
+    /// <summary>A referred friend's computer reports what it has mined for its inviter so far; see <see cref="MaxReferralShareUsdPerDay"/>.</summary>
+    public void ReportReferralShare(Session session, ReferralShareReport report)
+    {
+        var account = session.Account;
+        if (account.ReferredByCode is null || account.ReferredAt is not { } since || !double.IsFinite(report.EstimatedUsd))
+            return;
+        var now = time.GetUtcNow();
+        var cap = MaxReferralShareUsdPerDay * Math.Max(1, (now - since).TotalDays);
+        store.SetReferralShare(session.Device.DeviceId, account.AccountId, Math.Clamp(report.EstimatedUsd, 0, cap), now);
     }
 
     public Session Authenticate(string deviceId, string secret)
@@ -130,11 +176,13 @@ public sealed class AccountService(
         return new Session(device, account);
     }
 
-    public async Task<AccountSummary> GetSummaryAsync(string deviceId, string secret, string publicBaseUrl, CancellationToken ct)
+    public async Task<AccountSummary> GetSummaryAsync(string deviceId, string secret, string publicBaseUrl, CancellationToken ct, System.Net.IPAddress? from = null)
     {
         var session = Authenticate(deviceId, secret);
         // The app's regular check-in (every minute): what the admin dashboard's "online now" and "seen in 24 h" count.
         store.TouchDevice(deviceId, time.GetUtcNow(), TimeSpan.FromMinutes(5));
+        if (connections.Of(from) is { } network)
+            store.RecordAccountNetwork(session.Account.AccountId, network, time.GetUtcNow());
         await RefreshVerificationsAsync(session.Account, ct);
         return Summarize(store.FindAccount(session.Account.AccountId)!, publicBaseUrl, null);
     }
@@ -308,7 +356,7 @@ public sealed class AccountService(
 
     // ---------- referrals ----------
 
-    private string? TryBind(ref AccountRecord account, string code, DateTimeOffset now)
+    private string? TryBind(ref AccountRecord account, string code, DateTimeOffset now, string? network = null)
     {
         if (!ReferralCodes.IsWellFormed(code))
             return "That invite code doesn't look right.";
@@ -324,6 +372,9 @@ public sealed class AccountService(
             return "You can't invite a device that pays out to your own wallet.";
         if (referrer.ReferredByCode == account.Code)
             return "Two people can't invite each other.";
+        // One person inviting themselves from a second computer (with a second wallet) would collect both rewards.
+        if (network is not null && store.AccountUsedNetwork(referrer.AccountId, network, now - ConnectionMemory))
+            return "Invites only count for friends on a different internet connection.";
         if (account.OwnWallet is not null && store.WalletAlreadyReferred(account.OwnWallet, account.AccountId))
             return "This wallet has already joined through an invite.";
 
@@ -396,7 +447,11 @@ public sealed class AccountService(
         if (address.Uuid is not { } uuid)
             return false;
         var mined = await unmineable.GetStatsAsync(uuid, ct);
-        return mined.Rewarded7d > 0 || mined.Rewarded30d > 0 || mined.Paid > 0;
+        // Credited in two of unMineable's daily accountings (or paid out): at least a day of real mining, not a few
+        // minutes on a spare wallet to unlock the inviter's fee-free days.
+        return mined.Paid > 0
+               || (mined.Rewarded24h > 0 && mined.Rewarded7d > mined.Rewarded24h)
+               || (mined.Rewarded7d > 0 && mined.Rewarded30d > mined.Rewarded7d);
     }
 
     // ---------- summary ----------
@@ -442,7 +497,8 @@ public sealed class AccountService(
             _custodial,
             mystSponsor.IsAvailable,
             Policy.ToTerms(),
-            !proxybaseOptions.Value.Enabled);
+            !proxybaseOptions.Value.Enabled,
+            store.ReferralShareTotal(account.Code));
     }
 
     public static CashoutInfo ToInfo(CashoutRecord c) => new(

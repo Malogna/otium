@@ -119,8 +119,13 @@ policy.
   outside the US. Adding `;XMR:4…` also takes the fee from US users, whose Monero mines on MoneroOcean; without a fee
   address for a pool, the slice is mined for the user.
 - **Referral checks.** An invited friend counts as verified once their pool shows real mining: MoneroOcean hashes for
-  Monero addresses, or unMineable having rewarded or paid their address. The same address typed differently (case,
-  with or without the coin) can't invite itself.
+  Monero addresses, or unMineable having credited their address in two daily accountings (or paid it), so at least a
+  day of mining. The same address typed differently (case, with or without the coin) can't invite itself. Nobody can
+  invite themselves from a second computer: an invite doesn't count when the new computer is on an internet
+  connection one of the inviter's computers used in the last 30 days (kept as HMAC hashes, `account_networks`), and a
+  friend can't later switch to the inviter's payout address (nor the inviter to a friend's). Invited friends' apps
+  report the share of Otium's fee they mined for the inviter (`/referral-share`, at most $0.50 a day each); the
+  inviter's summary carries the total (`ReferralEarnedUsd`, "Earned from friends").
 - The **kill switch** still works: `GpuPolicy:Disabled` turns an algorithm off for every app at the next refresh, and a
   failed, lagging or more than 2-hour-old feed disables a coin automatically.
 

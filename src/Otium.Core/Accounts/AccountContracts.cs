@@ -42,7 +42,14 @@ public sealed record AccountSummary(
     bool Custodial = true,
     bool MysteriumSponsored = false,
     FeeTerms? Fees = null,
-    bool ProxybaseDisabled = false);
+    bool ProxybaseDisabled = false,
+    double ReferralEarnedUsd = 0);
+
+/// <summary>
+/// A referred friend's app: how much of Otium's fee it has mined for the person who invited them so far (an estimate
+/// from its own records), so the inviter can see what invites earn.
+/// </summary>
+public sealed record ReferralShareReport(double EstimatedUsd);
 
 /// <summary>
 /// The disclosed fee and invite terms, set by the server so they can change without an app release. Apps clamp them

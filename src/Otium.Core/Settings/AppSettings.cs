@@ -287,6 +287,9 @@ public sealed class ReferralState
     /// <summary>The server has been asked once whether a friend's invite link was opened on this connection.</summary>
     public bool InviteLinkChecked { get; set; }
 
+    /// <summary>Estimated, from the friends' apps: what invited friends' mining has paid to this user's address.</summary>
+    public double EarnedFromFriendsUsd { get; set; }
+
     /// <summary>This user's own code to share.</summary>
     public string? MyCode { get; set; }
 

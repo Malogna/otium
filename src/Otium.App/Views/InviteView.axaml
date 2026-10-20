@@ -87,7 +87,7 @@
                 <TextBlock Classes="h2" Text="How rewards work" />
                 <TextBlock TextWrapping="Wrap" Text="{Binding RewardFriend, StringFormat='• {0}'}" />
                 <TextBlock TextWrapping="Wrap" Text="{Binding RewardYou, StringFormat='• {0}'}" />
-                <TextBlock TextWrapping="Wrap" Text="{Binding RewardBonus, StringFormat='• {0}'}" />
+                <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Text="{Binding RewardBonus}" />
                 <TextBlock Classes="muted" FontSize="13"
                            Text="Rewards come only out of Otium' own fee, so your friends never earn less because you invited them. Rewards are paid by the pool to your wallet; Otium never holds anyone's money." />
             </StackPanel>
@@ -96,11 +96,14 @@
         <Border Classes="card">
             <StackPanel Spacing="10">
                 <TextBlock Classes="h2" Text="Your invites" />
-                <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="6">
+                <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto" RowSpacing="6">
                     <TextBlock Classes="muted" Text="Friends who joined" />
                     <TextBlock Grid.Column="1" Text="{Binding InvitedCount}" FontWeight="SemiBold" />
                     <TextBlock Grid.Row="1" Classes="muted" Text="Friends who started mining" />
                     <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding VerifiedCount}" FontWeight="SemiBold" />
+                    <TextBlock Grid.Row="2" Classes="muted" Text="Earned from friends"
+                               ToolTip.Tip="Estimated by your friends' apps. It's mined straight to your address, so it's already in your pool balance." />
+                    <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding EarnedFromFriends}" FontWeight="SemiBold" Classes="good" />
                 </Grid>
                 <TextBlock Classes="good" Text="{Binding FeeFreeText}"
                            IsVisible="{Binding FeeFreeText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />

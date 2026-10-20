@@ -25,6 +25,9 @@ public interface IAccountClient
     /// <summary>Sends what this computer earned since the last report (only for users who agreed to share it).</summary>
     Task ReportEarningsAsync(string deviceId, string deviceSecret, EarningsReport report, CancellationToken ct);
 
+    /// <summary>A referred friend's computer: the share of Otium's fee it has mined for the inviter so far.</summary>
+    Task ReportReferralShareAsync(string deviceId, string deviceSecret, ReferralShareReport report, CancellationToken ct);
+
     /// <summary>Deletes what this computer shared for the real-earnings figures, when the user stops sharing.</summary>
     Task DeleteEarningsReportsAsync(string deviceId, string deviceSecret, CancellationToken ct);
 
@@ -130,6 +133,13 @@ public sealed class AccountClient(HttpClient http) : IAccountClient
     {
         using var response = await PostAsync(deviceId, deviceSecret, "problem-report", report, ct);
         return await ReadAsync<ProblemReportResult>(response, ct);
+    }
+
+    public async Task ReportReferralShareAsync(string deviceId, string deviceSecret, ReferralShareReport report, CancellationToken ct)
+    {
+        using var response = await PostAsync(deviceId, deviceSecret, "referral-share", report, ct);
+        if (!response.IsSuccessStatusCode)
+            throw new AccountRequestException(await ReadProblemDetailAsync(response, ct), (int)response.StatusCode);
     }
 
     public async Task ReportEarningsAsync(string deviceId, string deviceSecret, EarningsReport report, CancellationToken ct)

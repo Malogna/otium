@@ -128,12 +128,22 @@ public sealed class NonCustodialServerTests : IDisposable
         Assert.Null(friend.ReferralCodeError);
         Assert.Equal(Usdt, friend.ReferrerWallet);
 
-        // unMineable has rewarded the friend's address in a daily accounting: that's real mining.
-        _unmineable.Rewarded["BNB:0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed"] = 0.0002m;
-        var request = new HttpRequestMessage(HttpMethod.Get, $"/api/v1/devices/{referrer.Device}/account");
-        request.Headers.Add(AccountClient.SecretHeader, referrer.Secret);
-        var refreshed = (await (await _http.SendAsync(request)).Content.ReadFromJsonAsync<AccountSummary>())!;
+        async Task<AccountSummary> Refresh()
+        {
+            var request = new HttpRequestMessage(HttpMethod.Get, $"/api/v1/devices/{referrer.Device}/account");
+            request.Headers.Add(AccountClient.SecretHeader, referrer.Secret);
+            return (await (await _http.SendAsync(request)).Content.ReadFromJsonAsync<AccountSummary>())!;
+        }
 
+        // One daily accounting at unMineable could be a few minutes on a spare wallet: not enough yet.
+        const string friendTarget = "BNB:0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed";
+        _unmineable.Rewarded[friendTarget] = 0.0002m;
+        Assert.Equal(0, (await Refresh()).VerifiedCount);
+
+        // Credited in an earlier accounting too: at least a day of real mining.
+        _unmineable.CreditedBefore[friendTarget] = 0.0003m;
+        _time.Advance(TimeSpan.FromHours(2)); // the pool is asked again at most hourly
+        var refreshed = await Refresh();
         Assert.Equal(1, refreshed.InvitedCount);
         Assert.Equal(1, refreshed.VerifiedCount);
         Assert.NotNull(refreshed.FeeFreeUntil);
@@ -372,9 +382,12 @@ public sealed class NonCustodialServerTests : IDisposable
     }
 
     /// <summary>unMineable as seen through its API: every address has an account, rewarded as set per target.</summary>
-    private sealed class FakeUnmineable : IUnmineableApi
+    internal sealed class FakeUnmineable : IUnmineableApi
     {
         public Dictionary<string, decimal> Rewarded { get; } = [];
+
+        /// <summary>Rewarded before the last day too (another daily accounting), per target.</summary>
+        public Dictionary<string, decimal> CreditedBefore { get; } = [];
 
         public Task<UnmineableAddress> GetAddressAsync(PayoutTarget target, CancellationToken ct) =>
             Task.FromResult(new UnmineableAddress(target.ToString(), 0.1m, 0.1m, target.Coin.Threshold, true, true, "TRX", [], null));
@@ -382,8 +395,9 @@ public sealed class NonCustodialServerTests : IDisposable
         public Task<UnmineableStats> GetStatsAsync(string uuid, CancellationToken ct)
         {
             var rewarded = Rewarded.GetValueOrDefault(uuid);
+            var week = rewarded + CreditedBefore.GetValueOrDefault(uuid);
             var coin = uuid.Split(':')[0];
-            return Task.FromResult(new UnmineableStats(coin, 0.1m, 0.5m, 0.6m, rewarded, rewarded, rewarded, 0, null, 1.5m));
+            return Task.FromResult(new UnmineableStats(coin, 0.1m, 0.5m, 0.6m, rewarded, week, week, 0, null, 1.5m));
         }
 
         public Task<IReadOnlyList<UnmineableWorker>> GetWorkersAsync(string uuid, CancellationToken ct) =>

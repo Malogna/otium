@@ -82,7 +82,7 @@ public sealed class EarningsEngine : IAsyncDisposable
     public IComputeProvider Provider => _provider;
 
     /// <summary>The running totals right now (available before the first tick, unlike the snapshot's).</summary>
-    public EarningsTotals Totals => new(_ledger.MiningTime, _ledger.EstimatedUserUsd, _ledger.ElectricityCostUsd);
+    public EarningsTotals Totals => new(_ledger.MiningTime, _ledger.EstimatedUserUsd, _ledger.ElectricityCostUsd, _ledger.EstimatedReferrerUsd);
 
     public void Start() => _loop ??= Task.Run(() => LoopAsync(_shutdown.Token));
 

@@ -96,7 +96,7 @@ public sealed record EmailCodeRecord(long Id, string Email, string DeviceId, str
 public sealed class OtiumStore
 {
     public const long MicrosPerDollar = 1_000_000;
-    private const int SchemaVersion = 8;
+    private const int SchemaVersion = 9;
 
     private readonly string _connectionString;
 
@@ -322,6 +322,25 @@ public sealed class OtiumStore
             );
             """);
 
+        // Version 9: the internet connections an account's computers used lately (keyed hashes), so nobody can invite
+        // themselves from their own connection; and what referred friends' apps say they mined for their inviter.
+        Execute("""
+            CREATE TABLE IF NOT EXISTS account_networks (
+                account_id TEXT NOT NULL,
+                network    TEXT NOT NULL,
+                seen_at    TEXT NOT NULL,
+                PRIMARY KEY (account_id, network)
+            );
+            CREATE INDEX IF NOT EXISTS ix_account_networks_network ON account_networks(network);
+            CREATE TABLE IF NOT EXISTS referral_shares (
+                device_id  TEXT PRIMARY KEY,
+                account_id TEXT NOT NULL,
+                usd        REAL NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS ix_referral_shares_account ON referral_shares(account_id);
+            """);
+
         Execute($"PRAGMA user_version = {SchemaVersion};");
     }
 
@@ -506,6 +525,8 @@ public sealed class OtiumStore
             // Earnings statistics the user chose to share, and what the pools paid their address, go with the account.
             Run("DELETE FROM earnings_reports WHERE account_id = $a", ("$a", id));
             Run("DELETE FROM problem_reports WHERE account_id = $a", ("$a", id));
+            Run("DELETE FROM account_networks WHERE account_id = $a", ("$a", id));
+            Run("DELETE FROM referral_shares WHERE account_id = $a", ("$a", id));
             Run("DELETE FROM pool_payouts WHERE account_id = $a", ("$a", id));
 
             // A new random id per computer keeps (device, sequence) unique if this computer starts sharing again.
@@ -562,6 +583,36 @@ public sealed class OtiumStore
             ("$n", Format(now)), ("$d", deviceId), ("$cut", Format(now - every)));
 
     public long DeviceCount(string accountId) => Scalar<long>("SELECT COUNT(*) FROM devices WHERE account_id = $a", ("$a", accountId));
+
+    // ---------- connections and referral shares (anti self-invites; "earned from friends") ----------
+
+    /// <summary>Notes that one of the account's computers used this connection (a keyed hash), at most hourly per connection.</summary>
+    public void RecordAccountNetwork(string accountId, string network, DateTimeOffset now) =>
+        Execute("""
+            INSERT INTO account_networks (account_id, network, seen_at) VALUES ($a, $n, $t)
+            ON CONFLICT(account_id, network) DO UPDATE SET seen_at = excluded.seen_at WHERE account_networks.seen_at < $cut
+            """, ("$a", accountId), ("$n", network), ("$t", Format(now)), ("$cut", Format(now - TimeSpan.FromHours(1))));
+
+    public bool AccountUsedNetwork(string accountId, string network, DateTimeOffset since) =>
+        Scalar<long>("SELECT COUNT(*) FROM account_networks WHERE account_id = $a AND network = $n AND seen_at >= $s",
+            ("$a", accountId), ("$n", network), ("$s", Format(since))) > 0;
+
+    public void DeleteAccountNetworksBefore(DateTimeOffset before) =>
+        Execute("DELETE FROM account_networks WHERE seen_at < $b", ("$b", Format(before)));
+
+    /// <summary>A friend's computer's running total of what it mined for its inviter; it never goes down.</summary>
+    public void SetReferralShare(string deviceId, string accountId, double usd, DateTimeOffset now) =>
+        Execute("""
+            INSERT INTO referral_shares (device_id, account_id, usd, updated_at) VALUES ($d, $a, $u, $t)
+            ON CONFLICT(device_id) DO UPDATE SET account_id = excluded.account_id, usd = MAX(referral_shares.usd, excluded.usd), updated_at = excluded.updated_at
+            """, ("$d", deviceId), ("$a", accountId), ("$u", usd), ("$t", Format(now)));
+
+    /// <summary>What every friend who joined with this code has mined for its owner, by their apps' estimates.</summary>
+    public double ReferralShareTotal(string code) =>
+        Scalar<double>("""
+            SELECT COALESCE(SUM(s.usd), 0) FROM referral_shares s JOIN accounts a ON a.account_id = s.account_id
+            WHERE a.referred_by = $c
+            """, ("$c", code));
 
     // ---------- invite links opened (see InviteLinks) ----------
 
