@@ -94,6 +94,42 @@ public sealed class InviteLinkTests : IDisposable
     }
 
     [Fact]
+    public async Task Only_opening_the_page_counts_and_the_first_link_opened_wins()
+    {
+        var friend = await RegisterReferrer();
+        var stranger = await RegisterReferrer();
+
+        async Task Open(string code, string? dest, string? mode)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"/r/{code}");
+            if (dest is not null)
+                request.Headers.Add("Sec-Fetch-Dest", dest);
+            if (mode is not null)
+                request.Headers.Add("Sec-Fetch-Mode", mode);
+            (await From("203.0.113.20").SendAsync(request)).EnsureSuccessStatusCode();
+        }
+
+        // Another site loading the link as an image, a script or a fetch: not someone opening it.
+        await Open(stranger, "image", "no-cors");
+        await Open(stranger, "empty", "cors");
+        await Open(stranger, null, "no-cors");
+        Assert.Null(await PendingFor("203.0.113.20"));
+
+        await Open(friend, "document", "navigate");
+        Assert.Equal(friend, await PendingFor("203.0.113.20"));
+
+        // A link opened later on the same connection (a university's, say) doesn't replace it.
+        await Open(stranger, "document", "navigate");
+        await Open(stranger, null, null);
+        Assert.Equal(friend, await PendingFor("203.0.113.20"));
+
+        // After the week, the next link opened counts.
+        _time.Advance(TimeSpan.FromDays(8));
+        await Open(stranger, "document", "navigate");
+        Assert.Equal(stranger, await PendingFor("203.0.113.20"));
+    }
+
+    [Fact]
     public async Task Unknown_codes_are_not_remembered_and_addresses_are_kept_only_as_keyed_hashes()
     {
         (await From("203.0.113.9").GetAsync("/r/ZZZZZZZ")).EnsureSuccessStatusCode(); // no such code

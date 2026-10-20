@@ -26,6 +26,10 @@ services:
       # Tied to this file's network layout: trust X-Forwarded-For only from Caddy's fixed address below.
       ReverseProxy__Enabled: "true"
       ReverseProxy__KnownProxies__0: 172.30.0.10
+      # The compose network has no working IPv6, so outgoing connections must use IPv4. Without this, .NET tries a
+      # site's IPv6 address first and hangs until the timeout: in October 2026 WhatToMine started answering with IPv6
+      # addresses and otium.lol lost its coin prices.
+      DOTNET_SYSTEM_NET_DISABLEIPV6: "1"
     volumes:
       - otium-data:/data
     networks:

@@ -16,6 +16,20 @@ public partial class DashboardViewModel : ViewModelBase
     private static readonly TimeSpan BalanceRefresh = TimeSpan.FromMinutes(5);
     private readonly AppHost _host;
     private readonly DispatcherTimer _balanceTimer;
+    private readonly DispatcherTimer _statsTimer;
+
+    private void RefreshStats()
+    {
+        Devices[0].Stats = _host.Hardware.ReadCpu().Describe() ?? "";
+        if (Devices.Count > 1 && _host.GpuProvider is { } gpu)
+        {
+            var cards = _host.Hardware.ReadGpus(gpu.Gpus);
+            Devices[1].Stats = cards.Count == 1
+                ? cards[0].Describe() ?? ""
+                : string.Join(Environment.NewLine, cards.Select(c => $"{c.Name}: {c.Describe() ?? "no readings"}"));
+        }
+    }
+
     private Uri? _poolDashboard;
 
     public DashboardViewModel(AppHost host)
@@ -47,6 +61,12 @@ public partial class DashboardViewModel : ViewModelBase
         host.Updates.Changed += () => Dispatcher.UIThread.Post(RefreshUpdate);
         host.AntivirusChanged += () => Dispatcher.UIThread.Post(Recalculate);
         RefreshUpdate();
+
+        // Processor and graphics card stats, every few seconds (cheap: a few driver calls).
+        _statsTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+        _statsTimer.Tick += (_, _) => RefreshStats();
+        _statsTimer.Start();
+        RefreshStats();
 
         _balanceTimer = new DispatcherTimer { Interval = BalanceRefresh };
         _balanceTimer.Tick += async (_, _) => await RefreshBalanceAsync();

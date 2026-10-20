@@ -30,6 +30,7 @@ and computers. We treat it with the same care as your email.
 | **Computers:** a device id (a one-way hash of your computer's machine id; the machine id itself never leaves your computer), a hash of the computer's secret key, when it first and last connected | Recognising your computers and keeping others out of your account | Contract; legitimate interest in security (art. 6(1)(f)) |
 | **Invites:** who invited you and whom you invited, whether their pool shows that they started mining (yes or no), and, if you joined with an invite code, your app's estimate of the share of Otium's fee your mining has paid to the person who invited you | Fee-free periods and the referral share of Otium's fee. If you join with an invite code, the person who invited you can see whether you have started mining, and that share added up with their other friends' ("Earned from friends"). Friends who join with your code receive your payout address (see section 3) | Contract |
 | **Internet connections your computers used** in the last 30 days, as keyed one-way hashes (of your IPv4 address, or the first half of your IPv6 address), never the address itself | Stopping people from inviting themselves: an invite doesn't count for a computer on the inviter's own connection | Legitimate interest in keeping invites fair (art. 6(1)(f)) |
+| **Payout addresses and computers that joined through an invite**, as keyed one-way hashes of your payout address (without the coin) and of your computer's hardware id (itself a one-way hash of its machine id, which never leaves your computer), with the date, if you join with an invite code or later switch an invited account to another address | Making sure each address and each computer joins through an invite only once, also after deleting an account and joining again | Legitimate interest in keeping invites fair (art. 6(1)(f)) |
 | **When the pools last showed your computers' miners working**, on your own address and on Otium's fee address, read from the pools' public APIs by your computer's worker name (kept 30 days) | Checking that copies of Otium mine Otium's fee, so a modified app can't skip it | Legitimate interest in being paid the disclosed fee (art. 6(1)(f)). Source: the pools' public APIs (art. 14) |
 | **Invite links opened:** when you open a friend's invite link (otium.lol/r/…), the invite code and a keyed one-way hash of your internet connection (your IPv4 address, or the first half of your IPv6 address), never the address itself | Filling in your friend's invite code when you install Otium on the same connection, so you don't have to type it. You can change or clear it during setup | Legitimate interest in making invites work for the people who use them (art. 6(1)(f)) |
 | **What the pools paid your address:** the coin, the total the pool reports as paid to your address and its last 30 days, read about twice a day from the pools' public APIs | Showing on otium.lol the total paid to Otium users (one sum over everyone, never per person) | Legitimate interest in showing what Otium is worth. Source: the pools' public APIs (art. 14) |
@@ -88,10 +89,14 @@ The mining pools are reached directly by your computer, not by Otium.
   payout address, invite code, the link between you and your mining worker, your computers and their keys, your
   sign-in codes, your problem reports, the earnings statistics you shared, the hashes of your internet connections, your
   app's reports of what it mined for the person who invited you, when the pools last showed your miners working, and
-  the record of what the pools paid your address.
+  the record of what the pools paid your address. Only the hashes of payout addresses and computers that joined
+  through an invite stay (see below).
   What the pools themselves keep about your address is up to them.
 - **Sign-in codes** stop working after 15 minutes.
 - **Invite links opened** are deleted after 7 days, and **internet connections your computers used** after 30.
+- **Payout addresses and computers that joined through an invite** are kept as keyed hashes after you delete your
+  account, no longer linked to it, so that deleting an account and joining again doesn't repeat the invite rewards.
+  They can't be turned back into your address or computer: we can only check whether a given one is among them.
 - **Server logs** are deleted as they rotate (at most 50 MB are kept), usually within a few weeks.
 - **Backups** of the server database are kept for up to 31 days, encrypted at rest, so deleted data disappears from
   them within that time.

@@ -96,7 +96,7 @@ public sealed record EmailCodeRecord(long Id, string Email, string DeviceId, str
 public sealed class OtiumStore
 {
     public const long MicrosPerDollar = 1_000_000;
-    private const int SchemaVersion = 11;
+    private const int SchemaVersion = 12;
 
     private readonly string _connectionString;
 
@@ -363,6 +363,16 @@ public sealed class OtiumStore
         if (Scalar<long>("SELECT COUNT(*) FROM pragma_table_info('devices') WHERE name = 'mined_reported_at'") == 0)
             Execute("ALTER TABLE devices ADD COLUMN mined_reported_at TEXT NULL;");
 
+        // Version 12: payout addresses and computers that already joined through an invite (keyed hashes, see
+        // ReferralRedemptions). Kept when the account is deleted, so deleting it and joining again doesn't repeat the invite.
+        Execute("""
+            CREATE TABLE IF NOT EXISTS referral_redemptions (
+                key         TEXT PRIMARY KEY,
+                account_id  TEXT NOT NULL,
+                redeemed_at TEXT NOT NULL
+            );
+            """);
+
         Execute($"PRAGMA user_version = {SchemaVersion};");
     }
 
@@ -388,13 +398,33 @@ public sealed class OtiumStore
 
     public bool WorkerExists(string workerId) => FindAccountByWorker(workerId) is not null;
 
-    /// <summary>True when some other account paying out to this wallet has already been referred by anyone.</summary>
-    public bool WalletAlreadyReferred(string wallet, string exceptAccountId) =>
-        Scalar<long>("SELECT COUNT(*) FROM accounts WHERE own_wallet = $a AND referred_by IS NOT NULL AND account_id <> $d",
-            ("$a", wallet), ("$d", exceptAccountId)) > 0;
+    /// <summary>
+    /// True when some other account paying out to this address (under any coin: stored wallets are "COIN:address" in
+    /// canonical form, or a bare Monero address) has already been referred by anyone.
+    /// </summary>
+    public bool WalletAlreadyReferred(string address, string exceptAccountId) =>
+        Scalar<long>("""
+            SELECT COUNT(*) FROM accounts
+            WHERE substr(own_wallet, instr(own_wallet, ':') + 1) = $a AND referred_by IS NOT NULL AND account_id <> $d
+            """, ("$a", address), ("$d", exceptAccountId)) > 0;
 
     public IReadOnlyList<AccountRecord> FindReferees(string code) =>
         QueryAccounts("SELECT * FROM accounts WHERE referred_by = $p AND merged_into IS NULL", ("$p", code));
+
+    /// <summary>
+    /// Marks an invited friend verified, only if nobody else did in the meantime: true for the one call that changed it,
+    /// so parallel check-ins can't each reward the inviter.
+    /// </summary>
+    public bool MarkReferralVerified(string accountId, DateTimeOffset now) =>
+        Execute("UPDATE accounts SET verified = 1, last_checked_at = $t WHERE account_id = $a AND verified = 0",
+            ("$a", accountId), ("$t", Format(now))) == 1;
+
+    /// <summary>Notes when an invited friend's mining was last checked (without changing whether they're verified).</summary>
+    public void MarkReferralChecked(string accountId, DateTimeOffset now) =>
+        Execute("UPDATE accounts SET last_checked_at = $t WHERE account_id = $a", ("$a", accountId), ("$t", Format(now)));
+
+    public void SetFeeFreeUntil(string accountId, DateTimeOffset? until) =>
+        Execute("UPDATE accounts SET fee_free_until = $f WHERE account_id = $a", ("$a", accountId), ("$f", Format(until)));
 
     /// <summary>Verified friends per referral code who joined since <paramref name="since"/>.</summary>
     public IReadOnlyList<(string Code, long Friends)> VerifiedReferralsSince(DateTimeOffset since)
@@ -426,7 +456,7 @@ public sealed class OtiumStore
                 referred_by = excluded.referred_by,
                 referred_at = excluded.referred_at,
                 fee_free_until = excluded.fee_free_until,
-                verified = excluded.verified,
+                verified = MAX(accounts.verified, excluded.verified), -- once verified, a stale record written back can't undo it
                 last_checked_at = excluded.last_checked_at,
                 merged_into = excluded.merged_into;
             """,
@@ -549,6 +579,9 @@ public sealed class OtiumStore
             Run("DELETE FROM earnings_reports WHERE account_id = $a", ("$a", id));
             Run("DELETE FROM problem_reports WHERE account_id = $a", ("$a", id));
             Run("DELETE FROM account_networks WHERE account_id = $a", ("$a", id));
+            // Which addresses and computers already joined through an invite stays (as keyed hashes), no longer tied to
+            // the account: deleting it mustn't make the invite usable again.
+            Run("UPDATE referral_redemptions SET account_id = '' WHERE account_id = $a", ("$a", id));
             Run("DELETE FROM referral_shares WHERE account_id = $a", ("$a", id));
             Run("DELETE FROM pool_payouts WHERE account_id = $a", ("$a", id));
 
@@ -671,6 +704,13 @@ public sealed class OtiumStore
         Scalar<long>("SELECT COUNT(*) FROM account_networks WHERE account_id = $a AND network = $n AND seen_at >= $s",
             ("$a", accountId), ("$n", network), ("$s", Format(since))) > 0;
 
+    /// <summary>Whether two accounts' computers used the same connection, both since <paramref name="since"/>.</summary>
+    public bool AccountsSharedNetwork(string accountId, string otherAccountId, DateTimeOffset since) =>
+        Scalar<long>("""
+            SELECT COUNT(*) FROM account_networks a JOIN account_networks b ON a.network = b.network
+            WHERE a.account_id = $a AND b.account_id = $b AND a.seen_at >= $s AND b.seen_at >= $s
+            """, ("$a", accountId), ("$b", otherAccountId), ("$s", Format(since))) > 0;
+
     public void DeleteAccountNetworksBefore(DateTimeOffset before) =>
         Execute("DELETE FROM account_networks WHERE seen_at < $b", ("$b", Format(before)));
 
@@ -681,19 +721,31 @@ public sealed class OtiumStore
             ON CONFLICT(device_id) DO UPDATE SET account_id = excluded.account_id, usd = MAX(referral_shares.usd, excluded.usd), updated_at = excluded.updated_at
             """, ("$d", deviceId), ("$a", accountId), ("$u", usd), ("$t", Format(now)));
 
-    /// <summary>What every friend who joined with this code has mined for its owner, by their apps' estimates.</summary>
-    public double ReferralShareTotal(string code) =>
-        Scalar<double>("""
+    /// <summary>
+    /// What verified friends who joined with these codes have mined for their owner, by their apps' estimates. Friends
+    /// whose pool hasn't shown real mining yet don't count, so made-up friends can't inflate it.
+    /// </summary>
+    public double ReferralShareTotal(IReadOnlyList<string> codes)
+    {
+        if (codes.Count == 0)
+            return 0;
+        var names = codes.Select((_, i) => $"$c{i}").ToArray();
+        return Scalar<double>($"""
             SELECT COALESCE(SUM(s.usd), 0) FROM referral_shares s JOIN accounts a ON a.account_id = s.account_id
-            WHERE a.referred_by = $c
-            """, ("$c", code));
+            WHERE a.referred_by IN ({string.Join(", ", names)}) AND a.verified = 1 AND a.merged_into IS NULL
+            """, codes.Select((c, i) => (names[i], (object?)c)).ToArray());
+    }
 
     // ---------- invite links opened (see InviteLinks) ----------
 
+    /// <summary>
+    /// Remembers the invite link opened on this network, unless one is already pending there: the first link wins, so a
+    /// page that loads someone's link behind its visitors' backs can't replace the friend's link they opened.
+    /// </summary>
     public void RecordInviteClick(string network, string code, DateTimeOffset now) =>
         Execute("""
             INSERT INTO invite_clicks (network, code, clicked_at) VALUES ($n, $c, $t)
-            ON CONFLICT(network) DO UPDATE SET code = excluded.code, clicked_at = excluded.clicked_at
+            ON CONFLICT(network) DO NOTHING
             """, ("$n", network), ("$c", code), ("$t", Format(now)));
 
     /// <summary>The code last opened on this network since <paramref name="since"/>, or null.</summary>
@@ -710,6 +762,31 @@ public sealed class OtiumStore
         Execute("DELETE FROM invite_clicks WHERE clicked_at < $b", ("$b", Format(before)));
 
     public long InviteClickCount() => Scalar<long>("SELECT COUNT(*) FROM invite_clicks");
+
+    // ---------- invites already redeemed (see ReferralRedemptions) ----------
+
+    /// <summary>
+    /// Records that the payout address or computer behind <paramref name="key"/> joined through an invite, for this
+    /// account. False when it already did for another account (the first one keeps it).
+    /// </summary>
+    public bool ClaimRedemption(string key, string accountId, DateTimeOffset now) =>
+        Execute("INSERT INTO referral_redemptions (key, account_id, redeemed_at) VALUES ($k, $a, $t) ON CONFLICT(key) DO NOTHING",
+            ("$k", key), ("$a", accountId), ("$t", Format(now))) == 1
+        || RedemptionHolder(key) == accountId;
+
+    /// <summary>The account that redeemed an invite with this key ("" once that account was deleted), or null.</summary>
+    public string? RedemptionHolder(string key)
+    {
+        using var connection = Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT account_id FROM referral_redemptions WHERE key = $k";
+        Bind(cmd, [("$k", key)]);
+        return cmd.ExecuteScalar() as string;
+    }
+
+    /// <summary>Undoes a claim this account just made, when the invite is refused for another reason after all.</summary>
+    public void ReleaseRedemption(string key, string accountId) =>
+        Execute("DELETE FROM referral_redemptions WHERE key = $k AND account_id = $a", ("$k", key), ("$a", accountId));
 
     /// <summary>A random 32-byte key (base64) made the first time it's asked for and kept in the database.</summary>
     public string ServerSecret(string name)
@@ -1341,13 +1418,14 @@ public sealed class OtiumStore
         return connection;
     }
 
-    private void Execute(string sql, params (string Name, object? Value)[] parameters)
+    /// <returns>The number of rows changed.</returns>
+    private int Execute(string sql, params (string Name, object? Value)[] parameters)
     {
         using var connection = Open();
         using var cmd = connection.CreateCommand();
         cmd.CommandText = sql;
         Bind(cmd, parameters);
-        cmd.ExecuteNonQuery();
+        return cmd.ExecuteNonQuery();
     }
 
     private T Scalar<T>(string sql, params (string Name, object? Value)[] parameters)
