@@ -93,21 +93,30 @@ public sealed class EarningsReportService(OtiumStore store, TimeProvider time)
         foreach (var d in report.Devices)
         {
             var days = d.EarningSeconds / 86400;
-            var maxUsd = d.Kind switch { "gpu" => MaxGpuUsdPerDay, "sharing" => MaxSharingUsdPerDay, _ => MaxCpuUsdPerDay };
+            // A computer with several cards reports "multi:N" (up to 16 cards) with the whole computer's earnings.
+            var cards = d.Kind == "gpu" && MultiCardCount(d.Model) is { } n ? n : 1;
+            var maxUsd = d.Kind switch { "gpu" => MaxGpuUsdPerDay * cards, "sharing" => MaxSharingUsdPerDay, _ => MaxCpuUsdPerDay };
             // Sharing's "model" is the computer's country: two letters, nothing else.
             if (d.Kind == "sharing" && (d.Model is not { Length: 2 } || !d.Model.All(char.IsAsciiLetter) || d.ElectricityUsd != 0))
                 throw new OtiumException(StatusCodes.Status400BadRequest, "This earnings report doesn't look right.");
             if (d.Kind is not ("cpu" or "gpu" or "sharing") || d.Model is { Length: > 100 } || d.EarningSeconds < 0 || d.EarningSeconds > period + 600
-                || d.UserUsd < 0 || d.UserUsd > maxUsd * days + 0.01 || d.ElectricityUsd < 0 || d.ElectricityUsd > MaxElectricityUsdPerDay * days + 0.01)
+                || d.UserUsd < 0 || d.UserUsd > maxUsd * days + 0.01 || d.ElectricityUsd < 0 || d.ElectricityUsd > MaxElectricityUsdPerDay * cards * days + 0.01)
                 throw new OtiumException(StatusCodes.Status400BadRequest, "This earnings report doesn't look right.");
         }
 
         var clean = report with
         {
-            Devices = report.Devices.Select(d => d with { Model = d.Kind == "sharing" ? d.Model!.ToUpperInvariant() : Clean(d.Model) }).ToList(),
+            Devices = report.Devices.Select(d => d with
+            {
+                Model = d.Kind == "sharing" ? d.Model!.ToUpperInvariant() : MultiCardCount(d.Model) is not null ? d.Model : Clean(d.Model),
+            }).ToList(),
         };
         store.AddEarningsReport(session.Device.DeviceId, session.Account.AccountId, clean, now);
     }
+
+    /// <summary>The number of cards in a "multi:N" model (2–16), or null.</summary>
+    public static int? MultiCardCount(string? model) =>
+        model is { } m && m.StartsWith("multi:", StringComparison.Ordinal) && int.TryParse(m.AsSpan(6), out var n) && n is >= 2 and <= 16 ? n : null;
 
     /// <summary>Letters, digits and a few separators only, so a model name can't carry markup or anything else.</summary>
     private static string? Clean(string? model)
@@ -336,7 +345,7 @@ public sealed class RealEarningsService(OtiumStore store, IOptions<RealEarningsO
         var showSection = Math.Max(paidUsd, rewarded) >= o.MinimumEarnedUsd && earningUsers >= o.MinimumUsers;
         var rows = store.EarningsSince(now - TimeSpan.FromDays(o.WindowDays));
         var cards = rows
-            .Where(r => r.Kind == "gpu" && r.Seconds >= o.MinimumHours * 3600)
+            .Where(r => r.Kind == "gpu" && r.Seconds >= o.MinimumHours * 3600 && EarningsReportService.MultiCardCount(r.Model) is null)
             .GroupBy(r => r.Model)
             .Where(g => g.Select(r => r.DeviceId).Distinct().Count() >= Math.Max(2, o.MinimumComputersPerCard))
             .Select(g => new RealCard(

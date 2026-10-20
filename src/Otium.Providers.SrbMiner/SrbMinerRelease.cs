@@ -57,8 +57,11 @@ public sealed record GpuAlgorithm(
     string DefaultTier = GpuTiers.FreePowerOnly,
     string DefaultRoute = GpuRoutes.MoneroOcean)
 {
-    public bool Supports(IReadOnlyList<GpuInfo> gpus) =>
-        gpus.Count > 0 && gpus.All(g => Vendors.Contains(g.Vendor) && (g.MemoryGb <= 0 || g.MemoryGb + 0.25 >= MinMemoryGb));
+    /// <summary>At least one of these cards can mine it (the others are left out of that coin's miner).</summary>
+    public bool Supports(IReadOnlyList<GpuInfo> gpus) => gpus.Any(Fits);
+
+    /// <summary>This card can mine it: a vendor the algorithm runs on, and enough graphics memory (unknown counts).</summary>
+    public bool Fits(GpuInfo gpu) => Vendors.Contains(gpu.Vendor) && (gpu.MemoryGb <= 0 || gpu.MemoryGb + 0.25 >= MinMemoryGb);
 }
 
 /// <summary>

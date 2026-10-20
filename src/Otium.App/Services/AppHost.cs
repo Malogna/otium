@@ -89,7 +89,7 @@ public sealed class AppHost : IAsyncDisposable
         // GPU (only when a supported card and miner build exist)
         _nvml = Nvml.TryOpen();
         Gpus = new GpuDetector(_nvml).Detect();
-        GpuPowerMeter = new GpuPowerMeter(_nvml, () => Settings.GpuWatts, Gpus.Count);
+        GpuPowerMeter = new GpuPowerMeter(_nvml, () => Settings.GpuWatts, Gpus);
         _gpuConfig = BuildConfig(100, "g");
         var gpuProvider = new SrbMinerGpuProvider(
             _http, Pool, Paths.EnginesDir, Paths.GpuBenchmarksFile, Gpus, GpuPowerMeter, EffectivePricePerKwh,
@@ -242,7 +242,7 @@ public sealed class AppHost : IAsyncDisposable
                 return;
             var devices = new List<MeasuredDevice> { new(DeviceKind.Cpu, CpuInfo.Name, Engine.Snapshot, "rx/0") };
             if (GpuEngine is not null && GpuEngine.Enabled)
-                devices.Add(new MeasuredDevice(DeviceKind.Gpu, GpuProvider?.Gpus.FirstOrDefault()?.Name ?? "Graphics card", GpuEngine.Snapshot));
+                devices.Add(new MeasuredDevice(DeviceKind.Gpu, GpuInfo.NamesOf(GpuProvider?.Gpus ?? []) ?? "Graphics card", GpuEngine.Snapshot));
             if (!Engine.Enabled)
                 devices.RemoveAt(0);
             run.Observe(DateTimeOffset.UtcNow, devices);
@@ -283,7 +283,12 @@ public sealed class AppHost : IAsyncDisposable
     {
         var devices = new List<ReportedDevice> { new("cpu", CpuInfo.Name, Engine.Totals) };
         if (GpuEngine is not null)
-            devices.Add(new ReportedDevice("gpu", CardIds.FromName(GpuProvider?.Gpus.FirstOrDefault()?.Name) ?? GpuProvider?.Gpus.FirstOrDefault()?.Name, GpuEngine.Totals));
+        {
+            // A computer with several cards reports "multi:N": its earnings are the whole computer's, so they stay out of
+            // the website's per-card figures.
+            var model = GpuInfo.ReportedModel(GpuProvider?.Gpus ?? []);
+            devices.Add(new ReportedDevice("gpu", model is { } m && !m.StartsWith("multi:", StringComparison.Ordinal) ? CardIds.FromName(m) ?? m : model, GpuEngine.Totals));
+        }
         // Internet sharing pays by country, so its line carries the country instead of a model: hours online and the
         // user's share earned, for the per-country figures on otium.lol.
         var sharing = Bandwidth.Snapshot;

@@ -17,6 +17,7 @@ public sealed class Nvml : IDisposable
     private readonly GetCountDelegate _getCount;
     private readonly GetHandleDelegate _getHandle;
     private readonly GetNameDelegate _getName;
+    private readonly GetPciInfoDelegate? _getPciInfo;
     private readonly GetMemoryDelegate _getMemory;
     private readonly GetPowerDelegate _getPower;
     private readonly GetPowerDelegate? _getDefaultLimit;
@@ -30,6 +31,7 @@ public sealed class Nvml : IDisposable
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetCountDelegate(out uint count);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetHandleDelegate(uint index, out IntPtr device);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetNameDelegate(IntPtr device, byte[] name, uint length);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetPciInfoDelegate(IntPtr device, byte[] pciInfo);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetMemoryDelegate(IntPtr device, out MemoryInfo memory);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetPowerDelegate(IntPtr device, out uint milliwatts);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetConstraintsDelegate(IntPtr device, out uint minMilliwatts, out uint maxMilliwatts);
@@ -51,6 +53,7 @@ public sealed class Nvml : IDisposable
         _getCount = Load<GetCountDelegate>("nvmlDeviceGetCount_v2");
         _getHandle = Load<GetHandleDelegate>("nvmlDeviceGetHandleByIndex_v2");
         _getName = Load<GetNameDelegate>("nvmlDeviceGetName");
+        _getPciInfo = TryLoad<GetPciInfoDelegate>("nvmlDeviceGetPciInfo_v3");
         _getMemory = Load<GetMemoryDelegate>("nvmlDeviceGetMemoryInfo");
         _getPower = Load<GetPowerDelegate>("nvmlDeviceGetPowerUsage");
         // Power limits: in every current driver, but optional so an old one still gives names and power.
@@ -101,7 +104,12 @@ public sealed class Nvml : IDisposable
                     ? Encoding.ASCII.GetString(nameBuffer).TrimEnd('\0')
                     : "NVIDIA GPU";
                 var memoryGb = _getMemory(device, out var memory) == Success ? memory.Total / 1024.0 / 1024 / 1024 : 0;
-                result.Add(new GpuInfo(GpuVendor.Nvidia, (int)i, name, memoryGb));
+                // nvmlPciInfo_t (v3): busIdLegacy[16], domain, bus, device, pciDeviceId, pciSubSystemId, busId[32].
+                var pci = new byte[68];
+                var bus = _getPciInfo is not null && _getPciInfo(device, pci) == Success
+                    ? GpuInfo.NormalizePciBus(Encoding.ASCII.GetString(pci, 36, 32).TrimEnd('\0'))
+                    : null;
+                result.Add(new GpuInfo(GpuVendor.Nvidia, (int)i, name, memoryGb, bus));
             }
             return result;
         }

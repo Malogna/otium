@@ -89,8 +89,10 @@ public sealed record GpuAlgorithmPolicy(
     IReadOnlyList<string>? OnlyGpus = null)
 {
     /// <summary>Whether every one of these cards may mine it (always, without <see cref="OnlyGpus"/>).</summary>
-    public bool Allows(IEnumerable<string> gpuNames) =>
-        OnlyGpus is not { Count: > 0 } patterns || gpuNames.All(name => patterns.Any(p => Matches(p, name)));
+    public bool Allows(IEnumerable<string> gpuNames) => gpuNames.All(AllowsCard);
+
+    /// <summary>Whether this card may mine it: on a PC with several cards, the others can mine it without this one.</summary>
+    public bool AllowsCard(string gpuName) => OnlyGpus is not { Count: > 0 } patterns || patterns.Any(p => Matches(p, gpuName));
 
     private static bool Matches(string pattern, string name)
     {
