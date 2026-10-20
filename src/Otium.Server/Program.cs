@@ -202,8 +202,8 @@ app.UseRouting();
 app.UseRateLimiter();
 
 // Browser hardening for every response (from a website scan): no MIME sniffing, no framing, no referrer beyond the
-// site's own origin, no device APIs, and pages may only load the site's own files (inline styles are used for bar
-// widths and the like; the site has no inline scripts). The per-response nonce is for Cloudflare: its bot detection
+// site's own origin, no device APIs, and pages may only load the site's own files: no inline scripts and no inline
+// styles (bar heights and widths travel as data-* attributes that site.js applies). The per-response nonce is for Cloudflare: its bot detection
 // injects an inline script, and Cloudflare stamps that script with the nonce it reads from this header, so it runs
 // without allowing inline scripts in general.
 app.Use(async (context, next) =>
@@ -214,7 +214,7 @@ app.Use(async (context, next) =>
     headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
     headers["X-Frame-Options"] = "DENY";
     headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=(), usb=()";
-    headers["Content-Security-Policy"] = $"default-src 'self'; script-src 'self' 'nonce-{nonce}'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+    headers["Content-Security-Policy"] = $"default-src 'self'; script-src 'self' 'nonce-{nonce}'; style-src 'self'; img-src 'self' data:; "
         + "font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
     await next();
 });

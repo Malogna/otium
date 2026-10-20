@@ -145,7 +145,8 @@ public sealed class SitePagesTests : IDisposable
         var html = (await Get("/")).Html;
         Assert.Contains("Pearl mining runs the math AI runs on.", html);
         Assert.Contains("It doesn't run anyone's AI model or see their data.", html);
-        Assert.Equal(48, System.Text.RegularExpressions.Regex.Matches(html, "<span style=\"--r:").Count); // three 4×4 grids
+        // Three 4×4 grids of tiles; each tile's row and column for the animation come from its position, in site.css.
+        Assert.Equal(3, System.Text.RegularExpressions.Regex.Matches(html, "<div class=\"grid [abc]\">(<span></span>){16}</div>").Count);
     }
 
     [Fact]
@@ -190,7 +191,9 @@ public sealed class SitePagesTests : IDisposable
             Assert.Equal("DENY", response.Headers.GetValues("X-Frame-Options").Single());
             // Only the site's own scripts, plus Cloudflare's injected one through a fresh nonce.
             Assert.Matches("script-src 'self' 'nonce-[A-Za-z0-9+/]{22}==';", response.Headers.GetValues("Content-Security-Policy").Single());
-            Assert.DoesNotContain("unsafe-inline';", response.Headers.GetValues("Content-Security-Policy").Single().Split("style-src")[0]);
+            // No inline styles either: a site scan counts 'unsafe-inline' anywhere as a weakened CSP.
+            Assert.Contains("style-src 'self';", response.Headers.GetValues("Content-Security-Policy").Single());
+            Assert.DoesNotContain("unsafe-inline", response.Headers.GetValues("Content-Security-Policy").Single());
             Assert.Contains("frame-ancestors 'none'", response.Headers.GetValues("Content-Security-Policy").Single());
         }
         // A new nonce on every response, or it would be no protection.
@@ -203,6 +206,28 @@ public sealed class SitePagesTests : IDisposable
         var html = (await Get("/")).Html;
         Assert.DoesNotMatch("<script>", html);
         Assert.DoesNotMatch("<script(?![^>]*(src=|type=\"application/(ld\\+)?json\"))", html);
+    }
+
+    [Fact]
+    public async Task No_page_relies_on_inline_styles_the_CSP_would_block()
+    {
+        // Every page in the sitemap, plus the ones it leaves out.
+        var sitemap = (await Get("/sitemap.xml")).Html;
+        var paths = System.Text.RegularExpressions.Regex.Matches(sitemap, "<loc>https?://[^/]+(/[^<]*)</loc>")
+            .Select(m => m.Groups[1].Value)
+            .Concat(["/download", "/r/NOSUCHCODE", "/no-such-page"])
+            .Distinct().ToList();
+        Assert.True(paths.Count > 10, $"expected the sitemap's pages, got {paths.Count}");
+        foreach (var path in paths)
+        {
+            var html = (await Get(path)).Html;
+            Assert.False(html.Contains(" style=\"", StringComparison.Ordinal), $"{path} has an inline style attribute");
+            Assert.False(html.Contains("<style", StringComparison.Ordinal), $"{path} has a <style> element");
+        }
+        // Sizes that come from data are carried as data-* for site.js instead.
+        var home = (await Get("/")).Html;
+        Assert.Contains("data-h=\"", home);
+        Assert.Contains("data-w=\"", home);
     }
 
     [Fact]

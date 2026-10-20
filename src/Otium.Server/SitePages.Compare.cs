@@ -92,7 +92,7 @@ internal static partial class SitePages
                     <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Otium</a><span aria-hidden="true">/</span><span aria-current="page">Otium vs {name}</span></nav>
                     <div class="panel">
                       <span class="label">Compare · {E(c.Category)}</span>
-                      <h1 style="margin-top:14px">A {name} alternative that pays your own wallet</h1>
+                      <h1 class="mt-14">A {name} alternative that pays your own wallet</h1>
                       <p class="lead">{E(c.Intro)}</p>
                       <div class="actions"><a class="button" href="/download"><span data-download-label>Download Otium</span></a>{others}</div>
                     </div>

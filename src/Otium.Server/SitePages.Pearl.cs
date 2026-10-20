@@ -45,7 +45,7 @@ internal static partial class SitePages
                     <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Otium</a><span aria-hidden="true">/</span><span aria-current="page">What is Pearl?</span></nav>
                     <div class="panel">
                       <span class="label">Pearl (PRL)</span>
-                      <h1 style="margin-top:14px">What is Pearl, and why does it pay gaming cards so well?</h1>
+                      <h1 class="mt-14">What is Pearl, and why does it pay gaming cards so well?</h1>
                       <p class="lead">Pearl is a cryptocurrency whose mining is matrix multiplication, the same arithmetic AI models run on. That's why NVIDIA graphics cards with tensor cores mine it well, and why it's the best-paying coin for most of them in October 2026.</p>
                       {today}
                     </div>
