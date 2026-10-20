@@ -312,10 +312,6 @@
                         </StackPanel>
                         <TextBlock Classes="muted" Text="{Binding EngineInfo}" />
                         <TextBlock Classes="muted" TextWrapping="Wrap" Text="{Binding FeeInfo}" />
-                        <StackPanel Spacing="4">
-                            <TextBlock Classes="label" Text="Invite server" />
-                            <TextBox Text="{Binding ServerUrl}" />
-                        </StackPanel>
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <TextBlock Classes="muted" VerticalAlignment="Center" Text="{Binding DataFolder}" />
                             <Button Content="Open data folder" Command="{Binding OpenDataFolderCommand}" />

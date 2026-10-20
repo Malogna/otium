@@ -595,7 +595,30 @@ public sealed class AppHost : IAsyncDisposable
     }
 
     /// <summary>The fee and invite terms in force: the server's, clamped, or the built-in defaults until it has answered.</summary>
-    public FeePolicy Fees => FeePolicy.FromTerms(Settings.Account.Fees);
+    public FeePolicy Fees => AppIdentity.IsReleaseBuild
+        ? FeeGrant is { } grant
+            ? (FeePolicy.Default with { FeePercent = grant.FeePercent, ReferrerShareOfFee = grant.ReferrerShareOfFee }).WithinBuiltInLimits()
+            : FeePolicy.Default
+        : FeePolicy.FromTerms(Settings.Account.Fees);
+
+    /// <summary>
+    /// The server's signed fee grant for this computer, while it's valid. Release builds take the fee, fee-free days, the
+    /// inviter's slice and balance mode only from it, so an edited settings file, another server or a computer cut off
+    /// from otium.lol for over a week pays the full built-in fee. Development builds also accept an unsigned summary.
+    /// </summary>
+    public FeeGrant? FeeGrant =>
+        FeeGrants.Verify(Settings.Referral.FeeGrant, Settings.Referral.FeeGrantSignature, AppIdentity.FeeGrantKeys, DeviceId, DateTimeOffset.UtcNow);
+
+    /// <summary>Fee-free time no further out than the most the built-in terms allow at once.</summary>
+    private static DateTimeOffset? Capped(DateTimeOffset? feeFreeUntil) =>
+        feeFreeUntil is { } until && until > DateTimeOffset.UtcNow + FeePolicy.Default.MaxFeeHoliday
+            ? DateTimeOffset.UtcNow + FeePolicy.Default.MaxFeeHoliday
+            : feeFreeUntil;
+
+    /// <summary>Balance mode's pool wallet: in release builds only one the server signed for a custodial account.</summary>
+    private string? BalancePoolWallet => AppIdentity.IsReleaseBuild
+        ? FeeGrant is { Custodial: true } grant ? ValidWalletOrNull(grant.PoolWallet) : null
+        : ValidWalletOrNull(Settings.Account.PoolWallet);
 
     /// <summary>
     /// unMineable's terms exclude US persons, so US users are paid in Monero by MoneroOcean instead. The user's own answer
@@ -718,7 +741,7 @@ public sealed class AppHost : IAsyncDisposable
             "Add the address you want to be paid at in Advanced settings.",
         PayoutMode.OwnWallet when InUnitedStates && PayoutRouting.PoolFor(Settings.PayoutAddress, unitedStates: true) == PayoutPool.Unmineable =>
             "unMineable, which pays out in your chosen coin, doesn't serve US residents. Choose Monero (XMR) as your payout coin in Advanced settings.",
-        PayoutMode.Balance when Settings.Account.WorkerId is null || ValidWalletOrNull(Settings.Account.PoolWallet) is null =>
+        PayoutMode.Balance when Settings.Account.WorkerId is null || BalancePoolWallet is null =>
             LastServerError is null ? "Connecting to Otium…" : "Can't reach Otium right now. Retrying automatically.",
         _ => null,
     };
@@ -982,7 +1005,7 @@ public sealed class AppHost : IAsyncDisposable
     {
         if (Settings.PayoutMode == PayoutMode.Balance)
         {
-            var poolWallet = ValidWalletOrNull(Settings.Account.PoolWallet) ?? "";
+            var poolWallet = BalancePoolWallet ?? "";
             return new EngineConfig(
                 poolWallet,
                 usagePercent,
@@ -1003,8 +1026,13 @@ public sealed class AppHost : IAsyncDisposable
         // Fee and referral slices mine on the user's own pool, so a referrer paid on the other pool gets no slice.
         var referral = Settings.Referral;
         var user = OwnPayoutTarget ?? Settings.PayoutAddress;
-        var referrer = PayoutRouting.SamePool(user, referral.ReferrerWallet, InUnitedStates) ? PayoutTarget.Normalize(referral.ReferrerWallet!) : null;
-        var standing = new ReferralStanding(referrer, referral.ReferredAt, referral.FeeFreeUntil);
+        // Release builds: who invited the user and their fee-free days come only from the signed grant.
+        var grant = FeeGrant;
+        var (referrerWallet, referredAt, feeFreeUntil) = AppIdentity.IsReleaseBuild
+            ? (grant?.ReferrerWallet, grant?.ReferredAt, grant?.FeeFreeUntil)
+            : (referral.ReferrerWallet, referral.ReferredAt, referral.FeeFreeUntil);
+        var referrer = PayoutRouting.SamePool(user, referrerWallet, InUnitedStates) ? PayoutTarget.Normalize(referrerWallet!) : null;
+        var standing = new ReferralStanding(referrer, referredAt, Capped(feeFreeUntil));
         return new EngineConfig(
             user,
             usagePercent,
@@ -1290,7 +1318,7 @@ public sealed class AppHost : IAsyncDisposable
     }
 
     private string ComputeDeviceId() =>
-        Environment.GetEnvironmentVariable("OTIUM_DEVICE_SEED") is { Length: > 0 } devSeed ? DeviceIdentity.FromSeed(devSeed)
+        AppIdentity.DevelopmentOverride("OTIUM_DEVICE_SEED") is { Length: > 0 } devSeed ? DeviceIdentity.FromSeed(devSeed)
         : Settings.InstallDeviceId ? DeviceIdentity.FromSeed("install:" + Settings.DeviceSeed)
         : DeviceIdentity.Compute(Settings.DeviceSeed);
 
@@ -1310,7 +1338,7 @@ public sealed class AppHost : IAsyncDisposable
     private AccountClient CreateClient() =>
         new(new HttpClient
         {
-            BaseAddress = new Uri(AppIdentity.ResolveServerUrl(Settings.ServerUrl).TrimEnd('/') + "/"),
+            BaseAddress = new Uri(AppIdentity.ResolveServerUrl().TrimEnd('/') + "/"),
             Timeout = TimeSpan.FromSeconds(20),
         });
 
@@ -1327,6 +1355,8 @@ public sealed class AppHost : IAsyncDisposable
         referral.VerifiedCount = summary.VerifiedCount;
         referral.EarnedFromFriendsUsd = summary.ReferralEarnedUsd;
         referral.LastSyncedAt = DateTimeOffset.UtcNow;
+        referral.FeeGrant = summary.FeeGrant;
+        referral.FeeGrantSignature = summary.FeeGrantSignature;
         if (summary.ReferralCodeError is not null)
         {
             referral.CodeError = summary.ReferralCodeError;

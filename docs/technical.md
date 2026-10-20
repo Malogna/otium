@@ -118,7 +118,8 @@ policy.
   mined to the referrer's own address when the same pool pays it. New users with an invite code get 30 fee-free days;
   each verified friend gives the referrer another 30 (capped at 90). The server sends these terms with every account
   summary (`Fees:*`), so they change without an app release; apps cap the fee at 10% and use the built-in defaults
-  until a server answers. The miner keeps its pool and algorithm; only the login
+  until a server answers. Release builds only lower the fee, or add fee-free days or an inviter's slice, within the
+  built-in terms and from a valid signed fee grant (see "Keeping the fee" below). The miner keeps its pool and algorithm; only the login
   changes for a slice. Builds set Otium's fee address with `-FeeWallet 'USDT:T…'`: one USDT address covers every user
   outside the US. Adding `;XMR:4…` also takes the fee from US users, whose Monero mines on MoneroOcean; without a fee
   address for a pool, the slice is mined for the user.
@@ -138,6 +139,24 @@ policy.
 - **Guards against a wrong server answer.** Own-wallet graphics cards only connect to the pools' own hosts
   (`*.unmineable.com`, `*.kryptex.network`, `*.moneroocean.stream`; `GpuPolicy.OnlyTrustedHosts`), the referrer's
   share is capped at 1% of mining time, and internet-sharing payouts only go to a well-formed 0x deposit address.
+- **Keeping the fee.** Every copy from otium.lol mines Otium's fee; only someone who builds Otium from the source
+  can change that.
+  - Release builds (the production server baked in, `AppIdentity.IsReleaseBuild`) ignore every developer override:
+    `OTIUM_SERVER_URL`, `OTIUM_FEE_WALLET`, `OTIUM_UNMINEABLE_REFERRAL`, `OTIUM_UPDATE_URL`, `OTIUM_SIMULATE`, the pool
+    API overrides and `OTIUM_DEVICE_SEED`. There's no server setting in the app either.
+  - Every account summary carries a **fee grant** for the computer asking (`Fees.FeeGrant`): the fee, the inviter's
+    share and address, the fee-free date, and for custodial balance accounts the pool wallet. It's signed by the
+    server (`Fees:GrantSigningKey`, ECDSA P-256) and valid for 7 days. Release builds take those values only from a
+    grant that verifies against `AppIdentity.FeeGrantKeys`, is for their own device and hasn't expired. Without one
+    (an edited settings.json, a blocked otium.lol for over a week) they mine the full built-in fee with no fee-free
+    days and no inviter's slice.
+  - The built-in terms are the limits (`FeePolicy.WithinBuiltInLimits`): a grant can't make the fee lower than 2%,
+    nor fee-free time or the inviter's share more generous; fee-free dates are capped at 90 days ahead.
+  - **Fee slices are checked from the server.** The payout checker records which Otium workers (`ot` + 8 hex digits
+    of the device id) the pools show working on users' own addresses, and `FeeSliceWatcher` does the same every hour
+    for Otium's fee address (`Unmineable:OtiumTarget`). The admin summary's `feeSlicesMissing` lists computers seen
+    mining over the last 7 days (first seen at least 2 days ago) with no fee slice in that time and no fee-free days:
+    most likely a modified app. Nothing is done to them automatically.
 
 Spike results behind these choices (logins, TLS ports, the referral code on workers, auto-pay, the worker API) are in
 [docs/non-custodial-plan.md](non-custodial-plan.md).
@@ -248,6 +267,7 @@ Configure `src/Otium.Server/appsettings.json` (or environment variables such as 
 | `ConnectionStrings:Otium` | SQLite database path |
 | `Fees:FeePercent`, `ReferrerShareOfFee`, `ReferrerRewardDays` | The disclosed fee as a share of mining time (default 2, apps cap it at 10) and the referrer's part of it (default a quarter, for 180 days; apps cap the referrer's part at 1% of mining time, since the referrer's address comes from the server); apps pick changes up at their next sync |
 | `Fees:RefereeFeeFreeDays`, `ReferrerFeeFreeDaysPerFriend`, `MaxFeeFreeDays` | Fee-free days for invited users (30), per verified friend for the referrer (30), and the most that can stack up (90) |
+| `Fees:GrantSigningKey` | Base64 PKCS#8 ECDSA P-256 key that signs fee grants. Its public half must be in `AppIdentity.FeeGrantKeys`, or release builds ignore the grants (and charge the full fee with no fee-free days). Production's lives in `.env`, with a copy in the developer's private keys folder |
 | `Custody:Enabled` | Off (default): non-custodial, accounts and referrals only. On: balances, crediting, cash-outs, Kryptex and internet sharing; the settings marked "custodial" below apply only then |
 | `Unmineable:OtiumTarget` | Otium's fee address on unMineable (e.g. `USDT:T…`), shown with its fee and referral earnings on the admin dashboard |
 | `Unmineable:Enabled`, `FeePercent`, `Algorithms:{algorithm}` | unMineable GPU routes in the policy (default on, 0.75%; Pearl and Xelis with their WhatToMine ids and hosts) |
@@ -314,7 +334,8 @@ sending, the app removes payout and email addresses, keys, the device secret, sa
 computer and user names, including in file paths (`Otium.Core.Support.ReportScrubber`). The server answers with a
 reference; the operator reads it at `/admin/problem-reports/<reference>`.
 
-The app finds the server through `AppIdentity.DefaultServerUrl`, which is overridable with `OTIUM_SERVER_URL`.
+The app finds the server through `AppIdentity.DefaultServerUrl`; development builds can override it with
+`OTIUM_SERVER_URL`, release builds can't.
 
 ### Internet sharing (bandwidth)
 

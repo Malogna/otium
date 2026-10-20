@@ -688,6 +688,37 @@ public sealed class ProofOfEarningsTests
         Assert.Equal(shown, (await server.Http.GetStringAsync("/")).Contains("id=\"real\""));
     }
 
+    [Fact]
+    public async Task Computers_that_mine_for_days_without_a_fee_slice_are_listed()
+    {
+        var fee = TestAddresses.Usdt(9);
+        using var server = new Server(("Unmineable:OtiumTarget", fee));
+        var (honest, _, _) = await server.Register(TestAddresses.Usdt(0));
+        var (modified, _, _) = await server.Register(TestAddresses.Usdt(1));
+        var (feeFree, _, _) = await server.Register(TestAddresses.Usdt(2));
+        server.Unmineable.Workers[TestAddresses.Usdt(0)] = [new UnmineableWorker("pearlpow", $"ot{honest[..8]}g", true, 1, 1)];
+        server.Unmineable.Workers[TestAddresses.Usdt(1)] = [new UnmineableWorker("pearlpow", $"ot{modified[..8]}g", true, 1, 1)];
+        server.Unmineable.Workers[TestAddresses.Usdt(2)] = [new UnmineableWorker("pearlpow", $"ot{feeFree[..8]}g", true, 1, 1)];
+        // Only the honest computer's fee slices reach Otium's address; the third account is still fee-free.
+        server.Unmineable.Workers[fee] = [new UnmineableWorker("pearlpow", $"ot{honest[..8]}g", true, 1, 1)];
+        var store = server.Factory.Services.GetRequiredService<Otium.Server.Data.OtiumStore>();
+        var feeFreeAccount = store.FindDevice(feeFree)!.AccountId;
+        store.Upsert(store.FindAccount(feeFreeAccount)! with { FeeFreeUntil = server.Time.GetUtcNow().AddDays(10) });
+
+        var checker = server.Factory.Services.GetRequiredService<PoolPayoutChecker>();
+        var watcher = server.Factory.Services.GetRequiredService<FeeSliceWatcher>();
+        await checker.CheckAllAsync(CancellationToken.None);
+        await watcher.CheckAsync(CancellationToken.None);
+        Assert.Empty(store.FeeSliceGaps(server.Time.GetUtcNow(), TimeSpan.FromDays(7), TimeSpan.FromDays(2))); // too soon to tell
+
+        server.Time.Advance(TimeSpan.FromDays(3));
+        await checker.CheckAllAsync(CancellationToken.None);
+        await watcher.CheckAsync(CancellationToken.None);
+        var gap = Assert.Single(store.FeeSliceGaps(server.Time.GetUtcNow(), TimeSpan.FromDays(7), TimeSpan.FromDays(2)));
+        Assert.Equal(modified, gap.DeviceId);
+        Assert.Null(gap.FeeSeen);
+    }
+
     [Theory]
     [InlineData("ot1234abcd", true)]
     [InlineData("ot1234abcdg", true)]

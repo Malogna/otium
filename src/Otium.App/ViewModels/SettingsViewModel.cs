@@ -53,7 +53,6 @@ public partial class SettingsViewModel : ViewModelBase
         SelectedZone = SpotPriceZone.Find(s.ElectricityZone);
         Payout = new PayoutTargetEditor(s.PayoutAddress, AppHost.InUnitedStates, host.SetUsPerson);
         Payout.Changed += () => SavePayoutCommand.NotifyCanExecuteChanged();
-        ServerUrl = Core.AppIdentity.ResolveServerUrl(s.ServerUrl);
         StartWithSystem = AutoStart.IsEnabled();
         UseBalance = s.PayoutMode == PayoutMode.Balance;
         UseCpu = s.CpuEnabled;
@@ -437,14 +436,12 @@ public partial class SettingsViewModel : ViewModelBase
     public bool OffersBalance => _host.ServerIsCustodial || UseBalance;
     [ObservableProperty] public partial string? PayoutError { get; set; }
     [ObservableProperty] public partial string? PayoutSaved { get; set; }
-    [ObservableProperty] public partial string ServerUrl { get; set; } = "";
 
     partial void OnCpuUsagePercentChanged(double value) => QueueSave();
     partial void OnIdleMinutesChanged(decimal? value) => QueueSave();
     partial void OnElectricityPriceChanged(decimal? value) => QueueSave();
     partial void OnCpuFullLoadWattsChanged(decimal? value) => QueueSave();
     partial void OnNeverRunAtLossChanged(bool value) => QueueSave();
-    partial void OnServerUrlChanged(string value) => QueueSave();
 
     partial void OnOnlyWhenIdleChanged(bool value)
     {
@@ -488,8 +485,6 @@ public partial class SettingsViewModel : ViewModelBase
         s.CpuFullLoadWatts = CpuFullLoadWatts is > 0 ? (double)CpuFullLoadWatts : null;
         s.NeverRunAtLoss = NeverRunAtLoss;
         s.GpuWatts = GpuWatts is > 0 ? (double)GpuWatts : null;
-        if (Uri.TryCreate(ServerUrl, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https")
-            s.ServerUrl = ServerUrl.Trim();
         _host.RefreshPowerModel();
         _host.SaveSettings();
     }

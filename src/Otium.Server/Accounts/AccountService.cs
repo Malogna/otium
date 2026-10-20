@@ -71,6 +71,16 @@ public sealed class AccountService(
 
     /// <summary>The fee and invite terms apps are told about; fee-free periods are granted by the same terms.</summary>
     private FeePolicy Policy => FeePolicy.FromTerms(feeOptions.Value.ToTerms());
+
+    /// <summary>The fee-grant signing key, or null when the server has none (development, tests).</summary>
+    private readonly Lazy<System.Security.Cryptography.ECDsa?> _grantKey = new(() =>
+    {
+        if (string.IsNullOrWhiteSpace(feeOptions.Value.GrantSigningKey))
+            return null;
+        var key = System.Security.Cryptography.ECDsa.Create();
+        key.ImportPkcs8PrivateKey(Convert.FromBase64String(feeOptions.Value.GrantSigningKey.Trim()), out _);
+        return key;
+    });
     private readonly ReferralOptions _referral = referralOptions.Value;
     private readonly EarningsOptions _earnings = earningsOptions.Value;
     private readonly CashoutOptions _cashouts = cashoutOptions.Value;
@@ -139,7 +149,7 @@ public sealed class AccountService(
             store.DeleteAccountNetworksBefore(now - ConnectionMemory);
             store.RecordAccountNetwork(account.AccountId, network, now);
         }
-        return Summarize(account, publicBaseUrl, codeError);
+        return Summarize(account, publicBaseUrl, codeError, device.DeviceId);
     }
 
     /// <summary>
@@ -184,7 +194,7 @@ public sealed class AccountService(
         if (connections.Of(from) is { } network)
             store.RecordAccountNetwork(session.Account.AccountId, network, time.GetUtcNow());
         await RefreshVerificationsAsync(session.Account, ct);
-        return Summarize(store.FindAccount(session.Account.AccountId)!, publicBaseUrl, null);
+        return Summarize(store.FindAccount(session.Account.AccountId)!, publicBaseUrl, null, deviceId);
     }
 
     // ---------- invite leaderboard ----------
@@ -305,11 +315,11 @@ public sealed class AccountService(
             // New email: it now secures (or replaces the email of) this computer's account.
             current = current with { Email = address };
             store.Upsert(current);
-            return Summarize(current, publicBaseUrl, null);
+            return Summarize(current, publicBaseUrl, null, deviceId);
         }
 
         if (owner.AccountId == current.AccountId)
-            return Summarize(current, publicBaseUrl, null);
+            return Summarize(current, publicBaseUrl, null, deviceId);
 
         // The email belongs to another account: this computer joins it. If the computer had only an anonymous
         // account of its own, fold that into the signed-in account so nothing it earned is lost.
@@ -323,7 +333,7 @@ public sealed class AccountService(
             store.Upsert(session.Device with { AccountId = owner.AccountId, LastSeenAt = now });
         }
 
-        return Summarize(store.FindAccount(owner.AccountId)!, publicBaseUrl, null);
+        return Summarize(store.FindAccount(owner.AccountId)!, publicBaseUrl, null, deviceId);
     }
 
     /// <summary>
@@ -456,7 +466,8 @@ public sealed class AccountService(
 
     // ---------- summary ----------
 
-    public AccountSummary Summarize(AccountRecord account, string publicBaseUrl, string? codeError)
+    /// <param name="deviceId">The computer asking: its summary carries a fee grant signed for it.</param>
+    public AccountSummary Summarize(AccountRecord account, string publicBaseUrl, string? codeError, string? deviceId = null)
     {
         var now = time.GetUtcNow();
         var referrer = account.ReferredByCode is null ? null : store.Resolve(store.FindAccountByCode(account.ReferredByCode));
@@ -466,7 +477,7 @@ public sealed class AccountService(
         // Without custody nothing can be cashed out, so no methods are offered (the app hides the balance UI).
         var methods = _custodial ? cashoutMethods.Current : [];
 
-        return new AccountSummary(
+        var summary = new AccountSummary(
             account.WorkerId,
             _custodial && account.IsBalanceAccount ? account.PoolWallet : null,
             account.Code,
@@ -499,6 +510,21 @@ public sealed class AccountService(
             Policy.ToTerms(),
             !proxybaseOptions.Value.Enabled,
             store.ReferralShareTotal(account.Code));
+        return deviceId is null ? summary : WithFeeGrant(summary, deviceId, now);
+    }
+
+    /// <summary>
+    /// Signs what this computer's fee depends on (see <see cref="FeeGrant"/>), for a week: release builds of the app
+    /// take fee-free days, the inviter's slice and the fee only from a grant like this.
+    /// </summary>
+    private AccountSummary WithFeeGrant(AccountSummary summary, string deviceId, DateTimeOffset now)
+    {
+        if (_grantKey.Value is not { } key)
+            return summary;
+        var policy = Policy;
+        var grant = new FeeGrant(deviceId, policy.FeePercent, policy.ReferrerShareOfFee, summary.ReferrerWallet, summary.ReferredAt,
+            summary.FeeFreeUntil, summary.Custodial && summary.PoolWallet is not null, summary.PoolWallet, now, now + FeeGrant.Lifetime);
+        return summary with { FeeGrant = grant.Payload(), FeeGrantSignature = FeeGrants.Sign(grant, key) };
     }
 
     public static CashoutInfo ToInfo(CashoutRecord c) => new(

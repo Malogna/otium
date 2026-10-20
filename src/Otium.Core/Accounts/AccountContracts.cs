@@ -43,7 +43,9 @@ public sealed record AccountSummary(
     bool MysteriumSponsored = false,
     FeeTerms? Fees = null,
     bool ProxybaseDisabled = false,
-    double ReferralEarnedUsd = 0);
+    double ReferralEarnedUsd = 0,
+    string? FeeGrant = null,
+    string? FeeGrantSignature = null);
 
 /// <summary>
 /// A referred friend's app: how much of Otium's fee it has mined for the person who invited them so far (an estimate

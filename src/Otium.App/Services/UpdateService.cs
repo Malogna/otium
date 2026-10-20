@@ -55,7 +55,7 @@ public sealed class UpdateService
 
     /// <summary>Otium's server's copy of the release feed: release candidates too, or releases only.</summary>
     private static string ServerFeedUrl(bool prereleases) =>
-        $"{AppIdentity.ResolveServerUrl(null).TrimEnd('/')}/updates/{(prereleases ? "pre" : "stable")}/";
+        $"{AppIdentity.ResolveServerUrl().TrimEnd('/')}/updates/{(prereleases ? "pre" : "stable")}/";
 
     public event Action? Changed;
 

@@ -28,7 +28,7 @@ public sealed class KryptexAddressClient(HttpClient http) : IKryptexAddressApi
     public static readonly Uri KryptexPool = new("https://pool.kryptex.com/");
 
     /// <summary>The pool in use: Kryptex, or a simulated pool when OTIUM_KRYPTEX_API is set (dev mode).</summary>
-    public static Uri ApiBase { get; } = Environment.GetEnvironmentVariable("OTIUM_KRYPTEX_API") is { Length: > 0 } custom
+    public static Uri ApiBase { get; } = AppIdentity.DevelopmentOverride("OTIUM_KRYPTEX_API") is { Length: > 0 } custom
         ? new Uri(custom.TrimEnd('/') + "/")
         : KryptexPool;
 

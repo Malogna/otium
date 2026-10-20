@@ -32,7 +32,7 @@ public static class ProblemReportBuilder
         Line(Invariant($"  pay for electricity {s.PayForElectricity} ({s.ElectricityPricePerKwh:0.###}/kWh), never at a loss {s.NeverRunAtLoss}"));
         Line($"  payout coin {Core.Wallets.PayoutTarget.ParseOrNull(s.PayoutAddress)?.Coin.Ticker ?? "none"}, mode {s.PayoutMode}, United States {AppHost.InUnitedStates}");
         Line($"  internet sharing {s.BandwidthEnabled} (offered {host.BandwidthOffered}), share earnings {s.ShareEarningsStats}");
-        Line($"  server {Core.AppIdentity.ResolveServerUrl(s.ServerUrl)}, last server error: {host.LastServerError ?? "none"}");
+        Line($"  server {Core.AppIdentity.ResolveServerUrl()}, last server error: {host.LastServerError ?? "none"}");
         Line($"  large pages in effect {LargePages.InEffect()}");
 
         foreach (var (name, engine) in host.Engines.Select((e, i) => (i == 0 ? "Processor" : "Graphics card", e)))

@@ -84,7 +84,7 @@ public sealed class UnmineableClient(HttpClient http) : IUnmineableApi
     public static readonly Uri UnmineableApi = new("https://api.unminable.com/");
 
     /// <summary>The API in use: unMineable, or a simulated pool when OTIUM_UNMINEABLE_API is set (dev mode).</summary>
-    public static Uri ApiBase { get; } = Environment.GetEnvironmentVariable("OTIUM_UNMINEABLE_API") is { Length: > 0 } custom
+    public static Uri ApiBase { get; } = AppIdentity.DevelopmentOverride("OTIUM_UNMINEABLE_API") is { Length: > 0 } custom
         ? new Uri(custom.TrimEnd('/') + "/")
         : UnmineableApi;
 
