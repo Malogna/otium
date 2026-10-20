@@ -117,6 +117,7 @@ p { margin: 0; text-wrap: pretty; }
     radial-gradient(30% 40% at 18% 10%, color-mix(in oklab, #1b4a6b 45%, transparent), transparent 70%);
   filter: blur(10px);
   animation: drift 22s ease-in-out infinite alternate;
+  will-change: transform;
 }
 /* …an ordered dither on the hero's glow, the way old screens shaded a gradient (a mask, so the glow's blur leaves it
    crisp; the even layer keeps the glow from going dim)… */
@@ -185,6 +186,7 @@ p { margin: 0; text-wrap: pretty; }
   white-space: nowrap;
 }
 .button:hover { transform: translateY(-2px); box-shadow: 0 0 0 1px #9af5d0 inset, 0 18px 50px -14px var(--emerald); }
+.button:active { transform: translateY(0) scale(0.98); transition-duration: .08s; }
 .button svg { width: 18px; height: 18px; }
 .button.small { padding: 10px 16px; font-size: 0.92rem; }
 .button.ghost {
@@ -319,6 +321,7 @@ input[type="range"] { width: 100%; min-width: 0; accent-color: var(--amber); }
 .ribbon { border-block: 1px solid var(--line); background: color-mix(in oklab, var(--night-2) 70%, transparent); overflow: hidden; }
 .ribbon .wrap { display: flex; align-items: center; gap: 28px; padding-block: 18px; }
 .ribbon .label { flex: none; }
+.ribbon:hover .marquee-track, .ribbon:focus-within .marquee-track { animation-play-state: paused; }
 .marquee { position: relative; flex: 1; min-width: 0; overflow: hidden; mask-image: linear-gradient(90deg, transparent, black 8%, black 92%, transparent); -webkit-mask-image: linear-gradient(90deg, transparent, black 8%, black 92%, transparent); }
 .marquee-track { display: flex; gap: 40px; width: max-content; animation: marquee 38s linear infinite; }
 .coin { display: inline-flex; align-items: baseline; gap: 8px; white-space: nowrap; font: 700 1.05rem var(--display); letter-spacing: -0.01em; }
@@ -463,8 +466,19 @@ footer a:hover { color: var(--ink); }
 .legal th, .legal td { border-top: 1px solid var(--line); padding: 8px 12px 8px 0; text-align: left; vertical-align: top; }
 
 /* Reveal: everything is visible without script; script only animates what starts below the fold. */
-.reveal.pending { opacity: 0; transform: translateY(24px); }
-.reveal.shown { opacity: 1; transform: none; transition: opacity .8s ease-out, transform .8s cubic-bezier(.2,.8,.2,1); }
+.reveal.pending { opacity: 0; transform: translateY(18px); }
+.reveal.shown { opacity: 1; transform: none; transition: opacity .7s ease-out, transform .7s cubic-bezier(.2,.8,.2,1); }
+/* What plays once (the dial's arcs drawing, the miner log, the price bars rising) waits until its section scrolls into
+   view, instead of finishing unseen while the visitor is still at the top. */
+.reveal.pending .arc.draw, .reveal.pending .log div, .reveal.pending .price-bars span { animation-play-state: paused; }
+
+/* Questions and "See the breakdown and adjust" unfold (site.js animates the height): what's inside fades in a moment
+   after the box starts opening, line by line, and fades out first when it closes. */
+@keyframes unfold { from { opacity: 0; transform: translateY(-8px); } }
+details[open]:not(.closing) > :not(summary) { animation: unfold .45s .06s cubic-bezier(.2,.8,.2,1) both; }
+.est-more[open]:not(.closing) .est-more-body > * { animation: unfold .45s cubic-bezier(.2,.8,.2,1) both; animation-delay: calc(60ms + var(--n, 0) * 45ms); }
+details.closing > :not(summary) { opacity: 0; transition: opacity .15s ease-in; }
+details.closing summary::after { transform: none; }
 
 /* ---------- Smaller screens ---------- */
 

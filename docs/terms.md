@@ -59,8 +59,9 @@ Otium is free to download, with no subscription. You pay with a share of mining 
 | Pool | unMineable 0.75%. Otium's referral code lowers it from 1%, and unMineable pays Otium 0.25–0.5% of what you mine there, out of its own fee |
 | Internet sharing | Otium: 2% of what Proxybase pays you, paid to Otium's address from your sharing earnings. The conversion to your coin has no Otium fee; its network costs come off each payout |
 
-If you join with an invite code, Otium's fee is off for 30 days. If you invite friends, part of Otium's fee on their
-mining is mined to your address for 6 months.
+If you join with an invite code, Otium's fee is off for 30 days. If you invite friends, Otium's fee is also off for 30
+days for each friend once they've mined for a day (up to 90 days at a time), and for 6 months 25% of Otium's fee on
+their mining is mined to your address.
 
 We'll tell you at least 30 days before we raise any fee, in the app and by email if you gave one. If you don't
 accept the change, you can stop using Otium at no cost.

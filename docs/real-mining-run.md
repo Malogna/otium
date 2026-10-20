@@ -4,14 +4,14 @@ A short run of the real engines (`pwsh build/dev.ps1 -RealMiners`) on the develo
 run" item under **Before launch** in [technical.md](technical.md). XMRig 6.26.0 and SRBMiner-Multi 3.7.6 mined on the real MoneroOcean
 pool into the developer's own Monero address (not recorded here).
 
-- **Hardware:** Intel i7-8700K (6 cores / 12 threads), NVIDIA RTX 3080 12 GB, driver 616.92, Windows 11 22621.
+- **Hardware:** Intel i7-8700K (6 cores / 12 threads), NVIDIA RTX 3080 12 GB, a recent NVIDIA driver, Windows 11.
 - **Otium run:** 14:44–14:57 (13 minutes).
 - **Direct SRBMiner diagnostics:** 14:57–15:05, about 5 minutes of mining.
 - **Settings:** for this test, the onboarding answer was "electricity is included or free". At the estimated $0.15/kWh
-  (Norway, NO1) the app correctly said mining wouldn't pay and would have waited. Free power also makes the GPU
+  (a Nordic price zone) the app correctly said mining wouldn't pay and would have waited. Free power also makes the GPU
   benchmark try cn/gpu.
-- **Machine load:** the PC was in normal use. Other Claude sessions, Python jobs and the Monero GUI wallet were running,
-  and Unreal Editor 5.8 was opened at 14:50, taking about 4.2 GB of VRAM.
+- **Machine load:** the PC was in normal use. Other development tools and a wallet app were running,
+  and a 3D editor was opened at 14:50, taking about 4.2 GB of VRAM.
 
 ## Summary
 
@@ -43,7 +43,7 @@ pool into the developer's own Monero address (not recorded here).
 After the benchmark, Otium picked kawpow as expected. That second kawpow launch also stalled at 0 H/s. The direct run
 shows why. SRBMiner first does `Hold on, doing the first devfee mining round` for about 45 s at ~330 W, then switches to
 the user's pool and fails with `Couldn't set epoch 611 on GPU0`. The DAG for MoneroOcean's job doesn't fit next to
-what other apps hold (Unreal Editor plus the desktop used ~4.2 GB). One consequence: a benchmark sample can be taken
+what other apps hold (the 3D editor plus the desktop used ~4.2 GB). One consequence: a benchmark sample can be taken
 during SRBMiner's dev-fee round, so a "successful" benchmark doesn't prove the card hashes for the user's pool.
 
 ### CPU
@@ -65,7 +65,7 @@ automatically" (one UAC prompt adds a Defender exclusion for the engines folder)
 ## Issues found (not fixed here)
 
 1. **No accepted GPU shares on MoneroOcean with this card while other apps hold VRAM.** Retest kawpow/etchash with
-   VRAM free (Unreal etc. closed) to separate SRBMiner from environment. Otium's per-algorithm `MinMemoryGb` checks
+   VRAM free (other apps closed) to separate SRBMiner from environment. Otium's per-algorithm `MinMemoryGb` checks
    total VRAM, not free VRAM.
 2. **A GPU stuck at 0 H/s after the benchmark stays "Starting…" forever.** `SrbMinerGpuProvider.GetStatusAsync` only
    handles a process that exited. A live miner reporting 0 H/s for minutes is never failed over or reported.
@@ -97,7 +97,7 @@ automatically" (one UAC prompt adds a Defender exclusion for the engines folder)
   this install's engines folder. That cleanup is skipped while another Otium holds the same data folder's `otium.lock`.
 - **Issue 4:** onboarding, Settings and the antivirus cards now tell users to choose **Cancel** at the Windows Firewall
   prompt. The miners only make outgoing connections, and Otium reads both stats APIs at `127.0.0.1`, which the
-  firewall doesn't filter.
+  firewall doesn't filter. (Later SRBMiner's API was turned off altogether; see issue 4 above.)
 - **Issue 1 (partly):** before launching an algorithm, Otium compares the free VRAM (NVML, NVIDIA only) with its
   `MinMemoryGb`. If it doesn't fit, Otium skips that algorithm for 10 minutes and explains that other apps are using the
   graphics memory. A skipped algorithm isn't recorded as a failed benchmark. This doesn't replace the retest with free
@@ -113,7 +113,7 @@ automatically" (one UAC prompt adds a Defender exclusion for the engines folder)
 
 ## Retest with VRAM free (16 October 2026, 15:36–15:52)
 
-A retest of the engine fixes above (commit 6d0a462), with Unreal Editor closed: `pwsh build/dev.ps1 -RealMiners`, mining
+A retest of the engine fixes above (commit 6d0a462), with the 3D editor closed: `pwsh build/dev.ps1 -RealMiners`, mining
 into the developer's own address (not recorded here). The miners ran from 15:37:20 until Otium was force-killed at 15:51:39,
 about 14 minutes. Electricity was set to "free", so all four MoneroOcean GPU algorithms were tested.
 
@@ -124,7 +124,7 @@ about 14 minutes. Electricity was set to "free", so all four MoneroOcean GPU alg
 | Check | Result |
 |---|---|
 | XMRig on MoneroOcean | ✅ **33 accepted, 0 rejected** in 14 min. The first shares came ~6 min in. API `hashrate.total` read 1.0–2.0 kH/s (the PC was in use). Otium showed 1.66 / 1.64 / 1.23 kH/s at moments when the API read 1.70 / 1.66 / 1.36 kH/s. |
-| SRBMiner accepted shares | ❌ **0 on every algorithm, with VRAM free.** So the first run's failures weren't caused by Unreal holding memory (details below). |
+| SRBMiner accepted shares | ❌ **0 on every algorithm, with VRAM free.** So the first run's failures weren't caused by the 3D editor holding memory (details below). |
 | Benchmarks fail plainly | ✅ Each failed algorithm was recorded with SRBMiner's reason and shown in Settings ("didn't work: …"). Once all four failed, the GPU row and Advanced showed *"Graphics card isn't mining: none of the coins it can mine worked in testing. Use "Test GPU again" in Settings to retry."*, not "Starting…". |
 | Stall failover while mining | ⚪ **Not exercised.** No algorithm passed testing, so the provider never reached mining mode. Unit tests cover it. |
 | Switching between tests | ✅ Each new test started a fresh SRBMiner. The previous process was gone each time (one `SRBMiner-MULTI` at a time, parent Otium). |
@@ -132,7 +132,7 @@ about 14 minutes. Electricity was set to "free", so all four MoneroOcean GPU alg
 | Free-VRAM check | ✅ No false positive: 10.9 GB free is above every algorithm's `MinMemoryGb`, so nothing was skipped. The "too little free memory" path wasn't exercised on hardware. |
 | Firewall prompt | No Windows Firewall prompt was seen during the run. |
 
-### GPU tests (SRBMiner 3.7.6, driver 616.92)
+### GPU tests (SRBMiner 3.7.6)
 
 | Algorithm | Window | API `gpu.total` | Power | Failure Otium recorded |
 |---|---|---|---|---|
@@ -160,7 +160,7 @@ free, this points at SRBMiner 3.7.6 with this driver, not at Otium or VRAM.
   - Try another SRBMiner release or NVIDIA driver.
   - Consider a CUDA-based miner for NVIDIA cards.
 - **Leftover from the first run:** an `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\Otium` entry that starts the other
-  worktree's dev build (`optimistic-vaughan-de3538`) at sign-in. This retest pre-seeded its settings instead of clicking through
+  worktree's dev build at sign-in. This retest pre-seeded its settings instead of clicking through
   onboarding, so it didn't add another. The entry was left in place for the developer to remove.
 
 ## Making the GPU earn (16 October 2026, 15:58–16:43)
@@ -185,7 +185,7 @@ All runs were short direct SRBMiner runs (`--log-file`, API on loopback), each k
   `--algorithm` with `--disable-cpu` is equivalent, and the failures occur in OpenCL setup, before any pool-specific step.
   Changing the pool didn't change them either.
 
-**Conclusion:** on this RTX 3080 with driver 616.92, SRBMiner (3.5.8 and 3.7.6) can't run its OpenCL algorithms at
+**Conclusion:** on this RTX 3080 with this driver, SRBMiner (3.5.8 and 3.7.6) can't run its OpenCL algorithms at
 today's dataset sizes. Its CUDA algorithms work. This is one machine, so whether every NVIDIA card is affected is still open.
 
 ### Kryptex coins (CUDA) on the real Kryptex Pool (the developer's account, not recorded here)
@@ -194,7 +194,7 @@ today's dataset sizes. Its CUDA algorithms work. This is one machine, so whether
 |---|---|---|---|---|---|
 | Direct, 130 s | pearlhash | ~1.14e14 | ~334 W | 2 accepted, 0 rejected | worker `diag`: 2 valid, 30-min avg 1.0e13 |
 | Direct, 130 s | quantus | ~5.15e8 | ~349 W | 7 accepted, 0 rejected | worker `diag`: 7 valid, 30-min avg 7.1e7 |
-| Otium, 14 min | pearlhash + quantus | 8.57e13 / 3.61e8 (Otium's benchmarks) | +247.5 W / +250.3 W measured | | worker `ot9kbke9riaubr`: Pearl 4 valid, Quantus 10 valid + 2 stale, 0 invalid |
+| Otium, 14 min | pearlhash + quantus | 8.57e13 / 3.61e8 (Otium's benchmarks) | +247.5 W / +250.3 W measured | | worker `ot…`: Pearl 4 valid, Quantus 10 valid + 2 stale, 0 invalid |
 
 - **Units (open item 6):** Kryptex's 30-minute averages are on the same scale as SRBMiner's `gpu.total`, given about
   2 minutes of mining in a 30-minute window and few shares. So `gpu.total` is H/s for both coins, with no ×1000 factor.
@@ -257,16 +257,16 @@ Still open:
 ## Non-custodial run through the app (17 October 2026, 19:21–20:00)
 
 The app itself (dev mode with `-RealMiners -FeeWallet 'USDT:TB2x…'`, a local non-custodial server, real unMineable and
-WhatToMine) on the i7-8700K and RTX 3080. The user's payout address was `BNB:0x166a…` (the operator's own, on BNB Smart
+WhatToMine) on the i7-8700K and RTX 3080. The user's payout address was `BNB:0x…` (the operator's own, on BNB Smart
 Chain) and Otium's fee target `USDT:TB2x…`. Both engines' mining time was set to 23:28 so the 24-hour fee cycle reached
 its fee slice after about 3 minutes; electricity was set as free.
 
 | Check | Result |
 |---|---|
-| Registration | ✅ The app registered `BNB:0x166a…` with the non-custodial server (worker `ot35v9qwinyxrb`, no pool wallet); the GPU policy priced Pearl, Xelis and FishHash from live WhatToMine. |
-| GPU login | ✅ SRBMiner 3.7.6: `--algorithm pearlhash --pool pearlpow.unmineable.com:443 --tls true --wallet BNB:0x166a….ot6148da9bg#ztjq-jr7s --password x`, about 105 TH/s, 3 of 3 shares accepted after switching back. |
-| CPU login | ✅ XMRig 6.26.0 config: `rx.unmineable.com:443`, TLS, `user` = the slice's target + `.ot6148da9b#ztjq-jr7s`, 50% threads. |
-| Fee slice | ✅ At mining time 23:31:12 both miners restarted with `USDT:TB2x…` (same worker, same referral code); at 24:00:00 (19:54:20) the GPU went back to `BNB:0x166a…`. Otium's address collected **0.014903 USDT** in about 30 minutes of fee slice (CPU and GPU). |
+| Registration | ✅ The app registered `BNB:0x…` with the non-custodial server (worker `ot…`, no pool wallet); the GPU policy priced Pearl, Xelis and FishHash from live WhatToMine. |
+| GPU login | ✅ SRBMiner 3.7.6: `--algorithm pearlhash --pool pearlpow.unmineable.com:443 --tls true --wallet BNB:0x….ot…g#ztjq-jr7s --password x`, about 105 TH/s, 3 of 3 shares accepted after switching back. |
+| CPU login | ✅ XMRig 6.26.0 config: `rx.unmineable.com:443`, TLS, `user` = the slice's target + `.ot…#ztjq-jr7s`, 50% threads. |
+| Fee slice | ✅ At mining time 23:31:12 both miners restarted with `USDT:TB2x…` (same worker, same referral code); at 24:00:00 (19:54:20) the GPU went back to `BNB:0x…`. Otium's address collected **0.014903 USDT** in about 30 minutes of fee slice (CPU and GPU). |
 | Referral code | ✅ unMineable lists every worker on both addresses with `"referral":"ztjq-jr7s"`, and the user's address dropped from a 1% to a **0.75%** fee once a worker with the code was active. |
 | App | ✅ Home showed "0.00000001 BNB at unMineable · paid out at 0.01 BNB" (no auto-pay warning: this address has auto-pay on) and "Mining Pearl (short fee slice)" with 104.7 TH/s and $3.15/day. |
 | New GPU algorithms | ✅ On first run the miner benchmarked FishHash and Xelis (`xelishashv3`) before settling on Pearl; unMineable recorded the Xelis worker too. |
@@ -277,14 +277,14 @@ operator turns it on; and a funded Mysterium registration end to end.
 
 ## Monero payout: GPU on unMineable, paid in XMR (17 October 2026, 23:13–23:22)
 
-The app from `main` after PR #6 (dev mode `-RealMiners`, non-custodial server, real pools, Norway, electricity set as
-free), with the operator's own Monero address as the payout target (`XMR:42zZ…`) and no fee address.
+The app from `main` after PR #6 (dev mode `-RealMiners`, non-custodial server, real pools, a Nordic price zone, electricity set as
+free), with the operator's own Monero address as the payout target (`XMR:4…`) and no fee address.
 
 | Check | Result |
 |---|---|
 | CPU | ✅ XMRig on `gulf.moneroocean.stream:20128` with TLS, the bare Monero address as user; MoneroOcean showed the address at about 1.25 kH/s. |
 | GPU routing | ✅ The GPU policy offered MoneroOcean's algorithms and unMineable's Pearl route together. SRBMiner first benchmarked CryptoNight-GPU (new on this PC; it failed with "couldn't setup ctx->algorithm", as MoneroOcean's GPU algorithms do on this card), then settled on Pearl. |
-| GPU login | ✅ `--algorithm pearlhash --pool pearlpow.unmineable.com:443 --tls true --wallet XMR:42zZ….ot6148da9bg#ztjq-jr7s`, about 101 TH/s, 2 of 2 shares accepted in 5 minutes. |
+| GPU login | ✅ `--algorithm pearlhash --pool pearlpow.unmineable.com:443 --tls true --wallet XMR:4….ot…g#ztjq-jr7s`, about 101 TH/s, 2 of 2 shares accepted in 5 minutes. |
 | unMineable | ✅ The XMR address has a `pearlpow` worker with `"referral":"ztjq-jr7s"`, the 0.75% fee, a balance building up (0.00000081 XMR after 5 minutes), threshold 0.03 XMR. Auto-pay is off, as for every new address. |
 | App | ✅ "0.00000302 XMR at MoneroOcean · paid out at 0.003 XMR · plus 0 XMR at unMineable from the graphics card, paid out at 0.03 XMR" (the unMineable figure refreshes every 5 minutes), the warning that auto-pay is off at unMineable for the graphics card's earnings, and "Mining Pearl" at 100.35 TH/s, $3.13/day. |
 | Fixed after the run | The warning's "Open my address page" opened MoneroOcean's page; it now opens the page of the pool the warning is about. |
@@ -317,9 +317,9 @@ terms accepted, earning on) was set in settings, which is exactly what finishing
 | Check | Result |
 |---|---|
 | Server address | ❌ then ✅ The first install talked to `http://localhost:5080`: older builds saved their default server address into `settings.json`, and settings survive an uninstall, so a release build installed over a test build kept the test build's server. Fixed: settings keep only a server the user chose, and a saved build default (or the old development default) is dropped on load. After the fix the same leftover settings healed themselves. |
-| Registration | ✅ The app registered with the live server: worker `ot72b65fx36yb5`, the server's 2% fee terms, invite code `HXKDU49`, share link `https://otium.lol/r/HXKDU49`. |
+| Registration | ✅ The app registered with the live server: a worker id, the server's 2% fee terms, an invite code and its share link `https://otium.lol/r/<code>`. |
 | Server side | ✅ The admin summary showed 1 USDT account and 1 device; Otium's unMineable balance read (auto pay on); the Pearl fork watcher reported "PIP-3 has no activation height yet". |
-| Invite page | ✅ `https://otium.lol/r/HXKDU49` offers the code with "no Otium fee for 30 days". |
+| Invite page | ✅ The share link offers the code with "no Otium fee for 30 days". |
 | Graphics card | ✅ SRBMiner 3.7.6 downloaded and verified, tested, then mined Pearl on `pearlpow.unmineable.com:443` (TLS) at about 90.6 TH/s: 4 shares accepted, 0 rejected in 5.5 minutes. unMineable hadn't listed the worker yet when the test stopped (its worker list lags). |
 | Processor | ⚠️ Windows Defender quarantined `xmrig.exe` about a minute after download, as in earlier runs. The app's antivirus help covers it; code signing won't change this, since Defender flags XMRig itself. |
 | Uninstall | ✅ App and engines removed; the test profile was deleted afterwards. |

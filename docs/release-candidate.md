@@ -7,8 +7,9 @@ release candidate; once there is one, it offers the newest stable release instea
 
 ## Signing a release (every release, on the developer's PC)
 
-Installed copies (from rc.15) only update from a feed signed with a key built into Otium
-(`AppIdentity.UpdateSigningKeys`), and otium.lol only offers signed releases, even to older copies. The key never goes to
+Every release goes: tag → the release workflow builds and publishes it → sign it here → check. Installed copies (from
+rc.15) only update from a feed signed with a key built into Otium (`AppIdentity.UpdateSigningKeys`), and otium.lol
+only offers signed releases, even to older copies. The key never goes to
 GitHub or the server, so taking over either can't push code to users. After the release workflow has published the
 release, sign it on the PC that holds the key:
 
@@ -57,8 +58,9 @@ its Windows account is lost, sign with the backup (`--key <backup>.pem`), then m
 - [ ] Internet sharing shows "Sharing" in Advanced (Proxybase's client running).
 
 **Update and uninstall**
-- [ ] Tag `v0.1.0-rc.2` (any small change): the installed rc.1 offers "Restart to update" within a few hours, and
-      comes back as rc.2 with settings and earnings kept.
+- [ ] Tag and sign the next candidate (any small change): within a few hours the installed one offers "Restart to
+      update", or restarts into it by itself once you've been away 10 minutes with the window closed, and comes back
+      as the new candidate with settings and earnings kept.
 - [ ] Uninstall from Windows Settings: Otium asks for permission once (efficiency mode's tasks), and afterwards
       `schtasks /Query /TN "\Otium\GPU power cap"` finds nothing, no `xmrig`/`SRBMiner`/`proxybase-cli` process runs,
       and `%LOCALAPPDATA%\Otium\engines` is gone.

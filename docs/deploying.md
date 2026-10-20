@@ -15,7 +15,7 @@ commented), `backup.env.example` and `backup/`.
 ```
 internet ──443──▶ caddy ──8080──▶ otium ──▶ /data/otium.db ◀── backup ──▶ (optional) off-site storage
                                     │
-                                    └──private network──▶ bitcoind (payouts) and monero-wallet-rpc (optional)
+                                    └──private network──▶ bitcoind (payouts) and monero-wallet-rpc (custodial only)
 ```
 
 ## 1. Provision the machine
@@ -37,7 +37,8 @@ until `dig +short api.otium.example` returns it. Caddy can't get a certificate b
 
 Don't add an **AAAA record** unless you also enable IPv6 on the compose network. On Docker's default setup, IPv6
 visitors reach Caddy through Docker's userland proxy and all appear to come from one internal address, which breaks
-per-IP rate limits and the "one paid sharer per internet connection" rule for internet sharing.
+per-IP rate limits, the per-connection quotas, invite checks and invite links, and the "one paid sharer per internet
+connection" rule for internet sharing.
 
 **Behind Cloudflare (proxied, orange cloud).** This works too, and hides the server's address. Set
 `CADDYFILE=Caddyfile.cloudflare` in `.env` (step 3) and Cloudflare's SSL/TLS mode to **Full (strict)**. Caddy still gets
@@ -144,9 +145,14 @@ Finally, point the desktop app at the server: set the GitHub repository variable
 `https://api.otium.example` (Settings → Secrets and variables → Actions → Variables, or
 `gh variable set OTIUM_SERVER_URL --body https://api.otium.example`). The release workflow bakes it into the app.
 
-**The website.** The server's address is also Otium's website: `/` is the front page (what Otium does, honest earnings
-and the cost breakdown, built from the server's `Fees:*` settings), and invite links open `/r/<code>`. The Download
-buttons go to `Referral__DownloadUrl` (the latest GitHub release by default). Privacy and terms pages appear at
+**The website.** The server's address is also Otium's website: `/` is the front page (what Otium does, an estimate of
+what a PC could earn next to the around-the-clock figure comparison sites quote, and the cost breakdown, built from the
+server's `Fees:*` settings), and invite links open `/r/<code>`, which also remembers the code for a week for that
+internet connection, so Otium installed there fills it in. The Download buttons go to `/download`, Otium's own page:
+it starts the installer for the visitor's system from the newest release (the newest release candidate until there's
+a stable one), and `/download/{windows|macos|macos-intel|linux}` link each installer directly. Only while no release
+can be read from GitHub do they go to `Referral__DownloadUrl` (GitHub's releases page by default). The app's update
+feed is served at `/updates/{stable|pre}/`, only from releases with a valid signature. Privacy and terms pages appear at
 `/privacy` and `/terms`, and in every page's footer, once you add their reviewed text as HTML (just the body, no
 `<html>` or `<head>`):
 

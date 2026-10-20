@@ -156,7 +156,7 @@ internal static class SitePages
                       <p style="margin-top:20px" class="muted">Optional, and off until you tick it. Proxybase's customers, mostly AI agents and businesses that collect public web pages, use some of the internet connection you aren't using. It's paid to your wallet in your coin, like mining.</p>
                     </div>
                     <div class="panel reveal">
-                      <p class="keep">{(s.IsReal ? "" : "≈ ")}{UsdWhole(s.PerDay * 30)}<small>{explain}</small></p>
+                      <p class="keep" data-count>{(s.IsReal ? "" : "≈ ")}{UsdWhole(s.PerDay * 30)}<small>{explain}</small></p>
                     </div>
                   </div>
                 </section>
@@ -595,7 +595,7 @@ internal static class SitePages
                   <div class="wrap fees">
                     <div class="reveal">
                       <span class="label">Every fee, in full</span>
-                      <p class="keep" style="margin-top:18px">${keep.ToString("0.##", CultureInfo.InvariantCulture)}<small>of every $100 your processor mines stays yours. The rest goes to the mining software ({Percent(CostBreakdown.CpuMinerPercent)}), the pool ({Percent(poolPct)}) and Otium ({fee} of mining time).</small></p>
+                      <p class="keep" data-count style="margin-top:18px">${keep.ToString("0.##", CultureInfo.InvariantCulture)}<small>of every $100 your processor mines stays yours. The rest goes to the mining software ({Percent(CostBreakdown.CpuMinerPercent)}), the pool ({Percent(poolPct)}) and Otium ({fee} of mining time).</small></p>
                       <div class="split" role="img" aria-label="You keep {Percent(keep)}">{Seg("you", keep)}{Seg("otium", fees.FeePercent)}{Seg("miner", CostBreakdown.CpuMinerPercent)}{Seg("pool", poolPct)}</div>
                       <ul class="split-legend">
                         <li><i style="background:var(--emerald)"></i>You</li><li><i style="background:var(--ink)"></i>Otium</li><li><i style="background:var(--mist)"></i>Miner</li><li><i style="background:var(--amber)"></i>Pool</li>
