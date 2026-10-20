@@ -358,7 +358,7 @@ internal static partial class SitePages
           <footer>
             <div class="wrap">
               <span>Otium · <i>otium</i> is Latin for leisure</span>
-              <nav aria-label="Site">{{string.Concat(legalLinks.Select(p => $"""<a href="/{p}">{Capitalize(p)}</a>"""))}}<a href="{{HelpUrl}}">Help</a><a href="{{Core.AppIdentity.DiscordUrl}}">Discord</a>{{ContactLink}}<a href="https://github.com/Malogna/otium">Source code</a><a href="https://github.com/Malogna/otium/releases">Releases</a></nav>
+              <nav aria-label="Site">{{string.Concat(legalLinks.Select(p => $"""<a href="/{p}">{Capitalize(p)}</a>"""))}}<a href="{{HelpUrl}}">Help</a><a href="/antivirus">Antivirus help</a><a href="/compare/nicehash">vs NiceHash</a><a href="/compare/honeygain">vs Honeygain</a><a href="{{Core.AppIdentity.DiscordUrl}}">Discord</a>{{ContactLink}}<a href="https://github.com/Malogna/otium">Source code</a><a href="https://github.com/Malogna/otium/releases">Releases</a></nav>
             </div>
           </footer>
           <script src="{{SiteAssets.Url("site.js")}}" defer></script>
@@ -387,11 +387,12 @@ internal static partial class SitePages
 
         """.ReplaceLineEndings("\n");
 
-    /// <summary>The pages worth finding: the front page, the download page, every mining page and whichever legal pages exist.</summary>
+    /// <summary>The pages worth finding: the front page, the download page, every mining page, the help and comparison pages, and whichever legal pages exist.</summary>
     public static string Sitemap(string baseUrl, IEnumerable<string> legalLinks)
     {
         var root = baseUrl.TrimEnd('/');
-        var urls = new[] { "/", "/download" }.Concat(MiningPaths).Concat(legalLinks.Select(p => "/" + p))
+        var urls = new[] { "/", "/download" }.Concat(MiningPaths).Append("/antivirus").Concat(ComparisonSlugs.Select(s => "/compare/" + s))
+            .Concat(legalLinks.Select(p => "/" + p))
             .Select(p => $"  <url><loc>{System.Security.SecurityElement.Escape(root + p)}</loc></url>\n");
         return $"""
             <?xml version="1.0" encoding="UTF-8"?>
@@ -659,7 +660,7 @@ internal static partial class SitePages
     [
         ("Is my money safe?", "Otium never touches it. The pool pays your wallet directly, and you can check your balance on the pool's own page at any time.", null),
         ("Why does Otium take 2%?", "It's how Otium pays its way, without ads or selling anyone's data. It pays for the servers behind the website, your account and invites, the update feed, and the price check that picks the best-paying coin for your graphics card every 10 minutes. It pays for setting up payouts to your own wallet: each miner set up for your coin and address, a check that the pool will actually pay you, and turning internet sharing's earnings into your coin. And it pays for development and support: keeping up as coins and pools change, signed updates, and help on Discord and by email. The fee is 2% of mining time, so you can see it happen, and it stops during fee-free days.", "why-fee"),
-        ("Why does my antivirus warn about it?", "Antivirus tools flag every mining program, because criminals hide miners on other people's computers. Otium downloads the official open-source XMRig and SRBMiner releases, checks their fingerprints, and keeps them in one folder you can allow. It only mines when you've set it up and turned it on.", null),
+        ("Why does my antivirus warn about it?", """Antivirus tools flag every mining program, because criminals hide miners on other people's computers. Otium downloads the official open-source XMRig and SRBMiner releases, checks their fingerprints, and keeps them in one folder you can allow. It only mines when you've set it up and turned it on. <a href="/antivirus">How to allow it in your antivirus</a>""", null),
         ("Will it slow my computer down?", "By default it only runs while you're away, and stops within a second when you're back. If you let it run while you work, it uses the lowest priority and only as much of the processor as you allow. Games and work always come first.", null),
         ("I live in the United States", "unMineable doesn't serve US residents, so Otium pays you in Monero through MoneroOcean instead.", null),
         ("What about AMD graphics cards?", "Otium tests Pearl on yours too: the mining software now runs it on recent AMD cards (an RX 9070 XT makes about $2 a day before power). If the pool doesn't accept an AMD card's work, Otium moves it to the next coin that pays your wallet more than the power it uses. Either way it's paid to your one wallet, and your processor earns too.", null),

@@ -287,6 +287,61 @@ public sealed class SitePagesTests : IDisposable
     }
 
     [Fact]
+    public async Task The_antivirus_page_says_why_and_how_to_allow_only_the_engines_folder()
+    {
+        var (status, html) = await Get("/antivirus");
+
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.Contains("""<link rel="canonical" href="http://localhost/antivirus">""", html);
+        Assert.Contains(@"%LOCALAPPDATA%\Otium\engines", html); // the folder AppPaths.EnginesDir uses
+        Assert.Contains("~/Library/Application Support/Otium/engines", html);
+        Assert.Contains("Allow automatically", html); // the app's one-click Defender fix
+        foreach (var vendor in new[] { "avast", "avg", "norton", "bitdefender", "kaspersky", "eset", "malwarebytes", "mcafee" })
+            Assert.Contains($"""<details id="av-{vendor}">""", html);
+        // Each vendor's steps end back in Otium, and link the vendor's own help.
+        Assert.Equal(8, System.Text.RegularExpressions.Regex.Matches(html, "press <strong>Try again</strong>.</li></ol>").Count);
+        Assert.Contains("""rel="nofollow">Norton 360's own help</a>""", html);
+
+        var json = System.Text.RegularExpressions.Regex.Match(html, """<script type="application/ld\+json">(.*?)</script>""").Groups[1].Value;
+        using var data = System.Text.Json.JsonDocument.Parse(json);
+        var faq = data.RootElement.GetProperty("@graph")[1];
+        Assert.Equal("FAQPage", faq.GetProperty("@type").GetString());
+        Assert.Equal("Is Otium a virus?", faq.GetProperty("mainEntity")[0].GetProperty("name").GetString());
+
+        // Found from the front page's antivirus question and every page's footer.
+        var home = (await Get("/")).Html;
+        Assert.Contains("""<a href="/antivirus">How to allow it in your antivirus</a>""", home);
+        Assert.Contains("""<a href="/antivirus">Antivirus help</a>""", home);
+    }
+
+    [Theory]
+    [InlineData("nicehash", "NiceHash", "https://www.nicehash.com/support/general-help/kyc/what-is-kyc")]
+    [InlineData("honeygain", "Honeygain", "https://www.honeygain.com/terms-of-use/")]
+    public async Task Comparisons_cite_the_other_apps_own_pages(string slug, string name, string source)
+    {
+        var (status, html) = await Get($"/compare/{slug}");
+
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.Contains($"<title>{name} alternative: Otium vs {name} compared | Otium</title>", html);
+        Assert.Contains($"""<link rel="canonical" href="http://localhost/compare/{slug}">""", html);
+        Assert.Contains($"""<a href="{source}" rel="nofollow">""", html);
+        Assert.Contains($"Where {name} is the better choice", html);
+        Assert.Contains($"Otium isn't affiliated with {name}.", html);
+        Assert.Contains("Otium&#39;s 3%", html); // the server's own fee, not a number written into the page
+        Assert.Contains($"""<a href="/compare/{slug}">vs {name}</a>""", html);
+    }
+
+    [Fact]
+    public async Task Only_known_comparisons_exist()
+    {
+        Assert.Equal(HttpStatusCode.NotFound, (await Get("/compare/kryptex")).Status);
+        var sitemap = (await Get("/sitemap.xml")).Html;
+        Assert.Contains("<loc>http://localhost/antivirus</loc>", sitemap);
+        Assert.Contains("<loc>http://localhost/compare/nicehash</loc>", sitemap);
+        Assert.Contains("<loc>http://localhost/compare/honeygain</loc>", sitemap);
+    }
+
+    [Fact]
     public async Task Without_coin_prices_the_card_pages_say_so_but_still_answer()
     {
         _feed.Fail = true;
