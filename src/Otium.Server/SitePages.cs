@@ -573,7 +573,7 @@ internal static partial class SitePages
                     <div class="shift-line reveal">
                       <div class="moment"><time>18:00</time><h3>Choose where to be paid</h3><p>Pick a coin and paste your wallet address. The default is USDT on TRON, which is worth a dollar and pays out from <span class="mono">1.5 USDT</span>.</p></div>
                       <div class="moment"><time>23:00</time><h3>Walk away</h3><p>A few minutes after you leave the keyboard, your processor and graphics card start mining. Touch the mouse and they stop within a second.</p></div>
-                      <div class="moment"><time>09:00</time><h3>The pool pays you</h3><p>unMineable sends your earnings straight to your address once a day after the minimum. Otium never holds your money and can't touch it.</p></div>
+                      <div class="moment"><time>09:00</time><h3>The pool pays you</h3><p>unMineable sends your earnings straight to your address once a day after the minimum. Otium never holds your money and can't touch it. <a href="#payouts">How payouts work</a></p></div>
                     </div>
                   </div>
                 </section>
@@ -628,6 +628,35 @@ internal static partial class SitePages
                   </div>
                 </section>
 
+                <section id="payouts" aria-labelledby="payouts-title">
+                  <div class="wrap">
+                    <div class="section-head reveal">
+                      <div><span class="label">Getting paid</span><h2 id="payouts-title">The pool pays your wallet. Otium never holds your money.</h2></div>
+                      <p>Mining and internet sharing each pay your own address, in the coin you chose. This is the path the money takes.</p>
+                    </div>
+                    <div class="payouts">
+                      <div class="panel reveal">
+                        <h3>Mining</h3>
+                        <ol class="pay-steps">
+                          <li><strong>Your computer mines on unMineable, under your address.</strong> Your processor mines Monero and your graphics card the coin that pays it most.</li>
+                          <li><strong>unMineable converts it into your coin.</strong> A few hours after the mining, it adds the value to your balance at the pool, in USDT, BTC or whichever coin you picked.</li>
+                          <li><strong>Once a day it pays your wallet,</strong> when your balance has passed the pool's minimum (<span class="mono">1.5 USDT</span> for USDT on TRON). Otium shows how close you are.</li>
+                        </ol>
+                        <p class="fine mt-14">Check that "Auto pay" is on for your address at unMineable: new TRON addresses start with it off, and Otium warns you if it is. A balance with no mining for 6 months is lost at unMineable, so collect it if you stop. In the US, MoneroOcean pays Monero instead, from <span class="mono">0.003 XMR</span>.</p>
+                      </div>
+                      <div class="panel reveal">
+                        <h3>Internet sharing</h3>
+                        <ol class="pay-steps">
+                          <li><strong>Proxybase pays for the bandwidth its buyers use,</strong> in dollars, into a small wallet Otium keeps on your computer.</li>
+                          <li><strong>From $1, Otium has it converted and sent to your address</strong> in your coin. It waits while network fees would take more than 5% of the payout, so USDT on TRON arrives in payouts of about $16, and pays anyway from $25.</li>
+                          <li><strong>The conversion goes through Relay</strong> (and SideShift for Litecoin, ChangeNOW for Monero). One that fails comes back to the wallet on your computer.</li>
+                        </ol>
+                        <p class="fine mt-14">Otium's {fee} of sharing earnings comes off; the rest reaches your address. Payouts only ever go to the address you registered, never anywhere the app or anyone else asks.</p>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
                 <section aria-labelledby="invite-title">
                   <div class="wrap">
                     <div class="panel invite reveal">
@@ -673,6 +702,7 @@ internal static partial class SitePages
     [
         ("Is my money safe?", "Otium never touches it. The pool pays your wallet directly, and you can check your balance on the pool's own page at any time.", null),
         ("Why does Otium take 2%?", "It's how Otium pays its way, without ads or selling anyone's data. It pays for the servers behind the website, your account and invites, the update feed, and the price check that picks the best-paying coin for your graphics card every 10 minutes. It pays for setting up payouts to your own wallet: each miner set up for your coin and address, a check that the pool will actually pay you, and turning internet sharing's earnings into your coin. And it pays for development and support: keeping up as coins and pools change, signed updates, and help on Discord and by email. The fee is 2% of mining time, so you can see it happen, and it stops during fee-free days.", "why-fee"),
+        ("When do I get paid?", "Mining: unMineable pays your address once a day after your balance passes its minimum (1.5 USDT for USDT on TRON, usually within a day or two of mining with a gaming graphics card). Internet sharing: from $1, once the network fees are a small part of the payout. Both go straight to your own wallet. <a href=\"#payouts\">How payouts work</a>", null),
         ("Why does my antivirus warn about it?", """Antivirus tools flag every mining program, because criminals hide miners on other people's computers. Otium downloads the official open-source XMRig and SRBMiner releases, checks their fingerprints, and keeps them in one folder you can allow. It only mines when you've set it up and turned it on. <a href="/antivirus">How to allow it in your antivirus</a>""", null),
         ("Will it slow my computer down?", "By default it only runs while you're away, and stops within a second when you're back. If you let it run while you work, it uses the lowest priority and only as much of the processor as you allow. Games and work always come first.", null),
         ("I live in the United States", "unMineable doesn't serve US residents, so Otium pays you in Monero through MoneroOcean instead.", null),
