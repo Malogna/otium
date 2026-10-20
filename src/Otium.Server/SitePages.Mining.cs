@@ -162,7 +162,78 @@ internal static partial class SitePages
         var head = JsonLd(
             Breadcrumbs(root, ("Otium", "/"), ("GPU mining", "/mining"), (name, $"/mining/{card.Slug}")),
             FaqPage(questions));
-        return Layout(title, description, body, legalLinks, "/download", baseUrl, $"/mining/{card.Slug}", head: head);
+        return Layout(title, description, body, legalLinks, "/download", baseUrl, $"/mining/{card.Slug}", head: head,
+            image: MiningPreviewImage(card.Slug));
+    }
+
+    /// <summary>
+    /// A mining page's link-preview picture (Site/previews/{slug}.jpg, or mining.jpg for the comparison) and what it
+    /// says, or null to use the site's own. tools/render-site-previews.ps1 draws them from <see cref="PreviewTemplate"/>.
+    /// </summary>
+    private static (string Path, string Alt)? MiningPreviewImage(string? slug)
+    {
+        var file = $"previews/{slug ?? "mining"}.jpg";
+        if (SiteAssets.Find(file) is null)
+            return null;
+        var card = MiningCardList.FirstOrDefault(c => c.Slug == slug);
+        return (SiteAssets.Url(file), card is null
+            ? "What every graphics card earns mining, on otium.lol"
+            : $"{card.Name}: {Th(card.PearlTh)}, {card.Watts:0} W. What it earns mining today, on otium.lol");
+    }
+
+    /// <summary>
+    /// The 1200×630 page a mining page's preview picture is screenshotted from, in the site's fonts and colours (served
+    /// only in development, at /dev/preview/mining/{slug}). Speed, power and memory don't change, so the picture can
+    /// be drawn once; today's figure travels in the page's title and description instead.
+    /// </summary>
+    public static string? PreviewTemplate(string? slug)
+    {
+        string kicker, title, line, facts;
+        if (slug is null)
+        {
+            (kicker, title, line) = ("GPU mining", "What every graphics card earns", "Mining profitability, today");
+            facts = $"<span><b>●</b>{MiningCardList.Length} NVIDIA cards</span><span><b>●</b>Today's prices</span><span><b>●</b>After every fee</span>";
+        }
+        else if (MiningCardList.FirstOrDefault(c => c.Slug == slug) is { } card)
+        {
+            (kicker, title, line) = ($"GPU mining · {card.Group}", card.Name, "What it earns mining today");
+            facts = $"<span><b>●</b>{Th(card.PearlTh)}</span><span><b>●</b>{card.Watts:0} W</span><span><b>●</b>{card.MemoryGb} GB</span><span><b>●</b>Pearl, paid in your coin</span>";
+        }
+        else
+            return null;
+        return $$"""
+            <!doctype html>
+            <html lang="en"><head><meta charset="utf-8"><title>{{E(title)}}</title>
+            <style>
+              @font-face { font-family: "Bricolage Grotesque"; src: url("{{SiteAssets.Url("fonts/BricolageGrotesque.woff2")}}") format("woff2"); font-weight: 200 800; font-stretch: 75% 100%; }
+              @font-face { font-family: "Hanken Grotesk"; src: url("{{SiteAssets.Url("fonts/HankenGrotesk.woff2")}}") format("woff2"); font-weight: 300 800; }
+              @font-face { font-family: "JetBrains Mono"; src: url("{{SiteAssets.Url("fonts/JetBrainsMono.woff2")}}") format("woff2"); font-weight: 400 700; }
+              html, body { margin: 0; width: 1200px; height: 630px; overflow: hidden; }
+              body { background: #08131a; color: #e4eeeb; font-family: "Hanken Grotesk"; position: relative; }
+              .glow { position: absolute; width: 900px; height: 900px; right: -320px; top: -360px; border-radius: 50%; background: radial-gradient(closest-side, rgba(52,201,143,.28), rgba(52,201,143,0)); }
+              .glow2 { position: absolute; width: 700px; height: 700px; right: 80px; bottom: -520px; border-radius: 50%; background: radial-gradient(closest-side, rgba(242,180,92,.16), rgba(242,180,92,0)); }
+              .wrap { position: absolute; inset: 0; padding: 72px 80px; display: flex; flex-direction: column; }
+              .brand { display: flex; align-items: center; gap: 16px; font: 800 38px/1 "Bricolage Grotesque"; font-stretch: 85%; letter-spacing: -0.02em; }
+              .brand img { width: 56px; height: 56px; }
+              .url { position: absolute; right: 80px; top: 86px; font: 500 24px/1 "JetBrains Mono"; color: #8ea4a2; }
+              .kicker { margin-top: auto; font: 500 22px/1 "JetBrains Mono"; letter-spacing: .12em; text-transform: uppercase; color: #8ea4a2; }
+              h1 { margin: 18px 0 0; font: 800 132px/0.92 "Bricolage Grotesque"; font-stretch: 78%; letter-spacing: -0.035em; max-width: 1040px; }
+              h1.long { font-size: 100px; }
+              .line { margin-top: 10px; font: 800 64px/1 "Bricolage Grotesque"; font-stretch: 80%; letter-spacing: -0.02em; background: linear-gradient(100deg, #34c98f 10%, #b9f6dc 55%, #f2b45c 100%); -webkit-background-clip: text; background-clip: text; color: transparent; display: inline-block; padding-bottom: 6px; }
+              .facts { margin-top: 30px; display: flex; gap: 28px; font: 500 26px/1 "Hanken Grotesk"; color: #8ea4a2; }
+              .facts b { color: #34c98f; margin-right: 10px; }
+            </style></head>
+            <body><div class="glow"></div><div class="glow2"></div>
+            <div class="wrap">
+              <div class="brand"><img src="{{SiteAssets.Url("otium.svg")}}" alt="">Otium</div>
+              <div class="kicker">{{E(kicker)}}</div>
+              <h1{{(title.Length > 20 ? " class=\"long\"" : "")}}>{{E(title)}}</h1>
+              <div><span class="line">{{E(line)}}</span></div>
+              <div class="facts">{{facts}}</div>
+            </div>
+            <div class="url">otium.lol</div>
+            </body></html>
+            """;
     }
 
     /// <summary>The cards the front page links to by name, so search engines see their pages as important.</summary>
@@ -228,7 +299,7 @@ internal static partial class SitePages
             : $"GPU mining profitability: typical speed and power for {cards.Count} NVIDIA cards mining Pearl, with live earnings after every fee.";
         var root = baseUrl.TrimEnd('/');
         return Layout("GPU mining profitability today: what every graphics card earns | Otium", description, body, legalLinks, "/download",
-            baseUrl, "/mining", head: JsonLd(Breadcrumbs(root, ("Otium", "/"), ("GPU mining", "/mining"))));
+            baseUrl, "/mining", head: JsonLd(Breadcrumbs(root, ("Otium", "/"), ("GPU mining", "/mining"))), image: MiningPreviewImage(null));
     }
 
     /// <summary>schema.org data for a page's head. JSON's default escaping turns &lt; into <, so nothing in it can end the script.</summary>

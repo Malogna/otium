@@ -549,7 +549,13 @@ app.MapGet("/healthz", () => Results.Ok("ok"));
 
 // Development only: read the emails that would have been sent (sign-in codes) when no SMTP server is configured.
 if (app.Environment.IsDevelopment() || app.Configuration.GetValue<bool>("DevMode:Enabled"))
+{
     app.MapGet("/dev/outbox", (OutboxEmailSender outbox) => Results.Ok(outbox.Sent.Reverse()));
+    // The pages tools/render-site-previews.ps1 screenshots into the mining pages' link-preview pictures.
+    app.MapGet("/dev/preview/mining", () => Results.Content(SitePages.PreviewTemplate(null)!, "text/html; charset=utf-8"));
+    app.MapGet("/dev/preview/mining/{card}", (string card) =>
+        SitePages.PreviewTemplate(card) is { } html ? Results.Content(html, "text/html; charset=utf-8") : Results.NotFound());
+}
 
 // ---------- operator dashboard and API ----------
 
