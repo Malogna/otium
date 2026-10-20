@@ -13,9 +13,9 @@
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     let stars = [], w = 0, h = 0, dpr = 1;
-    function resize() {
+    function resize(width, height) {
       dpr = Math.min(devicePixelRatio || 1, 2);
-      w = canvas.clientWidth; h = canvas.clientHeight;
+      w = width; h = height;
       canvas.width = w * dpr; canvas.height = h * dpr;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       const count = Math.round(w * h / 9000);
@@ -41,8 +41,14 @@
       }
       if (!still && !document.hidden) requestAnimationFrame(frame);
     }
-    resize();
-    addEventListener("resize", resize);
+    // A ResizeObserver reports the canvas's size after layout, so reading it never forces one while the page loads.
+    if ("ResizeObserver" in window) {
+      new ResizeObserver(e => resize(e[0].contentRect.width, e[0].contentRect.height)).observe(canvas);
+    } else {
+      const measure = () => resize(canvas.clientWidth, canvas.clientHeight);
+      measure();
+      addEventListener("resize", measure);
+    }
     document.addEventListener("visibilitychange", () => { if (!document.hidden && !still) requestAnimationFrame(frame); });
     requestAnimationFrame(frame);
   }

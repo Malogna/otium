@@ -354,6 +354,94 @@ public sealed class SitePagesTests : IDisposable
     }
 
     [Fact]
+    public async Task The_pearl_page_explains_the_coin_with_its_risks_and_sources()
+    {
+        var (status, html) = await Get("/pearl");
+
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.Contains("""<link rel="canonical" href="http://localhost/pearl">""", html);
+        Assert.Contains("""<a href="/mining/rtx-5090">RTX 5090</a> $""", html); // today's best cards, linked
+        Assert.Contains("The risks, plainly", html);
+        Assert.Contains("only let whitelisted GPUs mine", html); // the planned FP8 upgrade
+        Assert.Contains("""<a href="https://arxiv.org/abs/2606.04819" rel="nofollow">""", html); // the study disputing its usefulness
+        Assert.Contains("Otium isn't affiliated with Pearl Research Labs.", html);
+        Assert.Contains("\"@type\":\"FAQPage\"", html);
+        // Linked from the front page's Pearl section, every card page and the footer.
+        Assert.Contains("""see their data. <a href="/pearl">What is Pearl?</a>""", (await Get("/")).Html);
+        Assert.Contains("""<a href="/pearl">What is Pearl?</a>""", (await Get("/mining/rtx-3080")).Html);
+        Assert.Contains("<loc>http://localhost/pearl</loc>", (await Get("/sitemap.xml")).Html);
+    }
+
+    [Fact]
+    public async Task The_front_page_links_popular_cards_with_what_they_earn()
+    {
+        var html = (await Get("/")).Html;
+        Assert.Contains("""<a href="/mining/rtx-4090">RTX 4090<span>$9.94/day</span></a>""", html);
+        Assert.Contains("""<a class="all" href="/mining">Every card</a>""", html);
+    }
+
+    [Fact]
+    public async Task Missing_pages_get_a_page_with_the_way_back_but_the_api_keeps_bare_404s()
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, "/no-such-page");
+        request.Headers.Accept.ParseAdd("text/html");
+        using var page = await _http.SendAsync(request);
+        Assert.Equal(HttpStatusCode.NotFound, page.StatusCode);
+        var html = await page.Content.ReadAsStringAsync();
+        Assert.Contains("This page doesn't exist", html);
+        Assert.Contains("""<meta name="robots" content="noindex, follow">""", html);
+        Assert.Contains("""<a href="/mining">What each graphics card earns</a>""", html);
+
+        var api = new HttpRequestMessage(HttpMethod.Get, "/api/v1/no-such-thing");
+        api.Headers.Accept.ParseAdd("text/html");
+        using var bare = await _http.SendAsync(api);
+        Assert.Equal(HttpStatusCode.NotFound, bare.StatusCode);
+        Assert.Empty(await bare.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task The_sitemap_dates_the_priced_pages_by_todays_prices()
+    {
+        var sitemap = (await Get("/sitemap.xml")).Html;
+        Assert.Contains("<url><loc>http://localhost/mining/rtx-4090</loc><lastmod>2026-10-18T15:00:00Z</lastmod></url>", sitemap);
+        Assert.Contains("<url><loc>http://localhost/</loc><lastmod>2026-10-18T15:00:00Z</lastmod></url>", sitemap);
+        Assert.Contains("<url><loc>http://localhost/antivirus</loc></url>", sitemap); // unchanged by prices: no date
+    }
+
+    [Fact]
+    public async Task IndexNow_gets_the_pages_and_the_key_file_proves_the_site_sent_them()
+    {
+        Assert.Equal(Otium.Server.IndexNowService.Key, (await Get($"/{Otium.Server.IndexNowService.Key}.txt")).Html);
+
+        var handler = new RecordingHandler();
+        var service = new Otium.Server.IndexNowService(new HttpClient(handler),
+            Microsoft.Extensions.Options.Options.Create(new Otium.Server.ReferralOptions { PublicBaseUrl = "https://otium.lol" }),
+            Microsoft.Extensions.Options.Options.Create(new Otium.Server.SiteOptions { PagesDirectory = _pages }), _time,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<Otium.Server.IndexNowService>.Instance);
+        await service.NotifyAsync("https://otium.lol/", ["/", "/mining/rtx-4090"], CancellationToken.None);
+
+        Assert.Equal("https://api.indexnow.org/indexnow", handler.Uri?.ToString());
+        using var notice = System.Text.Json.JsonDocument.Parse(handler.Body!);
+        Assert.Equal("otium.lol", notice.RootElement.GetProperty("host").GetString());
+        Assert.Equal($"https://otium.lol/{Otium.Server.IndexNowService.Key}.txt", notice.RootElement.GetProperty("keyLocation").GetString());
+        Assert.Equal(["https://otium.lol/", "https://otium.lol/mining/rtx-4090"],
+            notice.RootElement.GetProperty("urlList").EnumerateArray().Select(u => u.GetString()));
+    }
+
+    private sealed class RecordingHandler : HttpMessageHandler
+    {
+        public Uri? Uri { get; private set; }
+        public string? Body { get; private set; }
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Uri = request.RequestUri;
+            Body = await request.Content!.ReadAsStringAsync(cancellationToken);
+            return new HttpResponseMessage(HttpStatusCode.Accepted);
+        }
+    }
+
+    [Fact]
     public async Task Only_known_comparisons_exist()
     {
         Assert.Equal(HttpStatusCode.NotFound, (await Get("/compare/kryptex")).Status);
@@ -386,11 +474,19 @@ public sealed class SitePagesTests : IDisposable
         Assert.Equal(HttpStatusCode.OK, versioned.StatusCode);
         Assert.Equal("text/css; charset=utf-8", versioned.Content.Headers.ContentType!.ToString());
         Assert.Contains("immutable", versioned.Headers.CacheControl!.ToString());
-        Assert.Contains("--emerald", await versioned.Content.ReadAsStringAsync());
+        var stylesheet = await versioned.Content.ReadAsStringAsync();
+        Assert.Contains("--emerald", stylesheet);
 
-        using var font = await _http.GetAsync("/site/fonts/HankenGrotesk.woff2");
+        // The stylesheet loads its fonts by versioned address, the same one the page preloads, so they're cached for a
+        // year too and downloaded once.
+        var fontUrl = System.Text.RegularExpressions.Regex.Match(stylesheet, """url\("(/site/fonts/HankenGrotesk\.woff2\?v=[0-9a-f]{10})"\)""").Groups[1].Value;
+        Assert.NotEmpty(fontUrl);
+        Assert.Contains($"""<link rel="preload" href="{fontUrl}" as="font" """, html);
+        using var font = await _http.GetAsync(fontUrl);
         Assert.Equal("font/woff2", font.Content.Headers.ContentType!.ToString());
-        Assert.Equal("public, max-age=86400", font.Headers.CacheControl!.ToString());
+        Assert.Contains("immutable", font.Headers.CacheControl!.ToString());
+        using var plainFont = await _http.GetAsync("/site/fonts/HankenGrotesk.woff2");
+        Assert.Equal("public, max-age=86400", plainFont.Headers.CacheControl!.ToString());
         Assert.Equal(HttpStatusCode.OK, (await _http.GetAsync("/site/fonts/HankenGrotesk-OFL.txt")).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await _http.GetAsync("/site/../appsettings.json")).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await _http.GetAsync("/site/missing.js")).StatusCode);
