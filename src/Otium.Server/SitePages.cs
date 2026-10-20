@@ -749,22 +749,7 @@ internal static class SitePages
               <h1 style="margin-top:14px">Download Otium</h1>
               <p class="lead">Otium {version} runs on Windows, macOS and Linux computers. On a phone? Open otium.lol on the computer you want to earn with.</p>
               """;
-        var steps = mine?.Os switch
-        {
-            "windows" => $"""
-                <li>Open <span class="code">{E(mine.FileName)}</span> from your downloads. Otium isn't signed yet, so Windows may say "Windows protected your PC": choose <strong>More info</strong>, then <strong>Run anyway</strong>.</li>
-                <li>Setup takes a few seconds and opens Otium. Choose Quick start, and add the wallet address you want to be paid to.</li>
-                """,
-            "macos" or "macos-intel" => $"""
-                <li>Open <span class="code">{E(mine.FileName)}</span> and follow the installer. If macOS says it can't check it for malicious software, open System Settings, Privacy &amp; Security, and choose <strong>Open Anyway</strong>.</li>
-                <li>Open Otium from Applications. Choose Quick start, and add the wallet address you want to be paid to.</li>
-                """,
-            "linux" => $"""
-                <li>Make <span class="code">{E(mine.FileName)}</span> executable (right-click, Properties, or <span class="code">chmod +x</span>) and run it.</li>
-                <li>Choose Quick start, and add the wallet address you want to be paid to.</li>
-                """,
-            _ => "",
-        };
+        var installing = Installing(release, mine?.Os);
         var others = string.Join("", release.Installers.Where(i => i != mine)
             .Select(i => $"""<a class="button ghost" href="/download/{E(i.Os)}">{E(i.Label)}</a>"""));
         var body = $"""
@@ -774,17 +759,71 @@ internal static class SitePages
                     <div class="panel">
                       <span class="label">Download</span>
                       {intro}
-                      {(steps.Length > 0 ? $"<ol>{steps}</ol>" : "")}
                       <p class="muted" style="margin-top:18px">{(mine is null ? "Choose your system:" : "Another system?")}</p>
                       <div class="actions">{others}</div>
                       <p class="muted" style="margin-top:18px">The macOS and Linux versions are in beta. Otium runs the open-source XMRig and SRBMiner miners, which some antivirus tools flag. <a href="/">How Otium works</a></p>
                     </div>
+                    {installing}
                   </div>
                 </section>
             """;
         var head = mine is null ? null : $"""<meta http-equiv="refresh" content="1;url=/download/{E(mine.Os)}">""";
         return Layout($"Download Otium {release.Version}", $"Download Otium {release.Version} for Windows, macOS and Linux.", body, legalLinks,
             "/download", baseUrl, "/download", head: head);
+    }
+
+    /// <summary>
+    /// "Installing": what each system says about an installer that isn't code-signed and how to get past it, then each
+    /// file's SHA-256 from GitHub with the command that checks it. The visitor's own system is open. Otium isn't signed
+    /// because certificates cost money every year and the free programs for open-source projects don't take miners.
+    /// </summary>
+    private static string Installing(LatestRelease release, string? os)
+    {
+        string Sums(IReadOnlyList<Installer> files, Func<string, string> command)
+        {
+            var known = files.Where(f => f.Sha256 is not null).ToList();
+            return known.Count == 0 ? "" : $"""
+                <p class="sum-intro">To check that a file is the one we published, compare its SHA-256 with ours: <span class="cmd">{E(command(known[0].FileName))}</span></p>
+                {string.Concat(known.Select(f => $"""<p class="sum"><span>{E(f.FileName)}</span><code>{E(f.Sha256!)}</code></p>"""))}
+                """;
+        }
+        string Part(string id, string title, bool open, string steps, IReadOnlyList<Installer> files, Func<string, string> command) =>
+            $"""<details id="install-{id}"{(open ? " open" : "")}><summary>{title}</summary><div class="install-body"><ol>{steps}</ol>{Sums(files, command)}</div></details>""";
+
+        var windows = release.Installers.Where(i => i.Os == "windows").ToList();
+        var macs = release.Installers.Where(i => i.Os.StartsWith("macos", StringComparison.Ordinal)).ToList();
+        var linux = release.Installers.Where(i => i.Os == "linux").ToList();
+        var parts = new List<string>();
+        if (windows.Count > 0)
+            parts.Add(Part("windows", "Windows", os == "windows", $"""
+                <li>Open <span class="code">{E(windows[0].FileName)}</span> from your downloads. If your browser says it isn't commonly downloaded, choose <strong>Keep</strong>.</li>
+                <li>Otium isn't code-signed yet, so Windows says "Windows protected your PC". Choose <strong>More info</strong>, then <strong>Run anyway</strong>.</li>
+                <li>Setup takes a few seconds and opens Otium. Choose Quick start, and add the wallet address you want to be paid to.</li>
+                <li>If your antivirus stops the miners, Otium tells you and shows the one folder to allow. Don't turn your antivirus off.</li>
+                <li>If Windows says <strong>Smart App Control</strong> blocked it, Otium can't run on that PC yet: Smart App Control only lets through signed apps and ones Microsoft already knows. We don't suggest turning it off for Otium.</li>
+                """, windows, f => $"Get-FileHash .\\{f}"));
+        if (macs.Count > 0)
+        {
+            var intel = macs.Count > 1 ? $""", <span class="code">{E(macs[1].FileName)}</span> for Intel""" : "";
+            parts.Add(Part("macos", "macOS", os is "macos" or "macos-intel", $"""
+                <li>Open the installer (<span class="code">{E(macs[0].FileName)}</span> for Apple silicon{intel}). Otium isn't signed by Apple yet, so macOS says it can't verify it: choose <strong>Done</strong>.</li>
+                <li>Open System Settings, then Privacy &amp; Security. Under Security, choose <strong>Open Anyway</strong> next to the message about Otium, and confirm with your password.</li>
+                <li>Follow the installer, then open Otium from Applications (if macOS asks again, do step 2 once more). Choose Quick start, and add the wallet address you want to be paid to.</li>
+                """, macs, f => $"shasum -a 256 ~/Downloads/{f}"));
+        }
+        if (linux.Count > 0)
+            parts.Add(Part("linux", "Linux", os == "linux", $"""
+                <li>Make <span class="code">{E(linux[0].FileName)}</span> executable (right-click, Properties, or <span class="code">chmod +x</span>) and run it.</li>
+                <li>If it doesn't start, install FUSE 2 (<span class="code">libfuse2</span>, or <span class="code">libfuse2t64</span> on Ubuntu 24.04), which AppImages need.</li>
+                <li>Choose Quick start, and add the wallet address you want to be paid to.</li>
+                """, linux, f => $"sha256sum {f}"));
+        return parts.Count == 0 ? "" : $"""
+            <div class="panel install" id="installing">
+              <h2>Installing</h2>
+              <p class="muted">Otium isn't code-signed yet: a certificate costs hundreds of dollars a year, and the free ones for open-source projects don't take apps that mine. So your computer warns you once when you install it. Here's what you'll see and what to do.</p>
+              {string.Concat(parts)}
+            </div>
+            """;
     }
 
     /// <summary>The legal pages whose files exist in <paramref name="directory"/>, in footer order.</summary>
