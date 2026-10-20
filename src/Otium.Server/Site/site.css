@@ -404,6 +404,8 @@ section { padding-block: 104px 0; }
 .split-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; padding: 0; margin: 0; list-style: none; font: 400 0.8rem var(--mono); color: var(--mist); }
 .split-legend li { display: inline-flex; align-items: center; gap: 8px; }
 .split-legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.fee-why { margin-top: 22px; max-width: 32em; font-size: 0.95rem; }
+.fee-why a { color: var(--emerald); white-space: nowrap; }
 .costs { margin: 0; display: grid; }
 .costs div { display: grid; grid-template-columns: 9rem minmax(0, 1fr); gap: 18px; padding: 14px 0; border-top: 1px solid var(--line); }
 .costs div:first-child { border-top: 0; padding-top: 0; }

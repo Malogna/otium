@@ -13,6 +13,10 @@ public sealed record CostLine(string Who, string What);
 /// </summary>
 public static class CostBreakdown
 {
+    /// <summary>What Otium's fee pays for, in one sentence (the cost line, Settings and the website).</summary>
+    public const string WhyOtiumsFee =
+        "It pays for Otium's servers, for setting up payouts to your own wallet, and for development and support.";
+
     /// <summary>XMRig's developer donation (its minimum).</summary>
     public const double CpuMinerPercent = 1.0;
 
@@ -40,7 +44,7 @@ public static class CostBreakdown
         var lines = new List<CostLine>
         {
             new("Otium", $"{P(fees.FeePercent)} of mining time, about {minutes:0} minutes per day of mining, mined to Otium's own address. " +
-                         "Nothing while Otium is paused, and nothing during fee-free days."),
+                         "Nothing while Otium is paused, and nothing during fee-free days. " + WhyOtiumsFee),
         };
 
         if (gpuPool is { } gpu)

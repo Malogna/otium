@@ -305,6 +305,16 @@
     }
   }
 
+  // ---------- A link to a question ("What that covers") opens it ----------
+  function openLinkedQuestion() {
+    const open = () => {
+      const target = location.hash.length > 1 ? document.getElementById(location.hash.slice(1)) : null;
+      if (target?.tagName === "DETAILS") target.open = true;
+    };
+    addEventListener("hashchange", open);
+    open();
+  }
+
   function countUps() {
     const items = $$("[data-count]");
     if (still || !items.length || !("IntersectionObserver" in window)) return;
@@ -402,5 +412,5 @@
     }, 140);
   }
 
-  sky(); dial(); earnings(); reveal(); countUps(); smoothDetails(); shiftLine(); spotlights(); platform(); hashField();
+  sky(); dial(); earnings(); reveal(); countUps(); smoothDetails(); openLinkedQuestion(); shiftLine(); spotlights(); platform(); hashField();
 })();

@@ -600,6 +600,7 @@ internal static class SitePages
                       <ul class="split-legend">
                         <li><i style="background:var(--emerald)"></i>You</li><li><i style="background:var(--ink)"></i>Otium</li><li><i style="background:var(--mist)"></i>Miner</li><li><i style="background:var(--amber)"></i>Pool</li>
                       </ul>
+                      <p class="muted fee-why">Otium's {fee} is how it pays its way, with no ads and no data sold: the servers, payouts to your own wallet, and development and support. <a href="#why-fee">What that covers</a></p>
                     </div>
                     <div class="panel reveal">
                       <h3 id="fees-title" style="margin-bottom:18px">What comes off, and who gets it</h3>
@@ -630,7 +631,7 @@ internal static class SitePages
                   <div class="wrap">
                     <div class="section-head reveal"><div><span class="label">Questions</span><h2 id="faq-title">Before you install</h2></div></div>
                     <div class="faq reveal">
-                      {string.Concat(Faq.Select(q => $"<details><summary>{q.Question}</summary><p>{q.AnswerHtml}</p></details>"))}
+                      {string.Concat(Faq.Select(q => $"<details{(q.Id is null ? "" : $" id=\"{q.Id}\"")}><summary>{q.Question}</summary><p>{q.AnswerHtml}</p></details>"))}
                     </div>
                   </div>
                 </section>
@@ -649,16 +650,17 @@ internal static class SitePages
     }
 
     /// <summary>"Questions" on the front page, also given to search engines as an FAQ. Answers are trusted HTML.</summary>
-    private static readonly (string Question, string AnswerHtml)[] Faq =
+    private static readonly (string Question, string AnswerHtml, string? Id)[] Faq =
     [
-        ("Is my money safe?", "Otium never touches it. The pool pays your wallet directly, and you can check your balance on the pool's own page at any time."),
-        ("Why does my antivirus warn about it?", "Antivirus tools flag every mining program, because criminals hide miners on other people's computers. Otium downloads the official open-source XMRig and SRBMiner releases, checks their fingerprints, and keeps them in one folder you can allow. It only mines when you've set it up and turned it on."),
-        ("Will it slow my computer down?", "By default it only runs while you're away, and stops within a second when you're back. If you let it run while you work, it uses the lowest priority and only as much of the processor as you allow. Games and work always come first."),
-        ("I live in the United States", "unMineable doesn't serve US residents, so Otium pays you in Monero through MoneroOcean instead."),
-        ("What about AMD graphics cards?", "Otium tests Pearl on yours too: the mining software now runs it on recent AMD cards (an RX 9070 XT makes about $2 a day before power). If the pool doesn't accept an AMD card's work, Otium moves it to the next coin that pays your wallet more than the power it uses. Either way it's paid to your one wallet, and your processor earns too."),
-        ("Which download do I need?", """The Download button picks the installer for the computer you're on. To choose one yourself: <a href="/download?os=windows">Windows</a>, <a href="/download?os=macos">Mac with Apple silicon</a>, <a href="/download?os=macos-intel">Mac with Intel</a> or <a href="/download?os=linux">Linux (AppImage)</a>. The Mac and Linux versions are a beta in this first release: they work, but have been tested less than Windows."""),
-        ("Something isn't working", $"""In Otium, open Advanced and press "Send a problem report". It sends what Otium knows about why it isn't earning, without your payout address or any keys, and gives you a reference. Then <a href="{HelpUrl}">ask for help</a> and mention it."""),
-        ("Will my computer go to sleep?", "Not while it's earning: Otium keeps it awake so it can mine through the night, and the screen still turns off. When it stops earning (you're back, power is too expensive, or a laptop runs on battery) your usual sleep settings apply again. You can switch this off in Settings."),
+        ("Is my money safe?", "Otium never touches it. The pool pays your wallet directly, and you can check your balance on the pool's own page at any time.", null),
+        ("Why does Otium take 2%?", "It's how Otium pays its way, without ads or selling anyone's data. It pays for the servers behind the website, your account and invites, the update feed, and the price check that picks the best-paying coin for your graphics card every 10 minutes. It pays for setting up payouts to your own wallet: each miner set up for your coin and address, a check that the pool will actually pay you, and turning internet sharing's earnings into your coin. And it pays for development and support: keeping up as coins and pools change, signed updates, and help on Discord and by email. The fee is 2% of mining time, so you can see it happen, and it stops during fee-free days.", "why-fee"),
+        ("Why does my antivirus warn about it?", "Antivirus tools flag every mining program, because criminals hide miners on other people's computers. Otium downloads the official open-source XMRig and SRBMiner releases, checks their fingerprints, and keeps them in one folder you can allow. It only mines when you've set it up and turned it on.", null),
+        ("Will it slow my computer down?", "By default it only runs while you're away, and stops within a second when you're back. If you let it run while you work, it uses the lowest priority and only as much of the processor as you allow. Games and work always come first.", null),
+        ("I live in the United States", "unMineable doesn't serve US residents, so Otium pays you in Monero through MoneroOcean instead.", null),
+        ("What about AMD graphics cards?", "Otium tests Pearl on yours too: the mining software now runs it on recent AMD cards (an RX 9070 XT makes about $2 a day before power). If the pool doesn't accept an AMD card's work, Otium moves it to the next coin that pays your wallet more than the power it uses. Either way it's paid to your one wallet, and your processor earns too.", null),
+        ("Which download do I need?", """The Download button picks the installer for the computer you're on. To choose one yourself: <a href="/download?os=windows">Windows</a>, <a href="/download?os=macos">Mac with Apple silicon</a>, <a href="/download?os=macos-intel">Mac with Intel</a> or <a href="/download?os=linux">Linux (AppImage)</a>. The Mac and Linux versions are a beta in this first release: they work, but have been tested less than Windows.""", null),
+        ("Something isn't working", $"""In Otium, open Advanced and press "Send a problem report". It sends what Otium knows about why it isn't earning, without your payout address or any keys, and gives you a reference. Then <a href="{HelpUrl}">ask for help</a> and mention it.""", null),
+        ("Will my computer go to sleep?", "Not while it's earning: Otium keeps it awake so it can mine through the night, and the screen still turns off. When it stops earning (you're back, power is too expensive, or a laptop runs on battery) your usual sleep settings apply again. You can switch this off in Settings.", null),
     ];
 
     /// <summary>
