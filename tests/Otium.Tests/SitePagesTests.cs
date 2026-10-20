@@ -101,9 +101,14 @@ public sealed class SitePagesTests : IDisposable
         Assert.Contains("""<input id="price" type="range" min="0" max="0.60" step="0.01" value="0.15">""", html);
         Assert.DoesNotContain("typical in", html);
         Assert.True(html.IndexOf("est-month", StringComparison.Ordinal) < html.IndexOf("id=\"night-shift\"", StringComparison.Ordinal));
-        // Quick chips for popular cards, and every card in the list grouped by series.
-        Assert.Contains("""data-card="rtx4090" aria-pressed="true">""", html);
-        Assert.Contains("""data-card="rtx3060" aria-pressed="false">""", html);
+        // At first sight: the figure, one sentence on what it assumes, and the card list; the breakdown and the sliders
+        // wait behind a closed "See the breakdown and adjust".
+        Assert.Contains("""<p class="est-summary" id="est-summary">An RTX 4090 mining while you're away (16 h a day), plus internet sharing.</p>""", html);
+        Assert.Contains("""<details class="est-more">""", html); // closed: no "open"
+        Assert.True(html.IndexOf("est-summary", StringComparison.Ordinal) < html.IndexOf("<details class=\"est-more\">", StringComparison.Ordinal));
+        Assert.True(html.IndexOf("<details class=\"est-more\">", StringComparison.Ordinal) < html.IndexOf("id=\"est-sub\"", StringComparison.Ordinal));
+        Assert.DoesNotContain("data-card=", html); // one card picker, not two
+        // Every card in the list, grouped by series.
         Assert.Contains("""<optgroup label="RTX 50 series"><option value="rtx5090">RTX 5090 · NVIDIA &#183; 32 GB</option>""", html);
         Assert.Contains("""<option value="rtx4090" selected>RTX 4090 · NVIDIA &#183; 24 GB</option>""", html);
         Assert.DoesNotContain("AMD Radeon", html); // no card list entry without a coin it can mine to the user's wallet

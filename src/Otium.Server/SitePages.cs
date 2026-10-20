@@ -61,9 +61,6 @@ internal static class SitePages
     /// <summary>The card the estimate opens with.</summary>
     public const string TypicalCard = "rtx4090";
 
-    /// <summary>Cards offered as one-click chips above the full list.</summary>
-    public static readonly string[] QuickCards = ["rtx4090", "rtx5090", "rtx4070", "rtx3080", "rtx3060"];
-
     /// <summary>
     /// The electricity price the page opens with for a visitor: the typical household price in their country (the same
     /// table the app starts from), from Cloudflare's CF-IPCountry header, or <see cref="DefaultPricePerKwh"/> without one.
@@ -93,6 +90,11 @@ internal static class SitePages
         var best = card.Coins.Select(c => (c, Net: (c.UsdPerDay - c.Watts * 24 / 1000 * pricePerKwh) * hoursAway / 24)).MaxBy(x => x.Net);
         return best.c is null ? null : new CardEstimate(card.Name, best.c.Coin, best.c.Note, Math.Max(0, best.Net), Math.Max(0, best.Net) * 30);
     }
+
+    /// <summary>What the headline figure assumes, in one sentence (the details are one click away).</summary>
+    internal static string SummaryLine(CardEstimate e, int hoursAway, SharingFigure s) => e.Day <= 0
+        ? $"An {e.Card} would mostly wait at this electricity price{(s.PerDay > 0 ? "; internet sharing still earns" : "")}."
+        : $"An {e.Card} mining while you're away ({hoursAway} h a day){(s.PerDay > 0 ? ", plus internet sharing" : "")}.";
 
     private static string EstimateLine(CardEstimate e) => e.Day <= 0
         ? $"Mining: waits at this power price on an {e.Card}."
@@ -443,8 +445,6 @@ internal static class SitePages
         var (price, country) = PriceFor(visitorCountry);
         var priceText = price.ToString("0.00", CultureInfo.InvariantCulture);
         var estimate = typical is null ? null : Estimate(typical, DefaultHoursAway, price);
-        var chips = string.Concat(QuickCards.Select(id => earnings.FirstOrDefault(c => c.Id == id)).OfType<CardEarnings>().Select(c =>
-            $"""<button type="button" class="chip" data-card="{c.Id}" aria-pressed="{(c == typical ? "true" : "false")}">{E(c.Name)}<small>{E(c.Detail)}</small></button>"""));
         var options = string.Concat(earnings.GroupBy(c => c.Group).Select(g =>
             $"""<optgroup label="{E(g.Key)}">{string.Concat(g.Select(c => $"""<option value="{c.Id}"{(c == typical ? " selected" : "")}>{E(c.Name)} · {E(c.Detail)}</option>"""))}</optgroup>"""));
         var estimator = typical is null || estimate is null
@@ -455,20 +455,25 @@ internal static class SitePages
             : $"""
                       <div class="est-head"><span class="label">What your PC could earn</span><span class="live"><i></i>Today's prices</span></div>
                       <div class="est-figure"><span class="est-amount" id="est-month">{UsdWhole(estimate.Value.Month + sharing.PerDay * 30)}</span><span class="est-per">a month</span></div>
-                      <p class="est-sub" id="est-sub">{EstimateLine(estimate.Value)}<br><span id="est-share">{SharingLine(sharing)}</span></p>
-                      <p class="est-payout" id="est-payout">{PayoutLine(estimate.Value.Day)}</p>
-                      <p class="est-compare" id="est-compare">{AroundTheClockLine(typical!)}</p>
-                      <div class="chips" role="group" aria-label="Popular graphics cards">{chips}</div>
+                      <p class="est-summary" id="est-summary">{SummaryLine(estimate.Value, DefaultHoursAway, sharing)}</p>
                       <label class="card-pick"><span>Your graphics card</span><select id="card">{options}</select></label>
-                      <div class="est-sliders">
-                        <label for="hours">Away from the computer</label>
-                        <input id="hours" type="range" min="2" max="24" step="1" value="{DefaultHoursAway}">
-                        <output id="hours-out" for="hours">{DefaultHoursAway} h a day</output>
-                        <label for="price">Electricity price{(country is null ? "" : $"<small>typical in {E(country)}</small>")}</label>
-                        <input id="price" type="range" min="0" max="0.60" step="0.01" value="{priceText}">
-                        <output id="price-out" for="price">${priceText} / kWh</output>
-                      </div>
-                      <p class="footnote">Estimate from today's coin prices{(asOf is null ? "" : $" ({asOf})")} and Proxybase's rates. The app measures your own PC before you start.</p>
+                      <details class="est-more">
+                        <summary>See the breakdown and adjust</summary>
+                        <div class="est-more-body">
+                          <p class="est-sub" id="est-sub">{EstimateLine(estimate.Value)}<br><span id="est-share">{SharingLine(sharing)}</span></p>
+                          <p class="est-payout" id="est-payout">{PayoutLine(estimate.Value.Day)}</p>
+                          <p class="est-compare" id="est-compare">{AroundTheClockLine(typical!)}</p>
+                          <div class="est-sliders">
+                            <label for="hours">Away from the computer</label>
+                            <input id="hours" type="range" min="2" max="24" step="1" value="{DefaultHoursAway}">
+                            <output id="hours-out" for="hours">{DefaultHoursAway} h a day</output>
+                            <label for="price">Electricity price{(country is null ? "" : $"<small>typical in {E(country)}</small>")}</label>
+                            <input id="price" type="range" min="0" max="0.60" step="0.01" value="{priceText}">
+                            <output id="price-out" for="price">${priceText} / kWh</output>
+                          </div>
+                          <p class="footnote">Estimate from today's coin prices{(asOf is null ? "" : $" ({asOf})")} and Proxybase's rates. The app measures your own PC before you start.</p>
+                        </div>
+                      </details>
                       <script type="application/json" id="otium-data">{data}</script>
               """;
 
