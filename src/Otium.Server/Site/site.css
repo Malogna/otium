@@ -463,6 +463,27 @@ footer a:hover { color: var(--ink); }
 .page .install { margin-top: 24px; }
 .page .install h2 { margin-bottom: 10px; }
 .page .install > p { margin-bottom: 14px; }
+/* What each graphics card earns (/mining): stacked panels, a breadcrumb above, the card's key figures as a row. */
+.mining .panel + .panel { margin-top: 24px; }
+.mining .panel.wide { max-width: 980px; }
+.mining .panel h2 { font-size: var(--step-2); margin-bottom: 12px; }
+.mining .panel p + p { margin-top: 12px; }
+.mining .faq { grid-template-columns: minmax(0, 1fr); }
+.crumbs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; font-size: var(--step--1); color: var(--mist); }
+.crumbs a { color: var(--mist); }
+.crumbs a:hover { color: var(--ink); }
+.card-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); gap: 16px; margin: 22px 0 0; }
+.card-facts div { padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--night-3); }
+.card-facts dt { font-size: 0.8rem; color: var(--mist); }
+.card-facts dt small { display: block; font: 400 0.72rem var(--mono); }
+.card-facts dd { margin: 4px 0 0; font: 700 1.2rem var(--display); font-variant-numeric: tabular-nums; }
+.card-facts dd small { display: block; font: 400 0.75rem var(--body); color: var(--mist); }
+.page .card-links { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); gap: 8px 24px; padding: 0; list-style: none; }
+.page .card-links li + li { margin-top: 0; }
+.card-links span { color: var(--mist); font-size: 0.88rem; font-variant-numeric: tabular-nums; }
+.real-cards td a, .real-cards th a { color: var(--ink); }
+.est-all { font-size: 0.85rem; color: var(--mist); justify-self: start; }
+.est-all:hover { color: var(--ink); }
 .install-body { padding-bottom: 22px; }
 .install-body ol { padding-left: 22px; color: var(--mist); }
 .install-body li + li { margin-top: 8px; }

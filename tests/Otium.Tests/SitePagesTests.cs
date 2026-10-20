@@ -235,6 +235,70 @@ public sealed class SitePagesTests : IDisposable
     }
 
     [Fact]
+    public async Task Each_graphics_card_has_a_page_with_what_it_earns_today()
+    {
+        var (status, html) = await Get("/mining/rtx-4090");
+
+        Assert.Equal(HttpStatusCode.OK, status);
+        // Same figures as the front page: $9.94 a day after every fee, before electricity; 400 W is 9.6 kWh a day, so it
+        // breaks even at $1.04/kWh. At $0.15/kWh, left alone 16 hours a day: $170 a month.
+        Assert.Contains("<title>RTX 4090 mining profitability today | Otium</title>", html);
+        Assert.Contains("About <strong>$9.94 a day</strong> mining Pearl", html);
+        Assert.Contains("<strong>$298 a month</strong>", html);
+        Assert.Contains("<dt>Breaks even at</dt><dd>$1.04/kWh</dd>", html);
+        Assert.Contains("$170 a month<small>mining while you're away, 16 h a day</small>", html);
+        // After electricity: a loss around the clock shows as one; Otium's column waits instead.
+        Assert.Contains("<tr><th scope=\"row\">$0.05/kWh</th><td>$9.46</td><td>$284</td><td>$189</td></tr>", html);
+        Assert.Contains("""<link rel="canonical" href="http://localhost/mining/rtx-4090">""", html);
+        Assert.Contains("""<a href="/mining/rtx-4080">RTX 4080</a>""", html); // the same series' other cards
+        Assert.DoesNotContain("""<a href="/mining/rtx-4090">""", html.Split("Other RTX 40 series cards")[1]);
+
+        // Breadcrumbs and the questions for search engines.
+        var json = System.Text.RegularExpressions.Regex.Match(html, """<script type="application/ld\+json">(.*?)</script>""").Groups[1].Value;
+        using var data = System.Text.Json.JsonDocument.Parse(json);
+        var graph = data.RootElement.GetProperty("@graph").EnumerateArray().ToList();
+        Assert.Equal(["BreadcrumbList", "FAQPage"], graph.Select(g => g.GetProperty("@type").GetString()));
+        Assert.Equal("http://localhost/mining/rtx-4090", graph[0].GetProperty("itemListElement")[2].GetProperty("item").GetString());
+        Assert.Equal("Is mining with an RTX 4090 worth it?", graph[1].GetProperty("mainEntity")[0].GetProperty("name").GetString());
+
+        // A card's id moves to its page for good; unknown cards, and cards that can't mine Pearl, have none.
+        using var noRedirects = _factory.CreateClient(new() { AllowAutoRedirect = false });
+        using var moved = await noRedirects.GetAsync("/mining/rtx4090");
+        Assert.Equal(HttpStatusCode.MovedPermanently, moved.StatusCode);
+        Assert.Equal("/mining/rtx-4090", moved.Headers.Location?.OriginalString);
+        Assert.Equal(HttpStatusCode.NotFound, (await Get("/mining/rtx-9999")).Status);
+        Assert.Equal(HttpStatusCode.NotFound, (await Get("/mining/rtx-2060")).Status);
+    }
+
+    [Fact]
+    public async Task The_mining_page_compares_every_card_best_paying_first()
+    {
+        var (status, html) = await Get("/mining");
+
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.Contains("The RTX 5090 leads at", html);
+        var rows = System.Text.RegularExpressions.Regex.Matches(html, """<tr><th scope="row"><a href="/mining/([a-z0-9-]+)">""")
+            .Select(m => m.Groups[1].Value).ToList();
+        Assert.Equal(30, rows.Count);
+        Assert.Equal("rtx-5090", rows[0]);
+        Assert.True(rows.IndexOf("rtx-4090") < rows.IndexOf("rtx-3060"));
+        Assert.Contains("""<a href="/mining">Graphics cards</a>""", html); // in the nav, on every page
+        Assert.Contains("""<a class="est-all" href="/mining">""", (await Get("/")).Html);
+    }
+
+    [Fact]
+    public async Task Without_coin_prices_the_card_pages_say_so_but_still_answer()
+    {
+        _feed.Fail = true;
+        var (status, html) = await Get("/mining/rtx-3080");
+        Assert.Equal(HttpStatusCode.OK, status); // not a 404 that would drop it from search results
+        Assert.Contains("Today's coin prices aren't available right now", html);
+        Assert.Contains("<dt>Speed</dt><dd>100 TH/s</dd>", html);
+        Assert.DoesNotContain("Breaks even at", html);
+        Assert.Contains("<td>–</td>", (await Get("/mining")).Html);
+    }
+
+    [Fact]
     public async Task The_sites_own_files_are_served_with_long_caching_when_versioned()
     {
         var html = (await Get("/")).Html;
@@ -331,10 +395,16 @@ public sealed class SitePagesTests : IDisposable
         Assert.Contains("Disallow: /api/\n", robots);
         Assert.DoesNotContain("/r/", robots); // invite pages must stay crawlable for their noindex to be seen
         Assert.Contains("Sitemap: http://localhost/sitemap.xml\n", robots);
+        Assert.Contains("Disallow: /download/\n", robots); // the installer redirects, not the download page
+        Assert.DoesNotContain("Disallow: /download\n", robots);
 
         var sitemap = (await Get("/sitemap.xml")).Html;
         Assert.StartsWith("""<?xml version="1.0" encoding="UTF-8"?>""", sitemap);
         Assert.Contains("<loc>http://localhost/</loc>", sitemap);
+        Assert.Contains("<loc>http://localhost/download</loc>", sitemap);
+        Assert.Contains("<loc>http://localhost/mining</loc>", sitemap);
+        Assert.Contains("<loc>http://localhost/mining/rtx-4070-ti-super</loc>", sitemap);
+        Assert.DoesNotContain("rtx-2060<", sitemap); // 6 GB: can't mine Pearl
         Assert.DoesNotContain("/privacy", sitemap); // no legal pages yet
     }
 
