@@ -119,6 +119,11 @@ builder.Services.AddSingleton<Otium.Server.Support.ProblemReportService>();
 builder.Services.AddHttpClient<ICoinPrices, CoinGeckoPrices>();
 builder.Services.AddSingleton<PoolPayoutChecker>();
 builder.Services.AddSingleton<RealEarningsService>();
+if (!builder.Configuration.GetValue<bool>("DisableBackgroundJobs"))
+{
+    builder.Services.AddHttpClient<IndexNowService>();
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<IndexNowService>());
+}
 if (!builder.Configuration.GetValue<bool>("DisableBackgroundJobs") && builder.Configuration.GetValue($"{RealEarningsOptions.Section}:CheckPools", true))
     builder.Services.AddHostedService<PoolPayoutService>();
 
@@ -226,6 +231,22 @@ app.Use(async (context, next) =>
         context.Response.StatusCode = e.StatusCode;
         await Results.Problem(e.Message, statusCode: e.StatusCode).ExecuteAsync(context);
     }
+});
+
+// A page that doesn't exist gets a page with the way back in, for people and crawlers following an old or mistyped
+// link. Only for pages: the API, update feed, admin and site files keep their bare 404s.
+app.UseStatusCodePages(async context =>
+{
+    var http = context.HttpContext;
+    var path = http.Request.Path.Value ?? "/";
+    if (http.Response.StatusCode != StatusCodes.Status404NotFound || !HttpMethods.IsGet(http.Request.Method)
+        || !http.Request.Headers.Accept.ToString().Contains("text/html", StringComparison.OrdinalIgnoreCase)
+        || new[] { "/api/", "/updates/", "/admin", "/site/", "/dev/" }.Any(p => path.StartsWith(p, StringComparison.OrdinalIgnoreCase)))
+        return;
+    var site = http.RequestServices.GetRequiredService<IOptions<SiteOptions>>().Value;
+    http.Response.ContentType = "text/html; charset=utf-8";
+    await http.Response.WriteAsync(SitePages.NotFoundPage(SitePages.AvailableLegalPages(site.PagesDirectory),
+        PublicBase(http.Request, http.RequestServices.GetRequiredService<IOptions<ReferralOptions>>()), path));
 });
 
 string PublicBase(HttpRequest request, IOptions<ReferralOptions> options) =>
@@ -434,7 +455,15 @@ app.MapGet("/mining/{card}", async (string card, HttpRequest request, IOptions<F
         "text/html; charset=utf-8");
 }).RequireRateLimiting("per-ip");
 
-// Help with antivirus warnings, and Otium next to the apps people compare it with.
+// What Pearl is, help with antivirus warnings, and Otium next to the apps people compare it with.
+app.MapGet("/pearl", async (HttpRequest request, IOptions<FeeOptions> fees, IOptions<SiteOptions> site, IOptions<ReferralOptions> referral,
+    GpuPolicyService gpuPolicy, ILogger<Program> logger, CancellationToken ct) =>
+{
+    var policy = Otium.Core.Fees.FeePolicy.FromTerms(fees.Value.ToTerms());
+    var gpu = await SiteGpuPolicy(gpuPolicy, logger, ct);
+    return Results.Content(SitePages.Pearl(SitePages.Earnings(gpu, policy), SitePages.AvailableLegalPages(site.Value.PagesDirectory),
+        PublicBase(request, referral)), "text/html; charset=utf-8");
+}).RequireRateLimiting("per-ip");
 app.MapGet("/antivirus", (HttpRequest request, IOptions<SiteOptions> site, IOptions<ReferralOptions> referral) =>
     Results.Content(SitePages.Antivirus(SitePages.AvailableLegalPages(site.Value.PagesDirectory), PublicBase(request, referral)),
         "text/html; charset=utf-8")).RequireRateLimiting("per-ip");
@@ -455,12 +484,15 @@ app.MapGet("/{page:regex(^(privacy|terms)$)}", (string page, HttpRequest request
         : Results.NotFound();
 }).RequireRateLimiting("per-ip");
 
-// For search engines: what not to crawl, and the pages worth finding.
+// For search engines: what not to crawl, the pages worth finding (with when today's prices last changed the priced
+// ones), and IndexNow's key file, which proves the site's own server sent IndexNowService's notices.
 app.MapGet("/robots.txt", (HttpRequest request, IOptions<ReferralOptions> referral) =>
     Results.Text(SitePages.Robots(PublicBase(request, referral)), "text/plain; charset=utf-8")).RequireRateLimiting("per-ip");
-app.MapGet("/sitemap.xml", (HttpRequest request, IOptions<ReferralOptions> referral, IOptions<SiteOptions> site) =>
-    Results.Text(SitePages.Sitemap(PublicBase(request, referral), SitePages.AvailableLegalPages(site.Value.PagesDirectory)),
-        "application/xml; charset=utf-8")).RequireRateLimiting("per-ip");
+app.MapGet("/sitemap.xml", async (HttpRequest request, IOptions<ReferralOptions> referral, IOptions<SiteOptions> site,
+    GpuPolicyService gpuPolicy, ILogger<Program> logger, CancellationToken ct) =>
+    Results.Text(SitePages.Sitemap(PublicBase(request, referral), SitePages.AvailableLegalPages(site.Value.PagesDirectory),
+        (await SiteGpuPolicy(gpuPolicy, logger, ct))?.GeneratedAt), "application/xml; charset=utf-8")).RequireRateLimiting("per-ip");
+app.MapGet($"/{IndexNowService.Key}.txt", () => Results.Text(IndexNowService.Key, "text/plain; charset=utf-8"));
 
 app.MapGet("/site/{**path}", (string path, HttpContext context) =>
 {

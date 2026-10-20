@@ -332,8 +332,8 @@ internal static partial class SitePages
           <meta name="twitter:card" content="summary_large_image">
           <link rel="icon" href="{{SiteAssets.Url("otium.svg")}}" type="image/svg+xml">
           <link rel="apple-touch-icon" href="{{SiteAssets.Url("icon.png")}}">
-          <link rel="preload" href="/site/fonts/BricolageGrotesque.woff2" as="font" type="font/woff2" crossorigin>
-          <link rel="preload" href="/site/fonts/HankenGrotesk.woff2" as="font" type="font/woff2" crossorigin>
+          <link rel="preload" href="{{SiteAssets.Url("fonts/BricolageGrotesque.woff2")}}" as="font" type="font/woff2" crossorigin>
+          <link rel="preload" href="{{SiteAssets.Url("fonts/HankenGrotesk.woff2")}}" as="font" type="font/woff2" crossorigin>
           <link rel="stylesheet" href="{{SiteAssets.Url("site.css")}}">
           {{head}}
         </head>
@@ -358,7 +358,7 @@ internal static partial class SitePages
           <footer>
             <div class="wrap">
               <span>Otium · <i>otium</i> is Latin for leisure</span>
-              <nav aria-label="Site">{{string.Concat(legalLinks.Select(p => $"""<a href="/{p}">{Capitalize(p)}</a>"""))}}<a href="{{HelpUrl}}">Help</a><a href="/antivirus">Antivirus help</a><a href="/compare/nicehash">vs NiceHash</a><a href="/compare/honeygain">vs Honeygain</a><a href="{{Core.AppIdentity.DiscordUrl}}">Discord</a>{{ContactLink}}<a href="https://github.com/Malogna/otium">Source code</a><a href="https://github.com/Malogna/otium/releases">Releases</a></nav>
+              <nav aria-label="Site">{{string.Concat(legalLinks.Select(p => $"""<a href="/{p}">{Capitalize(p)}</a>"""))}}<a href="{{HelpUrl}}">Help</a><a href="/pearl">What is Pearl?</a><a href="/antivirus">Antivirus help</a><a href="/compare/nicehash">vs NiceHash</a><a href="/compare/honeygain">vs Honeygain</a><a href="{{Core.AppIdentity.DiscordUrl}}">Discord</a>{{ContactLink}}<a href="https://github.com/Malogna/otium">Source code</a><a href="https://github.com/Malogna/otium/releases">Releases</a></nav>
             </div>
           </footer>
           <script src="{{SiteAssets.Url("site.js")}}" defer></script>
@@ -387,13 +387,22 @@ internal static partial class SitePages
 
         """.ReplaceLineEndings("\n");
 
-    /// <summary>The pages worth finding: the front page, the download page, every mining page, the help and comparison pages, and whichever legal pages exist.</summary>
-    public static string Sitemap(string baseUrl, IEnumerable<string> legalLinks)
+    /// <summary>The pages that show today's coin prices, so they change every day: the front page and the mining pages.</summary>
+    public static IEnumerable<string> PricedPaths => MiningPaths.Prepend("/");
+
+    /// <summary>The pages worth finding: the priced pages, the download, Pearl, help and comparison pages, and whichever legal pages exist.</summary>
+    public static IEnumerable<string> SitemapPaths(IEnumerable<string> legalLinks) =>
+        PricedPaths.Concat(["/download", "/pearl", "/antivirus"]).Concat(ComparisonSlugs.Select(s => "/compare/" + s))
+            .Concat(legalLinks.Select(p => "/" + p));
+
+    /// <param name="pricesAt">When today's coin prices were read: the priced pages' last change, or null to leave it out.</param>
+    public static string Sitemap(string baseUrl, IEnumerable<string> legalLinks, DateTimeOffset? pricesAt = null)
     {
         var root = baseUrl.TrimEnd('/');
-        var urls = new[] { "/", "/download" }.Concat(MiningPaths).Append("/antivirus").Concat(ComparisonSlugs.Select(s => "/compare/" + s))
-            .Concat(legalLinks.Select(p => "/" + p))
-            .Select(p => $"  <url><loc>{System.Security.SecurityElement.Escape(root + p)}</loc></url>\n");
+        var priced = PricedPaths.ToHashSet();
+        var lastmod = pricesAt?.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
+        var urls = SitemapPaths(legalLinks)
+            .Select(p => $"  <url><loc>{System.Security.SecurityElement.Escape(root + p)}</loc>{(lastmod is not null && priced.Contains(p) ? $"<lastmod>{lastmod}</lastmod>" : "")}</url>\n");
         return $"""
             <?xml version="1.0" encoding="UTF-8"?>
             <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
@@ -526,6 +535,7 @@ internal static partial class SitePages
                     <div class="marquee"><div class="marquee-track">{coins}<span aria-hidden="true" style="display:contents">{coins}</span></div></div>
                   </div>
                 </div>
+            {PopularCardsStrip(earnings)}
             {RealSection(real)}
 
                 <section id="night-shift" aria-labelledby="shift-title">
@@ -570,8 +580,8 @@ internal static partial class SitePages
                     <div class="reveal">
                       <span class="label">Proof of useful work</span>
                       <h2 id="ai-title" style="margin-top:18px">Pearl mining runs the math AI runs on.</h2>
-                      <p style="margin-top:20px" class="muted">Most coins burn power on hashes nobody needs. Pearl is a proof-of-useful-work coin: mining a block means multiplying large matrices, the same operation every AI model is built from, and its protocol lets that work be real AI computation, down to the mixture-of-experts layers of today's language models. That's why NVIDIA cards with tensor cores mine it best, and why it pays more than any other coin a gaming card can mine today.</p>
-                      <p style="margin-top:14px" class="fine">Through a pool, your card multiplies the matrices the network hands it. It doesn't run anyone's AI model or see their data.</p>
+                      <p style="margin-top:20px" class="muted">Most coins burn power on hashes nobody needs. Pearl is a proof-of-useful-work coin: mining a block means multiplying large matrices, the same operation every AI model is built from, and its protocol is designed so that work can be real AI computation, such as serving a language model. That's why NVIDIA cards with tensor cores mine it best, and why it pays more than any other coin a gaming card can mine today.</p>
+                      <p style="margin-top:14px" class="fine">Through a pool, your card multiplies the matrices the network hands it. It doesn't run anyone's AI model or see their data. <a href="/pearl">What is Pearl?</a></p>
                     </div>
                     <div class="panel matmul reveal" aria-hidden="true">
                       <div class="mm">{Grid("a")}<span class="op">×</span>{Grid("b")}<span class="op">=</span>{Grid("c")}</div>
@@ -715,6 +725,28 @@ internal static partial class SitePages
         ["privacy"] = ("Otium privacy policy", "How Otium handles your data: what the app and website collect, why, who it goes to, and your choices."),
         ["terms"] = ("Otium terms of use", "The terms for using Otium, the app that earns with your computer's spare power while you're away."),
     };
+
+    /// <summary>"Page not found", with the way back in. Kept out of search results.</summary>
+    public static string NotFoundPage(IEnumerable<string> legalLinks, string baseUrl, string path) =>
+        Layout("Page not found | Otium", "This page doesn't exist on otium.lol.", """
+                <div class="glow-frame" aria-hidden="true"><div class="glow"></div></div>
+                <section class="page stacked">
+                  <div class="wrap">
+                    <div class="panel">
+                      <span class="label">404</span>
+                      <h1 style="margin-top:14px">This page doesn't exist</h1>
+                      <p class="lead">The link may be old or mistyped. Here's where most people are headed:</p>
+                      <ul class="card-links">
+                        <li><a href="/">How Otium works</a></li>
+                        <li><a href="/mining">What each graphics card earns</a></li>
+                        <li><a href="/download">Download Otium</a></li>
+                        <li><a href="/antivirus">Antivirus help</a></li>
+                        <li><a href="/pearl">What is Pearl?</a></li>
+                      </ul>
+                    </div>
+                  </div>
+                </section>
+            """, legalLinks, "/download", baseUrl, path, index: false);
 
     /// <summary>A legal page: the operator's reviewed HTML inside the site's layout.</summary>
     public static string Legal(string page, string bodyHtml, IEnumerable<string> legalLinks, string? downloadUrl, string baseUrl)

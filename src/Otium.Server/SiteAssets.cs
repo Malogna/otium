@@ -43,8 +43,21 @@ internal static class SiteAssets
             stream.CopyTo(buffer);
             var content = buffer.ToArray();
             var type = Types.GetValueOrDefault(Path.GetExtension(path), "application/octet-stream");
-            assets[path["Site/".Length..]] = new Asset(content, type, Convert.ToHexStringLower(SHA256.HashData(content))[..10]);
+            assets[path["Site/".Length..]] = new Asset(content, type, Version(content));
+        }
+
+        // The stylesheet names its fonts by plain address; give those addresses the fonts' content hash too, so the
+        // fonts can be cached for a year like everything else. The stylesheet's own hash then covers the change.
+        foreach (var (path, asset) in assets.Where(a => a.Key.EndsWith(".css", StringComparison.Ordinal)).ToList())
+        {
+            var css = System.Text.RegularExpressions.Regex.Replace(System.Text.Encoding.UTF8.GetString(asset.Content),
+                """url\("/site/([^"?]+)"\)""",
+                m => assets.TryGetValue(m.Groups[1].Value, out var linked) ? $"""url("/site/{m.Groups[1].Value}?v={linked.Version}")""" : m.Value);
+            var content = System.Text.Encoding.UTF8.GetBytes(css);
+            assets[path] = asset with { Content = content, Version = Version(content) };
         }
         return assets;
     }
+
+    private static string Version(byte[] content) => Convert.ToHexStringLower(SHA256.HashData(content))[..10];
 }

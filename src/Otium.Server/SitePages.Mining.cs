@@ -142,7 +142,7 @@ internal static partial class SitePages
             {table}
                     <div class="panel">
                       <h2>Why Pearl</h2>
-                      <p>Pearl is a proof-of-useful-work coin: mining it means multiplying large matrices, the operation AI models are built from, which is why NVIDIA cards with tensor cores mine it best. Otium mines it while you're away and has it paid to your own wallet in the coin you choose.</p>
+                      <p>Pearl is a proof-of-useful-work coin: mining it means multiplying large matrices, the operation AI models are built from, which is why NVIDIA cards with tensor cores mine it best. Otium mines it while you're away and has it paid to your own wallet in the coin you choose. <a href="/pearl">What is Pearl?</a></p>
                       {Method($"the {E(name)}", fee)}
                     </div>
                     <div class="panel">
@@ -163,6 +163,21 @@ internal static partial class SitePages
             Breadcrumbs(root, ("Otium", "/"), ("GPU mining", "/mining"), (name, $"/mining/{card.Slug}")),
             FaqPage(questions));
         return Layout(title, description, body, legalLinks, "/download", baseUrl, $"/mining/{card.Slug}", head: head);
+    }
+
+    /// <summary>The cards the front page links to by name, so search engines see their pages as important.</summary>
+    private static readonly string[] PopularCards = ["rtx4090", "rtx5090", "rtx5080", "rtx4070", "rtx3080", "rtx3060ti", "rtx3060"];
+
+    /// <summary>"Popular cards today": each links its page, with today's earnings when prices are known.</summary>
+    internal static string PopularCardsStrip(IReadOnlyList<CardEarnings> earnings)
+    {
+        var links = PopularCards.Select(id => MiningCardList.First(c => c.Id == id)).Select(c =>
+            $"""<a href="/mining/{c.Slug}">{E(c.Name)}{(PearlPerDay(c, earnings) is { } d ? $"<span>{Usd(d)}/day</span>" : "")}</a>""");
+        return $"""
+                <nav class="popular" aria-label="What popular graphics cards earn">
+                  <div class="wrap"><span class="label">Popular cards today</span>{string.Concat(links)}<a class="all" href="/mining">Every card</a></div>
+                </nav>
+            """;
     }
 
     /// <summary>The comparison: every card's speed, power, earnings today and break-even price, best-paying first.</summary>
