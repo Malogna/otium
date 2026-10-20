@@ -69,6 +69,9 @@ public sealed class SitePagesTests : IDisposable
 
         Assert.Equal(HttpStatusCode.OK, status);
         Assert.Contains("Your computer works the night shift.", html);
+        // What search results show: both ways it earns, for people searching for either.
+        Assert.Contains("<title>Otium: get paid for your PC&#39;s spare power and bandwidth</title>", html);
+        Assert.Contains("""<meta name="description" content="Otium earns crypto with your idle PC and, if you choose, unused internet bandwidth""", html);
         Assert.Contains("""<a class="button" href="/download">""", html); // straight to the installer
         // The cost list comes from the same breakdown the app shows, with the server's 3% fee.
         Assert.Contains("<dt>Otium</dt><dd>3% of mining time, about 43 minutes per day of mining", html);
