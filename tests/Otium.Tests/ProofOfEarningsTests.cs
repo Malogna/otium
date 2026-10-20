@@ -480,6 +480,25 @@ public sealed class ProofOfEarningsTests
             Task.FromResult(new UnmineableReferrals("ztjq-jr7s", 0));
     }
 
+    /// <summary>MoneroOcean as the payout check sees it: per-worker history (who mines to an address) and what it paid.</summary>
+    private sealed class FakeMoneroOcean : IMoneroPoolApi
+    {
+        private readonly GpuPolicyTests.FakePool _rest = new();
+
+        public Dictionary<string, string[]> Workers { get; } = [];
+
+        public Task<MoneroNetworkStats> GetNetworkStatsAsync(CancellationToken ct) => _rest.GetNetworkStatsAsync(ct);
+
+        public Task<AlgoProfits> GetAlgoProfitsAsync(CancellationToken ct) => _rest.GetAlgoProfitsAsync(ct);
+
+        public Task<PoolMinerStats?> GetMinerStatsAsync(string walletAddress, CancellationToken ct) =>
+            Task.FromResult<PoolMinerStats?>(new PoolMinerStats(1e12, 0.001, 0.02, 9000)); // 0.02 XMR paid: $6 at $300
+
+        public Task<IReadOnlyDictionary<string, IReadOnlyList<HashratePoint>>> GetWorkerHistoryAsync(string walletAddress, CancellationToken ct) =>
+            Task.FromResult<IReadOnlyDictionary<string, IReadOnlyList<HashratePoint>>>(
+                (Workers.GetValueOrDefault(walletAddress) ?? []).ToDictionary(w => w, IReadOnlyList<HashratePoint> (_) => [new HashratePoint(T0, 9000, 9000)]));
+    }
+
     private sealed class FakePrices : ICoinPrices
     {
         public Task<IReadOnlyDictionary<string, double>> GetUsdAsync(CancellationToken ct) =>
@@ -491,6 +510,7 @@ public sealed class ProofOfEarningsTests
         private readonly string _dbPath = Path.Combine(Path.GetTempPath(), $"otium-real-{Guid.NewGuid():N}.db");
         public ManualTime Time { get; } = new(T0);
         public FakeUnmineable Unmineable { get; } = new();
+        public FakeMoneroOcean MoneroOcean { get; } = new();
         public WebApplicationFactory<Program> Factory { get; }
         public HttpClient Http { get; }
 
@@ -506,7 +526,7 @@ public sealed class ProofOfEarningsTests
                 builder.ConfigureServices(services =>
                 {
                     services.RemoveAll<IMoneroPoolApi>();
-                    services.AddSingleton<IMoneroPoolApi>(new GpuPolicyTests.FakePool());
+                    services.AddSingleton<IMoneroPoolApi>(MoneroOcean);
                     services.RemoveAll<IUnmineableApi>();
                     services.AddSingleton<IUnmineableApi>(Unmineable);
                     services.RemoveAll<IKryptexApi>();
@@ -536,6 +556,21 @@ public sealed class ProofOfEarningsTests
         public Task Report(string device, string secret, EarningsReport report) =>
             new AccountClient(Http).ReportEarningsAsync(device, secret, report, CancellationToken.None);
 
+        public Otium.Server.Data.OtiumStore Store => Factory.Services.GetRequiredService<Otium.Server.Data.OtiumStore>();
+
+        /// <summary>Makes every account so far a few weeks old, as the site's figures only count established accounts.</summary>
+        public void AgeAccounts() => Sql("UPDATE accounts SET created_at = '2026-09-01T00:00:00.0000000Z'");
+
+        /// <summary>Runs SQL on the server's database directly, for what the API can no longer create (old rows).</summary>
+        public void Sql(string sql)
+        {
+            using var connection = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={_dbPath};Pooling=False");
+            connection.Open();
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = sql;
+            cmd.ExecuteNonQuery();
+        }
+
         public void Dispose()
         {
             Http.Dispose();
@@ -560,6 +595,7 @@ public sealed class ProofOfEarningsTests
             var (device, secret, _) = await server.Register(TestAddresses.Usdt(i));
             computers.Add((device, secret));
         }
+        server.AgeAccounts();
 
         // Two RTX 4090s so far: not enough to show the card.
         await server.Report(computers[0].Device, computers[0].Secret, GpuReport(1, "rtx4090", 12, 1.20));
@@ -593,6 +629,7 @@ public sealed class ProofOfEarningsTests
             await server.Report(device, secret, new EarningsReport(1, T0 - TimeSpan.FromDays(1), T0,
                 [new DeviceEarnings("sharing", i == 0 ? "no" : "NO", 24 * 3600, i + 1, 0)]));
         }
+        server.AgeAccounts();
 
         var real = server.Factory.Services.GetRequiredService<RealEarningsService>().Compute(server.Time.GetUtcNow());
         var norway = Assert.Single(real.SharingByCountry);
@@ -649,6 +686,132 @@ public sealed class ProofOfEarningsTests
         var wrongSecret = await Assert.ThrowsAsync<AccountRequestException>(() =>
             client.ReportEarningsAsync(device, new string('0', 64), GpuReport(1, "rtx4090", 1, 0.1), CancellationToken.None));
         Assert.Equal(401, wrongSecret.StatusCode);
+    }
+
+    [Fact]
+    public async Task Reports_that_overlap_an_earlier_one_are_refused_and_retries_still_count_once()
+    {
+        using var server = new Server();
+        var (device, secret, _) = await server.Register(TestAddresses.Usdt(0));
+        var client = new AccountClient(server.Http);
+        await server.Report(device, secret, GpuReport(1, "rtx4090", 12, 1.20));
+        await server.Report(device, secret, GpuReport(1, "rtx4090", 12, 1.20)); // the same report again: a retry, no error
+
+        // The same day again under new sequence numbers (whole, or half of it) would add its hours and dollars twice.
+        foreach (var (start, end) in new[] { (T0 - TimeSpan.FromDays(1), T0), (T0 - TimeSpan.FromHours(12), T0), (T0 - TimeSpan.FromDays(2), T0 - TimeSpan.FromHours(23)) })
+        {
+            var e = await Assert.ThrowsAsync<AccountRequestException>(() => client.ReportEarningsAsync(device, secret,
+                new EarningsReport(2, start, end, [new DeviceEarnings("gpu", "rtx4090", 3600, 0.1, 0)]), CancellationToken.None));
+            Assert.Equal(400, e.StatusCode);
+        }
+
+        // The day before (ending where the first one starts) is fine, and so is another kind of device for the same day.
+        await server.Report(device, secret, new EarningsReport(2, T0 - TimeSpan.FromDays(2), T0 - TimeSpan.FromDays(1), [new DeviceEarnings("gpu", "rtx4090", 3600, 0.1, 0)]));
+        await server.Report(device, secret, new EarningsReport(3, T0 - TimeSpan.FromDays(1), T0, [new DeviceEarnings("sharing", "NO", 3600, 0.1, 0)]));
+        Assert.Equal(4, server.Store.EarningsReportsFor(server.Store.FindDevice(device)!.AccountId).Count);
+    }
+
+    [Fact]
+    public async Task A_cards_figures_need_three_established_accounts_and_each_account_counts_once()
+    {
+        using var server = new Server(("RealEarnings:MinimumEarnedUsd", "0"), ("RealEarnings:MinimumUsers", "0"));
+        var real = server.Factory.Services.GetRequiredService<RealEarningsService>();
+
+        // One account with three computers making $12 a day of earning, and two others at $2.40 and $3.00.
+        var (big, bigSecret, _) = await server.Register(TestAddresses.Usdt(0));
+        var bigAccount = server.Store.FindDevice(big)!.AccountId;
+        var computers = new List<(string Device, string Secret)> { (big, bigSecret) };
+        for (var i = 1; i < 3; i++)
+        {
+            var (device, secret, _) = await server.Register(TestAddresses.Usdt(i));
+            server.Store.Upsert(server.Store.FindDevice(device)! with { AccountId = bigAccount }); // signed in to the same account
+            computers.Add((device, secret));
+        }
+        foreach (var (device, secret) in computers)
+            await server.Report(device, secret, GpuReport(1, "rtx4090", 10, 5.00));
+        server.AgeAccounts();
+        Assert.Empty(real.Compute(server.Time.GetUtcNow()).Cards); // three computers, but one account
+
+        var (b, bSecret, _) = await server.Register(TestAddresses.Usdt(3));
+        var (c, cSecret, _) = await server.Register(TestAddresses.Usdt(4));
+        await server.Report(b, bSecret, GpuReport(1, "rtx4090", 10, 1.00));
+        await server.Report(c, cSecret, GpuReport(1, "rtx4090", 10, 1.25));
+        Assert.Empty(real.Compute(server.Time.GetUtcNow()).Cards); // the two new accounts are only minutes old
+
+        server.AgeAccounts();
+        var card = Assert.Single(real.Compute(server.Time.GetUtcNow()).Cards);
+        Assert.Equal(5, card.Computers);
+        // The median of the accounts ($12, $2.40 and $3.00 a day of earning), not of the five computers (which is $12).
+        Assert.Equal(3.00, card.UsdPerEarningDay, precision: 6);
+    }
+
+    [Fact]
+    public async Task No_computer_counts_more_hours_than_the_window_has()
+    {
+        using var server = new Server(("RealEarnings:MinimumEarnedUsd", "0"), ("RealEarnings:MinimumUsers", "0"));
+        var devices = new List<string>();
+        for (var i = 0; i < 3; i++)
+        {
+            var (device, secret, _) = await server.Register(TestAddresses.Usdt(i));
+            devices.Add(device);
+            // A fortnight's report: only its last week counts, with half its dollars ($7 of $14).
+            await server.Report(device, secret, new EarningsReport(1, T0 - TimeSpan.FromDays(14), T0, [new DeviceEarnings("sharing", "NO", 14 * 12 * 3600, 14, 0)]));
+        }
+        server.AgeAccounts();
+        var norway = Assert.Single(server.Factory.Services.GetRequiredService<RealEarningsService>().Compute(server.Time.GetUtcNow()).SharingByCountry);
+        Assert.Equal(7.0 / 7 * 30, norway.UsdPerMonth, precision: 6);
+        Assert.Equal(2.0, norway.UsdPerSharingDay, precision: 6);
+
+        // Overlapping rows stored before they were refused: a computer claiming the window three times over is cut back
+        // to the window, its rate unchanged.
+        foreach (var seq in new[] { 2, 3, 4 })
+            server.Sql($"""
+                INSERT INTO earnings_reports (device_id, seq, kind, account_id, model, period_start, period_end, seconds, user_usd, electricity_usd, created_at)
+                SELECT device_id, {seq}, kind, account_id, 'SE', '2026-10-11T02:00:00.0000000Z', '2026-10-18T02:00:00.0000000Z', 604800, 7, 0, created_at
+                FROM earnings_reports WHERE device_id IN ('{devices[0]}', '{devices[1]}', '{devices[2]}') AND seq = 1
+                """);
+        var sweden = Assert.Single(server.Factory.Services.GetRequiredService<RealEarningsService>().Compute(server.Time.GetUtcNow()).SharingByCountry, s => s.Country == "SE");
+        Assert.Equal(7.0 / 7 * 30, sweden.UsdPerMonth, precision: 6); // $7 a week, not $21
+        Assert.Equal(1.0, sweden.UsdPerSharingDay, precision: 6);
+    }
+
+    [Fact]
+    public async Task An_address_shared_by_several_accounts_counts_once()
+    {
+        using var server = new Server();
+        for (var i = 0; i < 3; i++)
+            await server.Register(TestAddresses.Usdt(0));
+        server.Unmineable.Workers[TestAddresses.Usdt(0)] = [new UnmineableWorker("randomx", "ot1234abcd", true, 9000, 9000)];
+
+        await server.Factory.Services.GetRequiredService<PoolPayoutChecker>().CheckAllAsync(CancellationToken.None);
+
+        var summary = server.Factory.Services.GetRequiredService<RealEarningsService>().Compute(server.Time.GetUtcNow());
+        Assert.Equal(6, summary.PaidUsd, precision: 6); // not $18
+        Assert.Equal(1, summary.PaidUsers);
+        Assert.Equal(3, summary.Rewarded30dUsd, precision: 6);
+    }
+
+    [Fact]
+    public async Task Moneroocean_payouts_count_only_while_the_pool_lists_otium_workers_alone()
+    {
+        using var server = new Server();
+        var (otium, mixed, unlisted) = (TestAddresses.Generate(), TestAddresses.Generate(), TestAddresses.Generate());
+        foreach (var address in new[] { otium, mixed, unlisted })
+            await server.Register($"XMR:{address}");
+        server.MoneroOcean.Workers[otium] = ["ot1234abcd", "ot1234abcdg"];
+        server.MoneroOcean.Workers[mixed] = ["ot5678abcd", "garage-rig"];
+        var checker = server.Factory.Services.GetRequiredService<PoolPayoutChecker>();
+        var real = server.Factory.Services.GetRequiredService<RealEarningsService>();
+
+        await checker.CheckAllAsync(CancellationToken.None);
+        var summary = real.Compute(server.Time.GetUtcNow());
+        Assert.Equal(6, summary.PaidUsd, precision: 6); // 0.02 XMR at $300, from the Otium-only address alone
+        Assert.Equal(1, summary.PaidUsers);
+
+        // Once the pool stops listing its workers, the address drops out rather than keeping an unchecked figure.
+        server.MoneroOcean.Workers.Remove(otium);
+        await checker.CheckAllAsync(CancellationToken.None);
+        Assert.Equal(0, real.Compute(server.Time.GetUtcNow()).PaidUsers);
     }
 
     [Fact]

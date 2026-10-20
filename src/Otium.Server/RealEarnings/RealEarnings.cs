@@ -24,8 +24,17 @@ public sealed class RealEarningsOptions
     /// <summary>Pause between two addresses, to stay a polite user of the pools' public APIs.</summary>
     public double PoolRequestDelaySeconds { get; set; } = 2;
 
-    /// <summary>A card appears on the site only with reports from at least this many computers, so no one's numbers stand alone.</summary>
+    /// <summary>
+    /// A card (or country) appears on the site only with reports from computers of at least this many different accounts,
+    /// so no one's numbers stand alone and no one can make up a card's figures with a few computers of their own.
+    /// </summary>
     public int MinimumComputersPerCard { get; set; } = 3;
+
+    /// <summary>
+    /// Reports count only from accounts at least this old: making accounts is free, so a fresh batch of them can't move
+    /// the site's figures right away.
+    /// </summary>
+    public int MinimumAccountAgeDays { get; set; } = 7;
 
     /// <summary>The period the per-card figures cover.</summary>
     public int WindowDays { get; set; } = 7;
@@ -56,7 +65,8 @@ public sealed record RealCard(string Model, int Computers, double UsdPerEarningD
 public sealed record RealSharing(string Country, int Computers, double UsdPerSharingDay, double UsdPerMonth);
 
 /// <param name="PaidUsd">Paid by the pools to Otium users' own addresses, in dollars at the time of each check.</param>
-/// <param name="PaidUsers">Users whose address has received at least one payout.</param>
+/// <param name="PaidUsers">Users' payout addresses (each counted once, however many accounts use it) that have received at
+/// least one payout.</param>
 /// <param name="Rewarded30dUsd">Credited to those addresses by the pools in the last 30 days.</param>
 /// <param name="ShowSection">Enough users have earned enough for the front page's "Real numbers" (the per-country sharing
 /// medians are used either way).</param>
@@ -111,7 +121,8 @@ public sealed class EarningsReportService(OtiumStore store, TimeProvider time)
                 Model = d.Kind == "sharing" ? d.Model!.ToUpperInvariant() : MultiCardCount(d.Model) is not null ? d.Model : Clean(d.Model),
             }).ToList(),
         };
-        store.AddEarningsReport(session.Device.DeviceId, session.Account.AccountId, clean, now);
+        if (store.AddEarningsReport(session.Device.DeviceId, session.Account.AccountId, clean, now) == OtiumStore.EarningsReportOutcome.Overlaps)
+            throw new OtiumException(StatusCodes.Status400BadRequest, "This earnings report covers time an earlier report already did.");
     }
 
     /// <summary>The number of cards in a "multi:N" model (2–16), or null.</summary>
@@ -178,8 +189,9 @@ public sealed class CoinGeckoPrices(HttpClient http, TimeProvider time) : ICoinP
 
 /// <summary>
 /// Reads what the pools have paid each user's own address, a couple of times a day, for the site's "paid to Otium
-/// users" figure. An unMineable address whose workers aren't all Otium's (named "ot" + device) is skipped, so mining
-/// the user does elsewhere isn't counted as Otium's.
+/// users" figure. Mining the user does elsewhere isn't counted as Otium's: an unMineable address with workers that aren't
+/// Otium's (named "ot" + device) is left out, and a MoneroOcean address counts only while the pool lists its workers and
+/// they're all Otium's (its worker history keeps about three days, so an address that stopped mining drops out).
 /// </summary>
 public sealed class PoolPayoutChecker(
     OtiumStore store, IUnmineableApi unmineable, IMoneroPoolApi moneroOcean, ICoinPrices prices, IOptions<RealEarningsOptions> options,
@@ -229,14 +241,26 @@ public sealed class PoolPayoutChecker(
             foreach (var worker in Working(workers))
                 store.RecordWorkerSighting(worker, "own", time.GetUtcNow());
             if (workers.Any(w => !IsOtiumWorker(w.Name)))
+            {
+                store.DeletePoolPayout(accountId);
                 return;
+            }
             var stats = await unmineable.GetStatsAsync(uuid, ct);
-            store.SetPoolPayout(accountId, target.Coin.Symbol, (double)stats.Paid, (double)stats.Paid * price, (double)stats.Rewarded30d * price, time.GetUtcNow());
+            store.SetPoolPayout(accountId, target.ToString(), target.Coin.Symbol, (double)stats.Paid, (double)stats.Paid * price,
+                (double)stats.Rewarded30d * price, time.GetUtcNow());
             return;
         }
 
-        if (target.Coin == PayoutCoins.Monero && await moneroOcean.GetMinerStatsAsync(target.Address, ct) is { } mo)
-            store.SetPoolPayout(accountId, "XMR", mo.PaidXmr, mo.PaidXmr * price, 0, time.GetUtcNow());
+        if (target.Coin != PayoutCoins.Monero)
+            return;
+        // MoneroOcean: its per-worker hashrate history is the only list of who mines to the address.
+        var moWorkers = (await moneroOcean.GetWorkerHistoryAsync(target.Address, ct)).Keys.ToList();
+        if (moWorkers.Count == 0 || moWorkers.Any(w => !IsOtiumWorker(w)) || await moneroOcean.GetMinerStatsAsync(target.Address, ct) is not { } mo)
+        {
+            store.DeletePoolPayout(accountId);
+            return;
+        }
+        store.SetPoolPayout(accountId, target.ToString(), "XMR", mo.PaidXmr, mo.PaidXmr * price, 0, time.GetUtcNow());
     }
 
     /// <summary>The computers (8 hex digits of the device id) whose Otium workers the pool shows working.</summary>
@@ -343,32 +367,54 @@ public sealed class RealEarningsService(OtiumStore store, IOptions<RealEarningsO
         var o = options.Value;
         var (paidUsd, rewarded, paidUsers, earningUsers) = store.PoolPayoutTotals();
         var showSection = Math.Max(paidUsd, rewarded) >= o.MinimumEarnedUsd && earningUsers >= o.MinimumUsers;
-        var rows = store.EarningsSince(now - TimeSpan.FromDays(o.WindowDays));
+        var window = TimeSpan.FromDays(o.WindowDays).TotalSeconds;
+        var establishedBefore = now - TimeSpan.FromDays(Math.Max(0, o.MinimumAccountAgeDays));
+        var rows = store.EarningsSince(now - TimeSpan.FromDays(o.WindowDays))
+            .Where(r => r.AccountCreatedAt is { } created && created <= establishedBefore)
+            .Select(r =>
+            {
+                // No computer earns for longer than the window; anything above it (reports stored before overlapping ones
+                // were refused) is cut, with its dollars, so the computer's rate stays what it reported.
+                var keep = r.Seconds > window ? window / r.Seconds : 1;
+                return new Reported(r.DeviceId, r.Kind, r.Model, r.AccountId, r.Seconds * keep, r.UserUsd * keep);
+            })
+            .Where(r => r.Seconds >= o.MinimumHours * 3600)
+            .ToList();
+        var minimumAccounts = Math.Max(2, o.MinimumComputersPerCard);
         var cards = rows
-            .Where(r => r.Kind == "gpu" && r.Seconds >= o.MinimumHours * 3600 && EarningsReportService.MultiCardCount(r.Model) is null)
+            .Where(r => r.Kind == "gpu" && EarningsReportService.MultiCardCount(r.Model) is null)
             .GroupBy(r => r.Model)
-            .Where(g => g.Select(r => r.DeviceId).Distinct().Count() >= Math.Max(2, o.MinimumComputersPerCard))
+            .Where(g => g.Select(r => r.AccountId).Distinct().Count() >= minimumAccounts)
             .Select(g => new RealCard(
                 g.Key,
                 g.Select(r => r.DeviceId).Distinct().Count(),
-                Median(g.Select(r => r.UserUsd / r.Seconds * 86400)),
-                Median(g.Select(r => r.Seconds / 3600 / o.WindowDays)),
-                Median(g.Select(r => r.UserUsd / o.WindowDays))))
+                AccountMedian(g, r => r.UserUsd / r.Seconds * 86400),
+                AccountMedian(g, r => r.Seconds / 3600 / o.WindowDays),
+                AccountMedian(g, r => r.UserUsd / o.WindowDays)))
             .OrderByDescending(c => c.UsdPerEarningDay)
             .ToList();
         var sharing = rows
-            .Where(r => r.Kind == "sharing" && r.Seconds >= o.MinimumHours * 3600)
+            .Where(r => r.Kind == "sharing")
             .GroupBy(r => r.Model)
-            .Where(g => g.Select(r => r.DeviceId).Distinct().Count() >= Math.Max(2, o.MinimumComputersPerCard))
+            .Where(g => g.Select(r => r.AccountId).Distinct().Count() >= minimumAccounts)
             .Select(g => new RealSharing(
                 g.Key,
                 g.Select(r => r.DeviceId).Distinct().Count(),
-                Median(g.Select(r => r.UserUsd / r.Seconds * 86400)),
-                Median(g.Select(r => r.UserUsd / o.WindowDays * 30))))
+                AccountMedian(g, r => r.UserUsd / r.Seconds * 86400),
+                AccountMedian(g, r => r.UserUsd / o.WindowDays * 30)))
             .OrderByDescending(s => s.UsdPerMonth)
             .ToList();
         return new RealEarningsSummary(paidUsd, paidUsers, rewarded, cards, o.WindowDays, sharing, showSection);
     }
+
+    private sealed record Reported(string DeviceId, string Kind, string Model, string AccountId, double Seconds, double UserUsd);
+
+    /// <summary>
+    /// The median over accounts of each account's own median: an account with many computers counts once, so it can't
+    /// outvote the others.
+    /// </summary>
+    private static double AccountMedian(IEnumerable<Reported> rows, Func<Reported, double> value) =>
+        Median(rows.GroupBy(r => r.AccountId).Select(a => Median(a.Select(value))));
 
     internal static double Median(IEnumerable<double> values)
     {

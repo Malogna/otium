@@ -296,6 +296,48 @@ public sealed class NonCustodialServerTests : IDisposable
 
     private const int ProblemReportServiceLimit = Otium.Server.Support.ProblemReportService.MaxPerDevicePerDay;
 
+    [Fact]
+    public async Task An_account_sends_at_most_a_few_problem_reports_a_day_from_all_its_computers()
+    {
+        var (first, firstSecret, _) = await Register(Usdt);
+        var (second, secondSecret, _) = await Register(Usdt);
+        var store = _factory.Services.GetRequiredService<Otium.Server.Data.OtiumStore>();
+        store.Upsert(store.FindDevice(second)! with { AccountId = store.FindDevice(first)!.AccountId }); // signed in to the same account
+        var client = new AccountClient(_http);
+
+        for (var i = 0; i < Otium.Server.Support.ProblemReportService.MaxPerAccountPerDay; i++)
+            await client.SendProblemReportAsync(i % 2 == 0 ? first : second, i % 2 == 0 ? firstSecret : secondSecret,
+                new ProblemReport("0.1.0", "Windows", null, "again"), CancellationToken.None);
+        var tooMany = await Assert.ThrowsAsync<AccountRequestException>(() =>
+            client.SendProblemReportAsync(second, secondSecret, new ProblemReport("0.1.0", "Windows", null, "again"), CancellationToken.None));
+        Assert.Equal(429, tooMany.StatusCode);
+        Assert.Contains("account", tooMany.Message);
+    }
+
+    [Fact]
+    public void When_problem_reports_are_full_the_oldest_make_room_for_new_ones()
+    {
+        var store = _factory.Services.GetRequiredService<Otium.Server.Data.OtiumStore>();
+        var reports = new Otium.Server.Support.ProblemReportService(store, _time, Microsoft.Extensions.Logging.Abstractions.NullLogger<Otium.Server.Support.ProblemReportService>.Instance)
+        {
+            MaxStoredCharacters = 10_000,
+        };
+        var references = new List<string>();
+        for (var i = 0; i < 6; i++)
+        {
+            // Each from a different computer and account, as a flood from many free accounts would be.
+            var id = Guid.NewGuid().ToString("N");
+            var session = new Otium.Server.Accounts.Session(new Otium.Server.Data.DeviceRecord(id, "x", id, _time.GetUtcNow(), _time.GetUtcNow()),
+                new Otium.Server.Data.AccountRecord(id, "w" + id, null, null, "c" + id, null, null, null, null, false, null, null, _time.GetUtcNow()));
+            references.Add(reports.Report(session, new ProblemReport("0.1.0", "Windows", null, new string('x', 3_000))).Reference);
+            _time.Advance(TimeSpan.FromMinutes(1));
+        }
+
+        // Three fit; each new one past that pushed out the oldest instead of being refused.
+        Assert.True(store.ProblemReportCharacters() <= 10_000);
+        Assert.Equal(references[^3..], store.ProblemReports().Select(r => r.Reference).Reverse());
+    }
+
     [Theory]
     [InlineData("IR", "sanctions")]
     [InlineData("CN", "mining")]

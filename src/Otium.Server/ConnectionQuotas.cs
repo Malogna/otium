@@ -20,11 +20,18 @@ public static class ClientNetwork
             ? Convert.ToHexStringLower(address.GetAddressBytes()[..8]) + "/64"
             : address.ToString();
     }
+
+    /// <summary>
+    /// The address itself, for a partner that wants the user's IP (SideShift's x-user-ip): IPv4 as itself, also when it
+    /// arrived IPv4-mapped, and IPv6 in full. (Mapping a real IPv6 address to IPv4 would make up an unrelated address.)
+    /// </summary>
+    public static string? Text(IPAddress? address) =>
+        address is null ? null : (address.IsIPv4MappedToIPv6 ? address.MapToIPv4() : address).ToString();
 }
 
 /// <summary>
 /// Allowances per internet connection for what anyone can ask for and costs Otium something: emails sent through SES,
-/// new accounts and problem reports on disk. Devices are free to create, so limits per device alone don't hold. Counted
+/// new accounts, problem reports on disk and partners' conversion quotas. Devices are free to create, so limits per device alone don't hold. Counted
 /// in memory only: no address is written down, and a restart starts the counts over.
 /// </summary>
 public sealed class ConnectionQuotas(TimeProvider time)
@@ -33,6 +40,13 @@ public sealed class ConnectionQuotas(TimeProvider time)
     public const int CodeEmailsPerHour = 10;
     public const int CodeEmailsPerDay = 30;
     public const int ProblemReportsPerDay = 20;
+
+    /// <summary>
+    /// New sharing payout routes (each costs conversion quotes, and for LTC or XMR a real shift or exchange at a partner).
+    /// An app asks at most every 10 minutes while something waits to be paid, about 144 times a day, so this leaves room
+    /// for two computers asking all day on one connection.
+    /// </summary>
+    public const int SharingRoutesPerDay = 300;
 
     private readonly ConcurrentDictionary<string, Window> _windows = new();
     private DateTimeOffset _nextSweep = DateTimeOffset.MinValue;

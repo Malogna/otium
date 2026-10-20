@@ -369,38 +369,95 @@ public sealed class ServerTests : IDisposable
         Assert.Contains("Too many wrong tries", locked.Message);
     }
 
-    [Fact]
-    public async Task Ten_wrong_codes_in_a_day_lock_the_email_address_until_the_next_day()
+    /// <summary>Asks for a code to <paramref name="email"/> and enters a wrong one until that code is used up.</summary>
+    private async Task GuessWrong(Device device, string email)
     {
-        // Without a daily limit, new codes (5 an hour, 5 tries each) would allow about 600 guesses a day.
-        var device = NewDevice();
-        await RegisterBalance(device);
         var client = new AccountClient(_http);
-        Task Verify(string code) => client.VerifyEmailCodeAsync(device.Id, device.Secret, new EmailVerifyRequest("sam@example.com", code), CancellationToken.None);
-        string Wrong(string right) => right == "000000" ? "111111" : "000000";
+        await client.SendEmailCodeAsync(device.Id, device.Secret, new EmailCodeRequest(email), CancellationToken.None);
+        var wrong = LatestCode(email) == "000000" ? "111111" : "000000";
+        for (var i = 0; i < AccountService.MaxCodeAttempts; i++)
+            await Assert.ThrowsAsync<AccountRequestException>(() =>
+                client.VerifyEmailCodeAsync(device.Id, device.Secret, new EmailVerifyRequest(email, wrong), CancellationToken.None));
+    }
 
-        for (var round = 0; round < AccountService.MaxWrongCodesPerEmailPerDay / AccountService.MaxCodeAttempts; round++)
-        {
-            await client.SendEmailCodeAsync(device.Id, device.Secret, new EmailCodeRequest("sam@example.com"), CancellationToken.None);
-            var right = LatestCode("sam@example.com");
-            for (var i = 0; i < AccountService.MaxCodeAttempts; i++)
-                await Assert.ThrowsAsync<AccountRequestException>(() => Verify(Wrong(right)));
-        }
+    [Fact]
+    public async Task Ten_wrong_codes_lock_the_address_on_that_computer_only()
+    {
+        // Someone guessing at another person's address locks out their own computer, not the owner's.
+        var attacker = NewDevice();
+        await RegisterBalance(attacker);
+        for (var round = 0; round < AccountService.MaxWrongCodesPerEmailPerDevicePerDay / AccountService.MaxCodeAttempts; round++)
+            await GuessWrong(attacker, "sam@example.com");
 
-        // Locked: no new code is sent, and even a right code isn't checked.
+        // Locked on that computer: no new code is sent, and even a right code isn't checked.
         var sent = Outbox.Sent.Count;
         var refused = await Assert.ThrowsAsync<AccountRequestException>(() =>
-            client.SendEmailCodeAsync(device.Id, device.Secret, new EmailCodeRequest("sam@example.com"), CancellationToken.None));
+            new AccountClient(_http).SendEmailCodeAsync(attacker.Id, attacker.Secret, new EmailCodeRequest("sam@example.com"), CancellationToken.None));
         Assert.Equal(429, refused.StatusCode);
         Assert.Contains("Too many wrong codes for this email address today", refused.Message);
         Assert.Equal(sent, Outbox.Sent.Count);
 
-        // Other addresses aren't affected, and the next day it works again.
-        var other = NewDevice();
-        await RegisterBalance(other);
-        await SignIn(other, "other@example.com");
+        // The owner signs in from their own computer as usual, and the next day the first computer can try again.
+        var owner = NewDevice();
+        await RegisterBalance(owner);
+        Assert.Equal("sam@example.com", (await SignIn(owner, "sam@example.com")).Email);
         _time.Advance(TimeSpan.FromDays(1) + TimeSpan.FromMinutes(1));
-        await SignIn(device, "sam@example.com");
+        await SignIn(attacker, "sam@example.com");
+    }
+
+    [Fact]
+    public async Task Wrong_codes_from_many_computers_still_lock_the_address_for_the_day()
+    {
+        // Computers are free to make, so guessing spread over many of them stops at a daily limit for the address. (Two
+        // computers guess through the API; the rest are written straight to the store, to stay under the request rate limit.)
+        for (var i = 0; i < 2; i++)
+        {
+            var device = NewDevice();
+            await RegisterBalance(device);
+            await GuessWrong(device, "kim@example.com");
+        }
+        var now = _time.GetUtcNow();
+        for (var i = 2; i < AccountService.MaxWrongCodesPerEmailPerDay / AccountService.MaxCodeAttempts; i++)
+        {
+            var device = $"guesser{i}";
+            Store.AddEmailCode("kim@example.com", device, "hash", "salt", now + AccountService.CodeLifetime, now);
+            var code = Store.LatestEmailCode("kim@example.com", device, now)!;
+            for (var t = 0; t < AccountService.MaxCodeAttempts; t++)
+                Store.CountEmailCodeAttempt(code.Id);
+        }
+
+        var fresh = NewDevice();
+        await RegisterBalance(fresh);
+        var refused = await Assert.ThrowsAsync<AccountRequestException>(() =>
+            new AccountClient(_http).SendEmailCodeAsync(fresh.Id, fresh.Secret, new EmailCodeRequest("kim@example.com"), CancellationToken.None));
+        Assert.Contains("Too many wrong codes for this email address today", refused.Message);
+
+        _time.Advance(TimeSpan.FromDays(1) + TimeSpan.FromMinutes(1));
+        await SignIn(fresh, "kim@example.com");
+    }
+
+    [Fact]
+    public async Task An_address_gets_at_most_ten_codes_a_day_however_many_computers_ask()
+    {
+        var sent = 0;
+        while (sent < AccountService.MaxCodesPerEmailPerDay)
+        {
+            var device = NewDevice();
+            await RegisterBalance(device);
+            await new AccountClient(_http).SendEmailCodeAsync(device.Id, device.Secret, new EmailCodeRequest("pat@example.com"), CancellationToken.None);
+            if (++sent % AccountService.MaxCodesPerEmailPerHour == 0)
+                _time.Advance(TimeSpan.FromMinutes(61));
+        }
+
+        var another = NewDevice();
+        await RegisterBalance(another);
+        var limited = await Assert.ThrowsAsync<AccountRequestException>(() =>
+            new AccountClient(_http).SendEmailCodeAsync(another.Id, another.Secret, new EmailCodeRequest("pat@example.com"), CancellationToken.None));
+        Assert.Equal(429, limited.StatusCode);
+        Assert.Contains("today", limited.Message);
+
+        _time.Advance(TimeSpan.FromDays(1));
+        await SignIn(another, "pat@example.com");
     }
 
     [Fact]

@@ -112,6 +112,11 @@ builder.Services.AddHttpClient<Otium.Server.Sharing.IRelayApi, Otium.Server.Shar
 builder.Services.AddHttpClient<Otium.Server.Sharing.SideShiftLitecoin>();
 builder.Services.AddHttpClient<Otium.Server.Sharing.ChangeNowMonero>();
 builder.Services.AddSingleton<Otium.Server.Sharing.SharingRouteService>();
+// Otium's sharing fee is paid by the app on Tempo; the server reads Tempo to see that it arrived.
+builder.Services.AddHttpClient<Otium.Server.Sharing.ITempoTransfers, Otium.Server.Sharing.TempoRpcClient>();
+builder.Services.AddSingleton<Otium.Server.Sharing.SharingFees>();
+if (!builder.Configuration.GetValue<bool>("DisableBackgroundJobs"))
+    builder.Services.AddHostedService<Otium.Server.Sharing.SharingFeeWatcher>();
 
 // The website's real numbers: opt-in earnings reports, and what the pools paid users' own addresses.
 builder.Services.Configure<RealEarningsOptions>(builder.Configuration.GetSection(RealEarningsOptions.Section));
@@ -332,8 +337,8 @@ api.MapPost("/devices/{deviceId}/sharing/route", async (string deviceId, Sharing
 {
     CheckCountry(context.Request);
     var session = accounts.Authenticate(deviceId, Secret(context.Request));
-    var ip = context.Connection.RemoteIpAddress?.MapToIPv4().ToString() ?? "unknown";
-    return Results.Ok(await routes.RouteAsync(session, body, ip, ct));
+    // The client's own address (IPv6 kept as it is): SideShift and ChangeNOW want the user's, and it keys the daily quota.
+    return Results.Ok(await routes.RouteAsync(session, body, context.Connection.RemoteIpAddress, ct));
 });
 
 // Problem reports users send from the app ("Send a problem report"), answered with a reference to quote.
@@ -341,6 +346,7 @@ api.MapPost("/devices/{deviceId}/problem-report", (string deviceId, ProblemRepor
     Otium.Server.Support.ProblemReportService reports, ConnectionQuotas quotas) =>
 {
     var session = accounts.Authenticate(deviceId, Secret(request));
+    reports.CheckAllowance(session);
     if (!quotas.TryTake("problem-report", request.HttpContext.Connection.RemoteIpAddress, ConnectionQuotas.ProblemReportsPerDay, TimeSpan.FromDays(1)))
         throw new OtiumException(StatusCodes.Status429TooManyRequests, "Several problem reports already came from this internet connection today. Please try again tomorrow.");
     return Results.Ok(reports.Report(session, body));

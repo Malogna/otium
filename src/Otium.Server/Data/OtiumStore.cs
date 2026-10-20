@@ -96,7 +96,7 @@ public sealed record EmailCodeRecord(long Id, string Email, string DeviceId, str
 public sealed class OtiumStore
 {
     public const long MicrosPerDollar = 1_000_000;
-    private const int SchemaVersion = 12;
+    private const int SchemaVersion = 13;
 
     private readonly string _connectionString;
 
@@ -370,6 +370,40 @@ public sealed class OtiumStore
                 key         TEXT PRIMARY KEY,
                 account_id  TEXT NOT NULL,
                 redeemed_at TEXT NOT NULL
+            );
+            """);
+
+        // Version 13: the payout address each pool payout was read for, so the website counts an address once however
+        // many accounts share it. Rows from before have none until the next pool check fills it in.
+        if (Scalar<long>("SELECT COUNT(*) FROM pragma_table_info('pool_payouts') WHERE name = 'address'") == 0)
+            Execute("ALTER TABLE pool_payouts ADD COLUMN address TEXT NULL;");
+        // Also version 13: Otium's internet-sharing fee. The payouts it's owed on (each route's Tempo deposit address, used
+        // once a transfer to it shows up), the exact fee payments the server asked apps for, and how far Tempo was read.
+        Execute("""
+            CREATE TABLE IF NOT EXISTS sharing_routes (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                account_id TEXT NOT NULL,
+                deposit    TEXT NOT NULL,
+                fee_micro  INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                used_at    TEXT NULL
+            );
+            CREATE INDEX IF NOT EXISTS ix_sharing_routes_account ON sharing_routes(account_id);
+            CREATE INDEX IF NOT EXISTS ix_sharing_routes_deposit ON sharing_routes(deposit);
+            CREATE TABLE IF NOT EXISTS sharing_fee_payments (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                account_id   TEXT NOT NULL,
+                amount_micro INTEGER NOT NULL,
+                created_at   TEXT NOT NULL,
+                seen_at      TEXT NULL,
+                transfer     TEXT NULL
+            );
+            CREATE INDEX IF NOT EXISTS ix_sharing_fee_payments_account ON sharing_fee_payments(account_id);
+            CREATE INDEX IF NOT EXISTS ix_sharing_fee_payments_amount ON sharing_fee_payments(amount_micro);
+            CREATE TABLE IF NOT EXISTS chain_scans (
+                name       TEXT PRIMARY KEY,
+                block      INTEGER NOT NULL,
+                through_at TEXT NOT NULL
             );
             """);
 
@@ -848,6 +882,11 @@ public sealed class OtiumStore
     public long EmailCodeAttemptsSince(string email, DateTimeOffset since) =>
         Scalar<long>("SELECT COALESCE(SUM(attempts), 0) FROM email_codes WHERE email = $e AND created_at >= $s", ("$e", email), ("$s", Format(since)));
 
+    /// <summary>Wrong tries over the codes this one computer asked for this email since <paramref name="since"/>.</summary>
+    public long EmailCodeAttemptsSince(string email, string deviceId, DateTimeOffset since) =>
+        Scalar<long>("SELECT COALESCE(SUM(attempts), 0) FROM email_codes WHERE email = $e AND device_id = $d AND created_at >= $s",
+            ("$e", email), ("$d", deviceId), ("$s", Format(since)));
+
     public void UseEmailCode(long id) => Execute("UPDATE email_codes SET used = 1 WHERE id = $id", ("$id", id));
 
     // ---------- bandwidth ----------
@@ -929,6 +968,42 @@ public sealed class OtiumStore
     public long ProblemReportsSince(string deviceId, DateTimeOffset since) =>
         Scalar<long>("SELECT COUNT(*) FROM problem_reports WHERE device_id = $d AND created_at > $s", ("$d", deviceId), ("$s", Format(since)));
 
+    public long AccountProblemReportsSince(string accountId, DateTimeOffset since) =>
+        Scalar<long>("SELECT COUNT(*) FROM problem_reports WHERE account_id = $a AND created_at > $s", ("$a", accountId), ("$s", Format(since)));
+
+    /// <summary>
+    /// Deletes the oldest problem reports until at least <paramref name="characters"/> fewer are stored (or none are left);
+    /// returns how many reports went.
+    /// </summary>
+    public int DeleteOldestProblemReports(long characters)
+    {
+        using var connection = Open();
+        using var tx = connection.BeginTransaction(deferred: false);
+        var oldest = new List<(string Reference, long Size)>();
+        using (var cmd = connection.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            cmd.CommandText = "SELECT reference, LENGTH(details) + COALESCE(LENGTH(note), 0) FROM problem_reports ORDER BY created_at, reference";
+            using var r = cmd.ExecuteReader();
+            long freed = 0;
+            while (freed < characters && r.Read())
+            {
+                oldest.Add((r.GetString(0), r.GetInt64(1)));
+                freed += r.GetInt64(1);
+            }
+        }
+        foreach (var (reference, _) in oldest)
+        {
+            using var delete = connection.CreateCommand();
+            delete.Transaction = tx;
+            delete.CommandText = "DELETE FROM problem_reports WHERE reference = $r";
+            delete.Parameters.AddWithValue("$r", reference);
+            delete.ExecuteNonQuery();
+        }
+        tx.Commit();
+        return oldest.Count;
+    }
+
     /// <summary>The newest reports first, without their details (<see cref="FindProblemReport"/> has those).</summary>
     public IReadOnlyList<ProblemReportRecord> ProblemReports(int limit = 50) =>
         QueryProblemReports("SELECT reference, account_id, device_id, app_version, platform, note, '' AS details, created_at FROM problem_reports ORDER BY created_at DESC LIMIT $l",
@@ -971,12 +1046,46 @@ public sealed class OtiumStore
         cmd.ExecuteNonQuery();
     }
 
-    /// <summary>Stores a report's rows. Returns false when this report (device and sequence) was already stored.</summary>
-    public bool AddEarningsReport(string deviceId, string accountId, EarningsReport report, DateTimeOffset now)
+    public enum EarningsReportOutcome
+    {
+        Stored,
+
+        /// <summary>This report (device and sequence) was already stored: a retry, kept once.</summary>
+        AlreadyStored,
+
+        /// <summary>
+        /// Another report of this computer already covers part of this period for the same kind of device. The app's
+        /// reports follow on from each other, so only a forged one overlaps: counting it would add the same hours twice.
+        /// </summary>
+        Overlaps,
+    }
+
+    /// <summary>Stores a report's rows unless it's a retry or overlaps an earlier report (see <see cref="EarningsReportOutcome"/>).</summary>
+    public EarningsReportOutcome AddEarningsReport(string deviceId, string accountId, EarningsReport report, DateTimeOffset now)
     {
         using var connection = Open();
         using var tx = connection.BeginTransaction(deferred: false);
-        var added = 0;
+        using (var seen = connection.CreateCommand())
+        {
+            seen.Transaction = tx;
+            seen.CommandText = "SELECT COUNT(*) FROM earnings_reports WHERE device_id = $d AND seq = $s";
+            Bind(seen, [("$d", deviceId), ("$s", report.Sequence)]);
+            if ((long)seen.ExecuteScalar()! > 0)
+                return EarningsReportOutcome.AlreadyStored;
+        }
+        foreach (var kind in report.Devices.Select(d => d.Kind).Distinct())
+        {
+            using var overlap = connection.CreateCommand();
+            overlap.Transaction = tx;
+            overlap.CommandText = """
+                SELECT COUNT(*) FROM earnings_reports
+                WHERE device_id = $d AND kind = $k AND seq <> $s AND period_start < $pe AND period_end > $ps
+                """;
+            Bind(overlap, [("$d", deviceId), ("$k", kind), ("$s", report.Sequence), ("$ps", Format(report.PeriodStart)), ("$pe", Format(report.PeriodEnd))]);
+            if ((long)overlap.ExecuteScalar()! > 0)
+                return EarningsReportOutcome.Overlaps;
+        }
+
         foreach (var device in report.Devices)
         {
             using var cmd = connection.CreateCommand();
@@ -989,27 +1098,45 @@ public sealed class OtiumStore
             Bind(cmd, [("$d", deviceId), ("$s", report.Sequence), ("$k", device.Kind), ("$a", accountId), ("$m", device.Model),
                 ("$ps", Format(report.PeriodStart)), ("$pe", Format(report.PeriodEnd)), ("$sec", device.EarningSeconds),
                 ("$u", device.UserUsd), ("$e", device.ElectricityUsd), ("$c", Format(now))]);
-            added += cmd.ExecuteNonQuery();
+            cmd.ExecuteNonQuery();
         }
         tx.Commit();
-        return added > 0;
+        return EarningsReportOutcome.Stored;
     }
 
-    /// <summary>Per device and model, what was earned in reports ending after <paramref name="since"/>.</summary>
-    public IReadOnlyList<(string DeviceId, string Kind, string Model, double Seconds, double UserUsd, double ElectricityUsd)> EarningsSince(DateTimeOffset since)
+    /// <summary>
+    /// Per device and model, what was earned after <paramref name="since"/>: a report that started earlier counts for the
+    /// share of its period inside the window. Each row carries the account (the surviving one after a merge) and when
+    /// that account was made, so the website can ask for computers of several established accounts.
+    /// </summary>
+    public IReadOnlyList<(string DeviceId, string Kind, string Model, double Seconds, double UserUsd, double ElectricityUsd, string AccountId, DateTimeOffset? AccountCreatedAt)>
+        EarningsSince(DateTimeOffset since)
     {
         using var connection = Open();
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
-            SELECT device_id, kind, model, SUM(seconds), SUM(user_usd), SUM(electricity_usd) FROM earnings_reports
-            WHERE period_end > $s AND model IS NOT NULL GROUP BY device_id, kind, model
+            SELECT r.device_id, r.kind, r.model, r.period_start, r.period_end, r.seconds, r.user_usd, r.electricity_usd,
+                   COALESCE(a.merged_into, r.account_id), a.created_at
+            FROM earnings_reports r LEFT JOIN accounts a ON a.account_id = r.account_id
+            WHERE r.period_end > $s AND r.model IS NOT NULL
             """;
         Bind(cmd, [("$s", Format(since))]);
         using var r = cmd.ExecuteReader();
-        var list = new List<(string, string, string, double, double, double)>();
+        var rows = new List<(string Device, string Kind, string Model, double Share, double Seconds, double User, double Electricity, string Account, DateTimeOffset? Created)>();
         while (r.Read())
-            list.Add((r.GetString(0), r.GetString(1), r.GetString(2), r.GetDouble(3), r.GetDouble(4), r.GetDouble(5)));
-        return list;
+        {
+            var (start, end) = (Parse(r.GetString(3)), Parse(r.GetString(4)));
+            var period = (end - start).TotalSeconds;
+            var inside = (end - (start > since ? start : since)).TotalSeconds;
+            var share = period > 0 ? Math.Clamp(inside / period, 0, 1) : 1;
+            rows.Add((r.GetString(0), r.GetString(1), r.GetString(2), share, r.GetDouble(5), r.GetDouble(6), r.GetDouble(7), r.GetString(8),
+                r.IsDBNull(9) ? null : Parse(r.GetString(9))));
+        }
+        return rows
+            .GroupBy(x => (x.Device, x.Kind, x.Model))
+            .Select(g => (g.Key.Device, g.Key.Kind, g.Key.Model, g.Sum(x => x.Seconds * x.Share), g.Sum(x => x.User * x.Share),
+                g.Sum(x => x.Electricity * x.Share), g.First().Account, g.First().Created))
+            .ToList();
     }
 
     public IReadOnlyList<(string Kind, string? Model, DateTimeOffset PeriodStart, DateTimeOffset PeriodEnd, double Seconds, double UserUsd, double ElectricityUsd)> EarningsReportsFor(string accountId)
@@ -1041,31 +1168,174 @@ public sealed class OtiumStore
         return list;
     }
 
-    public void SetPoolPayout(string accountId, string coin, double paid, double paidUsd, double rewarded30dUsd, DateTimeOffset now) =>
+    /// <param name="address">The payout address the pool was read for, in its canonical form ("USDT:T…").</param>
+    public void SetPoolPayout(string accountId, string address, string coin, double paid, double paidUsd, double rewarded30dUsd, DateTimeOffset now) =>
         Execute("""
-            INSERT INTO pool_payouts (account_id, coin, paid, paid_usd, rewarded_30d_usd, checked_at)
-            VALUES ($a, $c, $p, $pu, $r, $t)
-            ON CONFLICT(account_id) DO UPDATE SET coin = $c, paid = $p, paid_usd = $pu, rewarded_30d_usd = $r, checked_at = $t
-            """, ("$a", accountId), ("$c", coin), ("$p", paid), ("$pu", paidUsd), ("$r", rewarded30dUsd), ("$t", Format(now)));
+            INSERT INTO pool_payouts (account_id, address, coin, paid, paid_usd, rewarded_30d_usd, checked_at)
+            VALUES ($a, $ad, $c, $p, $pu, $r, $t)
+            ON CONFLICT(account_id) DO UPDATE SET address = $ad, coin = $c, paid = $p, paid_usd = $pu, rewarded_30d_usd = $r, checked_at = $t
+            """, ("$a", accountId), ("$ad", address), ("$c", coin), ("$p", paid), ("$pu", paidUsd), ("$r", rewarded30dUsd), ("$t", Format(now)));
+
+    /// <summary>The account's address no longer counts for the website (mined elsewhere too, or the pool can't show whose workers).</summary>
+    public void DeletePoolPayout(string accountId) => Execute("DELETE FROM pool_payouts WHERE account_id = $a", ("$a", accountId));
 
     /// <summary>
-    /// What the pools have paid Otium users' own addresses, in dollars at the time of each check, how many were paid, and
-    /// how many the pools have credited or paid at all.
+    /// What the pools have paid Otium users' own addresses, in dollars at the time of each check, how many addresses were
+    /// paid, and how many the pools have credited or paid at all. Each address counts once, however many accounts use it
+    /// (its latest check), so sharing one address between accounts can't multiply the figures.
     /// </summary>
     public (double PaidUsd, double Rewarded30dUsd, long PaidAccounts, long EarningAccounts) PoolPayoutTotals()
     {
         using var connection = Open();
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
-            SELECT COALESCE(SUM(p.paid_usd), 0), COALESCE(SUM(p.rewarded_30d_usd), 0), COALESCE(SUM(CASE WHEN p.paid > 0 THEN 1 ELSE 0 END), 0),
-                   COALESCE(SUM(CASE WHEN p.paid > 0 OR p.rewarded_30d_usd > 0 THEN 1 ELSE 0 END), 0)
-            FROM pool_payouts p JOIN accounts a ON a.account_id = p.account_id
-            WHERE a.merged_into IS NULL AND a.deleted_at IS NULL
+            WITH latest AS (
+                SELECT p.paid, p.paid_usd, p.rewarded_30d_usd,
+                       ROW_NUMBER() OVER (PARTITION BY COALESCE(p.address, 'account:' || p.account_id) ORDER BY p.checked_at DESC) AS n
+                FROM pool_payouts p JOIN accounts a ON a.account_id = p.account_id
+                WHERE a.merged_into IS NULL AND a.deleted_at IS NULL
+            )
+            SELECT COALESCE(SUM(paid_usd), 0), COALESCE(SUM(rewarded_30d_usd), 0), COALESCE(SUM(CASE WHEN paid > 0 THEN 1 ELSE 0 END), 0),
+                   COALESCE(SUM(CASE WHEN paid > 0 OR rewarded_30d_usd > 0 THEN 1 ELSE 0 END), 0)
+            FROM latest WHERE n = 1
             """;
         using var r = cmd.ExecuteReader();
         r.Read();
         return (r.GetDouble(0), r.GetDouble(1), r.GetInt64(2), r.GetInt64(3));
     }
+
+    // ---------- Otium's internet-sharing fee ----------
+
+    public sealed record SharingFeePayment(long Id, string AccountId, long AmountMicro, DateTimeOffset CreatedAt, DateTimeOffset? SeenAt);
+
+    /// <summary>A payout route with Otium's fee on it; the fee is owed once a transfer to <paramref name="deposit"/> shows up.</summary>
+    public void AddSharingRoute(string accountId, string deposit, long feeMicro, DateTimeOffset now) =>
+        Execute("INSERT INTO sharing_routes (account_id, deposit, fee_micro, created_at) VALUES ($a, $d, $f, $c)",
+            ("$a", accountId), ("$d", deposit.ToLowerInvariant()), ("$f", feeMicro), ("$c", Format(now)));
+
+    /// <summary>Deposit addresses of routes made since <paramref name="since"/> that nothing was paid into yet.</summary>
+    public IReadOnlyList<string> UnusedSharingDeposits(DateTimeOffset since)
+    {
+        using var connection = Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT DISTINCT deposit FROM sharing_routes WHERE used_at IS NULL AND created_at > $s";
+        Bind(cmd, [("$s", Format(since))]);
+        using var r = cmd.ExecuteReader();
+        var list = new List<string>();
+        while (r.Read())
+            list.Add(r.GetString(0));
+        return list;
+    }
+
+    public void MarkSharingDepositUsed(string deposit, DateTimeOffset at) =>
+        Execute("UPDATE sharing_routes SET used_at = $t WHERE deposit = $d AND used_at IS NULL", ("$d", deposit.ToLowerInvariant()), ("$t", Format(at)));
+
+    /// <summary>Otium's fee on the account's payouts that went through, and what of it arrived at Otium's address.</summary>
+    public (long Owed, long Paid) SharingFeeTotals(string accountId) =>
+        (Scalar<long>("SELECT COALESCE(SUM(fee_micro), 0) FROM sharing_routes WHERE account_id = $a AND used_at IS NOT NULL", ("$a", accountId)),
+         Scalar<long>("SELECT COALESCE(SUM(amount_micro), 0) FROM sharing_fee_payments WHERE account_id = $a AND seen_at IS NOT NULL", ("$a", accountId)));
+
+    /// <summary>Fee payments the server asked this account for that haven't arrived, oldest first.</summary>
+    public IReadOnlyList<SharingFeePayment> OpenSharingFeePayments(string accountId)
+    {
+        using var connection = Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT id, account_id, amount_micro, created_at FROM sharing_fee_payments WHERE account_id = $a AND seen_at IS NULL ORDER BY id";
+        Bind(cmd, [("$a", accountId)]);
+        using var r = cmd.ExecuteReader();
+        var list = new List<SharingFeePayment>();
+        while (r.Read())
+            list.Add(new SharingFeePayment(r.GetInt64(0), r.GetString(1), r.GetInt64(2), Parse(r.GetString(3)), null));
+        return list;
+    }
+
+    /// <summary>
+    /// Records a fee payment the server asks the account for: <paramref name="baseMicro"/> moved by the smallest offset
+    /// (+1, -1, +2, -2… microcredits, never 0, staying at or above <paramref name="minimumMicro"/>) that no other payment
+    /// still on its way uses, so a transfer of exactly that amount can only be this one. Null if none is free.
+    /// </summary>
+    public SharingFeePayment? AddSharingFeePayment(string accountId, long baseMicro, long minimumMicro, int maxOffset, DateTimeOffset now)
+    {
+        using var connection = Open();
+        using var tx = connection.BeginTransaction(deferred: false);
+        var taken = new HashSet<long>();
+        using (var cmd = connection.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            cmd.CommandText = "SELECT amount_micro FROM sharing_fee_payments WHERE seen_at IS NULL AND amount_micro BETWEEN $lo AND $hi";
+            Bind(cmd, [("$lo", baseMicro - maxOffset), ("$hi", baseMicro + maxOffset)]);
+            using var r = cmd.ExecuteReader();
+            while (r.Read())
+                taken.Add(r.GetInt64(0));
+        }
+        long? amount = null;
+        for (var offset = 1; offset <= maxOffset && amount is null; offset++)
+        {
+            foreach (var candidate in new[] { baseMicro + offset, baseMicro - offset })
+            {
+                if (candidate >= minimumMicro && !taken.Contains(candidate))
+                {
+                    amount = candidate;
+                    break;
+                }
+            }
+        }
+        if (amount is null)
+            return null;
+        using (var insert = connection.CreateCommand())
+        {
+            insert.Transaction = tx;
+            insert.CommandText = "INSERT INTO sharing_fee_payments (account_id, amount_micro, created_at) VALUES ($a, $m, $c); SELECT last_insert_rowid();";
+            Bind(insert, [("$a", accountId), ("$m", amount.Value), ("$c", Format(now))]);
+            var id = (long)insert.ExecuteScalar()!;
+            tx.Commit();
+            return new SharingFeePayment(id, accountId, amount.Value, now, null);
+        }
+    }
+
+    /// <summary>
+    /// A transfer of exactly <paramref name="amountMicro"/> reached Otium's address: marks the oldest payment of that
+    /// amount still on its way as arrived. <paramref name="transfer"/> (transaction and log index) is kept so reading the
+    /// same blocks again doesn't count it twice. Returns whether it matched a payment.
+    /// </summary>
+    public bool MatchSharingFeePayment(long amountMicro, string transfer, DateTimeOffset at)
+    {
+        using var connection = Open();
+        using var tx = connection.BeginTransaction(deferred: false);
+        using var seen = connection.CreateCommand();
+        seen.Transaction = tx;
+        seen.CommandText = "SELECT COUNT(*) FROM sharing_fee_payments WHERE transfer = $t";
+        Bind(seen, [("$t", transfer)]);
+        if ((long)seen.ExecuteScalar()! > 0)
+            return true;
+        using var update = connection.CreateCommand();
+        update.Transaction = tx;
+        update.CommandText = """
+            UPDATE sharing_fee_payments SET seen_at = $at, transfer = $t
+            WHERE id = (SELECT id FROM sharing_fee_payments WHERE amount_micro = $m AND seen_at IS NULL ORDER BY id LIMIT 1)
+            """;
+        Bind(update, [("$at", Format(at)), ("$t", transfer), ("$m", amountMicro)]);
+        var matched = update.ExecuteNonQuery() > 0;
+        tx.Commit();
+        return matched;
+    }
+
+    /// <summary>How far a chain was read: the last block, and the time up to which nothing newer was missed.</summary>
+    public (long Block, DateTimeOffset ThroughAt)? ChainScan(string name)
+    {
+        using var connection = Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT block, through_at FROM chain_scans WHERE name = $n";
+        Bind(cmd, [("$n", name)]);
+        using var r = cmd.ExecuteReader();
+        return r.Read() ? (r.GetInt64(0), Parse(r.GetString(1))) : null;
+    }
+
+    public void SetChainScan(string name, long block, DateTimeOffset throughAt) =>
+        Execute("""
+            INSERT INTO chain_scans (name, block, through_at) VALUES ($n, $b, $t)
+            ON CONFLICT(name) DO UPDATE SET block = $b, through_at = $t
+            """, ("$n", name), ("$b", block), ("$t", Format(throughAt)));
 
     // ---------- fee slices ----------
 

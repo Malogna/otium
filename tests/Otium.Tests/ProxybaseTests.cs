@@ -308,34 +308,67 @@ public sealed class ProxybaseTests : IDisposable
     }
 
     [Fact]
-    public async Task Otiums_fee_is_kept_back_and_paid_to_otiums_address_from_one_dollar_never_through_the_conversion()
+    public async Task Otiums_fee_is_kept_back_and_paid_to_otiums_address_the_exact_amount_the_server_names()
     {
         const string otium = "0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed";
         var provider = new ProxybaseBandwidthProvider(new HttpClient(), _engines, (request, _) =>
         {
             _routeRequests.Add(request);
             var fee = request.AvailableMicrocredits / 50; // 2%, as the server works it out
-            return Task.FromResult(_route with { AmountMicrocredits = request.AvailableMicrocredits - fee, FeeAddress = otium, FeeMicrocredits = fee });
+            // From $1 kept back, the server names the exact amount to pay (a few microcredits off, so it can recognise it).
+            var payment = request.ReservedFeeMicrocredits >= 1_000_000 ? request.ReservedFeeMicrocredits.Value + 3 : 0;
+            return Task.FromResult(_route with
+            {
+                AmountMicrocredits = request.AvailableMicrocredits - fee, FeeAddress = otium, FeeMicrocredits = fee, FeePaymentMicrocredits = payment,
+            });
         }, _cli, new ProxybaseAsset("test.zip", "00"), _time);
         await provider.StartAsync(new BandwidthRunOptions("w1"), CancellationToken.None);
 
         // $20: $19.60 goes to the user's conversion; Otium's $0.40 stays at Proxybase, below its $1 minimum.
         _cli.SellerAvailable = 20_000_000;
         await provider.CheckBalanceAndPayAsync(CancellationToken.None);
+        Assert.Equal(0, _routeRequests[^1].ReservedFeeMicrocredits);
         Assert.Contains($"seller payout create --amount 19600000 --tempo-address {DepositAddress}", _cli.Commands);
         Assert.DoesNotContain(_cli.Commands, c => c.EndsWith(otium, StringComparison.Ordinal));
         Assert.Equal(400_000, provider.Fee.Reserved);
         Assert.Equal(400_000, _cli.SellerAvailable);
 
-        // $40 more: the kept-back $0.40 isn't offered for conversion, and once Otium's share reaches $1.20 it's paid to Otium.
+        // $40 more: the kept-back $0.40 isn't offered for conversion, and the app pays Otium nothing on its own.
         _cli.SellerAvailable += 40_000_000;
         await provider.CheckBalanceAndPayAsync(CancellationToken.None);
         Assert.Equal(40_000_000, _routeRequests[^1].AvailableMicrocredits);
+        Assert.Equal(400_000, _routeRequests[^1].ReservedFeeMicrocredits);
         Assert.Contains($"seller payout create --amount 39200000 --tempo-address {DepositAddress}", _cli.Commands);
-        Assert.Contains($"seller payout create --amount 1200000 --tempo-address {otium}", _cli.Commands);
-        Assert.Equal(new ProxybaseFee(0, otium, 1_200_000), provider.Fee);
-        Assert.Equal(0, _cli.SellerAvailable);
-        Assert.Equal(58_800_000, provider.Payouts.Sum(p => p.Microcredits)); // the user's payouts only
+        Assert.DoesNotContain(_cli.Commands, c => c.EndsWith(otium, StringComparison.Ordinal));
+        Assert.Equal(1_200_000, provider.Fee.Reserved);
+
+        // $10 more: the app says $1.20 is kept back, and pays exactly the $1.200003 the server names, before the payout.
+        _cli.SellerAvailable += 10_000_000;
+        await provider.CheckBalanceAndPayAsync(CancellationToken.None);
+        Assert.Equal(1_200_000, _routeRequests[^1].ReservedFeeMicrocredits);
+        Assert.Contains($"seller payout create --amount 1200003 --tempo-address {otium}", _cli.Commands);
+        Assert.Equal(new ProxybaseFee(200_000, otium, 1_200_003), provider.Fee); // this payout's fee kept back again
+        // The 3 microcredits above what was kept back come out of the user's part.
+        Assert.Contains($"seller payout create --amount 9799997 --tempo-address {DepositAddress}", _cli.Commands);
+        Assert.Equal(68_599_997, provider.Payouts.Sum(p => p.Microcredits)); // the user's payouts only
+    }
+
+    [Fact]
+    public async Task A_fee_the_server_says_is_still_owed_is_paid_from_whats_waiting()
+    {
+        const string otium = "0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed";
+        _route = new SharingRoute(SharingRouteDecisions.Wait, Message: "Otium's share of your last sharing payouts hasn't arrived yet; payouts continue once it has.",
+            FeeAddress: otium, FeePaymentMicrocredits: 1_600_001);
+        var provider = Provider();
+        await provider.StartAsync(new BandwidthRunOptions("w1"), CancellationToken.None);
+
+        _cli.SellerAvailable = 5_000_000;
+        await provider.CheckBalanceAndPayAsync(CancellationToken.None);
+        Assert.Contains($"seller payout create --amount 1600001 --tempo-address {otium}", _cli.Commands);
+        Assert.Equal(new ProxybaseFee(0, otium, 1_600_001), provider.Fee);
+        Assert.Equal(3_399_999, _cli.SellerAvailable);
+        Assert.Empty(provider.Payouts); // held until the server sees it arrive
+        Assert.Contains("hasn't arrived yet", (await provider.GetStatusAsync(CancellationToken.None)).Message ?? "");
     }
 
     [Fact]

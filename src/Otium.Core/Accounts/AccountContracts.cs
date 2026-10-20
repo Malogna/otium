@@ -137,7 +137,11 @@ public sealed record DeviceEarnings(string Kind, string? Model, double EarningSe
 /// The sharing client's own wallet address on this computer (0x…), where a conversion that fails is refunded. The user's
 /// money either way; never Otium's.
 /// </param>
-public sealed record SharingRouteRequest(long AvailableMicrocredits, string? RefundAddress);
+/// <param name="ReservedFeeMicrocredits">
+/// Otium's fee kept back at Proxybase so far and not yet paid. Apps that pay Otium's fee the exact amount the server
+/// names send it (0 included); apps from before leave it out.
+/// </param>
+public sealed record SharingRouteRequest(long AvailableMicrocredits, string? RefundAddress, long? ReservedFeeMicrocredits = null);
 
 /// <summary>Where to have Proxybase pay, or why to wait.</summary>
 /// <param name="Decision">One of <see cref="SharingRouteDecisions"/>.</param>
@@ -146,10 +150,14 @@ public sealed record SharingRouteRequest(long AvailableMicrocredits, string? Ref
 /// <param name="ExpectedOutput">With "pay": what the user should receive, e.g. "4.23 USDT (TRON)".</param>
 /// <param name="CostPercent">The conversion's own network costs, as a share of the amount converted.</param>
 /// <param name="Message">With "wait" or "unsupported": why, in plain words.</param>
-/// <param name="FeeAddress">With "pay": Otium's own address on Tempo, where the app pays Otium's fee itself.</param>
+/// <param name="FeeAddress">Otium's own address on Tempo, where the app pays Otium's fee itself.</param>
 /// <param name="FeeMicrocredits">With "pay": Otium's fee on this payout (its mining share of the amount), kept back at
 /// Proxybase and paid to <paramref name="FeeAddress"/> once at least $1 of it has built up. It never goes through the
 /// conversion.</param>
+/// <param name="FeePaymentMicrocredits">With any decision: pay exactly this much to <paramref name="FeeAddress"/> now,
+/// out of the kept-back fee (or what's waiting, for a fee still owed beyond it). The amount is a few microcredits off
+/// the fee and unique to this payment, which is how the server recognises it on Tempo; payouts stop while one is
+/// overdue.</param>
 public sealed record SharingRoute(
     string Decision,
     string? DepositAddress = null,
@@ -159,7 +167,8 @@ public sealed record SharingRoute(
     string? Message = null,
     string? RequestId = null,
     string? FeeAddress = null,
-    long FeeMicrocredits = 0);
+    long FeeMicrocredits = 0,
+    long FeePaymentMicrocredits = 0);
 
 public static class SharingRouteDecisions
 {
