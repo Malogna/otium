@@ -331,6 +331,28 @@ public sealed class SitePagesTests : IDisposable
         Assert.Contains($"""<a href="/compare/{slug}">vs {name}</a>""", html);
     }
 
+    [Theory]
+    [InlineData("/", "text/html")]
+    [InlineData("/sitemap.xml", "application/xml")]
+    [InlineData("/robots.txt", "text/plain")]
+    [InlineData("/mining/rtx-4090", "text/html")]
+    public async Task Head_requests_get_the_pages_headers_without_a_body(string path, string type)
+    {
+        using var response = await _http.SendAsync(new HttpRequestMessage(HttpMethod.Head, path));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode); // not 405, which crawlers and link checkers read as broken
+        Assert.Equal(type, response.Content.Headers.ContentType?.MediaType);
+        Assert.Empty(await response.Content.ReadAsByteArrayAsync());
+        Assert.Equal("nosniff", response.Headers.GetValues("X-Content-Type-Options").Single());
+    }
+
+    [Fact]
+    public async Task Head_requests_for_missing_pages_still_say_not_found()
+    {
+        using var response = await _http.SendAsync(new HttpRequestMessage(HttpMethod.Head, "/compare/kryptex"));
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
     [Fact]
     public async Task Only_known_comparisons_exist()
     {

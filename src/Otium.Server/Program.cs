@@ -168,8 +168,32 @@ builder.Services.AddRateLimiter(options =>
 });
 
 var app = builder.Build();
+
+// HEAD gets the GET answer's status and headers without its body (RFC 9110), so crawlers and link checkers that ask
+// with HEAD don't get 405 for every page. It must run before routing picks an endpoint, hence UseRouting below.
+app.Use(async (context, next) =>
+{
+    if (!HttpMethods.IsHead(context.Request.Method))
+    {
+        await next();
+        return;
+    }
+    context.Request.Method = HttpMethods.Get;
+    var body = context.Response.Body;
+    context.Response.Body = Stream.Null;
+    try
+    {
+        await next();
+    }
+    finally
+    {
+        context.Response.Body = body;
+        context.Request.Method = HttpMethods.Head;
+    }
+});
 if (reverseProxy.Enabled)
     app.UseForwardedHeaders();
+app.UseRouting();
 app.UseRateLimiter();
 
 // Browser hardening for every response (from a website scan): no MIME sniffing, no framing, no referrer beyond the
