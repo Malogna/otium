@@ -288,11 +288,12 @@
       let anim = null;
       summary.addEventListener("click", e => {
         e.preventDefault();
-        const closing = d.open && !d.classList.contains("closing");
+        const closing = d.open && !d.classList.contains("folding");
         const from = d.getBoundingClientRect().height;
         anim?.cancel();
-        if (closing) d.classList.add("closing");
-        else { d.classList.remove("closing"); d.open = true; }
+        // "folding", not "closing": .closing is the front page's last section, whose padding would make the question jump.
+        if (closing) d.classList.add("folding");
+        else { d.classList.remove("folding"); d.open = true; }
         const to = closing ? summary.getBoundingClientRect().height + d.offsetHeight - d.clientHeight : d.getBoundingClientRect().height;
         d.style.overflow = "hidden";
         const duration = closing ? 280 : 380, mine = d.animate({ height: [`${from}px`, `${to}px`] }, { duration, easing: "cubic-bezier(.2,.8,.2,1)" });
@@ -302,7 +303,7 @@
           anim = null;
           mine.cancel();
           d.style.overflow = "";
-          if (closing) { d.open = false; d.classList.remove("closing"); }
+          if (closing) { d.open = false; d.classList.remove("folding"); }
         };
         mine.onfinish = done;
         // Where frames don't run (a hidden tab), the box still ends up open or closed.

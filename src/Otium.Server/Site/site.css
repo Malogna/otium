@@ -521,10 +521,10 @@ footer a:hover { color: var(--ink); }
 /* Questions and "See the breakdown and adjust" unfold (site.js animates the height): what's inside fades in a moment
    after the box starts opening, line by line, and fades out first when it closes. */
 @keyframes unfold { from { opacity: 0; transform: translateY(-8px); } }
-details[open]:not(.closing) > :not(summary) { animation: unfold .45s .06s cubic-bezier(.2,.8,.2,1) both; }
-.est-more[open]:not(.closing) .est-more-body > * { animation: unfold .45s cubic-bezier(.2,.8,.2,1) both; animation-delay: calc(60ms + var(--n, 0) * 45ms); }
-details.closing > :not(summary) { opacity: 0; transition: opacity .15s ease-in; }
-details.closing summary::after { transform: none; }
+details[open]:not(.folding) > :not(summary) { animation: unfold .45s .06s cubic-bezier(.2,.8,.2,1) both; }
+.est-more[open]:not(.folding) .est-more-body > * { animation: unfold .45s cubic-bezier(.2,.8,.2,1) both; animation-delay: calc(60ms + var(--n, 0) * 45ms); }
+details.folding > :not(summary) { opacity: 0; transition: opacity .15s ease-in; }
+details.folding summary::after { transform: none; }
 
 /* ---------- Smaller screens ---------- */
 
