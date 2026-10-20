@@ -410,6 +410,17 @@ app.MapGet("/mining/{card}", async (string card, HttpRequest request, IOptions<F
         "text/html; charset=utf-8");
 }).RequireRateLimiting("per-ip");
 
+// Help with antivirus warnings, and Otium next to the apps people compare it with.
+app.MapGet("/antivirus", (HttpRequest request, IOptions<SiteOptions> site, IOptions<ReferralOptions> referral) =>
+    Results.Content(SitePages.Antivirus(SitePages.AvailableLegalPages(site.Value.PagesDirectory), PublicBase(request, referral)),
+        "text/html; charset=utf-8")).RequireRateLimiting("per-ip");
+app.MapGet("/compare/{other}", (string other, HttpRequest request, IOptions<FeeOptions> fees, IOptions<SiteOptions> site,
+    IOptions<ReferralOptions> referral) =>
+    SitePages.ComparisonSlugs.Contains(other)
+        ? Results.Content(SitePages.Compare(other, Otium.Core.Fees.FeePolicy.FromTerms(fees.Value.ToTerms()),
+            SitePages.AvailableLegalPages(site.Value.PagesDirectory), PublicBase(request, referral)), "text/html; charset=utf-8")
+        : Results.NotFound()).RequireRateLimiting("per-ip");
+
 app.MapGet("/{page:regex(^(privacy|terms)$)}", (string page, HttpRequest request, IOptions<SiteOptions> site, IOptions<ReferralOptions> referral) =>
 {
     var directory = site.Value.PagesDirectory;

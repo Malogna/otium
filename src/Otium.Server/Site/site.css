@@ -463,12 +463,12 @@ footer a:hover { color: var(--ink); }
 .page .install { margin-top: 24px; }
 .page .install h2 { margin-bottom: 10px; }
 .page .install > p { margin-bottom: 14px; }
-/* What each graphics card earns (/mining): stacked panels, a breadcrumb above, the card's key figures as a row. */
-.mining .panel + .panel { margin-top: 24px; }
-.mining .panel.wide { max-width: 980px; }
-.mining .panel h2 { font-size: var(--step-2); margin-bottom: 12px; }
-.mining .panel p + p { margin-top: 12px; }
-.mining .faq { grid-template-columns: minmax(0, 1fr); }
+/* Content pages (graphics cards, comparisons, antivirus help): stacked panels, a breadcrumb above, key figures as a row. */
+.stacked .panel + .panel { margin-top: 24px; }
+.stacked .panel.wide { max-width: 980px; }
+.stacked .panel h2 { font-size: var(--step-2); margin-bottom: 12px; }
+.stacked .panel p + p { margin-top: 12px; }
+.stacked .faq { grid-template-columns: minmax(0, 1fr); }
 .crumbs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; font-size: var(--step--1); color: var(--mist); }
 .crumbs a { color: var(--mist); }
 .crumbs a:hover { color: var(--ink); }
@@ -482,6 +482,12 @@ footer a:hover { color: var(--ink); }
 .page .card-links li + li { margin-top: 0; }
 .card-links span { color: var(--mist); font-size: 0.88rem; font-variant-numeric: tabular-nums; }
 .real-cards td a, .real-cards th a { color: var(--ink); }
+/* Side-by-side comparisons: sentences, so they wrap and read from the top. */
+.real-cards.compare th, .real-cards.compare td { white-space: normal; text-align: left; vertical-align: top; }
+.real-cards.compare td { min-width: 15em; }
+.real-cards.compare tbody th { min-width: 9em; }
+.card-facts dd.path { font: 500 0.82rem/1.4 var(--mono); overflow-wrap: anywhere; }
+.card-facts.paths { grid-template-columns: minmax(0, 1fr); gap: 10px; margin-bottom: 16px; }
 .est-all { font-size: 0.85rem; color: var(--mist); justify-self: start; }
 .est-all:hover { color: var(--ink); }
 .install-body { padding-bottom: 22px; }
