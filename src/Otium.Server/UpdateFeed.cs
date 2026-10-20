@@ -50,9 +50,21 @@ public sealed class GitHubReleaseList(HttpClient http, IOptions<SiteOptions> opt
         release.TryGetProperty("assets", out var assets) && assets.ValueKind == JsonValueKind.Array
             ? assets.EnumerateArray()
                 .Where(a => a.TryGetProperty("name", out _) && a.TryGetProperty("browser_download_url", out _))
-                .Select(a => new ReleaseAsset(a.GetProperty("name").GetString()!, a.GetProperty("browser_download_url").GetString()!))
+                .Select(a => new ReleaseAsset(a.GetProperty("name").GetString()!, a.GetProperty("browser_download_url").GetString()!, Sha256(a)))
                 .ToList()
             : [];
+
+    /// <summary>GitHub's "digest" for an asset ("sha256:…"), as 64 lower-case hex digits, or null.</summary>
+    private static string? Sha256(JsonElement asset)
+    {
+        if (!asset.TryGetProperty("digest", out var d) || d.ValueKind != JsonValueKind.String)
+            return null;
+        var value = d.GetString() ?? "";
+        if (!value.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase))
+            return null;
+        var hex = value["sha256:".Length..].ToLowerInvariant();
+        return hex.Length == 64 && hex.All(char.IsAsciiHexDigit) ? hex : null;
+    }
 }
 
 /// <summary>The keys update feeds must be signed with: <see cref="Otium.Core.AppIdentity.UpdateSigningKeys"/> (tests use their own).</summary>

@@ -355,7 +355,7 @@ public sealed class SitePagesTests : IDisposable
         return new(tag, prerelease,
         [
             new($"Otium.Desktop-{tag.TrimStart('v')}-win-x64-full.nupkg", $"{dl}/full.nupkg"),
-            new("Otium.Desktop-win-x64-Setup.exe", $"{dl}/Otium.Desktop-win-x64-Setup.exe"),
+            new("Otium.Desktop-win-x64-Setup.exe", $"{dl}/Otium.Desktop-win-x64-Setup.exe", SetupSha256),
             new("Otium.Desktop-win-x64-Portable.zip", $"{dl}/Otium.Desktop-win-x64-Portable.zip"),
             new("Otium.Desktop-osx-arm64-Setup.pkg", $"{dl}/Otium.Desktop-osx-arm64-Setup.pkg"),
             new("Otium.Desktop-osx-x64-Setup.pkg", $"{dl}/Otium.Desktop-osx-x64-Setup.pkg"),
@@ -374,6 +374,7 @@ public sealed class SitePagesTests : IDisposable
     }
 
     private const string WindowsBrowser = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)";
+    private const string SetupSha256 = "4799b1743ee2cb74bcf7339d39d5a2115892ac0d70818dd56aee738ce59ab8e6";
 
     [Fact]
     public async Task Download_shows_otiums_own_page_and_starts_the_installer_for_the_visitors_computer()
@@ -387,13 +388,20 @@ public sealed class SitePagesTests : IDisposable
         Assert.Contains("""<meta http-equiv="refresh" content="1;url=/download/windows">""", html); // starts by itself
         Assert.Contains("Otium 0.1.0-rc.13 for Windows", html); // the newest version, not GitHub's tag-name order
         Assert.Contains("Run anyway", html); // what to do about the unsigned installer's warning
+        Assert.Contains("""<details id="install-windows" open>""", html); // the visitor's own system's steps are open
+        Assert.Contains("""<details id="install-macos">""", html);
+        Assert.Contains("Smart App Control", html);
+        Assert.Contains($"<code>{SetupSha256}</code>", html); // GitHub's checksum, and how to check it
+        Assert.Contains(@"Get-FileHash .\Otium.Desktop-win-x64-Setup.exe", html);
         Assert.Contains("""href="/download/macos-intel">macOS (Intel)</a>""", html); // the other systems
         Assert.DoesNotContain("""href="/download/windows">Windows</a>""", html);
 
         using var mac = await Visit("/download", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)");
         Assert.Contains("Otium 0.1.0-rc.13 for macOS (Apple silicon)", await mac.Content.ReadAsStringAsync());
         using var linux = await Visit("/download?os=linux", WindowsBrowser);
-        Assert.Contains("chmod +x", await linux.Content.ReadAsStringAsync());
+        var linuxHtml = await linux.Content.ReadAsStringAsync();
+        Assert.Contains("chmod +x", linuxHtml);
+        Assert.Contains("""<details id="install-linux" open>""", linuxHtml);
 
         // Phones can't install it: the page says so, lists every system and starts nothing.
         using var phone = await Visit("/download", "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Mobile");
@@ -487,14 +495,16 @@ public sealed class SitePagesTests : IDisposable
         using var doc = System.Text.Json.JsonDocument.Parse("""
             [
               {"tag_name":"v0.2.0","draft":true,"prerelease":false,"assets":[]},
-              {"tag_name":"v0.1.0-rc.9","draft":false,"prerelease":true,"assets":[{"name":"a.nupkg","browser_download_url":"https://x/a.nupkg"}]},
+              {"tag_name":"v0.1.0-rc.9","draft":false,"prerelease":true,"assets":[{"name":"a.nupkg","browser_download_url":"https://x/a.nupkg","digest":"sha256:4799B1743EE2CB74BCF7339D39D5A2115892AC0D70818DD56AEE738CE59AB8E6"},{"name":"b.exe","browser_download_url":"https://x/b.exe","digest":"md5:abc"}]},
               {"tag_name":"v0.0.9","draft":false,"prerelease":false,"assets":[]}
             ]
             """);
         var releases = Otium.Server.GitHubReleaseList.Parse(doc.RootElement);
         Assert.Equal(["v0.1.0-rc.9", "v0.0.9"], releases.Select(r => r.Tag));
         Assert.True(releases[0].Prerelease);
-        Assert.Equal("https://x/a.nupkg", Assert.Single(releases[0].Assets).Url);
+        Assert.Equal("https://x/a.nupkg", releases[0].Assets[0].Url);
+        Assert.Equal(SetupSha256, releases[0].Assets[0].Sha256); // GitHub's digest, in lower case
+        Assert.Null(releases[0].Assets[1].Sha256); // anything but a SHA-256 is left out
     }
 
     [Fact]

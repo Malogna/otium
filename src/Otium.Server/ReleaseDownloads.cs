@@ -1,11 +1,12 @@
 namespace Otium.Server;
 
 /// <summary>One file of a release.</summary>
-public sealed record ReleaseAsset(string Name, string Url);
+/// <param name="Sha256">The file's SHA-256 as GitHub reports it (lower-case hex), or null where GitHub gives none.</param>
+public sealed record ReleaseAsset(string Name, string Url, string? Sha256 = null);
 
 /// <summary>One system's installer, as the download page lists it.</summary>
 /// <param name="Os">"windows", "macos" (Apple silicon), "macos-intel" or "linux": the /download/{os} address.</param>
-public sealed record Installer(string Os, string Label, string FileName, string Url);
+public sealed record Installer(string Os, string Label, string FileName, string Url, string? Sha256 = null);
 
 /// <summary>The release the website offers: its version ("0.1.0-rc.13") and installers.</summary>
 public sealed record LatestRelease(string Version, IReadOnlyList<Installer> Installers);
@@ -40,7 +41,7 @@ public sealed class ReleaseDownloads(UpdateFeed feed)
         (await LatestAsync(ct))?.Installers.FirstOrDefault(i => i.Os == os)?.Url;
 
     internal static IReadOnlyList<Installer> Installers(PublishedRelease release) =>
-        Systems.Select(s => release.Assets.FirstOrDefault(s.Matches) is { } a ? new Installer(s.Os, s.Label, a.Name, a.Url) : null)
+        Systems.Select(s => release.Assets.FirstOrDefault(s.Matches) is { } a ? new Installer(s.Os, s.Label, a.Name, a.Url, a.Sha256) : null)
             .OfType<Installer>()
             .ToList();
 
