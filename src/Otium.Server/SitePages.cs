@@ -153,8 +153,8 @@ internal static partial class SitePages
                   <div class="wrap power">
                     <div class="reveal">
                       <span class="label">Internet sharing</span>
-                      <h2 id="sharing-title" style="margin-top:18px">Get paid for internet bandwidth you aren't using.</h2>
-                      <p style="margin-top:20px" class="muted">Optional, and off until you tick it. Proxybase's customers, mostly AI agents and businesses that collect public web pages, use some of the internet bandwidth you aren't using. It's paid to your wallet in your coin, like mining.</p>
+                      <h2 id="sharing-title" class="mt-18">Get paid for internet bandwidth you aren't using.</h2>
+                      <p class="muted mt-20">Optional, and off until you tick it. Proxybase's customers, mostly AI agents and businesses that collect public web pages, use some of the internet bandwidth you aren't using. It's paid to your wallet in your coin, like mining.</p>
                     </div>
                     <div class="panel reveal">
                       <p class="keep" data-count>{(s.IsReal ? "" : "≈ ")}{UsdWhole(s.PerDay * 30)}<small>{explain}</small></p>
@@ -504,11 +504,11 @@ internal static partial class SitePages
         double[] day = [0.07, 0.065, 0.06, 0.06, 0.062, 0.07, 0.11, 0.19, 0.24, 0.2, 0.15, 0.13, 0.12, 0.12, 0.13, 0.15, 0.2, 0.27, 0.29, 0.23, 0.17, 0.12, 0.09, 0.075];
         const double breakEven = 0.16, top = 0.3;
         var priceBars = string.Concat(day.Select((p, i) =>
-            $"""<span class="{(p > breakEven ? "off" : "")}" style="height:{(p / top * 100).ToString("0.#", CultureInfo.InvariantCulture)}%;--i:{i}" title="{i:00}:00 · ${p.ToString("0.000", CultureInfo.InvariantCulture)}/kWh · {(p > breakEven ? "waits" : "mines")}"></span>"""));
+            $"""<span class="{(p > breakEven ? "off" : "")}" data-h="{(p / top * 100).ToString("0.#", CultureInfo.InvariantCulture)}" title="{i:00}:00 · ${p.ToString("0.000", CultureInfo.InvariantCulture)}/kWh · {(p > breakEven ? "waits" : "mines")}"></span>"""));
 
-        static string Grid(string cls) => $"""<div class="grid {cls}">{string.Concat(Enumerable.Range(0, 16).Select(i => $"""<span style="--r:{i / 4};--c:{i % 4}"></span>"""))}</div>""";
+        static string Grid(string cls) => $"""<div class="grid {cls}">{string.Concat(Enumerable.Range(0, 16).Select(i => $"""<span></span>"""))}</div>""";
 
-        string Seg(string cls, double pct) => $"""<span class="{cls}" style="width:{pct.ToString("0.##", CultureInfo.InvariantCulture)}%"></span>""";
+        string Seg(string cls, double pct) => $"""<span class="{cls}" data-w="{pct.ToString("0.##", CultureInfo.InvariantCulture)}"></span>""";
 
         var body = $"""
                 <div class="glow-frame" aria-hidden="true"><div class="glow"></div></div>
@@ -536,7 +536,7 @@ internal static partial class SitePages
                 <div class="ribbon">
                   <div class="wrap">
                     <span class="label">Paid to your own wallet in</span>
-                    <div class="marquee"><div class="marquee-track">{coins}<span aria-hidden="true" style="display:contents">{coins}</span></div></div>
+                    <div class="marquee"><div class="marquee-track">{coins}<span aria-hidden="true" class="contents">{coins}</span></div></div>
                   </div>
                 </div>
             {PopularCardsStrip(earnings)}
@@ -583,9 +583,9 @@ internal static partial class SitePages
                   <div class="wrap power">
                     <div class="reveal">
                       <span class="label">Proof of useful work</span>
-                      <h2 id="ai-title" style="margin-top:18px">Pearl mining runs the math AI runs on.</h2>
-                      <p style="margin-top:20px" class="muted">Most coins burn power on hashes nobody needs. Pearl is a proof-of-useful-work coin: mining a block means multiplying large matrices, the same operation every AI model is built from, and its protocol is designed so that work can be real AI computation, such as serving a language model. That's why NVIDIA cards with tensor cores mine it best, and why it pays more than any other coin a gaming card can mine today.</p>
-                      <p style="margin-top:14px" class="fine">Through a pool, your card multiplies the matrices the network hands it. It doesn't run anyone's AI model or see their data. <a href="/pearl">What is Pearl?</a></p>
+                      <h2 id="ai-title" class="mt-18">Pearl mining runs the math AI runs on.</h2>
+                      <p class="muted mt-20">Most coins burn power on hashes nobody needs. Pearl is a proof-of-useful-work coin: mining a block means multiplying large matrices, the same operation every AI model is built from, and its protocol is designed so that work can be real AI computation, such as serving a language model. That's why NVIDIA cards with tensor cores mine it best, and why it pays more than any other coin a gaming card can mine today.</p>
+                      <p class="fine mt-14">Through a pool, your card multiplies the matrices the network hands it. It doesn't run anyone's AI model or see their data. <a href="/pearl">What is Pearl?</a></p>
                     </div>
                     <div class="panel matmul reveal" aria-hidden="true">
                       <div class="mm">{Grid("a")}<span class="op">×</span>{Grid("b")}<span class="op">=</span>{Grid("c")}</div>
@@ -598,14 +598,14 @@ internal static partial class SitePages
                   <div class="wrap power">
                     <div class="reveal">
                       <span class="label">Watches the power price</span>
-                      <h2 id="power-title" style="margin-top:18px">It watches the price of power by the hour.</h2>
-                      <p style="margin-top:20px" class="muted">When electricity would cost more than mining earns, Otium waits. In Norway, Sweden, Denmark and Finland it follows the live hourly price for your area, so it mines through the cheap night hours and sits out the evening peak.</p>
+                      <h2 id="power-title" class="mt-18">It watches the price of power by the hour.</h2>
+                      <p class="muted mt-20">When electricity would cost more than mining earns, Otium waits. In Norway, Sweden, Denmark and Finland it follows the live hourly price for your area, so it mines through the cheap night hours and sits out the evening peak.</p>
                     </div>
                     <div class="panel prices reveal">
                       <div class="threshold"><span>Example day, southern Norway</span><span>break-even ${breakEven.ToString("0.00", CultureInfo.InvariantCulture)}/kWh</span></div>
                       <div class="price-bars" id="price-bars">{priceBars}</div>
                       <div class="price-axis"><span>00:00</span><span>08:00</span><span>16:00</span><span>23:00</span></div>
-                      <ul class="split-legend"><li><i style="background:var(--emerald)"></i>Mines</li><li><i style="background:repeating-linear-gradient(0deg,var(--amber) 0 3px,transparent 3px 6px)"></i>Waits</li></ul>
+                      <ul class="split-legend"><li><i class="sw-emerald"></i>Mines</li><li><i class="sw-waits"></i>Waits</li></ul>
                     </div>
                   </div>
                 </section>
@@ -615,15 +615,15 @@ internal static partial class SitePages
                   <div class="wrap fees">
                     <div class="reveal">
                       <span class="label">Every fee, in full</span>
-                      <p class="keep" data-count style="margin-top:18px">${keep.ToString("0.##", CultureInfo.InvariantCulture)}<small>of every $100 your processor mines stays yours. The rest goes to the mining software ({Percent(CostBreakdown.CpuMinerPercent)}), the pool ({Percent(poolPct)}) and Otium ({fee} of mining time).</small></p>
+                      <p class="keep mt-18" data-count>${keep.ToString("0.##", CultureInfo.InvariantCulture)}<small>of every $100 your processor mines stays yours. The rest goes to the mining software ({Percent(CostBreakdown.CpuMinerPercent)}), the pool ({Percent(poolPct)}) and Otium ({fee} of mining time).</small></p>
                       <div class="split" role="img" aria-label="You keep {Percent(keep)}">{Seg("you", keep)}{Seg("otium", fees.FeePercent)}{Seg("miner", CostBreakdown.CpuMinerPercent)}{Seg("pool", poolPct)}</div>
                       <ul class="split-legend">
-                        <li><i style="background:var(--emerald)"></i>You</li><li><i style="background:var(--ink)"></i>Otium</li><li><i style="background:var(--mist)"></i>Miner</li><li><i style="background:var(--amber)"></i>Pool</li>
+                        <li><i class="sw-emerald"></i>You</li><li><i class="sw-ink"></i>Otium</li><li><i class="sw-mist"></i>Miner</li><li><i class="sw-amber"></i>Pool</li>
                       </ul>
                       <p class="muted fee-why">Otium's {fee} is how it pays its way, with no ads and no data sold: the servers, payouts to your own wallet, and development and support. <a href="#why-fee">What that covers</a></p>
                     </div>
                     <div class="panel reveal">
-                      <h3 id="fees-title" style="margin-bottom:18px">What comes off, and who gets it</h3>
+                      <h3 id="fees-title" class="mb-18">What comes off, and who gets it</h3>
                       <dl class="costs">{costs}</dl>
                     </div>
                   </div>
@@ -634,9 +634,9 @@ internal static partial class SitePages
                     <div class="panel invite reveal">
                       <div>
                         <span class="label">Invite friends</span>
-                        <h2 id="invite-title" style="margin-top:14px">Bring a friend, and {bothFeeFree}.</h2>
+                        <h2 id="invite-title" class="mt-14">Bring a friend, and {bothFeeFree}.</h2>
                         <p>Then, for {referrerMonths} months, {referrerShare} of Otium's fee on their mining is mined straight to your address.</p>
-                        <p class="muted" style="font-size:0.88rem">Your fee-free days start once your friend has mined for a day (up to {maxFeeFree} days at a time). Friends on your own internet connection don't count.</p>
+                        <p class="muted fs-sm">Your fee-free days start once your friend has mined for a day (up to {maxFeeFree} days at a time). Friends on your own internet connection don't count.</p>
                       </div>
                       <div class="ticket" aria-hidden="true">
                         <span class="label">Invite</span>
@@ -738,7 +738,7 @@ internal static partial class SitePages
                   <div class="wrap">
                     <div class="panel">
                       <span class="label">404</span>
-                      <h1 style="margin-top:14px">This page doesn't exist</h1>
+                      <h1 class="mt-14">This page doesn't exist</h1>
                       <p class="lead">The link may be old or mistyped. Here's where most people are headed:</p>
                       <ul class="card-links">
                         <li><a href="/">How Otium works</a></li>
@@ -772,12 +772,12 @@ internal static partial class SitePages
         var version = E(release.Version);
         var intro = mine is not null
             ? $"""
-              <h1 style="margin-top:14px">Your download is starting</h1>
+              <h1 class="mt-14">Your download is starting</h1>
               <p class="lead">Otium {version} for {E(mine.Label)}. If nothing happens, use the button.</p>
               <div class="actions"><a class="button" href="/download/{E(mine.Os)}">Download for {E(mine.Label)}</a></div>
               """
             : $"""
-              <h1 style="margin-top:14px">Download Otium</h1>
+              <h1 class="mt-14">Download Otium</h1>
               <p class="lead">Otium {version} runs on Windows, macOS and Linux computers. On a phone? Open otium.lol on the computer you want to earn with.</p>
               """;
         var installing = Installing(release, mine?.Os);
@@ -790,9 +790,9 @@ internal static partial class SitePages
                     <div class="panel">
                       <span class="label">Download</span>
                       {intro}
-                      <p class="muted" style="margin-top:18px">{(mine is null ? "Choose your system:" : "Another system?")}</p>
+                      <p class="muted mt-18">{(mine is null ? "Choose your system:" : "Another system?")}</p>
                       <div class="actions">{others}</div>
-                      <p class="muted" style="margin-top:18px">The macOS and Linux versions are in beta. Otium runs the open-source XMRig and SRBMiner miners, which some antivirus tools flag. <a href="/">How Otium works</a></p>
+                      <p class="muted mt-18">The macOS and Linux versions are in beta. Otium runs the open-source XMRig and SRBMiner miners, which some antivirus tools flag. <a href="/">How Otium works</a></p>
                     </div>
                     {installing}
                   </div>

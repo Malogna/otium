@@ -7,6 +7,15 @@
   const $$ = (s, root = document) => [...root.querySelectorAll(s)];
   const svgNs = "http://www.w3.org/2000/svg";
 
+  // ---------- Sizes from data ----------
+  // Bar heights and fee shares arrive as data-h / data-w (percent) and are set here through the CSSOM, which the CSP
+  // allows, unlike inline style attributes. The price bars' stagger (--i) is each bar's position.
+  function sizes() {
+    for (const el of $$("[data-h]")) el.style.height = `${el.dataset.h}%`;
+    for (const el of $$("[data-w]")) el.style.width = `${el.dataset.w}%`;
+    $$(".price-bars span").forEach((el, i) => el.style.setProperty("--i", i));
+  }
+
   // ---------- Night sky ----------
   function sky() {
     const canvas = $("#sky");
@@ -419,5 +428,5 @@
     }, 140);
   }
 
-  sky(); dial(); earnings(); reveal(); countUps(); smoothDetails(); openLinkedQuestion(); shiftLine(); spotlights(); platform(); hashField();
+  sizes(); sky(); dial(); earnings(); reveal(); countUps(); smoothDetails(); openLinkedQuestion(); shiftLine(); spotlights(); platform(); hashField();
 })();

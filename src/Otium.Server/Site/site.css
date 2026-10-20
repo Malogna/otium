@@ -342,6 +342,15 @@ section { padding-block: 104px 0; }
 .section-head p { font-size: 1.12rem; color: color-mix(in oklab, var(--ink) 78%, var(--mist)); max-width: 36em; }
 .section-head .label { display: block; margin-bottom: 18px; }
 
+/* One-off spacing that used to be inline style attributes. The CSP allows no inline styles, so these stand in for
+   them, and !important keeps them winning the way an inline style did. */
+.mt-14 { margin-top: 14px !important; }
+.mt-18 { margin-top: 18px !important; }
+.mt-20 { margin-top: 20px !important; }
+.mb-18 { margin-bottom: 18px !important; }
+.fs-sm { font-size: 0.88rem !important; }
+.contents { display: contents !important; }
+
 /* The night shift: three moments of a real day */
 .shift-line { position: relative; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; }
 .shift-line::before, .shift-line::after {
@@ -390,6 +399,7 @@ section { padding-block: 104px 0; }
 .power p + p { margin-top: 14px; }
 .prices { display: grid; gap: 10px; }
 .price-bars { display: grid; grid-template-columns: repeat(24, minmax(0, 1fr)); align-items: end; gap: 4px; height: 190px; }
+/* Each bar's height (data-h) and its place in the stagger (--i) are set by site.js; inline styles aren't allowed. */
 .price-bars span { display: block; border-radius: 4px 4px 2px 2px; background: var(--emerald); opacity: .9; transform-origin: bottom; animation: rise .9s cubic-bezier(.2,.8,.2,1) both; animation-delay: calc(var(--i) * 30ms); }
 .price-bars span.off { background: repeating-linear-gradient(0deg, var(--amber) 0 3px, transparent 3px 6px); opacity: 1; }
 @keyframes rise { from { transform: scaleY(0.05); } }
@@ -411,6 +421,11 @@ section { padding-block: 104px 0; }
 .split-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; padding: 0; margin: 0; list-style: none; font: 400 0.8rem var(--mono); color: var(--mist); }
 .split-legend li { display: inline-flex; align-items: center; gap: 8px; }
 .split-legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.split-legend .sw-emerald { background: var(--emerald); }
+.split-legend .sw-ink { background: var(--ink); }
+.split-legend .sw-mist { background: var(--mist); }
+.split-legend .sw-amber { background: var(--amber); }
+.split-legend .sw-waits { background: repeating-linear-gradient(0deg, var(--amber) 0 3px, transparent 3px 6px); }
 .fee-why { margin-top: 22px; max-width: 32em; font-size: 0.95rem; }
 .fee-why a { color: var(--emerald); white-space: nowrap; }
 .costs { margin: 0; display: grid; }
@@ -590,7 +605,14 @@ details.folding summary::after { transform: none; }
 .mm { display: flex; align-items: center; justify-content: center; gap: 14px; padding-block: 18px; }
 .mm .op { font: 400 1.6rem var(--mono); color: var(--mist); }
 .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; width: min(26%, 132px); }
-.grid span { aspect-ratio: 1; border-radius: 5px; background: var(--night-3); border: 1px solid var(--line); }
+.grid span { aspect-ratio: 1; border-radius: 5px; background: var(--night-3); border: 1px solid var(--line); --r: 0; --c: 0; }
+/* Each tile's row (--r) and column (--c) in the 4 × 4 grid, from its position. */
+.grid span:nth-child(4n+2) { --c: 1; }
+.grid span:nth-child(4n+3) { --c: 2; }
+.grid span:nth-child(4n+4) { --c: 3; }
+.grid span:nth-child(n+5) { --r: 1; }
+.grid span:nth-child(n+9) { --r: 2; }
+.grid span:nth-child(n+13) { --r: 3; }
 .grid.a span { animation: lit-row 4.8s linear infinite; animation-delay: calc(var(--r) * 1.2s); }
 .grid.b span { animation: lit-col 1.2s linear infinite; animation-delay: calc(var(--c) * 0.3s); }
 .grid.c span { animation: lit-cell 4.8s ease-out infinite; animation-delay: calc(var(--r) * 1.2s + var(--c) * 0.3s); }

@@ -80,7 +80,7 @@ internal static partial class SitePages
                     <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Otium</a><span aria-hidden="true">/</span><span aria-current="page">Antivirus help</span></nav>
                     <div class="panel">
                       <span class="label">Help</span>
-                      <h1 style="margin-top:14px">Your antivirus flagged the miner. Here's why, and the safe fix.</h1>
+                      <h1 class="mt-14">Your antivirus flagged the miner. Here's why, and the safe fix.</h1>
                       <p class="lead">Antivirus tools flag every crypto miner, often as <span class="code">Trojan:Win32/CoinMiner</span>, because criminals hide the same open-source miners on other people's computers. The fix is to allow one folder, not to turn your antivirus off.</p>
                     </div>
                     <div class="panel">

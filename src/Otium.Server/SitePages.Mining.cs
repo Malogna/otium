@@ -134,7 +134,7 @@ internal static partial class SitePages
                     <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Otium</a><span aria-hidden="true">/</span><a href="/mining">GPU mining</a><span aria-hidden="true">/</span><span aria-current="page">{E(name)}</span></nav>
                     <div class="panel">
                       <span class="label">{E(card.Group)} · NVIDIA · {card.MemoryGb} GB</span>
-                      <h1 style="margin-top:14px">What an {E(name)} earns mining today</h1>
+                      <h1 class="mt-14">What an {E(name)} earns mining today</h1>
                       <p class="lead">{lead}</p>
             {facts}
                       <div class="actions"><a class="button" href="/download"><span data-download-label>Download Otium</span></a><a class="button ghost" href="/mining">Compare every card</a></div>
@@ -204,25 +204,7 @@ internal static partial class SitePages
         return $$"""
             <!doctype html>
             <html lang="en"><head><meta charset="utf-8"><title>{{E(title)}}</title>
-            <style>
-              @font-face { font-family: "Bricolage Grotesque"; src: url("{{SiteAssets.Url("fonts/BricolageGrotesque.woff2")}}") format("woff2"); font-weight: 200 800; font-stretch: 75% 100%; }
-              @font-face { font-family: "Hanken Grotesk"; src: url("{{SiteAssets.Url("fonts/HankenGrotesk.woff2")}}") format("woff2"); font-weight: 300 800; }
-              @font-face { font-family: "JetBrains Mono"; src: url("{{SiteAssets.Url("fonts/JetBrainsMono.woff2")}}") format("woff2"); font-weight: 400 700; }
-              html, body { margin: 0; width: 1200px; height: 630px; overflow: hidden; }
-              body { background: #08131a; color: #e4eeeb; font-family: "Hanken Grotesk"; position: relative; }
-              .glow { position: absolute; width: 900px; height: 900px; right: -320px; top: -360px; border-radius: 50%; background: radial-gradient(closest-side, rgba(52,201,143,.28), rgba(52,201,143,0)); }
-              .glow2 { position: absolute; width: 700px; height: 700px; right: 80px; bottom: -520px; border-radius: 50%; background: radial-gradient(closest-side, rgba(242,180,92,.16), rgba(242,180,92,0)); }
-              .wrap { position: absolute; inset: 0; padding: 72px 80px; display: flex; flex-direction: column; }
-              .brand { display: flex; align-items: center; gap: 16px; font: 800 38px/1 "Bricolage Grotesque"; font-stretch: 85%; letter-spacing: -0.02em; }
-              .brand img { width: 56px; height: 56px; }
-              .url { position: absolute; right: 80px; top: 86px; font: 500 24px/1 "JetBrains Mono"; color: #8ea4a2; }
-              .kicker { margin-top: auto; font: 500 22px/1 "JetBrains Mono"; letter-spacing: .12em; text-transform: uppercase; color: #8ea4a2; }
-              h1 { margin: 18px 0 0; font: 800 132px/0.92 "Bricolage Grotesque"; font-stretch: 78%; letter-spacing: -0.035em; max-width: 1040px; }
-              h1.long { font-size: 100px; }
-              .line { margin-top: 10px; font: 800 64px/1 "Bricolage Grotesque"; font-stretch: 80%; letter-spacing: -0.02em; background: linear-gradient(100deg, #34c98f 10%, #b9f6dc 55%, #f2b45c 100%); -webkit-background-clip: text; background-clip: text; color: transparent; display: inline-block; padding-bottom: 6px; }
-              .facts { margin-top: 30px; display: flex; gap: 28px; font: 500 26px/1 "Hanken Grotesk"; color: #8ea4a2; }
-              .facts b { color: #34c98f; margin-right: 10px; }
-            </style></head>
+            <link rel="stylesheet" href="{{SiteAssets.Url("preview.css")}}"></head>
             <body><div class="glow"></div><div class="glow2"></div>
             <div class="wrap">
               <div class="brand"><img src="{{SiteAssets.Url("otium.svg")}}" alt="">Otium</div>
@@ -274,7 +256,7 @@ internal static partial class SitePages
                     <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Otium</a><span aria-hidden="true">/</span><span aria-current="page">GPU mining</span></nav>
                     <div class="panel">
                       <span class="label">GPU mining</span>
-                      <h1 style="margin-top:14px">What every graphics card earns mining today</h1>
+                      <h1 class="mt-14">What every graphics card earns mining today</h1>
                       <p class="lead">{lead}</p>
                       <div class="actions"><a class="button" href="/download"><span data-download-label>Download Otium</span></a><a class="button ghost" href="/#earnings">Estimate for your PC</a></div>
                     </div>

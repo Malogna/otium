@@ -20,7 +20,7 @@ internal static class LandingPage
                   <div class="wrap">
                     <div class="panel">
                       <span class="label">Invite</span>
-                      <h1 style="margin-top:14px">Get paid for your computer's spare power</h1>
+                      <h1 class="mt-14">Get paid for your computer's spare power</h1>
                       {invite}
                       <div class="actions"><a class="button" href="{safeDownload}"><span data-download-label>Download Otium</span></a></div>
                       <ul>
@@ -28,7 +28,7 @@ internal static class LandingPage
                         <li>Pays straight to your own wallet: Otium never holds your money.</li>
                         <li>Waits when electricity would cost more than you earn.</li>
                       </ul>
-                      <p class="muted" style="margin-top:18px">Earnings depend on your hardware and electricity price and are often small, typically cents to a few dollars a day. Otium runs the open-source XMRig miner, which some antivirus tools flag. <a href="/">How Otium works</a></p>
+                      <p class="muted mt-18">Earnings depend on your hardware and electricity price and are often small, typically cents to a few dollars a day. Otium runs the open-source XMRig miner, which some antivirus tools flag. <a href="/">How Otium works</a></p>
                     </div>
                   </div>
                 </section>
