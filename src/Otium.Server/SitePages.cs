@@ -138,7 +138,7 @@ internal static partial class SitePages
     private static string SharingLine(SharingFigure s) =>
         $"Internet sharing: +{Usd(s.PerDay)}/day ({E(s.Short)}).";
 
-    /// <summary>"Your unused internet can earn too": the visitor's country, real figures when there are, else the estimate.</summary>
+    /// <summary>"Get paid for internet bandwidth you aren't using": the visitor's country, real figures when there are, else the estimate.</summary>
     private static string SharingSection(SharingFigure s, string fee)
     {
         var rate = Usd(s.RatePerGb);
@@ -153,8 +153,8 @@ internal static partial class SitePages
                   <div class="wrap power">
                     <div class="reveal">
                       <span class="label">Internet sharing</span>
-                      <h2 id="sharing-title" style="margin-top:18px">Your unused internet can earn too.</h2>
-                      <p style="margin-top:20px" class="muted">Optional, and off until you tick it. Proxybase's customers, mostly AI agents and businesses that collect public web pages, use some of the internet connection you aren't using. It's paid to your wallet in your coin, like mining.</p>
+                      <h2 id="sharing-title" style="margin-top:18px">Get paid for internet bandwidth you aren't using.</h2>
+                      <p style="margin-top:20px" class="muted">Optional, and off until you tick it. Proxybase's customers, mostly AI agents and businesses that collect public web pages, use some of the internet bandwidth you aren't using. It's paid to your wallet in your coin, like mining.</p>
                     </div>
                     <div class="panel reveal">
                       <p class="keep" data-count>{(s.IsReal ? "" : "≈ ")}{UsdWhole(s.PerDay * 30)}<small>{explain}</small></p>
@@ -664,8 +664,8 @@ internal static partial class SitePages
                   </div>
                 </section>
             """;
-        const string description = "Otium mines crypto with your idle PC while you're away, stops when you're back, and the pool pays your own wallet directly. For Windows, macOS and Linux.";
-        return Layout("Otium: get paid for your computer's spare power", description, body, legalLinks, downloadUrl, baseUrl, "/",
+        const string description = "Otium earns crypto with your idle PC and, if you choose, unused internet bandwidth while you're away, paid to your own wallet. Windows, macOS, Linux.";
+        return Layout("Otium: get paid for your PC's spare power and bandwidth", description, body, legalLinks, downloadUrl, baseUrl, "/",
             head: StructuredData(baseUrl, description));
     }
 
