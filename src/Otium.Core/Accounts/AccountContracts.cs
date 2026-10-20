@@ -6,7 +6,11 @@ namespace Otium.Core.Accounts;
 /// The user's own payout target ("USDT:T…", or a bare Monero address), only for <c>PayoutMode.OwnWallet</c>; null for
 /// balance accounts.
 /// </param>
-public sealed record RegisterDeviceRequest(string DeviceId, string DeviceSecret, string? PayoutAddress, string? ReferralCode);
+/// <param name="HardwareId">
+/// A hash of the computer's own machine id (see <c>DeviceIdentity.HardwareId</c>), the same for every install on it, so
+/// an invite code can be used only once per computer; null when the computer has none (and from older apps).
+/// </param>
+public sealed record RegisterDeviceRequest(string DeviceId, string DeviceSecret, string? PayoutAddress, string? ReferralCode, string? HardwareId = null);
 
 /// <summary>The invite code of a friend's link opened on the caller's internet connection in the last week.</summary>
 public sealed record InviteLinkResponse(string Code);

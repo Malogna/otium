@@ -1094,16 +1094,12 @@ public sealed class AppHost : IAsyncDisposable
             var ownWallet = Settings.PayoutMode == PayoutMode.OwnWallet && OwnPayoutTarget is { } own
                 ? PayoutRouting.PoolFor(own, InUnitedStates) == PayoutPool.MoneroOcean ? PayoutRouting.MoneroOceanWallet(own) : own
                 : null;
-            // Setup finished without reaching the server, so the welcome screen couldn't ask: a friend's invite link
-            // opened on this connection still applies on the first registration.
-            if (account.WorkerId is null && referral.CodeUsed is null && referral.ReferredAt is null)
-                referral.CodeUsed = await CheckInviteLinkAsync(ct);
             var needsRegister = account.WorkerId is null
                                 || referral.MyCode is null
                                 || referral.RegisteredPayoutAddress != ownWallet
                                 || (referral.CodeUsed is not null && referral.ReferredAt is null);
             var summary = needsRegister
-                ? await client.RegisterAsync(new RegisterDeviceRequest(DeviceId, Settings.DeviceSecret, ownWallet, referral.CodeUsed), ct)
+                ? await client.RegisterAsync(new RegisterDeviceRequest(DeviceId, Settings.DeviceSecret, ownWallet, referral.CodeUsed, HardwareId()), ct)
                 : await client.GetSummaryAsync(DeviceId, Settings.DeviceSecret, ct);
 
             Apply(summary);
@@ -1143,7 +1139,9 @@ public sealed class AppHost : IAsyncDisposable
     /// <summary>
     /// The code of a friend's invite link (otium.lol/r/CODE) opened on this internet connection in the last week, so a
     /// friend who downloaded Otium from it doesn't have to type the code. Asked once: after the server answers, never
-    /// again, so a code the user cleared stays cleared. Null when there's none or the server can't be reached.
+    /// again, so a code the user cleared stays cleared. Null when there's none or the server can't be reached. Only the
+    /// welcome screen asks, and shows the code for the user to keep or clear: a link's code is never used unseen (anyone
+    /// on a shared connection, such as a university's, could have opened it).
     /// </summary>
     public async Task<string?> CheckInviteLinkAsync(CancellationToken ct)
     {
@@ -1159,7 +1157,7 @@ public sealed class AppHost : IAsyncDisposable
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException or UriFormatException or AccountRequestException
                                        or System.Text.Json.JsonException)
         {
-            return null; // asked again on the first check-in
+            return null; // not marked as asked: the welcome screen asks again next time it opens
         }
     }
 
@@ -1325,6 +1323,14 @@ public sealed class AppHost : IAsyncDisposable
         AccountChanged?.Invoke();
         return result;
     }
+
+    /// <summary>
+    /// The hardware id the server remembers invites by (see <see cref="DeviceIdentity.HardwareId"/>); in dev mode, one per
+    /// simulated computer.
+    /// </summary>
+    private static string? HardwareId() =>
+        AppIdentity.DevelopmentOverride("OTIUM_DEVICE_SEED") is { Length: > 0 } devSeed ? DeviceIdentity.HardwareIdFromSeed(devSeed)
+        : DeviceIdentity.HardwareId();
 
     private string ComputeDeviceId() =>
         AppIdentity.DevelopmentOverride("OTIUM_DEVICE_SEED") is { Length: > 0 } devSeed ? DeviceIdentity.FromSeed(devSeed)

@@ -123,14 +123,27 @@ policy.
   changes for a slice. Builds set Otium's fee address with `-FeeWallet 'USDT:T…'`: one USDT address covers every user
   outside the US. Adding `;XMR:4…` also takes the fee from US users, whose Monero mines on MoneroOcean; without a fee
   address for a pool, the slice is mined for the user.
-- **Referral checks.** An invited friend counts as verified once their pool shows real mining: MoneroOcean hashes for
-  Monero addresses, or unMineable having credited their address in two daily accountings (or paid it), so at least a
-  day of mining. The same address typed differently (case, with or without the coin) can't invite itself. Nobody can
+- **Referral checks.** An invited friend counts as verified once their pool shows real mining by one of their own
+  Otium computers (a worker named "ot" + 8 hex digits of one of their device ids): MoneroOcean hashes and worker
+  history for Monero addresses, or unMineable having credited their address in two daily accountings (or paid it), so
+  at least a day of mining, with such a worker in its list. The flip to verified is one conditional `UPDATE`, so check-ins
+  arriving together reward the inviter once; at most 10 friends' pools are asked per check-in, and friends invited
+  under the code of an account merged into this one (email sign-in) count too. Wallets are compared by address alone,
+  so the same address under another coin (TRX/USDT, BNB/ETH) or typed differently can't invite itself. A code is
+  bound only once the account has a payout address (without custody). Each payout address and each computer joins
+  through an invite once, ever: `referral_redemptions` keeps HMAC hashes of the address and of the app's hardware id
+  (`HardwareId`, a SHA-256 of the machine id, sent even when the install uses its own device id), and keeps them when
+  the account is deleted. A referred account that later moves to an address that already joined through another invite
+  (re-registering, or a computer joining it by email sign-in) loses what's left of its 30 fee-free days. Nobody can
   invite themselves from a second computer: an invite doesn't count when the new computer is on an internet
-  connection one of the inviter's computers used in the last 30 days (kept as HMAC hashes, `account_networks`), and a
-  friend can't later switch to the inviter's payout address (nor the inviter to a friend's). Invited friends' apps
-  report the share of Otium's fee they mined for the inviter (`/referral-share`, at most $0.50 a day each); the
-  inviter's summary carries the total (`ReferralEarnedUsd`, "Earned from friends").
+  connection one of the inviter's computers used in the last 30 days (kept as HMAC hashes, `account_networks`), a
+  friend isn't verified while their computers and the inviter's used the same connection in the last 30 days, and a
+  friend can't later switch to the inviter's payout address (nor the inviter to a friend's). Invite links
+  (`/r/CODE`) are remembered only for page loads (`Sec-Fetch-Dest: document`, `Sec-Fetch-Mode: navigate` when the
+  browser sends them), the first link on a connection wins for the week, and the app only shows the code on the
+  welcome screen to keep or clear, never using it unseen. Invited friends' apps report the share of Otium's fee they
+  mined for the inviter (`/referral-share`, at most $0.50 a day each, ignored after the 6 months); the inviter's
+  summary carries the total for verified friends (`ReferralEarnedUsd`, "Earned from friends").
 - The **kill switch** still works: `GpuPolicy:Disabled` turns an algorithm off for every app at the next refresh, and a
   failed, lagging or more than 2-hour-old feed disables a coin automatically.
 - **SRBMiner's statistics API stays off.** It listens on every network interface (3.7.6 has no bind option), answers
