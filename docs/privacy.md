@@ -53,8 +53,8 @@ years) in its data folder (Settings → About → Open data folder). Uninstallin
 
 | Recipient | What they receive | Why |
 |---|---|---|
-| **Mining pools:** unMineable; MoneroOcean (US users); Kryptex Pool (only if you add a Quantus address, for Quantus) | Your computer's IP address (the miner connects to them directly), your payout address and coin, the worker name, and Otium's referral code | Doing the mining work and paying you directly. Each pool is a separate controller under its own terms |
-| **unMineable's, MoneroOcean's and Kryptex's public APIs** | Your payout address, when the app or server looks up your balance or checks an invite | Showing your progress to the next payout; verifying invites |
+| **Mining pools:** unMineable; MoneroOcean (US users) | Your computer's IP address (the miner connects to them directly), your payout address and coin, the worker name, and Otium's referral code | Doing the mining work and paying you directly. Each pool is a separate controller under its own terms |
+| **unMineable's and MoneroOcean's public APIs** | Your payout address, when the app or server looks up your balance or checks an invite | Showing your progress to the next payout; verifying invites |
 | **The blockchain of your coin** | Your address and the amounts the pool pays you, published by the pool, not by Otium | Paying you |
 | **The miners' developers** (XMRig, SRBMiner) | Your computer's IP address: XMRig mines 1% of its time and SRBMiner a small developer fee on their developers' own pools, which these programs require. Not your address: that share is mined for them | Running the open-source miners Otium uses |
 | **Friends you invite** | Your payout address and coin: the Otium app of each friend who joins with your code mines your referral share straight to that address | Paying you the referral share. Anyone who has an address can see its history on the blockchain, so use a separate address for invites if you'd rather keep yours private |
