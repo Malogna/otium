@@ -4,16 +4,22 @@ using System.Text.RegularExpressions;
 namespace Otium.Providers.SrbMiner;
 
 /// <summary>
-/// Reads SRBMiner's statistics from its console output: hashrate and shares from the "Total" line it prints every
+/// Reads SRBMiner's statistics from its console output: hashrate and shares from the statistics it prints every
 /// 30 s, plus its dev-fee rounds and problems. (Its statistics API isn't used: it can't be limited to this computer.)
+/// SRBMiner 3.7.6 prints them as a table whose total row is labelled "Hashrate"
+/// ("[…]     Hashrate   74.32 TH/s   348.7W   0.213   …   0   0   0", accepted, rejected and hardware errors last);
+/// older output had a one-line "Total: 25.12 MH/s [P:349.2W EFF: A:2 R:1 HW:0]". Both are read.
 /// </summary>
 internal static partial class SrbMinerStats
 {
-    /// <summary>The share counts on the last console "Total" line ("Total: … [P:349.2W EFF: A:2 R:1 HW:0]"), or null.</summary>
+    /// <summary>The share counts on the last statistics total (the table's "Hashrate" row, or a "Total" line), or null.</summary>
     public static ShareCounts? ParseConsoleShares(IEnumerable<string> lines)
     {
         foreach (var line in lines.Reverse())
         {
+            var table = TableSharesRegex().Match(line);
+            if (table.Success)
+                return new ShareCounts(long.Parse(table.Groups["a"].Value, CultureInfo.InvariantCulture), long.Parse(table.Groups["r"].Value, CultureInfo.InvariantCulture));
             if (!line.Contains("Total", StringComparison.OrdinalIgnoreCase))
                 continue;
             var match = ConsoleSharesRegex().Match(line);
@@ -93,8 +99,13 @@ internal static partial class SrbMinerStats
         _ => 1,
     };
 
-    [GeneratedRegex(@"(?i)total[^0-9]*(?<value>[0-9]+(?:\.[0-9]+)?)\s*(?<unit>[kMGTP]?)H/s")]
+    /// <summary>A "Total: 25.12 MH/s" line, or the statistics table's total row "[…]     Hashrate   74.32 TH/s …".</summary>
+    [GeneratedRegex(@"(?i)(?:total|^(?:\[[^\]]*\])?\s*hashrate\b)[^0-9]*(?<value>[0-9]+(?:\.[0-9]+)?)\s*(?<unit>[kMGTP]?)H/s")]
     private static partial Regex HashrateRegex();
+
+    /// <summary>The table's total row ends with accepted, rejected and hardware-error counts.</summary>
+    [GeneratedRegex(@"(?i)^(?:\[[^\]]*\])?\s*hashrate\s+[0-9]+(?:\.[0-9]+)?\s*[kMGTP]?H/s.*?\s(?<a>\d+)\s+(?<r>\d+)\s+(?<hw>\d+)\s*$")]
+    private static partial Regex TableSharesRegex();
 
     [GeneratedRegex(@"(?i)out of memory|not enough (gpu |video |graphics )?memory|memory allocation fail|MEM_OBJECT_ALLOCATION_FAILURE")]
     private static partial Regex MemoryProblemRegex();
