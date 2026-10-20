@@ -320,9 +320,11 @@ public sealed class SitePagesTests : IDisposable
         Assert.Equal(["Organization", "WebSite", "SoftwareApplication", "FAQPage"], graph.Select(g => g.GetProperty("@type").GetString()));
         Assert.Equal("Windows, macOS, Linux", graph[2].GetProperty("operatingSystem").GetString());
         var questions = graph[3].GetProperty("mainEntity").EnumerateArray().ToList();
-        Assert.Equal(System.Text.RegularExpressions.Regex.Matches(html, "<details><summary>").Count, questions.Count);
+        Assert.Equal(System.Text.RegularExpressions.Regex.Matches(html, "<details[^>]*><summary>").Count, questions.Count);
         Assert.Equal("Is my money safe?", questions[0].GetProperty("name").GetString());
         Assert.Contains("<summary>Is my money safe?</summary>", html);
+        Assert.Contains("""<details id="why-fee"><summary>Why does Otium take 2%?</summary>""", html);
+        Assert.Contains("href=\"#why-fee\"", html);
 
         var robots = (await Get("/robots.txt")).Html;
         Assert.Contains("Disallow: /admin\n", robots);

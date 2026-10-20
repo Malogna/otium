@@ -83,6 +83,14 @@ Iran, China and Egypt).
 In total about 3.75% on the processor and 3.6–4.75% on the graphics card. The app shows the same breakdown before you
 start.
 
+**Why Otium takes 2%.** It's how Otium pays its way, with no ads and no data sold:
+
+- **Servers:** the website, accounts and invites, the update feed, and the price check that picks the best-paying coin
+  for your graphics card every 10 minutes.
+- **Payouts to your own wallet:** each miner set up for your coin and address, a check that the pool will actually pay
+  you, and turning internet sharing's earnings into your coin.
+- **Development and support:** keeping up as coins and pools change, signed updates, and help on Discord and by email.
+
 ## Safety and privacy
 
 - Otium runs well-known miners, [XMRig](https://github.com/xmrig/xmrig) (open source) and
