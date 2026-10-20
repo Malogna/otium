@@ -897,19 +897,23 @@ public sealed class OtiumStore
             ON CONFLICT(account_id) DO UPDATE SET coin = $c, paid = $p, paid_usd = $pu, rewarded_30d_usd = $r, checked_at = $t
             """, ("$a", accountId), ("$c", coin), ("$p", paid), ("$pu", paidUsd), ("$r", rewarded30dUsd), ("$t", Format(now)));
 
-    /// <summary>What the pools have paid Otium users' own addresses, in dollars at the time of each check, and how many were paid.</summary>
-    public (double PaidUsd, double Rewarded30dUsd, long PaidAccounts) PoolPayoutTotals()
+    /// <summary>
+    /// What the pools have paid Otium users' own addresses, in dollars at the time of each check, how many were paid, and
+    /// how many the pools have credited or paid at all.
+    /// </summary>
+    public (double PaidUsd, double Rewarded30dUsd, long PaidAccounts, long EarningAccounts) PoolPayoutTotals()
     {
         using var connection = Open();
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
-            SELECT COALESCE(SUM(p.paid_usd), 0), COALESCE(SUM(p.rewarded_30d_usd), 0), COALESCE(SUM(CASE WHEN p.paid > 0 THEN 1 ELSE 0 END), 0)
+            SELECT COALESCE(SUM(p.paid_usd), 0), COALESCE(SUM(p.rewarded_30d_usd), 0), COALESCE(SUM(CASE WHEN p.paid > 0 THEN 1 ELSE 0 END), 0),
+                   COALESCE(SUM(CASE WHEN p.paid > 0 OR p.rewarded_30d_usd > 0 THEN 1 ELSE 0 END), 0)
             FROM pool_payouts p JOIN accounts a ON a.account_id = p.account_id
             WHERE a.merged_into IS NULL AND a.deleted_at IS NULL
             """;
         using var r = cmd.ExecuteReader();
         r.Read();
-        return (r.GetDouble(0), r.GetDouble(1), r.GetInt64(2));
+        return (r.GetDouble(0), r.GetDouble(1), r.GetInt64(2), r.GetInt64(3));
     }
 
     // ---------- ledger ----------
