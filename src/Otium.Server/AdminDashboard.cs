@@ -61,16 +61,31 @@ internal static class AdminDashboard
 
               <div id="noncustodial" hidden>
                 <section>
-                  <h2>At a glance</h2>
+                  <div class="section-head">
+                    <h2>Users and computers</h2>
+                    <span class="muted">a user is an account; a computer is one install of the app</span>
+                  </div>
                   <div class="tiles">
+                    <div class="tile"><span class="label">Users</span><strong id="uc-users"></strong><span class="muted" id="uc-users-detail"></span></div>
+                    <div class="tile"><span class="label">Active users, 24 hours</span><strong id="uc-active"></strong><span class="muted" id="uc-active-detail"></span></div>
                     <div class="tile"><span class="label">Computers online now</span><strong id="act-now"></strong><span class="muted" id="act-now-detail"></span></div>
-                    <div class="tile"><span class="label">Accounts</span><strong id="act-accounts"></strong><span class="muted" id="act-accounts-detail"></span></div>
+                    <div class="tile"><span class="label">Computers mining now</span><strong id="uc-mining"></strong><span class="muted" id="uc-mining-detail"></span></div>
+                    <div class="tile"><span class="label">Still using Otium</span><strong id="uc-retention"></strong><span class="muted" id="uc-retention-detail"></span></div>
+                    <div class="tile"><span class="label">Computers per user</span><strong id="uc-per-user"></strong><span class="muted" id="uc-per-user-detail"></span></div>
+                  </div>
+                  <h3>Last 30 days (UTC), with today's number</h3>
+                  <div class="charts" id="uc-charts"></div>
+                  <p class="muted" id="uc-counting"></p>
+                  <h3>App versions on computers seen in the last 7 days</h3>
+                  <ul class="addresses" id="uc-versions"></ul>
+                </section>
+
+                <section>
+                  <h2>What users earned</h2>
+                  <div class="tiles">
                     <div class="tile"><span class="label">Paid to users by pools</span><strong id="pp-paid"></strong><span class="muted" id="pp-paid-detail"></span></div>
                     <div class="tile"><span class="label">Users earned, 30 days</span><strong id="pp-rewarded"></strong><span class="muted">at their pools, before payout</span></div>
                   </div>
-                  <h3>New computers per day</h3>
-                  <div class="chart" id="act-chart" role="img" aria-label="New computers per day, last 14 days"></div>
-                  <div class="chart-axis"><span id="act-chart-first"></span><span id="act-chart-last"></span></div>
                 </section>
 
                 <section>
@@ -97,9 +112,8 @@ internal static class AdminDashboard
                 </section>
 
                 <section>
-                  <h2>Accounts</h2>
+                  <h2>Invites and payout coins</h2>
                   <div class="tiles">
-                    <div class="tile"><span class="label">Computers seen</span><strong id="nc-devices"></strong><span class="muted">in the last 7 days</span></div>
                     <div class="tile"><span class="label">Joined by invite</span><strong id="nc-referred"></strong><span class="muted" id="nc-verified"></span></div>
                   </div>
                   <h3>Payout coins</h3>
@@ -252,6 +266,11 @@ internal static class AdminDashboard
         .chart div { flex:1; min-height:2px; background:var(--accent); border-radius:3px 3px 0 0; opacity:.85; }
         .chart div.zero { background:var(--border); }
         .chart-axis { display:flex; justify-content:space-between; font-size:12px; color:var(--muted); margin-top:4px; }
+        .charts { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:12px; }
+        .chart-card { margin:0; background:var(--soft); border-radius:10px; padding:12px 14px; min-width:0; }
+        .chart-card figcaption { display:flex; justify-content:space-between; align-items:baseline; gap:8px; font-size:13px; font-weight:600; margin-bottom:8px; }
+        .chart-card figcaption strong { font-size:18px; font-variant-numeric:tabular-nums; }
+        .chart-card .chart { gap:2px; height:64px; }
         tr.details td { background:var(--soft); }
         pre.report { margin:0; max-height:420px; overflow:auto; white-space:pre-wrap; word-break:break-word; font:12px/1.45 ui-monospace,Consolas,monospace; }
         @media (max-width:640px) { input { min-width:0; } }
@@ -463,24 +482,44 @@ internal static class AdminDashboard
             if (o) link.href = o.dashboardUrl;
             const a = s.activity || {};
             const n = v => Number(v || 0).toLocaleString("en-US");
+            $("uc-users").textContent = n(a.accounts);
+            $("uc-users-detail").textContent = `+${n(a.accountsNew24h)} in 24 h, +${n(a.accountsNew7d)} in 7 days`;
+            $("uc-active").textContent = n(a.accountsActivePast24h);
+            $("uc-active-detail").textContent = `with a computer online; ${n(a.accountsActivePast7d)} in 7 days, ${n(a.accountsActivePast30d)} in 30 days`;
             $("act-now").textContent = n(a.devicesActiveNow);
-            $("act-now-detail").textContent = `seen in the last 15 minutes; ${n(a.devicesSeenPast24h)} in 24 h, ${n(s.devicesSeenPast7Days)} in 7 days, ${n(a.devices)} ever`;
-            $("act-accounts").textContent = n(a.accounts);
-            $("act-accounts-detail").textContent = `+${n(a.accountsNew24h)} in 24 h, +${n(a.accountsNew7d)} in 7 days`;
+            $("act-now-detail").textContent = `app running in the last 15 minutes; ${n(a.devicesSeenPast24h)} in 24 h, ${n(s.devicesSeenPast7Days)} in 7 days, ${n(a.devicesSeenPast30d)} in 30 days, ${n(a.devices)} ever`;
+            const mn = a.miningNow || {}, m24 = a.miningPast24h || {};
+            $("uc-mining").textContent = n(mn.any);
+            $("uc-mining-detail").textContent = `processor ${n(mn.cpu)}, graphics card ${n(mn.gpu)}; ${n(m24.any)} mined in 24 h`;
+            const ret = a.retention || {};
+            $("uc-retention").textContent = Number(ret.joinedOverAWeekAgo) ? Math.round(ret.seenPast7d / ret.joinedOverAWeekAgo * 100) + "%" : "–";
+            $("uc-retention-detail").textContent = `${n(ret.seenPast7d)} of ${n(ret.joinedOverAWeekAgo)} computers that joined over a week ago were online this week`;
+            $("uc-per-user").textContent = Number(a.accounts) ? (Number(a.devices) / Number(a.accounts)).toLocaleString("en-US", { maximumFractionDigits: 2 }) : "–";
+            $("uc-per-user-detail").textContent = `${n(a.devices)} computers on ${n(a.accounts)} accounts`;
+
+            const daily = a.daily || [];
+            const charts = [
+              ["Computers active", d => d.devices],
+              ["Users active", d => d.accounts],
+              ["Processors mining", d => d.cpuMining],
+              ["Graphics cards mining", d => d.gpuMining],
+              ["New computers", d => d.newDevices],
+              ["New users", d => d.newAccounts],
+            ];
+            $("uc-charts").replaceChildren(...charts.map(([title, value]) => chart(title, daily, value)));
+            const counted = daily.findIndex(d => Number(d.devices) > 0);
+            $("uc-counting").textContent = counted > 0
+              ? `Active and mining counts start on ${daily[counted].day}, when the server began counting them; new computers and users go back further.`
+              : "";
+            const versions = a.appVersions || [];
+            $("uc-versions").replaceChildren(...(versions.length
+              ? versions.map(v => el("li", `${v.version}: ${n(v.devices)} computer(s)`))
+              : [el("li", "No computer was online in the last 7 days.")]));
+
             const pp = s.poolPayouts || {};
             $("pp-paid").textContent = usd(pp.paidUsd);
             $("pp-paid-detail").textContent = `${n(pp.paidAccounts)} account(s) paid at least once`;
             $("pp-rewarded").textContent = usd(pp.rewarded30dUsd);
-            const days = a.newDevicesPerDay || [];
-            const most = Math.max(1, ...days.map(d => Number(d.devices)));
-            $("act-chart").replaceChildren(...days.map(d => {
-              const bar = el("div", null, Number(d.devices) ? "" : "zero");
-              bar.style.height = Math.max(3, Number(d.devices) / most * 100) + "%";
-              bar.title = `${d.day}: ${d.devices}`;
-              return bar;
-            }));
-            $("act-chart-first").textContent = days.length ? days[0].day : "";
-            $("act-chart-last").textContent = days.length ? days[days.length - 1].day : "";
 
             const an = s.analytics || { devices: 0, byKind: [] };
             const names = { cpu: "Processor", gpu: "Graphics card", sharing: "Internet sharing" };
@@ -505,11 +544,32 @@ internal static class AdminDashboard
             if (myst) $("myst-detail").textContent = `${n(myst.nodesSponsored)} node(s) sponsored, ${myst.mystSpent} MYST spent (${myst.mystSpentPast24h} in 24 h)` +
               (myst.walletError ? `; wallet: ${myst.walletError}` : myst.walletBalanceMyst != null ? `; wallet holds ${myst.walletBalanceMyst} MYST` : "");
 
-            $("nc-devices").textContent = s.devicesSeenPast7Days;
             $("nc-referred").textContent = s.referredAccounts;
             $("nc-verified").textContent = `${s.verifiedReferrals} verified by their pool`;
             const coins = $("nc-coins");
             coins.replaceChildren(...s.accountsByCoin.map(c => el("li", `${c.coin === "none" ? "No payout address yet" : c.coin}: ${c.accounts}`)));
+          }
+
+          /** One small bar chart: a bar per day, today's number in the corner, the first and last day underneath. */
+          function chart(title, days, value) {
+            const values = days.map(d => Number(value(d)) || 0);
+            const most = Math.max(1, ...values);
+            const figure = el("figure", null, "chart-card");
+            const caption = el("figcaption");
+            caption.append(el("span", title), el("strong", values.length ? values[values.length - 1].toLocaleString("en-US") : "–"));
+            const bars = el("div", null, "chart");
+            bars.setAttribute("role", "img");
+            bars.setAttribute("aria-label", `${title} per day, last ${days.length} days`);
+            bars.append(...days.map((d, i) => {
+              const bar = el("div", null, values[i] ? "" : "zero");
+              bar.style.height = Math.max(3, values[i] / most * 100) + "%";
+              bar.title = `${d.day}: ${values[i].toLocaleString("en-US")}`;
+              return bar;
+            }));
+            const axis = el("div", null, "chart-axis");
+            axis.append(el("span", days.length ? days[0].day : ""), el("span", days.length ? "today" : ""));
+            figure.append(caption, bars, axis);
+            return figure;
           }
 
           function renderProblemReports(reports) {
