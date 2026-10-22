@@ -96,7 +96,7 @@ public sealed record EmailCodeRecord(long Id, string Email, string DeviceId, str
 public sealed class OtiumStore
 {
     public const long MicrosPerDollar = 1_000_000;
-    private const int SchemaVersion = 15;
+    private const int SchemaVersion = 16;
 
     private readonly string _connectionString;
 
@@ -435,6 +435,10 @@ public sealed class OtiumStore
             );
             """);
 
+        // Version 16: the operator's own test accounts, left out of every count (dashboard and otium.lol).
+        if (Scalar<long>("SELECT COUNT(*) FROM pragma_table_info('accounts') WHERE name = 'is_test'") == 0)
+            Execute("ALTER TABLE accounts ADD COLUMN is_test INTEGER NOT NULL DEFAULT 0;");
+
         Execute($"PRAGMA user_version = {SchemaVersion};");
     }
 
@@ -751,7 +755,7 @@ public sealed class OtiumStore
     private static void CountActiveDay(SqliteConnection connection, SqliteTransaction tx, string deviceId, string accountId, DateTimeOffset? previous, DateTimeOffset now)
     {
         var dayStart = new DateTimeOffset(now.UtcDateTime.Date, TimeSpan.Zero);
-        if (previous >= dayStart)
+        if (previous >= dayStart || IsTestAccount(connection, tx, accountId))
             return;
         long others;
         using (var cmd = connection.CreateCommand())
@@ -762,6 +766,15 @@ public sealed class OtiumStore
             others = (long)cmd.ExecuteScalar()!;
         }
         AddToDay(connection, tx, now, "devices", "accounts", others == 0 ? 1 : 0);
+    }
+
+    private static bool IsTestAccount(SqliteConnection connection, SqliteTransaction tx, string accountId)
+    {
+        using var cmd = connection.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText = "SELECT COUNT(*) FROM accounts WHERE account_id = $a AND is_test = 1";
+        Bind(cmd, [("$a", accountId)]);
+        return (long)cmd.ExecuteScalar()! > 0;
     }
 
     /// <summary>Adds one to a column of the day's totals in <c>daily_activity</c> (and <paramref name="otherAdd"/> to a second one).</summary>
@@ -801,16 +814,21 @@ public sealed class OtiumStore
         double cpu, gpu;
         string? reportedAt;
         DateTimeOffset? cpuMinedAt, gpuMinedAt;
+        bool isTest;
         using (var read = connection.CreateCommand())
         {
             read.Transaction = tx;
-            read.CommandText = "SELECT cpu_mined_seconds, gpu_mined_seconds, mined_reported_at, cpu_mined_at, gpu_mined_at FROM devices WHERE device_id = $d";
+            read.CommandText = """
+                SELECT d.cpu_mined_seconds, d.gpu_mined_seconds, d.mined_reported_at, d.cpu_mined_at, d.gpu_mined_at, COALESCE(a.is_test, 0)
+                FROM devices d LEFT JOIN accounts a ON a.account_id = d.account_id WHERE d.device_id = $d
+                """;
             Bind(read, [("$d", deviceId)]);
             using var r = read.ExecuteReader();
             if (!r.Read())
                 return (0, 0);
             (cpu, gpu, reportedAt) = (r.GetDouble(0), r.GetDouble(1), r.IsDBNull(2) ? null : r.GetString(2));
             (cpuMinedAt, gpuMinedAt) = (r.IsDBNull(3) ? null : Parse(r.GetString(3)), r.IsDBNull(4) ? null : Parse(r.GetString(4)));
+            isTest = r.GetInt64(5) == 1;
         }
         if (cpuSeconds is null && gpuSeconds is null)
             return (cpu, gpu);
@@ -825,13 +843,13 @@ public sealed class OtiumStore
         var dayStart = new DateTimeOffset(now.UtcDateTime.Date, TimeSpan.Zero);
         if (reportedAt is not null && cpu > cpuBefore)
         {
-            if (!(cpuMinedAt >= dayStart))
+            if (!(cpuMinedAt >= dayStart) && !isTest)
                 AddToDay(connection, tx, now, "cpu_mining");
             cpuMinedAt = now;
         }
         if (reportedAt is not null && gpu > gpuBefore)
         {
-            if (!(gpuMinedAt >= dayStart))
+            if (!(gpuMinedAt >= dayStart) && !isTest)
                 AddToDay(connection, tx, now, "gpu_mining");
             gpuMinedAt = now;
         }
@@ -1244,7 +1262,7 @@ public sealed class OtiumStore
             SELECT r.device_id, r.kind, r.model, r.period_start, r.period_end, r.seconds, r.user_usd, r.electricity_usd,
                    COALESCE(a.merged_into, r.account_id), a.created_at
             FROM earnings_reports r LEFT JOIN accounts a ON a.account_id = r.account_id
-            WHERE r.period_end > $s AND r.model IS NOT NULL
+            WHERE r.period_end > $s AND r.model IS NOT NULL AND COALESCE(a.is_test, 0) = 0
             """;
         Bind(cmd, [("$s", Format(since))]);
         using var r = cmd.ExecuteReader();
@@ -1319,7 +1337,7 @@ public sealed class OtiumStore
                 SELECT p.paid, p.paid_usd, p.rewarded_30d_usd,
                        ROW_NUMBER() OVER (PARTITION BY COALESCE(p.address, 'account:' || p.account_id) ORDER BY p.checked_at DESC) AS n
                 FROM pool_payouts p JOIN accounts a ON a.account_id = p.account_id
-                WHERE a.merged_into IS NULL AND a.deleted_at IS NULL
+                WHERE a.merged_into IS NULL AND a.deleted_at IS NULL AND a.is_test = 0
             )
             SELECT COALESCE(SUM(paid_usd), 0), COALESCE(SUM(rewarded_30d_usd), 0), COALESCE(SUM(CASE WHEN paid > 0 THEN 1 ELSE 0 END), 0),
                    COALESCE(SUM(CASE WHEN paid > 0 OR rewarded_30d_usd > 0 THEN 1 ELSE 0 END), 0)
@@ -1746,7 +1764,7 @@ public sealed class OtiumStore
                         WHEN instr(own_wallet, ':') > 0 THEN substr(own_wallet, 1, instr(own_wallet, ':') - 1)
                         ELSE 'XMR' END AS coin,
                    COUNT(*) AS n
-            FROM accounts WHERE merged_into IS NULL AND deleted_at IS NULL
+            FROM accounts WHERE merged_into IS NULL AND deleted_at IS NULL AND is_test = 0
             GROUP BY coin ORDER BY n DESC, coin
             """;
         using var reader = cmd.ExecuteReader();
@@ -1758,40 +1776,43 @@ public sealed class OtiumStore
 
     /// <summary>Accounts that joined through an invite, and how many of them have been verified by their pool.</summary>
     public (long Referred, long Verified) ReferralCounts() => (
-        Scalar<long>("SELECT COUNT(*) FROM accounts WHERE referred_by IS NOT NULL AND merged_into IS NULL"),
-        Scalar<long>("SELECT COUNT(*) FROM accounts WHERE referred_by IS NOT NULL AND verified = 1 AND merged_into IS NULL"));
+        Scalar<long>("SELECT COUNT(*) FROM accounts WHERE referred_by IS NOT NULL AND merged_into IS NULL AND is_test = 0"),
+        Scalar<long>("SELECT COUNT(*) FROM accounts WHERE referred_by IS NOT NULL AND verified = 1 AND merged_into IS NULL AND is_test = 0"));
 
     public long DevicesSeenSince(DateTimeOffset since) =>
-        Scalar<long>("SELECT COUNT(*) FROM devices WHERE last_seen_at >= $s", ("$s", Format(since)));
+        Scalar<long>($"SELECT COUNT(*) FROM devices WHERE last_seen_at >= $s AND {NotTest}", ("$s", Format(since)));
 
     /// <summary>Live accounts (not merged or deleted), and how many of them were created after <paramref name="since"/>.</summary>
     public (long Total, long New) AccountCounts(DateTimeOffset since) => (
-        Scalar<long>("SELECT COUNT(*) FROM accounts WHERE merged_into IS NULL AND deleted_at IS NULL"),
-        Scalar<long>("SELECT COUNT(*) FROM accounts WHERE merged_into IS NULL AND deleted_at IS NULL AND created_at >= $s", ("$s", Format(since))));
+        Scalar<long>("SELECT COUNT(*) FROM accounts WHERE merged_into IS NULL AND deleted_at IS NULL AND is_test = 0"),
+        Scalar<long>("SELECT COUNT(*) FROM accounts WHERE merged_into IS NULL AND deleted_at IS NULL AND is_test = 0 AND created_at >= $s", ("$s", Format(since))));
 
-    public long DeviceCount() => Scalar<long>("SELECT COUNT(*) FROM devices");
+    public long DeviceCount() => Scalar<long>($"SELECT COUNT(*) FROM devices WHERE {NotTest}");
+
+    /// <summary>Leaves out computers of the operator's test accounts (for queries over <c>devices</c>).</summary>
+    private const string NotTest = "account_id NOT IN (SELECT account_id FROM accounts WHERE is_test = 1)";
 
     /// <summary>Accounts with at least one computer seen since <paramref name="since"/>.</summary>
     public long AccountsSeenSince(DateTimeOffset since) =>
-        Scalar<long>("SELECT COUNT(DISTINCT account_id) FROM devices WHERE last_seen_at >= $s", ("$s", Format(since)));
+        Scalar<long>($"SELECT COUNT(DISTINCT account_id) FROM devices WHERE last_seen_at >= $s AND {NotTest}", ("$s", Format(since)));
 
     /// <summary>Computers whose processor, graphics card, or either reported mining since <paramref name="since"/>.</summary>
     public (long Cpu, long Gpu, long Any) DevicesMiningSince(DateTimeOffset since) => (
-        Scalar<long>("SELECT COUNT(*) FROM devices WHERE cpu_mined_at >= $s", ("$s", Format(since))),
-        Scalar<long>("SELECT COUNT(*) FROM devices WHERE gpu_mined_at >= $s", ("$s", Format(since))),
-        Scalar<long>("SELECT COUNT(*) FROM devices WHERE cpu_mined_at >= $s OR gpu_mined_at >= $s", ("$s", Format(since))));
+        Scalar<long>($"SELECT COUNT(*) FROM devices WHERE cpu_mined_at >= $s AND {NotTest}", ("$s", Format(since))),
+        Scalar<long>($"SELECT COUNT(*) FROM devices WHERE gpu_mined_at >= $s AND {NotTest}", ("$s", Format(since))),
+        Scalar<long>($"SELECT COUNT(*) FROM devices WHERE (cpu_mined_at >= $s OR gpu_mined_at >= $s) AND {NotTest}", ("$s", Format(since))));
 
     /// <summary>Computers that joined before <paramref name="joinedBefore"/>, and how many of them were seen since <paramref name="seenSince"/>.</summary>
     public (long Joined, long StillSeen) Retention(DateTimeOffset joinedBefore, DateTimeOffset seenSince) => (
-        Scalar<long>("SELECT COUNT(*) FROM devices WHERE created_at < $j", ("$j", Format(joinedBefore))),
-        Scalar<long>("SELECT COUNT(*) FROM devices WHERE created_at < $j AND last_seen_at >= $s", ("$j", Format(joinedBefore)), ("$s", Format(seenSince))));
+        Scalar<long>($"SELECT COUNT(*) FROM devices WHERE created_at < $j AND {NotTest}", ("$j", Format(joinedBefore))),
+        Scalar<long>($"SELECT COUNT(*) FROM devices WHERE created_at < $j AND last_seen_at >= $s AND {NotTest}", ("$j", Format(joinedBefore)), ("$s", Format(seenSince))));
 
     /// <summary>App versions of the computers seen since <paramref name="since"/>, most used first (null: too old to say).</summary>
     public IReadOnlyList<(string? Version, long Devices)> AppVersionsSince(DateTimeOffset since)
     {
         using var connection = Open();
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT app_version, COUNT(*) AS n FROM devices WHERE last_seen_at >= $s GROUP BY app_version ORDER BY n DESC, app_version DESC";
+        cmd.CommandText = $"SELECT app_version, COUNT(*) AS n FROM devices WHERE last_seen_at >= $s AND {NotTest} GROUP BY app_version ORDER BY n DESC, app_version DESC";
         Bind(cmd, [("$s", Format(since))]);
         using var r = cmd.ExecuteReader();
         var list = new List<(string?, long)>();
@@ -1799,6 +1820,60 @@ public sealed class OtiumStore
             list.Add((r.IsDBNull(0) ? null : r.GetString(0), r.GetInt64(1)));
         return list;
     }
+
+    /// <summary>One live account for the admin dashboard's list: no email address or secrets, the payout address shortened.</summary>
+    public sealed record AdminAccountRow(
+        string AccountId, DateTimeOffset CreatedAt, string? Payout, bool HasEmail, bool Invited, bool Verified, bool IsTest,
+        long Computers, DateTimeOffset? LastSeen, DateTimeOffset? LastMined, double CpuHours, double GpuHours, string? AppVersion);
+
+    /// <summary>Live accounts (not merged or deleted), newest first, at most <paramref name="limit"/>.</summary>
+    public IReadOnlyList<AdminAccountRow> AdminAccounts(int limit)
+    {
+        using var connection = Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT a.account_id, a.created_at, a.own_wallet, a.email IS NOT NULL, a.referred_by IS NOT NULL, a.verified, a.is_test,
+                   COUNT(d.device_id), MAX(d.last_seen_at), MAX(MAX(COALESCE(d.cpu_mined_at, '')), MAX(COALESCE(d.gpu_mined_at, ''))),
+                   COALESCE(SUM(d.cpu_mined_seconds), 0), COALESCE(SUM(d.gpu_mined_seconds), 0),
+                   (SELECT v.app_version FROM devices v WHERE v.account_id = a.account_id AND v.app_version IS NOT NULL ORDER BY v.last_seen_at DESC LIMIT 1)
+            FROM accounts a LEFT JOIN devices d ON d.account_id = a.account_id
+            WHERE a.merged_into IS NULL AND a.deleted_at IS NULL
+            GROUP BY a.account_id
+            ORDER BY a.created_at DESC
+            LIMIT $n
+            """;
+        Bind(cmd, [("$n", limit)]);
+        using var r = cmd.ExecuteReader();
+        var list = new List<AdminAccountRow>();
+        while (r.Read())
+        {
+            list.Add(new AdminAccountRow(
+                r.GetString(0), Parse(r.GetString(1)), ShortPayout(r.IsDBNull(2) ? null : r.GetString(2)), r.GetInt64(3) == 1, r.GetInt64(4) == 1,
+                !r.IsDBNull(5) && r.GetInt64(5) == 1, r.GetInt64(6) == 1, r.GetInt64(7), r.IsDBNull(8) ? null : Parse(r.GetString(8)),
+                r.IsDBNull(9) || r.GetString(9).Length == 0 ? null : Parse(r.GetString(9)),
+                Math.Round(r.GetDouble(10) / 3600, 1), Math.Round(r.GetDouble(11) / 3600, 1), r.IsDBNull(12) ? null : r.GetString(12)));
+        }
+        return list;
+    }
+
+    /// <summary>"USDT:TB2xNF…c9Qp": the coin and enough of the address to tell accounts apart.</summary>
+    internal static string? ShortPayout(string? wallet)
+    {
+        if (string.IsNullOrEmpty(wallet))
+            return null;
+        var colon = wallet.IndexOf(':');
+        var (coin, address) = colon > 0 ? (wallet[..colon], wallet[(colon + 1)..]) : ("XMR", wallet);
+        return address.Length <= 12 ? $"{coin}:{address}" : $"{coin}:{address[..6]}…{address[^4..]}";
+    }
+
+    /// <summary>Marks a live account as one of the operator's tests (left out of every count), or not. False if there's no such account.</summary>
+    public bool SetTestAccount(string accountId, bool isTest) =>
+        Execute("UPDATE accounts SET is_test = $t WHERE account_id = $a AND merged_into IS NULL AND deleted_at IS NULL",
+            ("$t", isTest ? 1 : 0), ("$a", accountId)) > 0;
+
+    /// <summary>Live accounts marked as tests.</summary>
+    public long TestAccountCount() =>
+        Scalar<long>("SELECT COUNT(*) FROM accounts WHERE is_test = 1 AND merged_into IS NULL AND deleted_at IS NULL");
 
     public sealed record DayActivity(DateOnly Day, long Devices, long Accounts, long CpuMining, long GpuMining, long NewDevices, long NewAccounts);
 
@@ -1831,8 +1906,8 @@ public sealed class OtiumStore
                 counts[r.GetString(0)] = r.GetInt64(1);
             return counts;
         }
-        var newDevices = NewPerDay("SELECT substr(created_at, 1, 10) AS day, COUNT(*) FROM devices WHERE created_at >= $s GROUP BY day");
-        var newAccounts = NewPerDay("SELECT substr(created_at, 1, 10) AS day, COUNT(*) FROM accounts WHERE created_at >= $s AND merged_into IS NULL AND deleted_at IS NULL GROUP BY day");
+        var newDevices = NewPerDay($"SELECT substr(created_at, 1, 10) AS day, COUNT(*) FROM devices WHERE created_at >= $s AND {NotTest} GROUP BY day");
+        var newAccounts = NewPerDay("SELECT substr(created_at, 1, 10) AS day, COUNT(*) FROM accounts WHERE created_at >= $s AND merged_into IS NULL AND deleted_at IS NULL AND is_test = 0 GROUP BY day");
         return Enumerable.Range(0, days).Select(i =>
         {
             var day = first.AddDays(i);
@@ -1851,7 +1926,7 @@ public sealed class OtiumStore
         var first = DateOnly.FromDateTime(now.UtcDateTime).AddDays(1 - days);
         using var connection = Open();
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT substr(created_at, 1, 10) AS day, COUNT(*) FROM devices WHERE created_at >= $s GROUP BY day";
+        cmd.CommandText = $"SELECT substr(created_at, 1, 10) AS day, COUNT(*) FROM devices WHERE created_at >= $s AND {NotTest} GROUP BY day";
         Bind(cmd, [("$s", Format(new DateTimeOffset(first.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero)))]);
         using var r = cmd.ExecuteReader();
         var counts = new Dictionary<string, long>();

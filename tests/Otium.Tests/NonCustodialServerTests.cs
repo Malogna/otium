@@ -229,6 +229,48 @@ public sealed class NonCustodialServerTests : IDisposable
     }
 
     [Fact]
+    public async Task Test_accounts_are_listed_and_left_out_of_every_count()
+    {
+        await RegisterOk(Usdt);
+        await RegisterOk(null);
+        async Task<JsonElement> Get(string path)
+        {
+            var request = new HttpRequestMessage(HttpMethod.Get, path);
+            request.Headers.Add("X-Admin-Token", AdminToken);
+            using var doc = JsonDocument.Parse(await (await _http.SendAsync(request)).Content.ReadAsStringAsync());
+            return doc.RootElement.Clone();
+        }
+        async Task<HttpStatusCode> Mark(string account, bool test)
+        {
+            var request = new HttpRequestMessage(HttpMethod.Post, $"/admin/accounts/{account}/test") { Content = JsonContent.Create(new { test }) };
+            request.Headers.Add("X-Admin-Token", AdminToken);
+            return (await _http.SendAsync(request)).StatusCode;
+        }
+
+        var list = (await Get("/admin/accounts")).GetProperty("accounts").EnumerateArray().ToList();
+        Assert.Equal(2, list.Count);
+        var usdt = list.Single(a => a.GetProperty("payout").GetString() is { } p && p.StartsWith("USDT:", StringComparison.Ordinal));
+        Assert.Equal("USDT:TR7NHq…Lj6t", usdt.GetProperty("payout").GetString()); // shortened, never the email address
+        Assert.Equal(1, usdt.GetProperty("computers").GetInt64());
+        Assert.False(usdt.GetProperty("isTest").GetBoolean());
+
+        var id = usdt.GetProperty("accountId").GetString()!;
+        Assert.Equal(HttpStatusCode.NoContent, await Mark(id, true));
+        var activity = (await Get("/admin/summary")).GetProperty("activity");
+        Assert.Equal((1, 1, 1), (activity.GetProperty("accounts").GetInt64(), activity.GetProperty("devices").GetInt64(),
+            activity.GetProperty("devicesActiveNow").GetInt64()));
+        Assert.Equal(1, activity.GetProperty("daily").EnumerateArray().Last().GetProperty("newAccounts").GetInt64());
+        Assert.DoesNotContain((await Get("/admin/summary")).GetProperty("accountsByCoin").EnumerateArray(), c => c.GetProperty("coin").GetString() == "USDT");
+        var marked = await Get("/admin/accounts");
+        Assert.Equal(1, marked.GetProperty("tests").GetInt64());
+        Assert.True(marked.GetProperty("accounts").EnumerateArray().Single(a => a.GetProperty("accountId").GetString() == id).GetProperty("isTest").GetBoolean());
+
+        Assert.Equal(HttpStatusCode.NoContent, await Mark(id, false));
+        Assert.Equal(2, (await Get("/admin/summary")).GetProperty("activity").GetProperty("accounts").GetInt64());
+        Assert.Equal(HttpStatusCode.NotFound, await Mark("no-such-account", true));
+    }
+
+    [Fact]
     public async Task The_admin_dashboard_counts_computers_mining_and_their_app_versions()
     {
         var (device, secret, _) = await Register(Usdt);

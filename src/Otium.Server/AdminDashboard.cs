@@ -198,6 +198,20 @@ internal static class AdminDashboard
 
               <section>
                 <div class="section-head">
+                  <h2 id="ac-title">Accounts</h2>
+                  <label class="muted toggle"><input type="checkbox" id="ac-hide-tests"> hide test accounts</label>
+                </div>
+                <p class="muted" id="ac-note"></p>
+                <div class="table-wrap">
+                  <table id="ac-table" hidden>
+                    <thead><tr><th>Joined</th><th>Payout</th><th>Computers</th><th>Last online</th><th>Mined</th><th>Version</th><th></th></tr></thead>
+                    <tbody id="ac-rows"></tbody>
+                  </table>
+                </div>
+              </section>
+
+              <section>
+                <div class="section-head">
                   <h2 id="pr-title">Problem reports</h2>
                   <span class="muted">newest first; open one to read what the app sent</span>
                 </div>
@@ -272,6 +286,9 @@ internal static class AdminDashboard
         .chart-card figcaption strong { font-size:18px; font-variant-numeric:tabular-nums; }
         .chart-card .chart { gap:2px; height:64px; }
         tr.details td { background:var(--soft); }
+        tr.test td { opacity:.55; }
+        .badge { display:inline-block; font-size:11px; font-weight:600; line-height:1.6; padding:0 7px; border-radius:99px; border:1px solid var(--border); background:var(--soft); color:var(--muted); margin:2px 4px 0 0; }
+        .badge.live { color:var(--good); border-color:var(--good); }
         pre.report { margin:0; max-height:420px; overflow:auto; white-space:pre-wrap; word-break:break-word; font:12px/1.45 ui-monospace,Consolas,monospace; }
         @media (max-width:640px) { input { min-width:0; } }
         """;
@@ -572,6 +589,59 @@ internal static class AdminDashboard
             return figure;
           }
 
+          let accounts = null;
+
+          function renderAccounts(data) {
+            if (data) accounts = data;
+            if (!accounts) return;
+            const all = accounts.accounts || [];
+            const hide = $("ac-hide-tests").checked;
+            const shown = hide ? all.filter(a => !a.isTest) : all;
+            const tests = Number(accounts.tests || 0);
+            $("ac-title").textContent = `Accounts (${all.length - tests}${tests ? ` + ${tests} test` : ""})`;
+            $("ac-note").textContent = (tests
+              ? `${tests} marked as test: left out of every count on this page and on otium.lol. `
+              : "Mark your own test accounts so they're left out of every count on this page and on otium.lol. ")
+              + (all.length >= 500 ? "Showing the newest 500." : "Newest first.");
+            $("ac-table").hidden = !shown.length;
+            const recent = t => t && Date.now() - new Date(t).getTime() < 15 * 60 * 1000;
+            $("ac-rows").replaceChildren(...shown.map(a => {
+              const tr = el("tr", null, a.isTest ? "test" : "");
+              const joined = el("td");
+              joined.append(el("div", when(a.createdAt)), el("div", a.accountId.slice(0, 8), "mono muted"));
+              const badges = el("div");
+              if (a.isTest) badges.append(el("span", "Test", "badge"));
+              if (a.invited) badges.append(el("span", a.verified ? "Invited, verified" : "Invited", "badge"));
+              if (a.hasEmail) badges.append(el("span", "Email", "badge"));
+              joined.append(badges);
+              tr.append(joined);
+              tr.append(el("td", a.payout || "none yet", a.payout ? "mono" : "muted"));
+              tr.append(el("td", String(a.computers), "num"));
+              const seen = el("td", a.lastSeen ? when(a.lastSeen) : "never", a.lastSeen ? "" : "muted");
+              if (recent(a.lastSeen)) {
+                const live = el("div");
+                live.append(el("span", recent(a.lastMined) ? "Mining now" : "Online", "badge live"));
+                seen.append(live);
+              }
+              tr.append(seen);
+              tr.append(el("td", Number(a.cpuHours) || Number(a.gpuHours) ? `CPU ${a.cpuHours} h · GPU ${a.gpuHours} h` : "–", "num"));
+              tr.append(el("td", a.appVersion || "–", "mono"));
+              const actions = el("td");
+              actions.append(button(a.isTest ? "Not a test" : "Mark as test", "quiet", () => markTest(a, !a.isTest)));
+              tr.append(actions);
+              return tr;
+            }));
+          }
+
+          async function markTest(a, test) {
+            try {
+              await api(`/admin/accounts/${encodeURIComponent(a.accountId)}/test`, { method: "POST", body: JSON.stringify({ test }) });
+              await refresh();
+            } catch (e) {
+              if (e.message !== "unauthorized") $("error").textContent = `Marking the account failed: ${e.message}`;
+            }
+          }
+
           function renderProblemReports(reports) {
             $("pr-title").textContent = `Problem reports (${reports.length}${reports.length >= 50 ? "+" : ""})`;
             $("pr-table").hidden = !reports.length;
@@ -628,6 +698,7 @@ internal static class AdminDashboard
               } else {
                 renderNonCustodial(summary);
               }
+              renderAccounts(await api("/admin/accounts"));
               // Problem reports in both modes; an open report stays open until the next manual refresh.
               if (!document.querySelector("tr.details")) renderProblemReports(await api("/admin/problem-reports"));
               $("updated").textContent = "Updated " + new Date().toLocaleTimeString();
@@ -645,6 +716,7 @@ internal static class AdminDashboard
             $("refresh").addEventListener("click", () => { $("error").textContent = ""; refresh(); });
             $("signout").addEventListener("click", () => signOut(""));
             $("status").addEventListener("change", refresh);
+            $("ac-hide-tests").addEventListener("change", () => renderAccounts());
             // Every minute while the tab is visible and auto-refresh is on (the API is rate-limited per address).
             setInterval(() => { if (token && $("auto").checked && document.visibilityState === "visible") refresh(); }, 60000);
             if (token) { showSignedIn(true); refresh(); } else { showSignedIn(false); $("token").focus(); }
