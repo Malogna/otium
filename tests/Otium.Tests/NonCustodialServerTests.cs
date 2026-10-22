@@ -5,6 +5,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Otium.Core;
 using Otium.Core.Accounts;
 using Otium.Core.Pools;
 using Otium.Core.Switching;
@@ -216,6 +217,37 @@ public sealed class NonCustodialServerTests : IDisposable
         Assert.Equal(0, days[0].GetProperty("devices").GetInt64());
         Assert.Equal(0, root.GetProperty("poolPayouts").GetProperty("paidAccounts").GetInt64());
         Assert.Equal(0, root.GetProperty("analytics").GetProperty("devices").GetInt32());
+
+        // Users and computers: both active today, in a 30-day series ending today.
+        Assert.Equal(2, activity.GetProperty("accountsActivePast24h").GetInt64());
+        var daily = activity.GetProperty("daily").EnumerateArray().ToList();
+        Assert.Equal(30, daily.Count);
+        Assert.Equal("2026-10-17", daily[^1].GetProperty("day").GetString());
+        Assert.Equal((2, 2, 2, 2), (daily[^1].GetProperty("devices").GetInt64(), daily[^1].GetProperty("accounts").GetInt64(),
+            daily[^1].GetProperty("newDevices").GetInt64(), daily[^1].GetProperty("newAccounts").GetInt64()));
+        Assert.Equal(0, activity.GetProperty("miningNow").GetProperty("any").GetInt64());
+    }
+
+    [Fact]
+    public async Task The_admin_dashboard_counts_computers_mining_and_their_app_versions()
+    {
+        var (device, secret, _) = await Register(Usdt);
+        using var http = _factory.CreateClient();
+        http.DefaultRequestHeaders.Add(AppVersions.Header, "0.1.1+3aeeb18");
+        var client = new AccountClient(http);
+        await client.GetSummaryAsync(device, secret, CancellationToken.None, new MiningTimeReport(TimeSpan.FromHours(3), TimeSpan.Zero));
+        _time.Advance(TimeSpan.FromMinutes(1));
+        await client.GetSummaryAsync(device, secret, CancellationToken.None, new MiningTimeReport(TimeSpan.FromHours(3) + TimeSpan.FromMinutes(1), TimeSpan.Zero));
+
+        var request = new HttpRequestMessage(HttpMethod.Get, "/admin/summary");
+        request.Headers.Add("X-Admin-Token", AdminToken);
+        using var doc = JsonDocument.Parse(await (await _http.SendAsync(request)).Content.ReadAsStringAsync());
+        var activity = doc.RootElement.GetProperty("activity");
+        Assert.Equal(1, activity.GetProperty("miningNow").GetProperty("cpu").GetInt64());
+        Assert.Equal(0, activity.GetProperty("miningNow").GetProperty("gpu").GetInt64());
+        Assert.Equal(1, activity.GetProperty("daily").EnumerateArray().Last().GetProperty("cpuMining").GetInt64());
+        var version = Assert.Single(activity.GetProperty("appVersions").EnumerateArray());
+        Assert.Equal("0.1.1", version.GetProperty("version").GetString()); // without the commit
     }
 
     [Fact]

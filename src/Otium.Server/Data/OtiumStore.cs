@@ -96,7 +96,7 @@ public sealed record EmailCodeRecord(long Id, string Email, string DeviceId, str
 public sealed class OtiumStore
 {
     public const long MicrosPerDollar = 1_000_000;
-    private const int SchemaVersion = 14;
+    private const int SchemaVersion = 15;
 
     private readonly string _connectionString;
 
@@ -417,6 +417,24 @@ public sealed class OtiumStore
             );
             """);
 
+        // Version 15: for the admin dashboard, when each computer's processor and graphics card last mined (its reported
+        // mining time grew) and which app version it runs, plus daily totals of active computers, accounts and miners
+        // (counts only: nothing per computer is kept by day).
+        foreach (var column in new[] { "cpu_mined_at TEXT NULL", "gpu_mined_at TEXT NULL", "app_version TEXT NULL" })
+        {
+            if (Scalar<long>($"SELECT COUNT(*) FROM pragma_table_info('devices') WHERE name = '{column.Split(' ')[0]}'") == 0)
+                Execute($"ALTER TABLE devices ADD COLUMN {column};");
+        }
+        Execute("""
+            CREATE TABLE IF NOT EXISTS daily_activity (
+                day        TEXT PRIMARY KEY,
+                devices    INTEGER NOT NULL DEFAULT 0,
+                accounts   INTEGER NOT NULL DEFAULT 0,
+                cpu_mining INTEGER NOT NULL DEFAULT 0,
+                gpu_mining INTEGER NOT NULL DEFAULT 0
+            );
+            """);
+
         Execute($"PRAGMA user_version = {SchemaVersion};");
     }
 
@@ -666,21 +684,97 @@ public sealed class OtiumStore
         return list;
     }
 
-    public void Upsert(DeviceRecord d) =>
-        Execute("""
-            INSERT INTO devices (device_id, secret_hash, account_id, created_at, last_seen_at)
-            VALUES ($id, $secret, $account, $created, $seen)
-            ON CONFLICT(device_id) DO UPDATE SET account_id = excluded.account_id, last_seen_at = excluded.last_seen_at;
-            """,
-            ("$id", d.DeviceId), ("$secret", d.SecretHash), ("$account", d.AccountId), ("$created", Format(d.CreatedAt)), ("$seen", Format(d.LastSeenAt)));
+    public void Upsert(DeviceRecord d)
+    {
+        using var connection = Open();
+        using var tx = connection.BeginTransaction(deferred: false);
+        var previous = Seen(connection, tx, d.DeviceId);
+        using (var cmd = connection.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            cmd.CommandText = """
+                INSERT INTO devices (device_id, secret_hash, account_id, created_at, last_seen_at)
+                VALUES ($id, $secret, $account, $created, $seen)
+                ON CONFLICT(device_id) DO UPDATE SET account_id = excluded.account_id, last_seen_at = excluded.last_seen_at;
+                """;
+            Bind(cmd, [("$id", d.DeviceId), ("$secret", d.SecretHash), ("$account", d.AccountId), ("$created", Format(d.CreatedAt)), ("$seen", Format(d.LastSeenAt))]);
+            cmd.ExecuteNonQuery();
+        }
+        CountActiveDay(connection, tx, d.DeviceId, d.AccountId, previous?.LastSeen, d.LastSeenAt);
+        tx.Commit();
+    }
 
     /// <summary>
     /// Records that a computer checked in, at most once per <paramref name="every"/> (the app checks in every minute;
-    /// "online now" on the admin dashboard needs only a few minutes' precision, so most check-ins write nothing).
+    /// "online now" on the admin dashboard needs only a few minutes' precision, so most check-ins write nothing), with
+    /// the app version it sent (null from apps before 0.1.1). Its first check-in of a UTC day counts it, and its account,
+    /// in the day's totals.
     /// </summary>
-    public void TouchDevice(string deviceId, DateTimeOffset now, TimeSpan every) =>
-        Execute("UPDATE devices SET last_seen_at = $n WHERE device_id = $d AND last_seen_at < $cut",
-            ("$n", Format(now)), ("$d", deviceId), ("$cut", Format(now - every)));
+    public void TouchDevice(string deviceId, DateTimeOffset now, TimeSpan every, string? appVersion = null)
+    {
+        using var connection = Open();
+        // Most check-ins change nothing: look before taking the write lock, then look again under it.
+        bool Needed((string AccountId, DateTimeOffset LastSeen, string? AppVersion) s) =>
+            s.LastSeen < now - every || (appVersion is not null && appVersion != s.AppVersion);
+        if (Seen(connection, null, deviceId) is not { } before || !Needed(before))
+            return;
+        using var tx = connection.BeginTransaction(deferred: false);
+        if (Seen(connection, tx, deviceId) is not { } seen || !Needed(seen))
+            return;
+        var touch = seen.LastSeen < now - every;
+        using (var cmd = connection.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            cmd.CommandText = "UPDATE devices SET last_seen_at = $n, app_version = COALESCE($v, app_version) WHERE device_id = $d";
+            Bind(cmd, [("$n", Format(touch ? now : seen.LastSeen)), ("$v", appVersion), ("$d", deviceId)]);
+            cmd.ExecuteNonQuery();
+        }
+        if (touch)
+            CountActiveDay(connection, tx, deviceId, seen.AccountId, seen.LastSeen, now);
+        tx.Commit();
+    }
+
+    private static (string AccountId, DateTimeOffset LastSeen, string? AppVersion)? Seen(SqliteConnection connection, SqliteTransaction? tx, string deviceId)
+    {
+        using var cmd = connection.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText = "SELECT account_id, last_seen_at, app_version FROM devices WHERE device_id = $d";
+        Bind(cmd, [("$d", deviceId)]);
+        using var r = cmd.ExecuteReader();
+        return r.Read() ? (r.GetString(0), Parse(r.GetString(1)), r.IsDBNull(2) ? null : r.GetString(2)) : null;
+    }
+
+    /// <summary>
+    /// The first time a computer is seen on a UTC day, adds it to that day's active computers, and its account to the
+    /// day's active accounts unless another of the account's computers was already seen that day.
+    /// </summary>
+    private static void CountActiveDay(SqliteConnection connection, SqliteTransaction tx, string deviceId, string accountId, DateTimeOffset? previous, DateTimeOffset now)
+    {
+        var dayStart = new DateTimeOffset(now.UtcDateTime.Date, TimeSpan.Zero);
+        if (previous >= dayStart)
+            return;
+        long others;
+        using (var cmd = connection.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            cmd.CommandText = "SELECT COUNT(*) FROM devices WHERE account_id = $a AND device_id <> $d AND last_seen_at >= $s";
+            Bind(cmd, [("$a", accountId), ("$d", deviceId), ("$s", Format(dayStart))]);
+            others = (long)cmd.ExecuteScalar()!;
+        }
+        AddToDay(connection, tx, now, "devices", "accounts", others == 0 ? 1 : 0);
+    }
+
+    /// <summary>Adds one to a column of the day's totals in <c>daily_activity</c> (and <paramref name="otherAdd"/> to a second one).</summary>
+    private static void AddToDay(SqliteConnection connection, SqliteTransaction tx, DateTimeOffset now, string column, string? other = null, long otherAdd = 0)
+    {
+        using var cmd = connection.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText = other is null
+            ? $"INSERT INTO daily_activity (day, {column}) VALUES ($day, 1) ON CONFLICT(day) DO UPDATE SET {column} = {column} + 1"
+            : $"INSERT INTO daily_activity (day, {column}, {other}) VALUES ($day, 1, $b) ON CONFLICT(day) DO UPDATE SET {column} = {column} + 1, {other} = {other} + $b";
+        Bind(cmd, [("$day", now.UtcDateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)), ("$b", otherAdd)]);
+        cmd.ExecuteNonQuery();
+    }
 
     public long DeviceCount(string accountId) => Scalar<long>("SELECT COUNT(*) FROM devices WHERE account_id = $a", ("$a", accountId));
 
@@ -706,15 +800,17 @@ public sealed class OtiumStore
         using var tx = connection.BeginTransaction(deferred: false);
         double cpu, gpu;
         string? reportedAt;
+        DateTimeOffset? cpuMinedAt, gpuMinedAt;
         using (var read = connection.CreateCommand())
         {
             read.Transaction = tx;
-            read.CommandText = "SELECT cpu_mined_seconds, gpu_mined_seconds, mined_reported_at FROM devices WHERE device_id = $d";
+            read.CommandText = "SELECT cpu_mined_seconds, gpu_mined_seconds, mined_reported_at, cpu_mined_at, gpu_mined_at FROM devices WHERE device_id = $d";
             Bind(read, [("$d", deviceId)]);
             using var r = read.ExecuteReader();
             if (!r.Read())
                 return (0, 0);
             (cpu, gpu, reportedAt) = (r.GetDouble(0), r.GetDouble(1), r.IsDBNull(2) ? null : r.GetString(2));
+            (cpuMinedAt, gpuMinedAt) = (r.IsDBNull(3) ? null : Parse(r.GetString(3)), r.IsDBNull(4) ? null : Parse(r.GetString(4)));
         }
         if (cpuSeconds is null && gpuSeconds is null)
             return (cpu, gpu);
@@ -722,13 +818,33 @@ public sealed class OtiumStore
         var allowance = reportedAt is null ? double.PositiveInfinity : Math.Max(0, (now - Parse(reportedAt)).TotalSeconds);
         double Next(double stored, double? reported) =>
             reported is { } value && double.IsFinite(value) && value > stored ? Math.Min(value, stored + allowance) : stored;
+        var (cpuBefore, gpuBefore) = (cpu, gpu);
         (cpu, gpu) = (Next(cpu, cpuSeconds), Next(gpu, gpuSeconds));
+
+        // Mining now, for the admin dashboard: the time grew since the last report (the first report only sets the start).
+        var dayStart = new DateTimeOffset(now.UtcDateTime.Date, TimeSpan.Zero);
+        if (reportedAt is not null && cpu > cpuBefore)
+        {
+            if (!(cpuMinedAt >= dayStart))
+                AddToDay(connection, tx, now, "cpu_mining");
+            cpuMinedAt = now;
+        }
+        if (reportedAt is not null && gpu > gpuBefore)
+        {
+            if (!(gpuMinedAt >= dayStart))
+                AddToDay(connection, tx, now, "gpu_mining");
+            gpuMinedAt = now;
+        }
 
         using (var write = connection.CreateCommand())
         {
             write.Transaction = tx;
-            write.CommandText = "UPDATE devices SET cpu_mined_seconds = $c, gpu_mined_seconds = $g, mined_reported_at = $n WHERE device_id = $d";
-            Bind(write, [("$c", cpu), ("$g", gpu), ("$n", Format(now)), ("$d", deviceId)]);
+            write.CommandText = """
+                UPDATE devices SET cpu_mined_seconds = $c, gpu_mined_seconds = $g, mined_reported_at = $n, cpu_mined_at = $cm, gpu_mined_at = $gm
+                WHERE device_id = $d
+                """;
+            Bind(write, [("$c", cpu), ("$g", gpu), ("$n", Format(now)), ("$cm", cpuMinedAt is { } c ? Format(c) : null),
+                ("$gm", gpuMinedAt is { } g ? Format(g) : null), ("$d", deviceId)]);
             write.ExecuteNonQuery();
         }
         tx.Commit();
@@ -1654,6 +1770,77 @@ public sealed class OtiumStore
         Scalar<long>("SELECT COUNT(*) FROM accounts WHERE merged_into IS NULL AND deleted_at IS NULL AND created_at >= $s", ("$s", Format(since))));
 
     public long DeviceCount() => Scalar<long>("SELECT COUNT(*) FROM devices");
+
+    /// <summary>Accounts with at least one computer seen since <paramref name="since"/>.</summary>
+    public long AccountsSeenSince(DateTimeOffset since) =>
+        Scalar<long>("SELECT COUNT(DISTINCT account_id) FROM devices WHERE last_seen_at >= $s", ("$s", Format(since)));
+
+    /// <summary>Computers whose processor, graphics card, or either reported mining since <paramref name="since"/>.</summary>
+    public (long Cpu, long Gpu, long Any) DevicesMiningSince(DateTimeOffset since) => (
+        Scalar<long>("SELECT COUNT(*) FROM devices WHERE cpu_mined_at >= $s", ("$s", Format(since))),
+        Scalar<long>("SELECT COUNT(*) FROM devices WHERE gpu_mined_at >= $s", ("$s", Format(since))),
+        Scalar<long>("SELECT COUNT(*) FROM devices WHERE cpu_mined_at >= $s OR gpu_mined_at >= $s", ("$s", Format(since))));
+
+    /// <summary>Computers that joined before <paramref name="joinedBefore"/>, and how many of them were seen since <paramref name="seenSince"/>.</summary>
+    public (long Joined, long StillSeen) Retention(DateTimeOffset joinedBefore, DateTimeOffset seenSince) => (
+        Scalar<long>("SELECT COUNT(*) FROM devices WHERE created_at < $j", ("$j", Format(joinedBefore))),
+        Scalar<long>("SELECT COUNT(*) FROM devices WHERE created_at < $j AND last_seen_at >= $s", ("$j", Format(joinedBefore)), ("$s", Format(seenSince))));
+
+    /// <summary>App versions of the computers seen since <paramref name="since"/>, most used first (null: too old to say).</summary>
+    public IReadOnlyList<(string? Version, long Devices)> AppVersionsSince(DateTimeOffset since)
+    {
+        using var connection = Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT app_version, COUNT(*) AS n FROM devices WHERE last_seen_at >= $s GROUP BY app_version ORDER BY n DESC, app_version DESC";
+        Bind(cmd, [("$s", Format(since))]);
+        using var r = cmd.ExecuteReader();
+        var list = new List<(string?, long)>();
+        while (r.Read())
+            list.Add((r.IsDBNull(0) ? null : r.GetString(0), r.GetInt64(1)));
+        return list;
+    }
+
+    public sealed record DayActivity(DateOnly Day, long Devices, long Accounts, long CpuMining, long GpuMining, long NewDevices, long NewAccounts);
+
+    /// <summary>
+    /// Each of the last <paramref name="days"/> UTC days, oldest first: active computers and accounts, computers whose
+    /// processor or graphics card mined, and new computers and accounts. Days before the server counted show zeros.
+    /// </summary>
+    public IReadOnlyList<DayActivity> DailyActivity(DateTimeOffset now, int days)
+    {
+        var first = DateOnly.FromDateTime(now.UtcDateTime).AddDays(1 - days);
+        var from = Format(new DateTimeOffset(first.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero));
+        using var connection = Open();
+        var active = new Dictionary<string, (long, long, long, long)>();
+        using (var cmd = connection.CreateCommand())
+        {
+            cmd.CommandText = "SELECT day, devices, accounts, cpu_mining, gpu_mining FROM daily_activity WHERE day >= $d";
+            Bind(cmd, [("$d", first.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))]);
+            using var r = cmd.ExecuteReader();
+            while (r.Read())
+                active[r.GetString(0)] = (r.GetInt64(1), r.GetInt64(2), r.GetInt64(3), r.GetInt64(4));
+        }
+        Dictionary<string, long> NewPerDay(string sql)
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = sql;
+            Bind(cmd, [("$s", from)]);
+            using var r = cmd.ExecuteReader();
+            var counts = new Dictionary<string, long>();
+            while (r.Read())
+                counts[r.GetString(0)] = r.GetInt64(1);
+            return counts;
+        }
+        var newDevices = NewPerDay("SELECT substr(created_at, 1, 10) AS day, COUNT(*) FROM devices WHERE created_at >= $s GROUP BY day");
+        var newAccounts = NewPerDay("SELECT substr(created_at, 1, 10) AS day, COUNT(*) FROM accounts WHERE created_at >= $s AND merged_into IS NULL AND deleted_at IS NULL GROUP BY day");
+        return Enumerable.Range(0, days).Select(i =>
+        {
+            var day = first.AddDays(i);
+            var key = day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            var (devices, accounts, cpu, gpu) = active.GetValueOrDefault(key);
+            return new DayActivity(day, devices, accounts, cpu, gpu, newDevices.GetValueOrDefault(key), newAccounts.GetValueOrDefault(key));
+        }).ToList();
+    }
 
     /// <summary>
     /// Computers registered on each of the last <paramref name="days"/> days (UTC), oldest first, including days with none.

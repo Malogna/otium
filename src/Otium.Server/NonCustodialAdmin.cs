@@ -90,6 +90,11 @@ public static class NonCustodialAdmin
         }).ToList();
         var (accounts, accountsNew7d) = store.AccountCounts(now.AddDays(-7));
         var payouts = store.PoolPayoutTotals();
+        // "Mining now": the app reports its mining time with each check-in (every minute), so 15 minutes allows for gaps.
+        var miningNow = store.DevicesMiningSince(now.AddMinutes(-15));
+        var mining24h = store.DevicesMiningSince(now.AddDays(-1));
+        var retention = store.Retention(now.AddDays(-7), now.AddDays(-7));
+        var day = (DateOnly d) => d.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
 
         return Results.Ok(new
         {
@@ -99,10 +104,25 @@ public static class NonCustodialAdmin
                 accounts,
                 accountsNew24h = store.AccountCounts(now.AddDays(-1)).New,
                 accountsNew7d,
+                // Accounts with a computer that checked in (the app was running) in the period.
+                accountsActivePast24h = store.AccountsSeenSince(now.AddDays(-1)),
+                accountsActivePast7d = store.AccountsSeenSince(now.AddDays(-7)),
+                accountsActivePast30d = store.AccountsSeenSince(now.AddDays(-30)),
                 devices = store.DeviceCount(),
                 devicesActiveNow = store.DevicesSeenSince(now.AddMinutes(-15)),
                 devicesSeenPast24h = store.DevicesSeenSince(now.AddDays(-1)),
-                newDevicesPerDay = store.NewDevicesPerDay(now, 14).Select(d => new { day = d.Day.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture), d.Devices }),
+                devicesSeenPast30d = store.DevicesSeenSince(now.AddDays(-30)),
+                miningNow = new { cpu = miningNow.Cpu, gpu = miningNow.Gpu, any = miningNow.Any },
+                miningPast24h = new { cpu = mining24h.Cpu, gpu = mining24h.Gpu, any = mining24h.Any },
+                // Computers that joined over a week ago, and how many of them still checked in during the last week.
+                retention = new { joinedOverAWeekAgo = retention.Joined, seenPast7d = retention.StillSeen },
+                newDevicesPerDay = store.NewDevicesPerDay(now, 14).Select(d => new { day = day(d.Day), d.Devices }),
+                // The last 30 UTC days; active and mining counts start on the day the server began counting them.
+                daily = store.DailyActivity(now, 30).Select(d => new
+                {
+                    day = day(d.Day), d.Devices, d.Accounts, d.CpuMining, d.GpuMining, d.NewDevices, d.NewAccounts,
+                }),
+                appVersions = store.AppVersionsSince(now.AddDays(-7)).Select(v => new { version = v.Version ?? "0.1.0 or older", devices = v.Devices }),
             },
             // What the pools have paid users' own addresses (checked by the real-earnings job).
             poolPayouts = new { paidUsd = Math.Round(payouts.PaidUsd, 2), rewarded30dUsd = Math.Round(payouts.Rewarded30dUsd, 2), paidAccounts = payouts.PaidAccounts },

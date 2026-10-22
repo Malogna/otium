@@ -234,6 +234,10 @@ public sealed class AccountService(
         store.SetReferralShare(session.Device.DeviceId, account.AccountId, Math.Clamp(report.EstimatedUsd, 0, cap), now);
     }
 
+    /// <summary>"0.1.1" from "0.1.1+abc123"; null when it isn't an Otium version number.</summary>
+    internal static string? CleanVersion(string? version) =>
+        version is { Length: <= 64 } && Otium.Core.AppVersions.Parse(version) is not null ? version.Trim().TrimStart('v').Split('+')[0] : null;
+
     public Session Authenticate(string deviceId, string secret)
     {
         var device = store.FindDevice(deviceId) ?? throw new OtiumException(404, "Unknown device.");
@@ -244,12 +248,13 @@ public sealed class AccountService(
 
     /// <param name="cpuMinedSeconds">How long the computer's processor has mined in all, as its app reports (null from older apps).</param>
     /// <param name="gpuMinedSeconds">The same for its graphics card.</param>
+    /// <param name="appVersion">The <see cref="Otium.Core.AppVersions.Header"/> the app sent (none before 0.1.1).</param>
     public async Task<AccountSummary> GetSummaryAsync(string deviceId, string secret, string publicBaseUrl, CancellationToken ct, System.Net.IPAddress? from = null,
-        double? cpuMinedSeconds = null, double? gpuMinedSeconds = null)
+        double? cpuMinedSeconds = null, double? gpuMinedSeconds = null, string? appVersion = null)
     {
         var session = Authenticate(deviceId, secret);
         // The app's regular check-in (every minute): what the admin dashboard's "online now" and "seen in 24 h" count.
-        store.TouchDevice(deviceId, time.GetUtcNow(), TimeSpan.FromMinutes(5));
+        store.TouchDevice(deviceId, time.GetUtcNow(), TimeSpan.FromMinutes(5), CleanVersion(appVersion));
         // Kept so the signed fee grant can give it back (see FeeGrant.CpuMiningFloor).
         store.RecordMiningTime(deviceId, cpuMinedSeconds, gpuMinedSeconds, time.GetUtcNow());
         if (connections.Of(from) is { } network)

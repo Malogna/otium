@@ -313,7 +313,8 @@ api.MapGet("/devices/{deviceId}/account", async (string deviceId, HttpRequest re
     CheckCountry(request);
     // Apps since the fee grant's mining floors also say how long they've mined (seconds); older apps send nothing.
     return Results.Ok(await accounts.GetSummaryAsync(deviceId, Secret(request), PublicBase(request, options), ct, request.HttpContext.Connection.RemoteIpAddress,
-        Seconds(request.Query[AccountClient.CpuMinedParameter]), Seconds(request.Query[AccountClient.GpuMinedParameter])));
+        Seconds(request.Query[AccountClient.CpuMinedParameter]), Seconds(request.Query[AccountClient.GpuMinedParameter]),
+        request.Headers[Otium.Core.AppVersions.Header].ToString()));
 });
 
 static double? Seconds(string? value) =>
