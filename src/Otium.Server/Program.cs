@@ -697,6 +697,12 @@ else
     });
 }
 
+// Accounts, newest first (no email addresses, payout addresses shortened), and marking the operator's own tests,
+// which every count then leaves out.
+admin.MapGet("/accounts", (OtiumStore store) => Results.Ok(new { accounts = store.AdminAccounts(500), tests = store.TestAccountCount() }));
+admin.MapPost("/accounts/{id}/test", (string id, AdminTestMark body, OtiumStore store) =>
+    store.SetTestAccount(id, body.Test) ? Results.NoContent() : Results.NotFound());
+
 // Problem reports: the newest first, and one in full by the reference the user quotes.
 admin.MapGet("/problem-reports", (OtiumStore store) => Results.Ok(store.ProblemReports()));
 admin.MapGet("/problem-reports/{reference}", (string reference, OtiumStore store) =>
@@ -754,5 +760,7 @@ if (custodial)
 app.Run();
 
 public sealed record AdminNote(string? Note);
+
+public sealed record AdminTestMark(bool Test);
 
 public partial class Program;

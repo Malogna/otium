@@ -51,6 +51,28 @@ public sealed class ActivityCountTests : IDisposable
         Assert.Equal((1, 0), (today.CpuMining, today.GpuMining));
     }
 
+    [Fact]
+    public void Test_accounts_add_nothing_to_the_day_totals()
+    {
+        _store.Upsert(new AccountRecord("acc1", "w1", null, null, "code1", null, null, null, null, false, null, null, Day1));
+        Assert.True(_store.SetTestAccount("acc1", true));
+        _store.Upsert(new DeviceRecord("d1", "h", "acc1", Day1, Day1));
+        _store.RecordMiningTime("d1", 3600, 0, Day1);
+        _store.RecordMiningTime("d1", 3660, 0, Day1.AddMinutes(1));
+        _store.TouchDevice("d1", Day2, TimeSpan.FromMinutes(5));
+
+        Assert.All(_store.DailyActivity(Day2, 2), d => Assert.Equal((0, 0, 0, 0), (d.Devices, d.Accounts, d.CpuMining, d.NewDevices)));
+        Assert.Equal(0, _store.DeviceCount());
+        Assert.Equal((0, 0, 0), _store.DevicesMiningSince(Day1));
+    }
+
+    [Theory]
+    [InlineData("USDT:TB2xNFAjGarYPykmt1dZQz8hJb2Rhry4wJ", "USDT:TB2xNF…y4wJ")]
+    [InlineData("4AdUndXHHZ6cfufTMvppY6JwXNouMBzSkbLYfpAV5Usx3skxNgYeYTRj5UzqtReoS44qo9mtmXCqY45DJ852K5Jv2684Rge", "XMR:4AdUnd…4Rge")]
+    [InlineData(null, null)]
+    public void Payout_addresses_are_shortened_for_the_list(string? wallet, string? shown) =>
+        Assert.Equal(shown, OtiumStore.ShortPayout(wallet));
+
     [Theory]
     [InlineData("0.1.1+3aeeb18", "0.1.1")]
     [InlineData("0.1.2-rc.1", "0.1.2-rc.1")]
