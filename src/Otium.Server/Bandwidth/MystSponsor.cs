@@ -23,6 +23,9 @@ public interface IMystWallet
     /// <summary>The wallet's address, so the operator knows where to send MYST and POL; null without a key.</summary>
     string? Address => null;
 
+    /// <summary>How much MYST <paramref name="address"/> holds, so a fee that already arrived isn't sent twice; null when unknown.</summary>
+    Task<decimal?> BalanceOfAsync(string address, CancellationToken ct) => Task.FromResult<decimal?>(null);
+
     /// <summary>The wallet's POL balance (gas for each transfer), for the admin dashboard; null when unknown.</summary>
     Task<decimal?> GetGasBalanceAsync(CancellationToken ct) => Task.FromResult<decimal?>(null);
 }
@@ -58,10 +61,40 @@ public sealed class PolygonMystWallet(IOptions<MysteriumOptions> options) : IMys
     {
         var token = Connect().Eth.ERC20.GetContractService(_options.MystTokenAddress);
         var wei = new BigInteger(decimal.Round(amountMyst * 1_000_000m)) * WeiPerMyst / 1_000_000;
-        var receipt = await token.TransferRequestAndWaitForReceiptAsync(to, wei, ct);
-        if (receipt.Status?.Value != 1)
-            throw new InvalidOperationException($"The MYST transfer {receipt.TransactionHash} failed on chain.");
-        return receipt.TransactionHash;
+        var tx = await token.TransferRequestAsync(to, wei);
+
+        // Public RPCs refuse fast polling now and then (403, October 2026): once the transfer is broadcast, a failed
+        // receipt read doesn't make it fail. Wait a while for it to be mined; after that it counts as sent (a later
+        // request for the same node finds the MYST already there).
+        var web3 = Connect();
+        var deadline = DateTimeOffset.UtcNow + ReceiptWait;
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(4), ct);
+            try
+            {
+                if (await web3.Eth.Transactions.GetTransactionReceipt.SendRequestAsync(tx) is { } receipt)
+                {
+                    if (receipt.Status?.Value != 1)
+                        throw new InvalidOperationException($"The MYST transfer {tx} failed on chain.");
+                    return tx;
+                }
+            }
+            catch (Exception e) when (e is Nethereum.JsonRpc.Client.RpcClientUnknownException or Nethereum.JsonRpc.Client.RpcResponseException or HttpRequestException)
+            {
+                // Try again in a moment.
+            }
+        }
+        return tx;
+    }
+
+    /// <summary>How long to wait for a broadcast transfer to be mined (Polygon makes a block every 2 seconds or so).</summary>
+    private static readonly TimeSpan ReceiptWait = TimeSpan.FromMinutes(2);
+
+    public async Task<decimal?> BalanceOfAsync(string address, CancellationToken ct)
+    {
+        var wei = await Connect().Eth.ERC20.GetContractService(_options.MystTokenAddress).BalanceOfQueryAsync(address);
+        return (decimal)(wei * 1_000_000 / WeiPerMyst) / 1_000_000m;
     }
 
     public async Task<decimal> GetBalanceAsync(CancellationToken ct)
@@ -113,6 +146,26 @@ public sealed partial class MystSponsorService(OtiumStore store, IMystWallet wal
             {
                 logger.LogWarning("Mysterium sponsorship budget of {Budget} MYST for the last 24 hours is used up", o.DailyBudgetMyst);
                 return Unavailable("Otium can't cover more Mysterium registrations today. Retrying tomorrow.");
+            }
+
+            // A transfer the server lost track of (its receipt couldn't be read) is already on the node's channel: record
+            // it rather than paying twice.
+            decimal? onChannel;
+            try
+            {
+                onChannel = await wallet.BalanceOfAsync(channel, ct);
+            }
+            catch (Exception e) when (e is not OperationCanceledException)
+            {
+                logger.LogWarning(e, "Reading the MYST on Mysterium channel {Channel} failed", channel);
+                return Unavailable("Otium couldn't reach the Polygon network just now. Retrying later.");
+            }
+            if (onChannel >= o.AmountMyst * 0.9m)
+            {
+                store.AddMystSponsorship(new MystSponsorshipRecord(identity, channel, session.Account.AccountId, session.Device.DeviceId, ip,
+                    o.AmountMyst, "already-on-channel", now));
+                logger.LogInformation("Mysterium channel {Channel} already holds {Amount} MYST; recorded without sending again", channel, onChannel);
+                return new MystSponsorResult(MystSponsorStatuses.AlreadySent, null, o.AmountMyst);
             }
 
             string tx;
