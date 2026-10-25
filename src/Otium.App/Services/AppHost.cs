@@ -870,8 +870,11 @@ public sealed class AppHost : IAsyncDisposable
     /// <param name="shareEarnings">The user answered yes to "Share analytics" (see <see cref="SetShareEarningsStats"/>).</param>
     /// <param name="keepMinerReady">The user agreed to keep the processor miner paused, not stopped, when they come back.</param>
     /// <param name="shareInternet">The user agreed to internet sharing on the welcome screen (Quick start, or ticked).</param>
+    /// <param name="shareInternet">Share through Proxybase, agreed on the welcome screen.</param>
+    /// <param name="shareMysterium">Also share through Mysterium, agreed on the same screen.</param>
+    /// <param name="mysteriumAddress">The Polygon (0x…) address Mysterium pays, when the payout address isn't an 0x address.</param>
     public async Task StartFirstTimeAsync(string? inviteCode, string? payoutTarget = null, bool shareEarnings = false, bool keepMinerReady = false,
-        bool shareInternet = false)
+        bool shareInternet = false, bool shareMysterium = false, string? mysteriumAddress = null)
     {
         SetShareEarningsStats(shareEarnings);
         Settings.KeepMinerReadyWhenBack = keepMinerReady;
@@ -909,6 +912,27 @@ public sealed class AppHost : IAsyncDisposable
         {
             // Not possible yet (e.g. no address it can pay): remember the agreement so the overview can finish it.
             Settings.BandwidthPromptDismissed = false;
+        }
+        if (shareMysterium)
+        {
+            if (CryptoAddresses.TryValidate(AddressFormat.Evm, mysteriumAddress, out _))
+                Settings.MysteriumPayoutAddress = mysteriumAddress!.Trim().ToLowerInvariant();
+            if (MysteriumOffered && Mysterium?.Provider.UnavailableReason is null)
+            {
+                try
+                {
+                    await SetMysteriumSharingAsync(true);
+                }
+                catch (InvalidOperationException)
+                {
+                    // Not fatal: the overview offers it again.
+                }
+            }
+            else
+            {
+                Settings.MysteriumPromptDismissed = false; // the overview finishes it (e.g. once the server sponsors it)
+                SaveSettings();
+            }
         }
 
         // Measure this PC right away (the user is watching), so the overview shows its own numbers, not a table's.

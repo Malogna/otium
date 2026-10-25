@@ -1,0 +1,66 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Otium.App.ViewModels"
+             x:Class="Otium.App.Views.SharingSetupView"
+             x:DataType="vm:SharingSetupViewModel">
+
+    <!-- Turning internet sharing on: every network this computer can use, each ticked, in one step. -->
+    <StackPanel Spacing="12">
+        <Border Classes="tile" IsVisible="{Binding OffersProxybase}">
+            <StackPanel Spacing="6">
+                <CheckBox IsChecked="{Binding UseProxybase}" AutomationProperties.Name="Share through Proxybase">
+                    <StackPanel Spacing="2">
+                        <TextBlock FontWeight="SemiBold" Text="Proxybase" />
+                        <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap" Text="{Binding ProxybaseLine}" />
+                    </StackPanel>
+                </CheckBox>
+                <StackPanel Orientation="Horizontal" Spacing="16" Margin="28,0,0,0">
+                    <ToggleButton x:Name="ProxybaseHow" Classes="link" Content="How it works" />
+                    <Button Classes="link" Command="{Binding Proxybase.OpenTermsCommand}" AutomationProperties.Name="Read Proxybase's terms">
+                        <TextBlock Text="Proxybase's terms" FontSize="12.5" Foreground="{DynamicResource GoodBrush}" />
+                    </Button>
+                </StackPanel>
+                <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap" Margin="28,0,0,0" Text="{Binding Proxybase.ConsentText}"
+                           IsVisible="{Binding #ProxybaseHow.IsChecked}" />
+            </StackPanel>
+        </Border>
+
+        <Border Classes="tile" IsVisible="{Binding OffersMysterium}">
+            <StackPanel Spacing="6">
+                <CheckBox IsChecked="{Binding UseMysterium}" AutomationProperties.Name="Share through Mysterium">
+                    <StackPanel Spacing="2">
+                        <TextBlock FontWeight="SemiBold" Text="Mysterium" />
+                        <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap" Text="{Binding MysteriumLine}" />
+                    </StackPanel>
+                </CheckBox>
+                <StackPanel Orientation="Horizontal" Spacing="16" Margin="28,0,0,0">
+                    <ToggleButton x:Name="MysteriumHow" Classes="link" Content="How it works" />
+                    <Button Classes="link" Command="{Binding Mysterium.OpenTermsCommand}" AutomationProperties.Name="Read Mysterium's terms">
+                        <TextBlock Text="Mysterium's terms" FontSize="12.5" Foreground="{DynamicResource GoodBrush}" />
+                    </Button>
+                </StackPanel>
+                <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap" Margin="28,0,0,0" Text="{Binding Mysterium.ConsentText}"
+                           IsVisible="{Binding #MysteriumHow.IsChecked}" />
+            </StackPanel>
+        </Border>
+
+        <StackPanel Spacing="4" IsVisible="{Binding NeedsPolygonAddress}">
+            <TextBlock Classes="label" Text="Your 0x address on Polygon, for Mysterium's MYST" />
+            <TextBox Text="{Binding PolygonAddress}" PlaceholderText="0x…" FontFamily="Consolas, Menlo, monospace"
+                     AutomationProperties.Name="Your Polygon address" />
+            <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
+                       Text="Your payout coin isn't on an 0x network, so Mysterium needs the address of a wallet you hold the keys to (MetaMask, Rabby, Trust Wallet)." />
+            <TextBlock Classes="error" TextWrapping="Wrap" Text="{Binding PolygonAddressError}"
+                       IsVisible="{Binding PolygonAddressError, Converter={x:Static ObjectConverters.IsNotNull}}" />
+        </StackPanel>
+
+        <TextBlock Classes="error" TextWrapping="Wrap" Text="{Binding Error}"
+                   IsVisible="{Binding Error, Converter={x:Static ObjectConverters.IsNotNull}}" />
+        <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
+                   Text="Turning a network on means you agree to its terms. Each one can be switched off on its own in Advanced settings." />
+        <StackPanel Orientation="Horizontal" Spacing="10">
+            <Button Classes="accent" Content="I agree, turn it on" Command="{Binding TurnOnCommand}" IsEnabled="{Binding CanTurnOn}" />
+            <Button Content="Not now" Command="{Binding NotNowCommand}" IsVisible="{Binding CanDismiss}" />
+        </StackPanel>
+    </StackPanel>
+</UserControl>

@@ -128,7 +128,7 @@
                 <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" IsVisible="{Binding ShowSharing}">
                     <StackPanel Spacing="2">
                         <StackPanel Orientation="Horizontal" Spacing="8">
-                            <TextBlock Text="Internet connection" FontWeight="SemiBold" VerticalAlignment="Center" />
+                            <TextBlock Text="Internet: Proxybase" FontWeight="SemiBold" VerticalAlignment="Center" />
                             <Border Classes="pill" Padding="8,1"
                                     Classes.earning="{Binding SharingIsEarning}"
                                     Classes.paused="{Binding SharingIsPaused}"
@@ -136,7 +136,7 @@
                                 <TextBlock Text="{Binding SharingLabel}" FontSize="12" />
                             </Border>
                         </StackPanel>
-                        <TextBlock Classes="muted" FontSize="12" Text="Unused bandwidth via Proxybase · paid to your wallet in your coin" />
+                        <TextBlock Classes="muted" FontSize="12" Text="Unused bandwidth · paid to your wallet in your coin" />
                     </StackPanel>
                     <StackPanel Grid.Column="1" HorizontalAlignment="Right" Spacing="2">
                         <TextBlock HorizontalAlignment="Right" FontWeight="SemiBold" Text="{Binding SharingPerDay}" />
@@ -148,7 +148,7 @@
                 <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" IsVisible="{Binding ShowMysterium}">
                     <StackPanel Spacing="2">
                         <StackPanel Orientation="Horizontal" Spacing="8">
-                            <TextBlock Text="Internet connection" FontWeight="SemiBold" VerticalAlignment="Center" />
+                            <TextBlock Text="Internet: Mysterium" FontWeight="SemiBold" VerticalAlignment="Center" />
                             <Border Classes="pill" Padding="8,1"
                                     Classes.earning="{Binding MysteriumIsEarning}"
                                     Classes.paused="{Binding MysteriumIsPaused}"
@@ -156,7 +156,7 @@
                                 <TextBlock Text="{Binding MysteriumLabel}" FontSize="12" />
                             </Border>
                         </StackPanel>
-                        <TextBlock Classes="muted" FontSize="12" Text="Unused bandwidth via Mysterium · paid in MYST to your Polygon address" />
+                        <TextBlock Classes="muted" FontSize="12" Text="Unused bandwidth · paid in MYST to your Polygon address" />
                     </StackPanel>
                     <StackPanel Grid.Column="1" HorizontalAlignment="Right" Spacing="2">
                         <TextBlock HorizontalAlignment="Right" FontWeight="SemiBold" Text="{Binding MysteriumPerDay}" />

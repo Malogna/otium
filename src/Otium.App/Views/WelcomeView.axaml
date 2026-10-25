@@ -245,29 +245,97 @@
                             </ItemsControl>
                             <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap"
                                        Text="Pressing Start earning means you agree to all of these. Turn any of them off in Settings at any time, or go Back and choose Customize." />
-                            <CheckBox IsChecked="{Binding ShareInternet}" IsVisible="{Binding CanShareInternet}" Margin="0,6,0,0"
+                            <CheckBox IsChecked="{Binding ShareInternet}" IsVisible="{Binding CanShareAny}" Margin="0,6,0,0"
                                       AutomationProperties.Name="Also share my unused internet">
                                 <StackPanel Spacing="2">
                                     <TextBlock FontWeight="SemiBold" Text="Also share my unused internet" TextWrapping="Wrap" />
                                     <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap" Text="{Binding SharingChoiceText}" />
                                 </StackPanel>
                             </CheckBox>
-                            <Button Classes="link" HorizontalAlignment="Left" IsVisible="{Binding CanShareInternet}" Command="{Binding OpenProxybaseTermsCommand}"
-                                    AutomationProperties.Name="Read Proxybase's terms">
-                                <TextBlock Text="Read Proxybase's terms" FontSize="12.5" Foreground="{DynamicResource GoodBrush}" />
-                            </Button>
+                            <!-- The networks the one tick turns on, each ticked unless the user unticks it -->
+                            <StackPanel Spacing="10" Margin="28,0,0,0" IsVisible="{Binding ShareInternet}">
+                                <StackPanel Spacing="2" IsVisible="{Binding CanShareInternet}">
+                                    <CheckBox IsChecked="{Binding ShareProxybase}" AutomationProperties.Name="Share through Proxybase">
+                                        <StackPanel Spacing="2">
+                                            <TextBlock FontWeight="SemiBold" Text="Proxybase" />
+                                            <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap" Text="{Binding ProxybaseChoiceText}" />
+                                        </StackPanel>
+                                    </CheckBox>
+                                    <Button Classes="link" HorizontalAlignment="Left" Margin="28,0,0,0" Command="{Binding OpenProxybaseTermsCommand}"
+                                            AutomationProperties.Name="Read Proxybase's terms">
+                                        <TextBlock Text="Proxybase's terms" FontSize="12.5" Foreground="{DynamicResource GoodBrush}" />
+                                    </Button>
+                                </StackPanel>
+                                <StackPanel Spacing="2" IsVisible="{Binding CanShareMysterium}">
+                                    <CheckBox IsChecked="{Binding ShareMysterium}" AutomationProperties.Name="Share through Mysterium">
+                                        <StackPanel Spacing="2">
+                                            <TextBlock FontWeight="SemiBold" Text="Mysterium" />
+                                            <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap" Text="{Binding MysteriumChoiceText}" />
+                                        </StackPanel>
+                                    </CheckBox>
+                                    <Button Classes="link" HorizontalAlignment="Left" Margin="28,0,0,0" Command="{Binding OpenMysteriumTermsCommand}"
+                                            AutomationProperties.Name="Read Mysterium's terms">
+                                        <TextBlock Text="Mysterium's terms" FontSize="12.5" Foreground="{DynamicResource GoodBrush}" />
+                                    </Button>
+                                </StackPanel>
+                                <StackPanel Spacing="4" IsVisible="{Binding NeedsPolygonAddress}">
+                                    <TextBlock Classes="label" Text="Your 0x address on Polygon, for Mysterium's MYST" />
+                                    <TextBox Text="{Binding PolygonAddress}" PlaceholderText="0x…" FontFamily="Consolas, Menlo, monospace"
+                                             AutomationProperties.Name="Your Polygon address" />
+                                    <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
+                                               Text="Your payout coin isn't on an 0x network, so Mysterium needs the address of a wallet you hold the keys to (MetaMask, Rabby, Trust Wallet). Or untick Mysterium." />
+                                    <TextBlock Classes="error" TextWrapping="Wrap" Text="{Binding PolygonAddressError}"
+                                               IsVisible="{Binding PolygonAddressError, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                                </StackPanel>
+                            </StackPanel>
                         </StackPanel>
                     </Border>
 
                     <!-- Customize: the choices, each with its own explanation -->
                     <Border Classes="card delay2" Padding="16" IsVisible="{Binding IsCustom}">
                         <StackPanel Spacing="14">
-                            <CheckBox IsChecked="{Binding ShareInternet}" IsVisible="{Binding CanShareInternet}" AutomationProperties.Name="Share my unused internet too">
+                            <CheckBox IsChecked="{Binding ShareInternet}" IsVisible="{Binding CanShareAny}" AutomationProperties.Name="Share my unused internet too">
                                 <StackPanel Spacing="2">
                                     <TextBlock FontWeight="SemiBold" Text="Share my unused internet too" TextWrapping="Wrap" />
                                     <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap" Text="{Binding SharingChoiceText}" />
                                 </StackPanel>
                             </CheckBox>
+                            <!-- The networks the one tick turns on, each ticked unless the user unticks it -->
+                            <StackPanel Spacing="10" Margin="28,0,0,0" IsVisible="{Binding ShareInternet}">
+                                <StackPanel Spacing="2" IsVisible="{Binding CanShareInternet}">
+                                    <CheckBox IsChecked="{Binding ShareProxybase}" AutomationProperties.Name="Share through Proxybase">
+                                        <StackPanel Spacing="2">
+                                            <TextBlock FontWeight="SemiBold" Text="Proxybase" />
+                                            <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap" Text="{Binding ProxybaseChoiceText}" />
+                                        </StackPanel>
+                                    </CheckBox>
+                                    <Button Classes="link" HorizontalAlignment="Left" Margin="28,0,0,0" Command="{Binding OpenProxybaseTermsCommand}"
+                                            AutomationProperties.Name="Read Proxybase's terms">
+                                        <TextBlock Text="Proxybase's terms" FontSize="12.5" Foreground="{DynamicResource GoodBrush}" />
+                                    </Button>
+                                </StackPanel>
+                                <StackPanel Spacing="2" IsVisible="{Binding CanShareMysterium}">
+                                    <CheckBox IsChecked="{Binding ShareMysterium}" AutomationProperties.Name="Share through Mysterium">
+                                        <StackPanel Spacing="2">
+                                            <TextBlock FontWeight="SemiBold" Text="Mysterium" />
+                                            <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap" Text="{Binding MysteriumChoiceText}" />
+                                        </StackPanel>
+                                    </CheckBox>
+                                    <Button Classes="link" HorizontalAlignment="Left" Margin="28,0,0,0" Command="{Binding OpenMysteriumTermsCommand}"
+                                            AutomationProperties.Name="Read Mysterium's terms">
+                                        <TextBlock Text="Mysterium's terms" FontSize="12.5" Foreground="{DynamicResource GoodBrush}" />
+                                    </Button>
+                                </StackPanel>
+                                <StackPanel Spacing="4" IsVisible="{Binding NeedsPolygonAddress}">
+                                    <TextBlock Classes="label" Text="Your 0x address on Polygon, for Mysterium's MYST" />
+                                    <TextBox Text="{Binding PolygonAddress}" PlaceholderText="0x…" FontFamily="Consolas, Menlo, monospace"
+                                             AutomationProperties.Name="Your Polygon address" />
+                                    <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
+                                               Text="Your payout coin isn't on an 0x network, so Mysterium needs the address of a wallet you hold the keys to (MetaMask, Rabby, Trust Wallet). Or untick Mysterium." />
+                                    <TextBlock Classes="error" TextWrapping="Wrap" Text="{Binding PolygonAddressError}"
+                                               IsVisible="{Binding PolygonAddressError, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                                </StackPanel>
+                            </StackPanel>
                             <CheckBox IsChecked="{Binding KeepMinerReady}" AutomationProperties.Name="Keep the processor miner ready when I come back">
                                 <StackPanel Spacing="2">
                                     <TextBlock FontWeight="SemiBold" Text="Keep the processor miner ready when I come back" TextWrapping="Wrap" />
