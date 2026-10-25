@@ -81,17 +81,22 @@ public sealed class WindowsMystSupervisor : IMystSupervisor
     public static string ProtectedDirectory =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Otium", "Mysterium");
 
-    public bool IsInstalled => ServiceBinaryPath() is { } binary && IsUnder(binary, ProtectedDirectory);
+    /// <summary>Installed from the protected folder, with WireGuard's Wintun driver beside it (earlier installs lacked it).</summary>
+    public bool IsInstalled => ServiceBinaryPath() is { } binary && IsUnder(binary, ProtectedDirectory)
+                               && File.Exists(Path.Combine(ProtectedDirectory, MystRelease.WintunDll));
 
     /// <summary>
-    /// The elevated command: stop an earlier service (it may hold the file), copy the supervisor into the protected
-    /// folder, and install the service from there for this user.
+    /// The elevated command: stop an earlier service (it may hold the files), copy the supervisor and WireGuard's Wintun
+    /// driver (from beside the supervisor) into the protected folder, and install the service from there for this user.
     /// </summary>
     internal static string InstallCommand(string supervisorPath, string protectedDirectory, string user)
     {
-        var target = protectedDirectory.TrimEnd('\\') + @"\myst_supervisor.exe"; // Windows paths, whatever the test machine
-        return $"/d /s /c \"net stop {ServiceName} >nul 2>&1 & (if not exist \"{protectedDirectory}\" mkdir \"{protectedDirectory}\")"
-               + $" && copy /y \"{supervisorPath}\" \"{target}\" >nul && \"{target}\" -install -uid \"{user}\"\"";
+        var folder = protectedDirectory.TrimEnd('\\'); // Windows paths, whatever the test machine
+        var target = folder + @"\myst_supervisor.exe";
+        var wintun = supervisorPath[..(supervisorPath.LastIndexOfAny(['\\', '/']) + 1)] + MystRelease.WintunDll;
+        return $"/d /s /c \"net stop {ServiceName} >nul 2>&1 & (if not exist \"{folder}\" mkdir \"{folder}\")"
+               + $" && copy /y \"{supervisorPath}\" \"{target}\" >nul && copy /y \"{wintun}\" \"{folder}\\{MystRelease.WintunDll}\" >nul"
+               + $" && \"{target}\" -install -uid \"{user}\"\"";
     }
 
     public async Task InstallAsync(string supervisorPath, CancellationToken ct)
