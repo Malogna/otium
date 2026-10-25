@@ -45,6 +45,35 @@ public class MysteriumPlatformTests
     }
 
     [Fact]
+    public void On_windows_wintun_is_copied_next_to_the_supervisor_too()
+    {
+        // Mysterium's node zip has no wintun.dll: without it every buyer session failed ("Error loading wintun.dll").
+        var command = WindowsMystSupervisor.InstallCommand(
+            @"C:\Users\pat\AppData\Local\Otium\engines\myst-1.39.7\myst_supervisor.exe", @"C:\Program Files\Otium\Mysterium", "pat");
+
+        Assert.Contains(@"copy /y ""C:\Users\pat\AppData\Local\Otium\engines\myst-1.39.7\wintun.dll"" ""C:\Program Files\Otium\Mysterium\wintun.dll""", command);
+        Assert.True(command.IndexOf("wintun.dll", StringComparison.Ordinal) < command.IndexOf("-install", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Wintun_is_pinned_to_wireguards_release()
+    {
+        var w = MystRelease.Wintun;
+        Assert.Equal("https://www.wintun.net/builds/wintun-0.14.1.zip", w.DownloadUrl.ToString());
+        Assert.Equal("07c256185d6ee3652e09fa55c0b673e2624b565e02c4b9091c79ca7d2f24ef51", w.Sha256);
+        Assert.Equal("e5da8447dc2c320edc0fc52fa01885c103de8c118481f683643cacc3220dafce", w.DllSha256);
+        Assert.EndsWith(Path.Combine("wintun", "bin", "amd64", "wintun.dll"), WintunAsset.AmdDll("x"));
+    }
+
+    [Theory]
+    [InlineData(@"C:\Windows\System32;C:\Program Files\PowerShell\7\", @"C:\Windows\System32;C:\Program Files\PowerShell\7\;C:\Windows\System32\WindowsPowerShell\v1.0")]
+    [InlineData(@"C:\Windows\System32\WindowsPowerShell\v1.0\;C:\Windows", @"C:\Windows\System32\WindowsPowerShell\v1.0\;C:\Windows")] // already there
+    [InlineData(@"C:\Windows;", @"C:\Windows;C:\Windows\System32\WindowsPowerShell\v1.0")]
+    [InlineData(null, @"C:\Windows\System32\WindowsPowerShell\v1.0")]
+    public void The_node_finds_windows_powershell(string? path, string expected) =>
+        Assert.Equal(expected, MysteriumBandwidthProvider.WithWindowsPowerShell(path, @"C:\Windows\System32\WindowsPowerShell\v1.0"));
+
+    [Fact]
     public void On_linux_the_supervisor_is_copied_to_a_root_owned_folder_through_pkexec()
     {
         var script = LinuxMystSupervisor.InstallScript("/home/pat/.local/share/Otium/engines/myst-1.39.7/myst_supervisor", 1000);

@@ -69,6 +69,9 @@ public sealed class MysteriumBandwidthProvider : IBandwidthProvider
     private static readonly TimeSpan RegisterRetry = TimeSpan.FromSeconds(30);
 
     private readonly EngineInstaller _installer;
+
+    /// <summary>Windows only: WireGuard's Wintun driver, copied next to the node and its supervisor.</summary>
+    private readonly EngineInstaller? _wintun;
     private readonly string _dataDir;
     private readonly Func<string?> _beneficiary;
     private readonly Func<MystSponsorRequest, CancellationToken, Task<MystSponsorResult>> _sponsor;
@@ -102,6 +105,8 @@ public sealed class MysteriumBandwidthProvider : IBandwidthProvider
     {
         var engineDir = Path.Combine(enginesRoot, $"myst-{MystRelease.Version}");
         _installer = new EngineInstaller(http, engineDir, MystRelease.BinaryName);
+        if (OperatingSystem.IsWindows())
+            _wintun = new EngineInstaller(http, Path.Combine(enginesRoot, $"wintun-{MystRelease.Wintun.Version}"), MystRelease.WintunDll);
         // Outside the versioned folder, so the node's identity (its keystore) survives an upgrade.
         _dataDir = Path.Combine(enginesRoot, "myst-data");
         _beneficiary = beneficiary;
@@ -157,12 +162,49 @@ public sealed class MysteriumBandwidthProvider : IBandwidthProvider
         : _beneficiary() is null ? "Add a Polygon address (0x…) for internet sharing payouts."
         : null;
 
-    public bool IsInstalled => _installer.IsInstalled;
+    public bool IsInstalled => _installer.IsInstalled && (_wintun is null || WintunNextToNode() is not null);
 
-    public Task InstallAsync(IProgress<InstallProgress>? progress, CancellationToken ct) =>
-        _asset is null
-            ? throw new PlatformNotSupportedException("Mysterium has no node for this computer.")
-            : _installer.InstallAsync($"Mysterium node {MystRelease.Version}", _asset.DownloadUrl, _asset.FileName, _asset.Sha256, progress, ct);
+    public async Task InstallAsync(IProgress<InstallProgress>? progress, CancellationToken ct)
+    {
+        if (_asset is null)
+            throw new PlatformNotSupportedException("Mysterium has no node for this computer.");
+        await _installer.InstallAsync($"Mysterium node {MystRelease.Version}", _asset.DownloadUrl, _asset.FileName, _asset.Sha256, progress, ct);
+        if (_wintun is null)
+            return;
+
+        // The supervisor installs it from next to its own file (see WindowsMystSupervisor), so put it beside the node.
+        var w = MystRelease.Wintun;
+        await _wintun.InstallAsync($"WireGuard's Wintun driver {w.Version}", w.DownloadUrl, w.FileName, w.Sha256, progress, ct);
+        var source = WintunAsset.AmdDll(_wintun.EngineDirectory);
+        if (!HasHash(source, w.DllSha256))
+            throw new InvalidOperationException("WireGuard's Wintun driver didn't match its checksum. Retrying later.");
+        File.Copy(source, Path.Combine(Path.GetDirectoryName(_installer.FindBinary()!)!, MystRelease.WintunDll), overwrite: true);
+    }
+
+    /// <summary>The checked wintun.dll next to the node, or null.</summary>
+    private string? WintunNextToNode() =>
+        _installer.FindBinary() is { } node && Path.Combine(Path.GetDirectoryName(node)!, MystRelease.WintunDll) is var dll
+                                            && HasHash(dll, MystRelease.Wintun.DllSha256)
+            ? dll
+            : null;
+
+    private static bool HasHash(string path, string sha256)
+    {
+        if (!File.Exists(path))
+            return false;
+        using var file = File.OpenRead(path);
+        return Convert.ToHexStringLower(SHA256.HashData(file)) == sha256;
+    }
+
+    /// <summary>
+    /// The node's PATH, with Windows PowerShell added when it's missing: the node runs <c>powershell</c> to set up
+    /// connection sharing for its tunnels, and some PCs' PATH only has PowerShell 7 ("pwsh").
+    /// </summary>
+    internal static string WithWindowsPowerShell(string? path, string windowsPowerShellDir) =>
+        (path ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries)
+            .Any(p => string.Equals(p.TrimEnd('\\'), windowsPowerShellDir.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
+            ? path ?? ""
+            : string.IsNullOrEmpty(path) ? windowsPowerShellDir : $"{path.TrimEnd(';')};{windowsPowerShellDir}";
 
     public async Task StartAsync(BandwidthRunOptions options, CancellationToken ct)
     {
@@ -203,6 +245,12 @@ public sealed class MysteriumBandwidthProvider : IBandwidthProvider
             };
             foreach (var arg in DaemonArguments(_dataDir, port, password))
                 start.ArgumentList.Add(arg);
+            if (OperatingSystem.IsWindows())
+            {
+                var windowsPowerShell = Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0");
+                if (Directory.Exists(windowsPowerShell))
+                    start.Environment["PATH"] = WithWindowsPowerShell(Environment.GetEnvironmentVariable("PATH"), windowsPowerShell);
+            }
             _process = Process.Start(start) ?? throw new InvalidOperationException("Could not start the Mysterium node.");
             MinerLifetime.Adopt(_process); // dies with Otium, even if Otium crashes
             // Drain its log so a full pipe never blocks it.
