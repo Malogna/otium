@@ -35,7 +35,15 @@ public sealed class PolygonMystWallet(IOptions<MysteriumOptions> options) : IMys
 
     public bool IsConfigured => !string.IsNullOrWhiteSpace(_options.SponsorPrivateKey) && !string.IsNullOrWhiteSpace(_options.PolygonRpcUrl);
 
-    private Web3 Connect() => new(new Account(_options.SponsorPrivateKey!.Trim(), _options.ChainId), _options.PolygonRpcUrl);
+    private Web3 Connect()
+    {
+        var web3 = new Web3(new Account(_options.SponsorPrivateKey!.Trim(), _options.ChainId), _options.PolygonRpcUrl);
+        // EIP-1559 fee suggestions read eth_feeHistory at exact block numbers, which a load-balanced public RPC can't
+        // always serve yet ("request beyond head block", October 2026): a legacy transaction priced from one
+        // eth_gasPrice call needs no block number, and Polygon accepts it.
+        web3.TransactionManager.UseLegacyAsDefault = true;
+        return web3;
+    }
 
     public string? Address => IsConfigured ? new Account(_options.SponsorPrivateKey!.Trim(), _options.ChainId).Address : null;
 
