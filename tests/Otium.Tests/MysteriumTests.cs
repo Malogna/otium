@@ -190,6 +190,20 @@ public sealed class MysteriumSponsorTests : IDisposable
     }
 
     [Fact]
+    public async Task A_fee_that_already_reached_the_channel_isnt_sent_twice()
+    {
+        // October 2026: the transfer went through but the RPC refused the receipt read, so the server called it a
+        // failure. When the app asked again, the MYST was already on the node's channel.
+        var (device, secret, _) = await Register();
+        _wallet.Channels[Channel] = 0.15m;
+
+        var result = await Sponsor(device, secret, 1);
+        Assert.Equal(MystSponsorStatuses.AlreadySent, result.Status);
+        Assert.Empty(_wallet.Sent);
+        Assert.Equal(MystSponsorStatuses.AlreadySent, (await Sponsor(device, secret, 1)).Status); // recorded once
+    }
+
+    [Fact]
     public async Task The_daily_budget_caps_spending()
     {
         for (var n = 1; n <= 3; n++)
@@ -264,5 +278,11 @@ public sealed class MysteriumSponsorTests : IDisposable
         }
 
         public Task<decimal> GetBalanceAsync(CancellationToken ct) => Task.FromResult(10m);
+
+        /// <summary>MYST already on channel addresses (lower case).</summary>
+        public Dictionary<string, decimal> Channels { get; } = [];
+
+        public Task<decimal?> BalanceOfAsync(string address, CancellationToken ct) =>
+            Task.FromResult<decimal?>(Channels.GetValueOrDefault(address.ToLowerInvariant()));
     }
 }
