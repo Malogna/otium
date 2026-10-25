@@ -44,6 +44,7 @@ public partial class WelcomeViewModel : ViewModelBase
             StartCommand.NotifyCanExecuteChanged();
             OnPropertyChanged(nameof(PayoutLine));
             OnPropertyChanged(nameof(FeeLine));
+            OnPropertyChanged(nameof(NeedsPolygonAddress));
         };
         _ = LoadEstimateAsync();
         _ = FillInviteFromLinkAsync();
@@ -160,8 +161,52 @@ public partial class WelcomeViewModel : ViewModelBase
 
     public bool IsCustom => !IsQuick;
 
-    /// <summary>Internet sharing can run on this computer (Proxybase has a client for it).</summary>
+    /// <summary>Proxybase has a client for this computer.</summary>
     public bool CanShareInternet => _host.UsesProxybase ? Otium.Providers.Proxybase.ProxybaseRelease.ForCurrentPlatform() is not null : false;
+
+    /// <summary>Mysterium has a node for this computer (whether the server pays its setup is known only after Start).</summary>
+    public bool CanShareMysterium => _host.Mysterium is not null && Otium.Providers.Mysterium.MystRelease.ForCurrentPlatform() is not null;
+
+    /// <summary>Some network can share this computer's internet: the one tick offers them all.</summary>
+    public bool CanShareAny => CanShareInternet || CanShareMysterium;
+
+    /// <summary>Share through Proxybase, under the one tick (on unless the user unticks it).</summary>
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(StartCommand))]
+    public partial bool ShareProxybase { get; set; } = true;
+
+    /// <summary>Share through Mysterium too, under the one tick (on unless the user unticks it).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(NeedsPolygonAddress))]
+    [NotifyCanExecuteChangedFor(nameof(StartCommand))]
+    public partial bool ShareMysterium { get; set; } = true;
+
+    /// <summary>The Polygon (0x…) address Mysterium pays, asked for only when the payout coin isn't on an 0x network.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(PolygonAddressError))]
+    [NotifyCanExecuteChangedFor(nameof(StartCommand))]
+    public partial string PolygonAddress { get; set; } = "";
+
+    public bool NeedsPolygonAddress => ShareInternet && ShareMysterium && CanShareMysterium
+                                       && Payout.Target is not { Coin.Format: Otium.Core.Wallets.AddressFormat.Evm };
+
+    public string? PolygonAddressError =>
+        NeedsPolygonAddress && PolygonAddress.Length > 0 && !Otium.Core.Wallets.CryptoAddresses.TryValidate(Otium.Core.Wallets.AddressFormat.Evm, PolygonAddress, out var error)
+            ? error ?? "That isn't a valid 0x address. Copy it from your wallet."
+            : null;
+
+    private bool PolygonAddressOk => !NeedsPolygonAddress
+                                     || Otium.Core.Wallets.CryptoAddresses.TryValidate(Otium.Core.Wallets.AddressFormat.Evm, PolygonAddress, out _);
+
+    public string ProxybaseChoiceText =>
+        "AI agents and businesses that collect public web pages. Paid to your address in your coin, like mining. Ticking it means you agree to Proxybase's terms.";
+
+    public string MysteriumChoiceText =>
+        "Business customers only. Paid in MYST to your own Polygon address; Otium takes nothing and pays the setup. " +
+        "Asks for administrator permission once. Ticking it means you agree to Mysterium's terms.";
+
+    [RelayCommand]
+    private void OpenMysteriumTerms() => Launch.Open(MysteriumSharingViewModel.TermsUrl);
 
     /// <summary>Mining on, then straight to where to be paid. Internet sharing waits for its own tick on the summary.</summary>
     [RelayCommand]
@@ -196,15 +241,20 @@ public partial class WelcomeViewModel : ViewModelBase
         _host.SaveSettings();
     }
 
-    /// <summary>Share unused internet through Proxybase: always the user's own tick, in Quick start and Customize.</summary>
-    [ObservableProperty] public partial bool ShareInternet { get; set; }
+    /// <summary>
+    /// Share unused internet: always the user's own tick, in Quick start and Customize. It turns on every network ticked
+    /// below it (all of them unless the user unticks one).
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(NeedsPolygonAddress))]
+    [NotifyCanExecuteChangedFor(nameof(StartCommand))]
+    public partial bool ShareInternet { get; set; }
 
     /// <summary>What ticking internet sharing means, in both setups.</summary>
     public string SharingChoiceText =>
-        "Proxybase's customers, mostly AI agents and businesses collecting public web pages, use some of your unused internet " +
-        "connection. Websites they visit see your internet address. Otium can't see or control this traffic, and if someone " +
-        "misuses it, it shows your address; some internet providers don't allow sharing a connection. It's paid to your " +
-        "address in your coin, like mining. Ticking it means you agree to Proxybase's terms.";
+        "Businesses and AI agents use some of your unused internet connection through the networks below. Websites they " +
+        "visit see your internet address. Otium can't see or control this traffic, and if someone misuses it, it shows " +
+        "your address; some internet providers don't allow sharing a connection.";
 
     /// <summary>What Quick start turns on, one line each, so the user sees it all before pressing Start.</summary>
     public IReadOnlyList<string> QuickList
@@ -410,13 +460,16 @@ public partial class WelcomeViewModel : ViewModelBase
         Step = 1;
     }
 
-    private bool CanStart() => CanBegin && !IsStarting && ShareEarnings is not null && InviteError is null && Payout.IsValid && (UseCpu || (HasGpu && UseGpu));
+    private bool CanStart() => CanBegin && !IsStarting && ShareEarnings is not null && InviteError is null && Payout.IsValid && (UseCpu || (HasGpu && UseGpu))
+                               && PolygonAddressOk;
 
     [RelayCommand(CanExecute = nameof(CanStart))]
     private async Task Start()
     {
         IsStarting = true;
         _started(); // show the home screen right away; it reports progress while the account connects
-        await _host.StartFirstTimeAsync(InviteCode, Payout.Target?.ToString(), ShareEarnings == true, KeepMinerReady, ShareInternet && CanShareInternet);
+        await _host.StartFirstTimeAsync(InviteCode, Payout.Target?.ToString(), ShareEarnings == true, KeepMinerReady,
+            ShareInternet && ShareProxybase && CanShareInternet, ShareInternet && ShareMysterium && CanShareMysterium,
+            NeedsPolygonAddress ? PolygonAddress : null);
     }
 }

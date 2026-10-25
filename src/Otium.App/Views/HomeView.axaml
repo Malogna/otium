@@ -329,7 +329,8 @@
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate x:DataType="vm:ActivityRow">
                                     <Border Classes="tile">
-                                        <Grid ColumnDefinitions="Auto,*,Auto">
+                                      <StackPanel Spacing="10">
+                                        <Grid ColumnDefinitions="Auto,*,Auto,Auto">
                                             <Panel>
                                                 <Border Classes="iconBadge" Background="{DynamicResource CardBackground}">
                                                     <Path Classes="icon" Data="{Binding Icon}" />
@@ -347,7 +348,34 @@
                                                 <TextBlock HorizontalAlignment="Right" FontWeight="SemiBold" Text="{Binding PerDay}" />
                                                 <TextBlock HorizontalAlignment="Right" Classes="muted" FontSize="12" Text="{Binding Speed}" />
                                             </StackPanel>
+                                            <ToggleButton Grid.Column="3" Classes="link" Margin="10,0,0,0" VerticalAlignment="Center"
+                                                          IsVisible="{Binding HasProviders}" IsChecked="{Binding IsExpanded}"
+                                                          AutomationProperties.Name="Show each network" ToolTip.Tip="Show each network">
+                                                <Panel>
+                                                    <Path Classes="icon" Data="{StaticResource IconChevronDown}" Width="16" Height="16" IsVisible="{Binding !IsExpanded}" />
+                                                    <Path Classes="icon" Data="{StaticResource IconChevronUp}" Width="16" Height="16" IsVisible="{Binding IsExpanded}" />
+                                                </Panel>
+                                            </ToggleButton>
                                         </Grid>
+                                        <!-- The networks the internet connection shares through, one line each -->
+                                        <ItemsControl ItemsSource="{Binding Providers}" IsVisible="{Binding IsExpanded}" Margin="54,0,0,0">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="vm:ProviderLine">
+                                                    <Grid ColumnDefinitions="Auto,*,Auto">
+                                                        <Ellipse Width="8" Height="8" VerticalAlignment="Top" Margin="0,6,10,0" Classes="liveDot" Classes.on="{Binding IsActive}" />
+                                                        <StackPanel Grid.Column="1" Spacing="1">
+                                                            <TextBlock FontSize="13" FontWeight="SemiBold" Text="{Binding Name}" />
+                                                            <TextBlock Classes="muted" FontSize="12" Text="{Binding What}" TextWrapping="Wrap" />
+                                                        </StackPanel>
+                                                        <TextBlock Grid.Column="2" Classes="muted" FontSize="12" VerticalAlignment="Top" Margin="10,1,0,0" Text="{Binding Amount}" />
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                      </StackPanel>
                                     </Border>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
@@ -428,41 +456,19 @@
 
                 </StackPanel>
 
-                <!-- ===== Earn more: opt-in internet sharing ===== -->
-                <Border Classes="card delay1" IsVisible="{Binding InternetSharing.ShowSuggestion}">
-                    <StackPanel Spacing="14" DataContext="{Binding InternetSharing}" x:DataType="vm:InternetSharingViewModel">
+                <!-- ===== Earn more: internet sharing, every network in one place ===== -->
+                <Border Classes="card delay1" IsVisible="{Binding ShowSharingSuggestion}">
+                    <StackPanel Spacing="14">
                         <Grid ColumnDefinitions="Auto,*,Auto">
                             <Border Classes="iconBadge" VerticalAlignment="Top"><Path Classes="icon" Data="{StaticResource IconGlobe}" /></Border>
                             <StackPanel Grid.Column="1" Margin="14,0" VerticalAlignment="Center" Spacing="2">
-                                <TextBlock Classes="h2" Text="Earn from your internet too" />
-                                <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap">
-                                    <Run Text="Share internet you're not using, even while you're at the computer." />
-                                    <Run Text="{Binding EstimateSentence, Mode=OneWay}" />
-                                </TextBlock>
+                                <TextBlock Classes="h2" Text="{Binding SharingSuggestionTitle}" />
+                                <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Text="{Binding SharingSuggestionText}" />
                             </StackPanel>
-                            <Button Grid.Column="2" Classes="accent" VerticalAlignment="Center" Content="Learn more"
-                                    Command="{Binding LearnMoreCommand}" IsVisible="{Binding !ShowConsent}" />
+                            <Button Grid.Column="2" Classes="accent" VerticalAlignment="Center" Content="Choose networks"
+                                    Command="{Binding OpenSharingSetupCommand}" IsVisible="{Binding !ShowSharingSetup}" />
                         </Grid>
-                        <views:InternetSharingConsentView IsVisible="{Binding ShowConsent}" />
-                    </StackPanel>
-                </Border>
-
-                <!-- ===== Earn more: also share through Mysterium ===== -->
-                <Border Classes="card delay1" IsVisible="{Binding MysteriumSharing.ShowSuggestion}">
-                    <StackPanel Spacing="14" DataContext="{Binding MysteriumSharing}" x:DataType="vm:MysteriumSharingViewModel">
-                        <Grid ColumnDefinitions="Auto,*,Auto">
-                            <Border Classes="iconBadge" VerticalAlignment="Top"><Path Classes="icon" Data="{StaticResource IconGlobe}" /></Border>
-                            <StackPanel Grid.Column="1" Margin="14,0" VerticalAlignment="Center" Spacing="2">
-                                <TextBlock Classes="h2" Text="Also share through Mysterium" />
-                                <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap">
-                                    <Run Text="A second network for your unused internet, paid in MYST straight to your own address." />
-                                    <Run Text="{Binding EstimateText, Mode=OneWay, StringFormat='Typically {0}.'}" />
-                                </TextBlock>
-                            </StackPanel>
-                            <Button Grid.Column="2" Classes="accent" VerticalAlignment="Center" Content="Learn more"
-                                    Command="{Binding LearnMoreCommand}" IsVisible="{Binding !ShowConsent}" />
-                        </Grid>
-                        <views:MysteriumConsentView IsVisible="{Binding ShowConsent}" />
+                        <Panel IsVisible="{Binding ShowSharingSetup}"><views:SharingSetupView DataContext="{Binding SharingSetup}" /></Panel>
                     </StackPanel>
                 </Border>
 

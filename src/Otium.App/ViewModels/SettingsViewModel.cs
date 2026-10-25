@@ -75,9 +75,28 @@ public partial class SettingsViewModel : ViewModelBase
 
     private InternetSharingViewModel? _internetSharing;
 
-    public MysteriumSharingViewModel MysteriumSharing => _mysteriumSharing ??= new MysteriumSharingViewModel(_host);
+    public MysteriumSharingViewModel MysteriumSharing => _mysteriumSharing ??= CreateMysterium();
 
     private MysteriumSharingViewModel? _mysteriumSharing;
+
+    /// <summary>The one "Internet sharing" card: shown while any network is offered here, on, or left something to remove.</summary>
+    public bool ShowSharingSection => InternetSharing.ShowInSettings || MysteriumSharing.ShowInSettings;
+
+    private MysteriumSharingViewModel CreateMysterium()
+    {
+        var mysterium = new MysteriumSharingViewModel(_host);
+        mysterium.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(MysteriumSharingViewModel.ShowInSettings))
+                OnPropertyChanged(nameof(ShowSharingSection));
+        };
+        InternetSharing.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(InternetSharingViewModel.ShowInSettings))
+                OnPropertyChanged(nameof(ShowSharingSection));
+        };
+        return mysterium;
+    }
 
     public EmailSignInViewModel SignIn => _signIn ??= new EmailSignInViewModel(_host, () => OnPropertyChanged(nameof(AccountText)));
 

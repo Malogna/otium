@@ -23,6 +23,25 @@ public partial class ActivityRow : ObservableObject
     [ObservableProperty] public partial string Speed { get; set; } = "";
     [ObservableProperty] public partial string PerDay { get; set; } = "";
     [ObservableProperty] public partial bool IsActive { get; set; }
+
+    /// <summary>For the internet connection: each network it shares through, shown when the row is opened.</summary>
+    public System.Collections.ObjectModel.ObservableCollection<ProviderLine> Providers { get; } = [];
+
+    [ObservableProperty] public partial bool HasProviders { get; set; }
+
+    [ObservableProperty] public partial bool IsExpanded { get; set; }
+
+    [CommunityToolkit.Mvvm.Input.RelayCommand]
+    private void ToggleExpanded() => IsExpanded = !IsExpanded;
+}
+
+/// <summary>One network under the internet connection row: its name, what it's doing and what it has earned.</summary>
+public partial class ProviderLine : ObservableObject
+{
+    [ObservableProperty] public partial string Name { get; set; } = "";
+    [ObservableProperty] public partial string What { get; set; } = "";
+    [ObservableProperty] public partial string Amount { get; set; } = "";
+    [ObservableProperty] public partial bool IsActive { get; set; }
 }
 
 /// <summary>
@@ -40,7 +59,6 @@ public partial class HomeViewModel : ViewModelBase
     private readonly Dictionary<DeviceKind, (double User, double Electricity)> _lastRates = [];
     private EarningsEstimate? _estimate;
     private readonly ActivityRow _internetRow;
-    private readonly ActivityRow _mysteriumRow;
 
     public HomeViewModel(AppHost host, Action openAdvanced)
     {
@@ -59,9 +77,14 @@ public partial class HomeViewModel : ViewModelBase
         host.MeasurementChanged += () => Dispatcher.UIThread.Post(Refresh);
 
         _internetRow = new ActivityRow { Icon = Icon("IconGlobe"), Title = "Internet connection" };
-        _mysteriumRow = new ActivityRow { Icon = Icon("IconGlobe"), Title = "Internet via Mysterium" };
         InternetSharing = new InternetSharingViewModel(host);
         MysteriumSharing = new MysteriumSharingViewModel(host);
+        SharingSetup = new SharingSetupViewModel(host, InternetSharing, MysteriumSharing) { CanDismiss = true };
+        SharingSetup.Dismissed += () =>
+        {
+            ShowSharingSetup = false;
+            Refresh();
+        };
         MysteriumSharing.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(MysteriumSharingViewModel.IsOn))
@@ -101,6 +124,23 @@ public partial class HomeViewModel : ViewModelBase
 
     /// <summary>Sharing through Mysterium, next to Proxybase: its own suggestion card and overview row.</summary>
     public MysteriumSharingViewModel MysteriumSharing { get; }
+
+    /// <summary>The overview's one card for turning internet sharing on: every network at once.</summary>
+    public SharingSetupViewModel SharingSetup { get; }
+
+    /// <summary>Some network is offered and off, and the user hasn't said "Not now" to it.</summary>
+    [ObservableProperty] public partial bool ShowSharingSuggestion { get; set; }
+
+    /// <summary>The suggestion is open, showing the networks to tick.</summary>
+    [ObservableProperty] public partial bool ShowSharingSetup { get; set; }
+
+    /// <summary>"Earn from your internet too" while nothing is shared, otherwise "Add another network".</summary>
+    [ObservableProperty] public partial string SharingSuggestionTitle { get; set; } = "Earn from your internet too";
+
+    [ObservableProperty] public partial string SharingSuggestionText { get; set; } = "";
+
+    [RelayCommand]
+    private void OpenSharingSetup() => ShowSharingSetup = true;
 
     // ---------- balance ----------
 
@@ -287,7 +327,7 @@ public partial class HomeViewModel : ViewModelBase
         // Status and activity
         RefreshActivity(engines);
         RefreshInternetRow();
-        RefreshMysteriumRow();
+        RefreshSharingSuggestion();
         IsRunning = settings.EarningEnabled;
         ToggleText = settings.EarningEnabled ? "Pause" : "Start";
         var states = snapshots.Select(s => s.State).ToList();
@@ -452,10 +492,20 @@ public partial class HomeViewModel : ViewModelBase
         }
     }
 
+    /// <summary>
+    /// The internet connection: one row for every network it shares through, with their pace and earnings added up;
+    /// opening it lists each network on its own line.
+    /// </summary>
     private void RefreshInternetRow()
     {
         var settings = _host.Settings;
-        var on = settings.BandwidthEnabled && settings.BandwidthConsentAt is not null && _host.BandwidthOffered;
+        var lines = new List<(ProviderLine Line, double PerDay, bool Estimate, double Earned, string What)>();
+        if (settings.BandwidthEnabled && settings.BandwidthConsentAt is not null && _host.BandwidthOffered)
+            lines.Add(ProxybaseLine(settings));
+        if (_host.Mysterium is { } mysterium && settings.MysteriumEnabled && settings.MysteriumConsentAt is not null && _host.MysteriumOffered)
+            lines.Add(MysteriumLine(settings, mysterium.Snapshot));
+
+        var on = lines.Count > 0;
         if (on && !Activity.Contains(_internetRow))
             Activity.Add(_internetRow);
         else if (!on && Activity.Contains(_internetRow))
@@ -463,59 +513,87 @@ public partial class HomeViewModel : ViewModelBase
         if (!on)
             return;
 
-        var b = _host.Bandwidth.Snapshot;
-        _internetRow.IsActive = b.State == BandwidthState.Sharing;
-        // Until this computer has its own pace, Proxybase sharing shows the estimate from its rate here (marked as one).
-        var directPay = InternetSharing.IsProxybase || b.Earnings is not null;
-        var estimate = directPay && b.UserUsdPerDay <= 0 ? InternetSharing.EstimatedUsdPerDay : 0;
-        _internetRow.PerDay = b.State != BandwidthState.Sharing ? ""
-            : b.UserUsdPerDay > 0 ? $"{Format.Usd(b.UserUsdPerDay)}/day"
-            : estimate > 0 ? $"≈ {Format.Usd(estimate)}/day" : "";
-        // Partners that pay the user directly (Proxybase) report money, not traffic: show what it has earned so far.
-        _internetRow.Speed = directPay
-            ? (b.TotalUserUsd > 0 ? $"{Format.Usd(b.TotalUserUsd)} earned so far"
-                : estimate > 0 && b.State != BandwidthState.Sharing ? $"≈ {Format.Usd(estimate)}/day estimate · nothing earned yet"
-                : estimate > 0 ? "estimate · nothing earned yet"
-                : "Nothing earned yet")
-            : b.BytesToday > 0 ? $"{InternetSharingViewModel.FormatBytes(b.BytesToday)} today" : "";
-        _internetRow.What = b.State switch
+        // Keep the same line objects while the set of networks is the same, so an open dropdown doesn't flicker.
+        if (_internetRow.Providers.Count != lines.Count || _internetRow.Providers.Select(p => p.Name).Except(lines.Select(l => l.Line.Name)).Any())
         {
-            BandwidthState.Sharing => b.Activity ?? "Sharing unused bandwidth",
-            BandwidthState.WaitingForIdle => "Waiting for you to step away",
-            BandwidthState.LimitReached => "Today's data limit reached",
-            BandwidthState.Starting => "Connecting…",
-            BandwidthState.Error or BandwidthState.Unavailable => b.StatusText,
-            _ => settings.EarningEnabled ? "Starting…" : "Paused",
-        };
-        if (b.Note is { } note && b.State == BandwidthState.Sharing)
-            _internetRow.What = note;
+            _internetRow.Providers.Clear();
+            foreach (var l in lines)
+                _internetRow.Providers.Add(l.Line);
+        }
+        else
+        {
+            foreach (var (existing, fresh) in _internetRow.Providers.Zip(lines.Select(l => l.Line)))
+            {
+                existing.What = fresh.What;
+                existing.Amount = fresh.Amount;
+                existing.IsActive = fresh.IsActive;
+            }
+        }
+        _internetRow.HasProviders = true;
+
+        var active = lines.Count(l => l.Line.IsActive);
+        _internetRow.IsActive = active > 0;
+        var perDay = lines.Sum(l => l.PerDay);
+        _internetRow.PerDay = perDay <= 0 ? "" : $"{(lines.Any(l => l.Estimate && l.PerDay > 0) ? "≈ " : "")}{Format.Usd(perDay)}/day";
+        var earned = lines.Sum(l => l.Earned);
+        var networks = lines.Count == 1 ? $"via {lines[0].Line.Name}" : $"{lines.Count} networks";
+        _internetRow.Speed = earned > 0 ? $"{Format.Usd(earned)} earned · {networks}" : $"Nothing earned yet · {networks}";
+        _internetRow.What = lines.Count == 1 ? lines[0].What
+            : active == lines.Count ? "Sharing unused bandwidth on every network"
+            : active > 0 ? $"Sharing on {string.Join(" and ", lines.Where(l => l.Line.IsActive).Select(l => l.Line.Name))}"
+            : lines[0].What;
     }
 
-    /// <summary>The Mysterium row, shown while sharing through Mysterium is on.</summary>
-    private void RefreshMysteriumRow()
+    /// <summary>Proxybase: its own pace, or until there is one the estimate from its rate here (marked as one).</summary>
+    private (ProviderLine, double, bool, double, string) ProxybaseLine(Core.Settings.AppSettings settings)
     {
-        var settings = _host.Settings;
-        var on = _host.Mysterium is not null && settings.MysteriumEnabled && settings.MysteriumConsentAt is not null && _host.MysteriumOffered;
-        if (on && !Activity.Contains(_mysteriumRow))
-            Activity.Add(_mysteriumRow);
-        else if (!on && Activity.Contains(_mysteriumRow))
-            Activity.Remove(_mysteriumRow);
-        if (!on || _host.Mysterium is not { } sharer)
-            return;
+        var b = _host.Bandwidth.Snapshot;
+        var sharing = b.State == BandwidthState.Sharing;
+        var directPay = InternetSharing.IsProxybase || b.Earnings is not null;
+        var estimate = directPay && b.UserUsdPerDay <= 0 ? InternetSharing.EstimatedUsdPerDay : 0;
+        var perDay = !sharing ? 0 : b.UserUsdPerDay > 0 ? b.UserUsdPerDay : estimate;
+        var what = SharingWhat(settings, b, b.State == BandwidthState.Sharing && b.Note is { } note ? note : null);
+        var amount = (perDay > 0 ? $"{(b.UserUsdPerDay > 0 ? "" : "≈ ")}{Format.Usd(perDay)}/day · " : "")
+                     + (b.TotalUserUsd > 0 ? $"{Format.Usd(b.TotalUserUsd)} earned" : "nothing earned yet");
+        return (new ProviderLine { Name = "Proxybase", What = what, Amount = amount, IsActive = sharing },
+            perDay, b.UserUsdPerDay <= 0, b.TotalUserUsd, what);
+    }
 
-        var b = sharer.Snapshot;
-        _mysteriumRow.IsActive = b.State == BandwidthState.Sharing;
-        _mysteriumRow.PerDay = b.State == BandwidthState.Sharing && b.UserUsdPerDay > 0 ? $"{Format.Usd(b.UserUsdPerDay)}/day" : "";
-        _mysteriumRow.Speed = b.TotalUserUsd > 0 ? $"{Format.Usd(b.TotalUserUsd)} earned so far, in MYST" : "Nothing earned yet";
-        _mysteriumRow.What = b.State switch
+    /// <summary>Mysterium: paid in MYST, shown in dollars at today's price once the node has earned something.</summary>
+    private static (ProviderLine, double, bool, double, string) MysteriumLine(Core.Settings.AppSettings settings, BandwidthSnapshot b)
+    {
+        var sharing = b.State == BandwidthState.Sharing;
+        var perDay = sharing ? b.UserUsdPerDay : 0;
+        var what = SharingWhat(settings, b, null, "Sharing with Mysterium's business customers");
+        var amount = (perDay > 0 ? $"{Format.Usd(perDay)}/day · " : "")
+                     + (b.TotalUserUsd > 0 ? $"{Format.Usd(b.TotalUserUsd)} earned in MYST" : "nothing earned yet");
+        return (new ProviderLine { Name = "Mysterium", What = what, Amount = amount, IsActive = sharing }, perDay, false, b.TotalUserUsd, what);
+    }
+
+    private static string SharingWhat(Core.Settings.AppSettings settings, BandwidthSnapshot b, string? note, string sharing = "Sharing unused bandwidth") =>
+        note ?? b.State switch
         {
-            BandwidthState.Sharing => b.Activity ?? "Sharing unused bandwidth with Mysterium's business customers",
+            BandwidthState.Sharing => b.Activity ?? sharing,
             BandwidthState.WaitingForIdle => "Waiting for you to step away",
             BandwidthState.LimitReached => "Today's data limit reached",
             BandwidthState.Starting => b.StatusText is { Length: > 0 } text ? text : "Connecting…",
             BandwidthState.Error or BandwidthState.Unavailable => b.StatusText,
             _ => settings.EarningEnabled ? "Starting…" : "Paused",
         };
+
+    /// <summary>The one suggestion card: shown while a network is offered, off and not turned down.</summary>
+    private void RefreshSharingSuggestion()
+    {
+        var settings = _host.Settings;
+        SharingSetup.Refresh();
+        var proxybase = InternetSharing.CanTurnOn && !settings.BandwidthPromptDismissed;
+        var mysterium = MysteriumSharing.CanTurnOn && !settings.MysteriumPromptDismissed;
+        ShowSharingSuggestion = settings.OnboardingComplete && (proxybase || mysterium);
+        var sharingAlready = InternetSharing.IsOn || MysteriumSharing.IsOn;
+        SharingSuggestionTitle = sharingAlready ? "Add another network" : "Earn from your internet too";
+        SharingSuggestionText = sharingAlready
+            ? "Share your unused internet through one more network too, for more buyers and more earnings."
+            : "Share internet you're not using, even while you're at the computer, through one or more networks. You choose which.";
     }
 
     /// <summary>What internet sharing adds per day: measured while sharing, otherwise the typical estimate.</summary>
