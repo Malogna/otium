@@ -69,6 +69,9 @@ public sealed record BandwidthSnapshot
 
     /// <summary>While sharing: the partner's fuller account of this connection (findable, reachable, pending).</summary>
     public string? Detail { get; init; }
+
+    /// <summary>Antivirus software removed or blocked the partner's component, so the overview offers to allow it.</summary>
+    public bool EngineBlocked { get; init; }
 }
 
 /// <summary>Persistent counters, so totals and the report sequence survive restarts.</summary>
@@ -171,6 +174,7 @@ public sealed class BandwidthSharer : IAsyncDisposable
     public void Enable()
     {
         _enabled = true;
+        _blocked = false; // "Try again" after an antivirus block
         _wake.Release();
     }
 
@@ -193,6 +197,12 @@ public sealed class BandwidthSharer : IAsyncDisposable
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
                 break;
+            }
+            catch (Providers.EngineBlockedException e)
+            {
+                await StopProviderAsync();
+                _blocked = true;
+                Publish(BandwidthState.Error, e.Message);
             }
             catch (Exception e)
             {
@@ -371,6 +381,9 @@ public sealed class BandwidthSharer : IAsyncDisposable
         await _provider.StopAsync(CancellationToken.None);
     }
 
+    /// <summary>The last failure was antivirus software blocking the partner's component; cleared when enabled again.</summary>
+    private volatile bool _blocked;
+
     private void Publish(BandwidthState state, string text, TimeSpan? idle = null)
     {
         var config = _config();
@@ -393,6 +406,7 @@ public sealed class BandwidthSharer : IAsyncDisposable
             IdleTime = idle,
             Activity = state == BandwidthState.Sharing ? _activity : null,
             Detail = state == BandwidthState.Sharing ? _detail : null,
+            EngineBlocked = _blocked && state == BandwidthState.Error,
         };
         SnapshotChanged?.Invoke(Snapshot);
     }

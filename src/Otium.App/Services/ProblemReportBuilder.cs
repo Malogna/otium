@@ -56,6 +56,9 @@ public static class ProblemReportBuilder
         var sharing = host.Bandwidth.Snapshot;
         Line("");
         Line($"Internet sharing: {sharing.State}, \"{sharing.StatusText}\"{(sharing.Earnings is { } e ? $", {e}" : "")}");
+        // The node's own MYST figures only; its payout (Polygon) address is left out like every other address.
+        if (host.Mysterium?.Snapshot is { } myst)
+            Line($"Mysterium sharing: on {s.MysteriumEnabled}, {myst.State}, \"{myst.StatusText}\"{(myst.Earnings is { } me ? $", {me}" : "")}");
 
         if (host.PoolBalance is { } pool)
             Line(Invariant($"Pool: {pool.PoolName}, pending {pool.Pending} {pool.Coin}, paid {pool.Paid}, auto pay {pool.AutoPay}, problems: {string.Join("; ", pool.Problems ?? [])}"));

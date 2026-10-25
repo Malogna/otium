@@ -145,6 +145,27 @@ public sealed class AppSettings
     /// <summary>The user answered "Not now" to the internet sharing suggestion on the overview.</summary>
     public bool BandwidthPromptDismissed { get; set; }
 
+    /// <summary>
+    /// Also share internet through Mysterium (next to Proxybase above): its node pays MYST straight to the user's own
+    /// Polygon address. Off until the user opts in on its own explanation screen.
+    /// </summary>
+    public bool MysteriumEnabled { get; set; }
+
+    /// <summary>When the user agreed to Mysterium's explanation; its node never runs without it.</summary>
+    public DateTimeOffset? MysteriumConsentAt { get; set; }
+
+    /// <summary>Share through Mysterium only while the user is away.</summary>
+    public bool MysteriumOnlyWhenIdle { get; set; }
+
+    /// <summary>Most data to share through Mysterium per day, in GB.</summary>
+    public double MysteriumDailyLimitGb { get; set; } = 5;
+
+    /// <summary>The user's own Polygon (0x…) address Mysterium pays, when their payout address isn't an 0x address.</summary>
+    public string? MysteriumPayoutAddress { get; set; }
+
+    /// <summary>The user answered "Not now" to the overview's suggestion to also share through Mysterium.</summary>
+    public bool MysteriumPromptDismissed { get; set; }
+
     /// <summary>The last "measure my PC" test, or null until one finished.</summary>
     public Projections.PcMeasurement? Measurement { get; set; }
 
@@ -244,6 +265,9 @@ public sealed class AccountState
 
     /// <summary>The operator switched internet sharing through Proxybase off.</summary>
     public bool ProxybaseDisabled { get; set; }
+
+    /// <summary>Today's MYST price in US dollars as the server last sent it, for Mysterium sharing earnings; null until then.</summary>
+    public double? MystUsd { get; set; }
 
     /// <summary>The fee and invite terms the server last announced; null until it has.</summary>
     public Accounts.FeeTerms? Fees { get; set; }

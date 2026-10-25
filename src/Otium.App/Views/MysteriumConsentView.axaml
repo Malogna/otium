@@ -1,0 +1,42 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Otium.App.ViewModels"
+             x:Class="Otium.App.Views.MysteriumConsentView"
+             x:DataType="vm:MysteriumSharingViewModel">
+
+    <!-- What the user agrees to before Mysterium's node can run. Same text on the overview and in Advanced. -->
+    <StackPanel Spacing="12">
+        <Border Classes="tile">
+            <StackPanel Spacing="8">
+                <TextBlock FontWeight="SemiBold" Text="How it works" />
+                <TextBlock TextWrapping="Wrap" FontSize="13" Text="{Binding ConsentText}" />
+                <TextBlock Classes="muted" TextWrapping="Wrap" FontSize="12.5" Text="{Binding LimitsText}" />
+                <StackPanel Orientation="Horizontal" Spacing="16">
+                    <Button Classes="link" Command="{Binding OpenTermsCommand}" AutomationProperties.Name="Read Mysterium's terms">
+                        <TextBlock Text="Read Mysterium's terms" FontSize="12.5" Foreground="{DynamicResource GoodBrush}" />
+                    </Button>
+                    <Button Classes="link" Command="{Binding OpenSwapCommand}" AutomationProperties.Name="Swapping MYST on Relay">
+                        <TextBlock Text="Swapping MYST on Relay" FontSize="12.5" Foreground="{DynamicResource GoodBrush}" />
+                    </Button>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+        <StackPanel Spacing="4" IsVisible="{Binding NeedsPayoutAddress}">
+            <TextBlock Classes="label" Text="Your 0x address on Polygon, for MYST" />
+            <TextBox Text="{Binding PayoutAddress}" PlaceholderText="0x…" FontFamily="Consolas, Menlo, monospace"
+                     AutomationProperties.Name="Your Polygon address" />
+            <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
+                       Text="Your payout address isn't an 0x address, so Mysterium needs one: the address of a wallet you hold the keys to (MetaMask, Rabby, Trust Wallet). Use an exchange deposit address only if the exchange says it accepts MYST on the Polygon network." />
+            <TextBlock Classes="error" TextWrapping="Wrap" Text="{Binding PayoutAddressError}"
+                       IsVisible="{Binding PayoutAddressError, Converter={x:Static ObjectConverters.IsNotNull}}" />
+        </StackPanel>
+        <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap" Text="{Binding PaidToText}"
+                   IsVisible="{Binding !NeedsPayoutAddress}" />
+        <TextBlock Classes="error" TextWrapping="Wrap" Text="{Binding Error}"
+                   IsVisible="{Binding Error, Converter={x:Static ObjectConverters.IsNotNull}}" />
+        <StackPanel Orientation="Horizontal" Spacing="10">
+            <Button Classes="accent" Content="I agree, turn it on" Command="{Binding AgreeCommand}" IsEnabled="{Binding !IsBusy}" />
+            <Button Content="Not now" Command="{Binding NotNowCommand}" />
+        </StackPanel>
+    </StackPanel>
+</UserControl>

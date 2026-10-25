@@ -24,7 +24,6 @@ public partial class InternetSharingViewModel : ViewModelBase
         OnlyWhenAway = host.Settings.BandwidthOnlyWhenIdle;
         DailyLimitGb = (decimal)host.Settings.BandwidthDailyLimitGb;
         PayoutAddress = host.Settings.BandwidthPayoutAddress ?? "";
-        _ = CheckServiceAsync();
         _loading = false;
         host.AccountChanged += () => Dispatcher.UIThread.Post(Refresh);
         host.Bandwidth.SnapshotChanged += _ => Dispatcher.UIThread.Post(Refresh);
@@ -36,16 +35,13 @@ public partial class InternetSharingViewModel : ViewModelBase
     public partial bool IsOffered { get; set; }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CanTurnOn), nameof(CanRemoveService), nameof(ShowInSettings))]
+    [NotifyPropertyChangedFor(nameof(CanTurnOn), nameof(ShowInSettings))]
     public partial bool IsOn { get; set; }
 
     public bool CanTurnOn => IsOffered && !IsOn;
 
-    /// <summary>
-    /// Settings shows internet sharing only when the server offers it, it's on, or its Windows service is still installed:
-    /// it's off for launch (it earns little), so most people never see it.
-    /// </summary>
-    public bool ShowInSettings => IsOffered || IsOn || CanRemoveService;
+    /// <summary>Settings shows internet sharing only when the server offers it or it's on.</summary>
+    public bool ShowInSettings => IsOffered || IsOn;
 
     [ObservableProperty] public partial bool ShowSuggestion { get; set; }
     [ObservableProperty] public partial bool ShowConsent { get; set; }
@@ -73,45 +69,13 @@ public partial class InternetSharingViewModel : ViewModelBase
 
     public bool IsProxybase => _host.UsesProxybase;
 
-    /// <summary>
-    /// Mysterium (earlier versions) needed a Polygon address; Proxybase's earnings are converted to the user's own payout
-    /// coin, so no extra address is asked for.
-    /// </summary>
+    /// <summary>Proxybase's earnings are converted to the user's own payout coin, so no extra address is asked for.</summary>
     public bool NeedsPayoutAddress => false;
 
     /// <summary>Proxybase reports no byte counts Otium can see, so there's no daily data limit to set.</summary>
     public bool SupportsDailyLimit => !IsProxybase;
 
     public string TermsUrl => "https://proxybase.xyz/terms";
-
-    /// <summary>Mysterium's network service, installed by Otium, is still there while sharing is off.</summary>
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CanRemoveService), nameof(ShowInSettings))]
-    public partial bool ServiceInstalled { get; set; }
-
-    [ObservableProperty] public partial string? ServiceMessage { get; set; }
-
-    public bool CanRemoveService => ServiceInstalled && !IsOn;
-
-    /// <summary>Earlier versions shared through Mysterium, whose Windows service may still be installed.</summary>
-    private async Task CheckServiceAsync()
-    {
-        if (!OperatingSystem.IsWindows())
-            return;
-        var engines = _host.Paths.EnginesDir;
-        ServiceInstalled = await Task.Run(() => Otium.Providers.Mysterium.WindowsMystSupervisor.OurServiceBinary(engines) is not null);
-    }
-
-    [RelayCommand]
-    private async Task RemoveService()
-    {
-        IsBusy = true;
-        var engines = _host.Paths.EnginesDir;
-        var problem = await Task.Run(() => Otium.Providers.Mysterium.WindowsMystSupervisor.RemoveIfOurs(engines, TimeSpan.FromMinutes(2)));
-        ServiceMessage = problem ?? "Removed. Turning internet sharing on again would set it up again.";
-        await CheckServiceAsync();
-        IsBusy = false;
-    }
 
     [RelayCommand]
     private void OpenTerms() => Launch.Open(TermsUrl);
@@ -297,7 +261,6 @@ public partial class InternetSharingViewModel : ViewModelBase
         {
             await _host.SetBandwidthSharingAsync(on);
             ShowConsent = false;
-            await CheckServiceAsync();
         }
         catch (InvalidOperationException e)
         {

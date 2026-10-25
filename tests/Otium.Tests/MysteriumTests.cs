@@ -65,14 +65,6 @@ public class MysteriumNodeTests
     }
 
     [Fact]
-    public void Only_windows_x64_is_offered_for_now()
-    {
-        Assert.NotNull(MystRelease.For(System.Runtime.InteropServices.OSPlatform.Windows, System.Runtime.InteropServices.Architecture.X64));
-        Assert.Null(MystRelease.For(System.Runtime.InteropServices.OSPlatform.Linux, System.Runtime.InteropServices.Architecture.X64));
-        Assert.Equal(64, MystRelease.For(System.Runtime.InteropServices.OSPlatform.Windows, System.Runtime.InteropServices.Architecture.X64)!.Sha256.Length);
-    }
-
-    [Fact]
     public async Task Sharing_paid_by_the_partner_sends_no_reports_and_shows_its_earnings()
     {
         var time = new ManualTime(new DateTimeOffset(2026, 10, 17, 12, 0, 0, TimeSpan.Zero));

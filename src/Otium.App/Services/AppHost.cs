@@ -36,6 +36,7 @@ public sealed class AppHost : IAsyncDisposable
     private volatile EngineConfig _cpuConfig;
     private volatile EngineConfig _gpuConfig;
     private volatile BandwidthConfig _bandwidthConfig;
+    private volatile BandwidthConfig _mysteriumConfig;
     private volatile GpuPolicy? _gpuPolicy;
     private readonly JsonFileStore<CachedGpuPolicy> _gpuPolicyStore;
     private bool _gpuPolicyFetched;
@@ -117,7 +118,8 @@ public sealed class AppHost : IAsyncDisposable
         // Internet sharing (opt-in). Proxybase's client earns per GB; the server routes each payout through a conversion
         // to the user's own payout address and coin;
         // builds with a Honeygain publisher key (custodial operators) report usage to the Otium server, which credits
-        // the balance. (Mysterium's node, the earlier choice, stays in the code base but isn't offered.)
+        // the balance. Next to Proxybase, users can also share through a Mysterium node (below), which pays MYST
+        // straight to their own Polygon address.
         var bandwidthLedger = new JsonFileStore<BandwidthLedger>(Paths.BandwidthLedgerFile);
         IBandwidthProvider bandwidthProvider = IsSimulated
             ? new SimulatedBandwidthProvider()
@@ -130,6 +132,16 @@ public sealed class AppHost : IAsyncDisposable
         Bandwidth = new BandwidthSharer(bandwidthProvider, idle, () => _bandwidthConfig,
             UsesProxybase ? null : (report, ct) => CreateClient().ReportBandwidthAsync(DeviceId, Settings.DeviceSecret, report, ct),
             bandwidthLedger.Load(), bandwidthLedger.Save);
+        _mysteriumConfig = BuildMysteriumConfig();
+        if (UsesProxybase)
+        {
+            var mysteriumLedger = new JsonFileStore<BandwidthLedger>(Paths.MysteriumLedgerFile);
+            Mysterium = new BandwidthSharer(
+                new MysteriumBandwidthProvider(_http, Paths.EnginesDir, () => MysteriumBeneficiary,
+                    (request, ct) => CreateClient().SponsorMysteriumAsync(DeviceId, Settings.DeviceSecret, request, ct),
+                    mystUsd: () => Settings.Account.MystUsd),
+                idle, () => _mysteriumConfig, null, mysteriumLedger.Load(), mysteriumLedger.Save);
+        }
 
         foreach (var engine in Engines)
         {
@@ -296,6 +308,9 @@ public sealed class AppHost : IAsyncDisposable
         var sharing = Bandwidth.Snapshot;
         if (sharing.TotalSharingTime > TimeSpan.Zero && CountryCode() is { } country)
             devices.Add(new ReportedDevice("sharing", country, new EarningsTotals(sharing.TotalSharingTime, sharing.TotalUserUsd, 0)));
+        // Mysterium on its own line, so the two networks' figures never mix.
+        if (Mysterium?.Snapshot is { TotalSharingTime.Ticks: > 0 } myst && CountryCode() is { } mystCountry)
+            devices.Add(new ReportedDevice("sharing-mysterium", mystCountry, new EarningsTotals(myst.TotalSharingTime, myst.TotalUserUsd, 0)));
         return devices;
     }
 
@@ -731,8 +746,30 @@ public sealed class AppHost : IAsyncDisposable
         ? Settings.PayoutMode == PayoutMode.OwnWallet && !Settings.Account.ProxybaseDisabled && ProxybaseRelease.ForCurrentPlatform() is not null
         : Settings.PayoutMode == PayoutMode.Balance && Settings.Account.BandwidthAvailable && Bandwidth.Provider.UnavailableReason is null;
 
-    /// <summary>Internet sharing runs a Mysterium node that pays the user directly (not a partner paying Otium).</summary>
+    /// <summary>Internet sharing runs Proxybase's client (own-wallet builds), not a custodial operator's partner.</summary>
     public bool UsesProxybase { get; }
+
+    /// <summary>
+    /// Sharing through Mysterium, next to Proxybase: its node pays MYST to the user's own Polygon address. Null in builds
+    /// that don't share through Proxybase (simulated, custodial operators).
+    /// </summary>
+    public BandwidthSharer? Mysterium { get; }
+
+    /// <summary>Both kinds of internet sharing this build has, for totals and switches that cover every one.</summary>
+    public IEnumerable<BandwidthSharer> Sharers => Mysterium is null ? [Bandwidth] : [Bandwidth, Mysterium];
+
+    /// <summary>The server pays new nodes' registration and this computer can run Mysterium's node.</summary>
+    public bool MysteriumOffered => Mysterium is not null && Settings.PayoutMode == PayoutMode.OwnWallet && Settings.Account.MysteriumSponsored
+                                    && MystRelease.ForCurrentPlatform() is not null;
+
+    /// <summary>
+    /// The Polygon address Mysterium pays: the one the user gave for it, or their payout address when it's an 0x
+    /// address (the same key works on every EVM network). Null until there is one.
+    /// </summary>
+    public string? MysteriumBeneficiary =>
+        CryptoAddresses.TryValidate(AddressFormat.Evm, Settings.MysteriumPayoutAddress, out _)
+            ? Settings.MysteriumPayoutAddress!.Trim().ToLowerInvariant()
+            : PayoutTarget.ParseOrNull(Settings.PayoutAddress) is { Coin.Format: AddressFormat.Evm } evm ? evm.Address : null;
 
     /// <summary>
     /// The 0x address internet sharing pays (Proxybase: USDC on Tempo): the one the user gave for sharing, or their
@@ -773,7 +810,8 @@ public sealed class AppHost : IAsyncDisposable
     {
         foreach (var engine in Engines)
             engine.Start();
-        Bandwidth.Start();
+        foreach (var sharer in Sharers)
+            sharer.Start();
     }
 
     /// <summary>
@@ -788,6 +826,27 @@ public sealed class AppHost : IAsyncDisposable
 
         Settings.BandwidthEnabled = on;
         Settings.BandwidthConsentAt = on ? Settings.BandwidthConsentAt ?? DateTimeOffset.UtcNow : null;
+        SaveSettings();
+        ApplyDeviceSwitches();
+
+        if (!on && provider.UnavailableReason is null)
+            await provider.OptOutAsync(CancellationToken.None);
+    }
+
+    /// <summary>
+    /// Opts in to (or out of) sharing through Mysterium, on its own consent screen. Turning it on records the consent
+    /// with the node too (it agrees to Mysterium's provider terms when it starts); turning it off withdraws it.
+    /// </summary>
+    public async Task SetMysteriumSharingAsync(bool on)
+    {
+        if (Mysterium is null)
+            return;
+        var provider = Mysterium.Provider;
+        if (on && provider.UnavailableReason is null)
+            await provider.OptInAsync(CancellationToken.None);
+
+        Settings.MysteriumEnabled = on;
+        Settings.MysteriumConsentAt = on ? Settings.MysteriumConsentAt ?? DateTimeOffset.UtcNow : null;
         SaveSettings();
         ApplyDeviceSwitches();
 
@@ -868,6 +927,10 @@ public sealed class AppHost : IAsyncDisposable
             Bandwidth.Enable();
         else
             Bandwidth.Disable();
+        if (on && Settings.MysteriumEnabled && Settings.MysteriumConsentAt is not null)
+            Mysterium?.Enable();
+        else
+            Mysterium?.Disable();
 
         static void Toggle(EarningsEngine engine, bool enabled)
         {
@@ -896,7 +959,7 @@ public sealed class AppHost : IAsyncDisposable
         var earning = snapshots.Any(s => s.State == EngineState.Earning);
         // Earning hours count mining only: they scale the mining projection. Sharing is projected separately.
         History.Record(now,
-            snapshots.Sum(s => s.TotalUserUsd) + Bandwidth.Snapshot.TotalUserUsd,
+            snapshots.Sum(s => s.TotalUserUsd) + Sharers.Sum(s => s.Snapshot.TotalUserUsd),
             snapshots.Sum(s => s.TotalElectricityUsd),
             earning ? now - _lastHistorySample : TimeSpan.Zero);
         _lastHistorySample = now;
@@ -937,11 +1000,10 @@ public sealed class AppHost : IAsyncDisposable
         var showWindow = IsWindowOpen();
         foreach (var engine in Engines)
             await engine.DisposeAsync();
-        await Bandwidth.DisposeAsync();
+        await DisposeSharersAsync();
         await Provider.DisposeAsync();
         if (GpuProvider is not null)
             await GpuProvider.DisposeAsync();
-        await Bandwidth.Provider.DisposeAsync();
         _settingsStore.Save(Settings);
         Updates.ApplyAndRestart(showWindow);
     }
@@ -953,7 +1015,12 @@ public sealed class AppHost : IAsyncDisposable
     /// </summary>
     public async Task<string?> AllowEnginesInWindowsSecurityAsync()
     {
-        var problem = await WindowsSecurity.AllowFolderAsync(Paths.EnginesDir);
+        // Mysterium's network service runs from its own folder under Program Files (only administrators can change it),
+        // so the same prompt allows that folder too once the user shares through Mysterium.
+        string[] folders = Settings.MysteriumConsentAt is not null && OperatingSystem.IsWindows()
+            ? [Paths.EnginesDir, WindowsMystSupervisor.ProtectedDirectory]
+            : [Paths.EnginesDir];
+        var problem = await WindowsSecurity.AllowFoldersAsync(folders);
         if (problem is null)
             ApplyDeviceSwitchesAfterBlock();
         return problem;
@@ -982,6 +1049,8 @@ public sealed class AppHost : IAsyncDisposable
     {
         foreach (var engine in Engines.Where(e => e.Enabled))
             engine.Enable();
+        foreach (var sharer in Sharers.Where(s => s.Enabled))
+            sharer.Enable();
     }
 
     public void SaveSettings()
@@ -996,9 +1065,11 @@ public sealed class AppHost : IAsyncDisposable
         _cpuConfig = BuildConfig(Settings.CpuUsagePercent, "", cpu: true);
         _gpuConfig = BuildConfig(100, "g");
         _bandwidthConfig = BuildBandwidthConfig();
+        _mysteriumConfig = BuildMysteriumConfig();
         foreach (var engine in Engines)
             engine.Nudge();
-        Bandwidth.Nudge();
+        foreach (var sharer in Sharers)
+            sharer.Nudge();
     }
 
     /// <summary>Settings affecting the power estimate need the model rebuilt.</summary>
@@ -1092,6 +1163,16 @@ public sealed class AppHost : IAsyncDisposable
             ? Settings.PayoutMode == PayoutMode.OwnWallet && !account.ProxybaseDisabled
             : Settings.PayoutMode == PayoutMode.Balance && account.BandwidthAvailable && account.WorkerId is not null;
     }
+
+    /// <summary>Mysterium's node: the user's own switch, idle choice and daily limit; Mysterium pays it, not the server.</summary>
+    private BandwidthConfig BuildMysteriumConfig() => new(
+        Settings.MysteriumEnabled && Settings.MysteriumConsentAt is not null && Settings.PayoutMode == PayoutMode.OwnWallet,
+        Settings.MysteriumOnlyWhenIdle,
+        TimeSpan.FromMinutes(Math.Max(1, Settings.IdleMinutes)),
+        (long)(Math.Clamp(Settings.MysteriumDailyLimitGb, 0.1, 100) * 1024 * 1024 * 1024),
+        0,
+        0,
+        Settings.Account.WorkerId ?? "");
 
     /// <summary>
     /// Registers this device with the Otium server (creating its account and redeeming a pending invite code)
@@ -1414,6 +1495,7 @@ public sealed class AppHost : IAsyncDisposable
         account.FeePercent = summary.Balance.FeePercent;
         account.BandwidthAvailable = summary.Bandwidth?.Available ?? false;
         account.MysteriumSponsored = summary.MysteriumSponsored;
+        account.MystUsd = summary.MystUsd ?? account.MystUsd;
         account.ProxybaseDisabled = summary.ProxybaseDisabled;
         if (summary.Fees is not null && summary.Fees != account.Fees)
         {
@@ -1445,6 +1527,16 @@ public sealed class AppHost : IAsyncDisposable
             _settingsStore.Save(Settings);
     }
 
+    /// <summary>Stops every sharer and its partner component (each node or client process ends with it).</summary>
+    private async Task DisposeSharersAsync()
+    {
+        foreach (var sharer in Sharers)
+        {
+            await sharer.DisposeAsync();
+            await sharer.Provider.DisposeAsync();
+        }
+    }
+
     private static string? ValidWalletOrNull(string? wallet) =>
         wallet is not null && MoneroAddress.TryValidate(wallet, out _, out _) ? wallet.Trim() : null;
 
@@ -1452,11 +1544,10 @@ public sealed class AppHost : IAsyncDisposable
     {
         foreach (var engine in Engines)
             await engine.DisposeAsync();
-        await Bandwidth.DisposeAsync();
+        await DisposeSharersAsync();
         await Provider.DisposeAsync();
         if (GpuProvider is not null)
             await GpuProvider.DisposeAsync();
-        await Bandwidth.Provider.DisposeAsync();
         _sleep.Dispose();
         if (_capApplied == 1)
             GpuEfficiency.Trigger(cap: false); // full power again once Otium is closed
