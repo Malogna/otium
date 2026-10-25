@@ -458,7 +458,7 @@ public sealed class MysteriumOptions
     public bool Enabled { get; set; }
 
     /// <summary>A Polygon JSON-RPC endpoint.</summary>
-    public string PolygonRpcUrl { get; set; } = "https://polygon-rpc.com";
+    public string PolygonRpcUrl { get; set; } = "https://polygon-bor-rpc.publicnode.com"; // polygon-rpc.com needs a key since 2026
 
     public long ChainId { get; set; } = 137;
 

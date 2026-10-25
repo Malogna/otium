@@ -559,7 +559,8 @@ internal static class AdminDashboard
             const myst = s.mysterium;
             $("myst").hidden = !(myst && (myst.sponsoring || Number(myst.nodesSponsored) > 0));
             if (myst) $("myst-detail").textContent = `${n(myst.nodesSponsored)} node(s) sponsored, ${myst.mystSpent} MYST spent (${myst.mystSpentPast24h} in 24 h)` +
-              (myst.walletError ? `; wallet: ${myst.walletError}` : myst.walletBalanceMyst != null ? `; wallet holds ${myst.walletBalanceMyst} MYST` : "");
+              (myst.walletError ? `; wallet: ${myst.walletError}` : myst.walletBalanceMyst != null ? `; wallet holds ${myst.walletBalanceMyst} MYST and ${myst.walletBalancePol ?? "?"} POL` : "") +
+              (myst.walletAddress ? `. Sponsor wallet (Polygon): ${myst.walletAddress}` : "");
 
             $("nc-referred").textContent = s.referredAccounts;
             $("nc-verified").textContent = `${s.verifiedReferrals} verified by their pool`;
