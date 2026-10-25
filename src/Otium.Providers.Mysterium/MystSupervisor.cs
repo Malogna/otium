@@ -89,7 +89,7 @@ public sealed class WindowsMystSupervisor : IMystSupervisor
     /// </summary>
     internal static string InstallCommand(string supervisorPath, string protectedDirectory, string user)
     {
-        var target = Path.Combine(protectedDirectory, MystRelease.SupervisorName);
+        var target = protectedDirectory.TrimEnd('\\') + @"\myst_supervisor.exe"; // Windows paths, whatever the test machine
         return $"/d /s /c \"net stop {ServiceName} >nul 2>&1 & (if not exist \"{protectedDirectory}\" mkdir \"{protectedDirectory}\")"
                + $" && copy /y \"{supervisorPath}\" \"{target}\" >nul && \"{target}\" -install -uid \"{user}\"\"";
     }

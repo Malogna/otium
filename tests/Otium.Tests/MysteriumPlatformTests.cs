@@ -40,7 +40,7 @@ public class MysteriumPlatformTests
 
         Assert.StartsWith("/d /s /c \"", command);
         Assert.Contains(@"copy /y ""C:\Users\pat\AppData\Local\Otium\engines\myst-1.39.7\myst_supervisor.exe"" ""C:\Program Files\Otium\Mysterium\", command);
-        Assert.Contains(@"\Otium\Mysterium\" + MystRelease.SupervisorName + @""" -install -uid ""pat""", command);
+        Assert.Contains(@"\Otium\Mysterium\myst_supervisor.exe"" -install -uid ""pat""", command);
         Assert.True(command.IndexOf("copy", StringComparison.Ordinal) < command.IndexOf("-install", StringComparison.Ordinal));
     }
 
