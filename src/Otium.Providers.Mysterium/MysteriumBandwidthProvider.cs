@@ -2,11 +2,53 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Net.Sockets;
 using System.Security.Cryptography;
+using System.Text.Json;
 using Otium.Core.Accounts;
 using Otium.Core.Bandwidth;
 using Otium.Core.Providers;
 
 namespace Otium.Providers.Mysterium;
+
+/// <summary>
+/// What this node has earned in total (in MYST, before Mysterium's 20% settlement fee), sampled as its status is read, and
+/// the last MYST price the server gave, so the app can show the user's share in dollars and its recent pace, also while
+/// the node starts after a restart.
+/// </summary>
+public sealed record MystEarned(IReadOnlyList<MystEarnedSample> Samples, double? MystUsd = null)
+{
+    /// <summary>Mysterium keeps 20% when it settles earnings to the user's address; Otium takes nothing.</summary>
+    public const double UserShare = 0.8;
+
+    public static readonly MystEarned Empty = new([]);
+
+    public decimal TotalMyst => Samples.Count == 0 ? 0 : Samples[^1].TotalMyst;
+
+    /// <summary>The user's share of everything earned so far, in dollars at the last known price; null without a price.</summary>
+    public double? UserUsd => MystUsd is { } price ? (double)TotalMyst * UserShare * price : null;
+
+    /// <summary>The user's share per day at the pace of the last day (from an hour of history on); null before that or without a price.</summary>
+    public double? UserUsdPerDay(DateTimeOffset now)
+    {
+        if (Samples.Count < 2 || MystUsd is not { } price)
+            return null;
+        var latest = Samples[^1];
+        var from = Samples.LastOrDefault(x => x.At <= now - TimeSpan.FromDays(1)) ?? Samples[0];
+        var hours = (latest.At - from.At).TotalHours;
+        return hours < 1 ? null : (double)(latest.TotalMyst - from.TotalMyst) * UserShare * price / hours * 24;
+    }
+
+    /// <summary>Adds a reading when the total changed or an hour has passed (keeping a week), and the newest price if any.</summary>
+    public MystEarned With(DateTimeOffset at, decimal totalMyst, double? mystUsd)
+    {
+        var price = mystUsd is > 0 ? mystUsd : MystUsd;
+        if (Samples.Count > 0 && Samples[^1].TotalMyst == totalMyst && at - Samples[^1].At < TimeSpan.FromHours(1))
+            return this with { MystUsd = price };
+        var kept = Samples.Where(x => x.At >= at - TimeSpan.FromDays(8)).Append(new MystEarnedSample(at, totalMyst)).ToList();
+        return new MystEarned(kept, price);
+    }
+}
+
+public sealed record MystEarnedSample(DateTimeOffset At, decimal TotalMyst);
 
 /// <summary>
 /// Internet sharing as a Mysterium Network node (the open-source <c>myst</c> node, run headless). The node is paid in
@@ -15,7 +57,8 @@ namespace Otium.Providers.Mysterium;
 ///
 /// Every new node needs a one-time on-chain registration (about 0.13 MYST, a cent or so in October 2026). Otium pays it:
 /// the server sends the fee to the node's channel address, then the node registers with the user's address. The node
-/// also needs Mysterium's network service installed once, with an administrator prompt.
+/// also needs Mysterium's network service installed once, with the system's administrator prompt (see
+/// <see cref="IMystSupervisor"/>). Otium takes no fee from it.
 /// </summary>
 public sealed class MysteriumBandwidthProvider : IBandwidthProvider
 {
@@ -32,6 +75,7 @@ public sealed class MysteriumBandwidthProvider : IBandwidthProvider
     private readonly IMystSupervisor? _supervisor;
     private readonly MystAsset? _asset;
     private readonly TimeProvider _time;
+    private readonly Func<double?> _mystUsd;
     private readonly SemaphoreSlim _lock = new(1, 1);
 
     private Process? _process;
@@ -45,6 +89,7 @@ public sealed class MysteriumBandwidthProvider : IBandwidthProvider
 
     /// <param name="beneficiary">The user's own Polygon (0x…) address that earnings settle to; null until they set one.</param>
     /// <param name="sponsor">Asks the Otium server to pay the registration fee for a node.</param>
+    /// <param name="mystUsd">Today's MYST price in dollars from the Otium server, or null when it has none.</param>
     public MysteriumBandwidthProvider(
         HttpClient http,
         string enginesRoot,
@@ -52,7 +97,8 @@ public sealed class MysteriumBandwidthProvider : IBandwidthProvider
         Func<MystSponsorRequest, CancellationToken, Task<MystSponsorResult>> sponsor,
         IMystSupervisor? supervisor = null,
         MystAsset? asset = null,
-        TimeProvider? time = null)
+        TimeProvider? time = null,
+        Func<double?>? mystUsd = null)
     {
         var engineDir = Path.Combine(enginesRoot, $"myst-{MystRelease.Version}");
         _installer = new EngineInstaller(http, engineDir, MystRelease.BinaryName);
@@ -60,9 +106,45 @@ public sealed class MysteriumBandwidthProvider : IBandwidthProvider
         _dataDir = Path.Combine(enginesRoot, "myst-data");
         _beneficiary = beneficiary;
         _sponsor = sponsor;
-        _supervisor = supervisor ?? (OperatingSystem.IsWindows() ? new WindowsMystSupervisor() : null);
+        _supervisor = supervisor ?? MystSupervisors.ForCurrentPlatform();
         _asset = asset ?? MystRelease.ForCurrentPlatform();
         _time = time ?? TimeProvider.System;
+        _mystUsd = mystUsd ?? (() => null);
+    }
+
+    private string EarnedFile => Path.Combine(_dataDir, "otium-earned.json");
+
+    /// <summary>The identity whose registration fee Otium already paid, so a restart doesn't ask the server again.</summary>
+    private string SponsoredFile => Path.Combine(_dataDir, "otium-sponsored.txt");
+
+    public MystEarned Earned
+    {
+        get
+        {
+            try
+            {
+                return File.Exists(EarnedFile) ? JsonSerializer.Deserialize<MystEarned>(File.ReadAllText(EarnedFile)) ?? MystEarned.Empty : MystEarned.Empty;
+            }
+            catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException)
+            {
+                return MystEarned.Empty;
+            }
+        }
+    }
+
+    public double? LastKnownUserUsd => Earned.UserUsd;
+
+    private void SaveEarned(MystEarned earned)
+    {
+        try
+        {
+            Directory.CreateDirectory(_dataDir);
+            File.WriteAllText(EarnedFile, JsonSerializer.Serialize(earned));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // Shown again from the node next time; only the pace history is lost.
+        }
     }
 
     public string Id => "mysterium";
@@ -70,7 +152,8 @@ public sealed class MysteriumBandwidthProvider : IBandwidthProvider
     public string DisplayName => "Mysterium Network";
 
     public string? UnavailableReason =>
-        _asset is null || _supervisor is null ? "Internet sharing through Mysterium isn't available on this computer yet (Windows only for now)."
+        _asset is null || _supervisor is null
+            ? "Sharing through Mysterium isn't available on this computer (it needs Windows or Linux on a 64-bit Intel or AMD processor, or a Mac)."
         : _beneficiary() is null ? "Add a Polygon address (0x…) for internet sharing payouts."
         : null;
 
@@ -175,9 +258,12 @@ public sealed class MysteriumBandwidthProvider : IBandwidthProvider
         {
             case "Registered":
                 await EnsureServicesAsync(identity.Id, ct);
-                return new BandwidthStatus(BandwidthProviderState.Online, bytes, null, EarningsText(identity));
+                var earned = Earned.With(_time.GetUtcNow(), identity.EarningsTotalMyst, _mystUsd());
+                SaveEarned(earned);
+                return new BandwidthStatus(BandwidthProviderState.Online, bytes, null, EarningsText(identity), earned.UserUsd,
+                    earned.UserUsdPerDay(_time.GetUtcNow()));
             case "InProgress":
-                return new BandwidthStatus(BandwidthProviderState.Starting, bytes, "Registering this computer with Mysterium (one time, a few minutes)…");
+                return new BandwidthStatus(BandwidthProviderState.Starting, bytes, "Mysterium is registering this computer. This happens once and takes a few minutes.");
             case "RegistrationError":
                 return new BandwidthStatus(BandwidthProviderState.Error, bytes, "Mysterium couldn't register this computer. Retrying later.");
             default:
@@ -195,6 +281,7 @@ public sealed class MysteriumBandwidthProvider : IBandwidthProvider
         _nextRegisterAttempt = _time.GetUtcNow() + RegisterRetry;
         var beneficiary = _beneficiary() ?? throw new ProviderProblemException("Add a Polygon address (0x…) for internet sharing payouts.");
 
+        _funded = _funded || (File.Exists(SponsoredFile) && File.ReadAllText(SponsoredFile).Trim() == identity.Id);
         if (!_funded)
         {
             var result = await _sponsor(new MystSponsorRequest(identity.Id, identity.ChannelAddress), ct);
@@ -206,6 +293,14 @@ public sealed class MysteriumBandwidthProvider : IBandwidthProvider
             }
             _funded = true;
             _registrationProblem = null;
+            try
+            {
+                File.WriteAllText(SponsoredFile, identity.Id);
+            }
+            catch (IOException)
+            {
+                // The server remembers it too ("already sent").
+            }
             return; // give the transfer a block or two before registering
         }
 

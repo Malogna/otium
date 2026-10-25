@@ -45,8 +45,9 @@ public static class UninstallCleanup
         var engines = AppPaths.Default.EnginesDir;
         try
         {
-            // The service runs from the engines folder and holds its file, so it goes first. The hook has 30 seconds.
-            Otium.Providers.Mysterium.WindowsMystSupervisor.RemoveIfOurs(engines, TimeSpan.FromSeconds(20));
+            // Mysterium's network service (in its Program Files folder, or the engines folder for earlier versions) goes first,
+            // as it may hold files there. The hook has 30 seconds.
+            Otium.Providers.Mysterium.MystSupervisors.RemoveOurs(engines, TimeSpan.FromSeconds(20));
         }
         catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException or IOException)
         {

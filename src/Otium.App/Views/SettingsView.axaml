@@ -174,12 +174,51 @@
                             <views:InternetSharingConsentView />
                         </StackPanel>
 
-                        <!-- Off, with Mysterium's network service (from an earlier version) still installed -->
+                    </StackPanel>
+                </Border>
+
+                <Border x:Name="MysteriumSection" Classes="card" IsVisible="{Binding MysteriumSharing.ShowInSettings}">
+                    <StackPanel Spacing="12" DataContext="{Binding MysteriumSharing}" x:DataType="vm:MysteriumSharingViewModel">
+                        <TextBlock Classes="h2" Text="Internet sharing through Mysterium" />
+                        <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" IsVisible="{Binding !IsOffered}" Text="{Binding UnavailableText}" />
+
+                        <!-- On: status and limits -->
+                        <StackPanel Spacing="10" IsVisible="{Binding IsOn}">
+                            <TextBlock TextWrapping="Wrap" Text="{Binding StatusText}" />
+                            <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Text="{Binding PaidToText}"
+                                       IsVisible="{Binding PaidToText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                            <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Text="{Binding ProjectionText}"
+                                       IsVisible="{Binding ProjectionText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                            <ToggleSwitch IsChecked="{Binding OnlyWhenAway}"
+                                          OnContent="Only share while I'm away from the computer" OffContent="Only share while I'm away from the computer" />
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <NumericUpDown Value="{Binding DailyLimitGb}" Minimum="0.1" Maximum="100" Increment="0.5" FormatString="0.#" Width="140" />
+                                <TextBlock VerticalAlignment="Center" Text="GB a day at most" />
+                            </StackPanel>
+                            <ToggleButton x:Name="MysteriumHow" Classes="link" HorizontalAlignment="Left" Content="How sharing through Mysterium works" />
+                            <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap" Text="{Binding ConsentText}"
+                                       IsVisible="{Binding #MysteriumHow.IsChecked}" />
+                            <Button Classes="link" HorizontalAlignment="Left" Command="{Binding OpenSwapCommand}" AutomationProperties.Name="Swapping MYST on Relay">
+                                <TextBlock Text="Swapping MYST on Relay" FontSize="12.5" Foreground="{DynamicResource GoodBrush}" />
+                            </Button>
+                            <Button Content="Turn off sharing through Mysterium" Command="{Binding TurnOffCommand}" IsEnabled="{Binding !IsBusy}" />
+                        </StackPanel>
+
+                        <!-- Offered but off: the explanation to agree to -->
+                        <StackPanel Spacing="10" IsVisible="{Binding CanTurnOn}">
+                            <TextBlock TextWrapping="Wrap" FontSize="13">
+                                <Run Text="Also share through Mysterium, paid in MYST to your own address" />
+                                <Run Text="{Binding EstimateText, Mode=OneWay, StringFormat=' ({0})'}" />
+                            </TextBlock>
+                            <views:MysteriumConsentView />
+                        </StackPanel>
+
+                        <!-- Off, with Mysterium's network service still installed -->
                         <StackPanel Spacing="6" IsVisible="{Binding CanRemoveService}">
                             <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap"
-                                       Text="Mysterium's network service, which internet sharing installed, is still on this computer. It does nothing while sharing is off; uninstalling Otium removes it too." />
+                                       Text="Mysterium's network service, which Otium installed for sharing, is still on this computer. It does nothing while sharing through Mysterium is off; uninstalling Otium on Windows removes it too." />
                             <Button Content="Remove Mysterium's network service" Command="{Binding RemoveServiceCommand}" IsEnabled="{Binding !IsBusy}"
-                                    ToolTip.Tip="Windows asks for your permission" />
+                                    ToolTip.Tip="Your computer asks for your permission" />
                         </StackPanel>
                         <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap" Text="{Binding ServiceMessage}"
                                    IsVisible="{Binding ServiceMessage, Converter={x:Static ObjectConverters.IsNotNull}}" />

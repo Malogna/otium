@@ -18,18 +18,27 @@ public static class WindowsSecurity
     /// <summary>
     /// Adds a Defender exclusion for <paramref name="folder"/>. Returns null on success, or a short user-facing reason.
     /// </summary>
-    public static async Task<string?> AllowFolderAsync(string folder)
+    public static Task<string?> AllowFolderAsync(string folder) => AllowFoldersAsync([folder]);
+
+    /// <summary>
+    /// Adds Defender exclusions for <paramref name="folders"/> with one Windows prompt: Otium's engines folder and, for
+    /// sharing through Mysterium, the Program Files folder its network service runs from. Returns null on success, or a
+    /// short user-facing reason.
+    /// </summary>
+    public static async Task<string?> AllowFoldersAsync(IReadOnlyList<string> folders)
     {
         if (!IsSupported)
             return "This is only needed on Windows.";
 
-        Directory.CreateDirectory(folder);
-        // PowerShell single-quoted string: the only character to escape is the quote itself.
-        var path = Path.GetFullPath(folder).Replace("'", "''", StringComparison.Ordinal);
+        // PowerShell single-quoted strings: the only character to escape is the quote itself. A folder under Program
+        // Files may not exist yet (only an administrator can create it); Defender accepts the path anyway.
+        foreach (var folder in folders.Take(1))
+            Directory.CreateDirectory(folder);
+        var paths = string.Join(",", folders.Select(f => "'" + Path.GetFullPath(f).Replace("'", "''", StringComparison.Ordinal) + "'"));
         var start = new ProcessStartInfo
         {
             FileName = Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe"),
-            Arguments = $"-NoProfile -NonInteractive -WindowStyle Hidden -Command \"Add-MpPreference -ExclusionPath '{path}'\"",
+            Arguments = $"-NoProfile -NonInteractive -WindowStyle Hidden -Command \"Add-MpPreference -ExclusionPath {paths}\"",
             UseShellExecute = true,
             Verb = "runas", // shows the UAC prompt
             WindowStyle = ProcessWindowStyle.Hidden,

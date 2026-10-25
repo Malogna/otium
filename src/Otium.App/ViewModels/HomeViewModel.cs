@@ -40,6 +40,7 @@ public partial class HomeViewModel : ViewModelBase
     private readonly Dictionary<DeviceKind, (double User, double Electricity)> _lastRates = [];
     private EarningsEstimate? _estimate;
     private readonly ActivityRow _internetRow;
+    private readonly ActivityRow _mysteriumRow;
 
     public HomeViewModel(AppHost host, Action openAdvanced)
     {
@@ -58,7 +59,14 @@ public partial class HomeViewModel : ViewModelBase
         host.MeasurementChanged += () => Dispatcher.UIThread.Post(Refresh);
 
         _internetRow = new ActivityRow { Icon = Icon("IconGlobe"), Title = "Internet connection" };
+        _mysteriumRow = new ActivityRow { Icon = Icon("IconGlobe"), Title = "Internet via Mysterium" };
         InternetSharing = new InternetSharingViewModel(host);
+        MysteriumSharing = new MysteriumSharingViewModel(host);
+        MysteriumSharing.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(MysteriumSharingViewModel.IsOn))
+                Refresh();
+        };
         InternetSharing.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(InternetSharingViewModel.IsOn))
@@ -68,6 +76,8 @@ public partial class HomeViewModel : ViewModelBase
         foreach (var engine in host.Engines)
             engine.SnapshotChanged += _ => Dispatcher.UIThread.Post(Refresh);
         host.Bandwidth.SnapshotChanged += _ => Dispatcher.UIThread.Post(Refresh);
+        if (host.Mysterium is { } mysterium)
+            mysterium.SnapshotChanged += _ => Dispatcher.UIThread.Post(Refresh);
         host.AccountChanged += () => Dispatcher.UIThread.Post(Refresh);
         host.Updates.Changed += () => Dispatcher.UIThread.Post(Refresh);
         host.HistoryChanged += () => Dispatcher.UIThread.Post(Refresh);
@@ -88,6 +98,9 @@ public partial class HomeViewModel : ViewModelBase
 
     /// <summary>Opt-in internet sharing: the suggestion card and its consent screen.</summary>
     public InternetSharingViewModel InternetSharing { get; }
+
+    /// <summary>Sharing through Mysterium, next to Proxybase: its own suggestion card and overview row.</summary>
+    public MysteriumSharingViewModel MysteriumSharing { get; }
 
     // ---------- balance ----------
 
@@ -195,8 +208,8 @@ public partial class HomeViewModel : ViewModelBase
         }
         else
         {
-            // Internet sharing pays the same wallet (Proxybase's earnings are converted to the user's coin), so it counts.
-            var sharedUsd = _host.Bandwidth.Snapshot.TotalUserUsd;
+            // Internet sharing pays the user too (Proxybase's earnings converted to their coin, Mysterium's in MYST), so it counts.
+            var sharedUsd = _host.Sharers.Sum(s => s.Snapshot.TotalUserUsd);
             // The engines' ledgers, not their snapshots: those are empty until each engine's first tick after a start.
             balanceValue = (decimal)(engines.Sum(e => e.Totals.UserUsd) + sharedUsd);
             BalanceCaption = "Earned so far · paid straight to your wallet";
@@ -274,10 +287,11 @@ public partial class HomeViewModel : ViewModelBase
         // Status and activity
         RefreshActivity(engines);
         RefreshInternetRow();
+        RefreshMysteriumRow();
         IsRunning = settings.EarningEnabled;
         ToggleText = settings.EarningEnabled ? "Pause" : "Start";
         var states = snapshots.Select(s => s.State).ToList();
-        NeedsAntivirusFix = snapshots.Any(s => s.EngineBlocked);
+        NeedsAntivirusFix = snapshots.Any(s => s.EngineBlocked) || _host.Sharers.Any(s => s.Snapshot.EngineBlocked);
         if (NeedsAntivirusFix)
             _ = _host.RefreshAntivirusAsync();
         AntivirusDetail = NeedsAntivirusFix ? _host.AntivirusReport?.Describe(_host.Paths.EnginesDir) ?? "" : "";
@@ -285,7 +299,8 @@ public partial class HomeViewModel : ViewModelBase
         IsEarning = states.Contains(EngineState.Earning);
         IsWaiting = !IsEarning && settings.EarningEnabled && states.Contains(EngineState.WaitingForIdle);
         IsProblem = NeedsAntivirusFix || (!IsEarning && states.Contains(EngineState.Error));
-        var sharing = _host.Bandwidth.Snapshot.State == BandwidthState.Sharing;
+        var sharers = _host.Sharers.Select(s => s.Snapshot).Where(s => s.State == BandwidthState.Sharing).ToList();
+        var sharing = sharers.Count > 0;
         (StateLabel, StatusText) = Describe(settings, snapshots, earningNow.Sum(s => s.UserUsdPerDay));
         if (!IsEarning && sharing && !IsProblem && settings.EarningEnabled)
         {
@@ -293,7 +308,7 @@ public partial class HomeViewModel : ViewModelBase
             IsWaiting = false;
             (StateLabel, StatusText) = ("Earning", "Sharing your internet connection. Mining starts when you step away.");
         }
-        var sharingNow = sharing ? _host.Bandwidth.Snapshot.UserUsdPerDay : 0;
+        var sharingNow = sharers.Sum(s => s.UserUsdPerDay);
         var netNow = earningNow.Sum(s => s.NetUsdPerDay) + sharingNow;
         ActivityHeadline = earningNow.Count == 0 && sharingNow <= 0 ? StatusText
             : netNow > 0 ? $"Earning {Format.Usd(netNow)} a day right now, after electricity"
@@ -476,8 +491,37 @@ public partial class HomeViewModel : ViewModelBase
             _internetRow.What = note;
     }
 
+    /// <summary>The Mysterium row, shown while sharing through Mysterium is on.</summary>
+    private void RefreshMysteriumRow()
+    {
+        var settings = _host.Settings;
+        var on = _host.Mysterium is not null && settings.MysteriumEnabled && settings.MysteriumConsentAt is not null && _host.MysteriumOffered;
+        if (on && !Activity.Contains(_mysteriumRow))
+            Activity.Add(_mysteriumRow);
+        else if (!on && Activity.Contains(_mysteriumRow))
+            Activity.Remove(_mysteriumRow);
+        if (!on || _host.Mysterium is not { } sharer)
+            return;
+
+        var b = sharer.Snapshot;
+        _mysteriumRow.IsActive = b.State == BandwidthState.Sharing;
+        _mysteriumRow.PerDay = b.State == BandwidthState.Sharing && b.UserUsdPerDay > 0 ? $"{Format.Usd(b.UserUsdPerDay)}/day" : "";
+        _mysteriumRow.Speed = b.TotalUserUsd > 0 ? $"{Format.Usd(b.TotalUserUsd)} earned so far, in MYST" : "Nothing earned yet";
+        _mysteriumRow.What = b.State switch
+        {
+            BandwidthState.Sharing => b.Activity ?? "Sharing unused bandwidth with Mysterium's business customers",
+            BandwidthState.WaitingForIdle => "Waiting for you to step away",
+            BandwidthState.LimitReached => "Today's data limit reached",
+            BandwidthState.Starting => b.StatusText is { Length: > 0 } text ? text : "Connecting…",
+            BandwidthState.Error or BandwidthState.Unavailable => b.StatusText,
+            _ => settings.EarningEnabled ? "Starting…" : "Paused",
+        };
+    }
+
     /// <summary>What internet sharing adds per day: measured while sharing, otherwise the typical estimate.</summary>
-    private double SharingPerDay()
+    private double SharingPerDay() => ProxybaseSharingPerDay() + (MysteriumSharing.IsOn ? MysteriumSharing.ExpectedUsdPerDay : 0);
+
+    private double ProxybaseSharingPerDay()
     {
         if (!InternetSharing.IsOn)
             return 0;

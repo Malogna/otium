@@ -76,7 +76,7 @@ Edit `.env`. Each setting has a comment; the essentials:
 | `Unmineable__OtiumTarget` | Otium's fee address on unMineable, e.g. `USDT:T…`, shown with its referral earnings on the admin dashboard |
 | `Sharing__RelayApiKey`, `Sharing__FeeRecipient`, `Sharing__FeeBps` | Internet sharing payouts: Relay converts each Proxybase payout to the user's coin; Otium's cut (basis points, default the mining fee) is paid by the app from the user's sharing earnings to your 0x address on Tempo, never taken from the conversion; the server reads Tempo (`Sharing__TempoRpcUrl`, default `https://rpc.tempo.xyz`) to check it arrived, and `Sharing__RequireFeeCheck=true` makes older apps update |
 | `Sharing__SideShiftSecret`, `Sharing__SideShiftAffiliateId`, `Sharing__ChangeNowApiKey` | Optional: LTC (SideShift) and XMR (ChangeNOW) sharing payouts; without them those users are asked to pick another coin for sharing |
-| `Mysterium__Enabled`, `Mysterium__SponsorPrivateKey` | Earlier, not offered now. Internet sharing: Otium pays each new Mysterium node's registration (about 0.13 MYST) from this Polygon wallet. Keep only a few days' MYST and a little POL in it |
+| `Mysterium__Enabled`, `Mysterium__SponsorPrivateKey` | Internet sharing through Mysterium, next to Proxybase: apps offer it only while this is on and the wallet is set. Otium pays each new node's registration (about 0.13 MYST) from this Polygon wallet. Keep only a few days' MYST and a little POL in it |
 | `Earnings__PoolWallets__0` | Custodial: your XMR receiving (sub)address, unless the wallet RPC creates them |
 | `Email__*` | Your SMTP service, so email sign-in and receipts work |
 | `BitcoinWallet__*` | Custodial: the Bitcoin treasury that pays every crypto cash-out (see [Bitcoin treasury](#bitcoin-treasury)) |

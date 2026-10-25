@@ -41,6 +41,7 @@ public sealed class AccountService(
     ILogger<AccountService> logger,
     IOptions<CustodyOptions> custodyOptions,
     MystSponsorService mystSponsor,
+    Bandwidth.MystPrice mystPrice,
     IOptions<FeeOptions> feeOptions,
     IOptions<ProxybaseOptions> proxybaseOptions,
     ConnectionHashes connections,
@@ -634,7 +635,8 @@ public sealed class AccountService(
             mystSponsor.IsAvailable,
             Policy.ToTerms(),
             !proxybaseOptions.Value.Enabled,
-            store.ReferralShareTotal(codes));
+            store.ReferralShareTotal(codes),
+            MystUsd: mystPrice.Current);
         return deviceId is null ? summary : WithFeeGrant(summary, deviceId, now);
     }
 

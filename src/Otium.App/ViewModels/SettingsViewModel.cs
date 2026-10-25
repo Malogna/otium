@@ -75,6 +75,10 @@ public partial class SettingsViewModel : ViewModelBase
 
     private InternetSharingViewModel? _internetSharing;
 
+    public MysteriumSharingViewModel MysteriumSharing => _mysteriumSharing ??= new MysteriumSharingViewModel(_host);
+
+    private MysteriumSharingViewModel? _mysteriumSharing;
+
     public EmailSignInViewModel SignIn => _signIn ??= new EmailSignInViewModel(_host, () => OnPropertyChanged(nameof(AccountText)));
 
     private EmailSignInViewModel? _signIn;

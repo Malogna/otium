@@ -58,6 +58,8 @@ public partial class DashboardViewModel : ViewModelBase
         Recalculate();
 
         host.Bandwidth.SnapshotChanged += _ => Dispatcher.UIThread.Post(Recalculate);
+        if (host.Mysterium is { } mysterium)
+            mysterium.SnapshotChanged += _ => Dispatcher.UIThread.Post(Recalculate);
         host.Updates.Changed += () => Dispatcher.UIThread.Post(RefreshUpdate);
         host.AntivirusChanged += () => Dispatcher.UIThread.Post(Recalculate);
         RefreshUpdate();
@@ -113,6 +115,18 @@ public partial class DashboardViewModel : ViewModelBase
     [ObservableProperty] public partial string SharingDetail { get; set; } = "";
     [ObservableProperty] public partial string SharingEarned { get; set; } = "$0.000";
 
+    [ObservableProperty] public partial bool ShowMysterium { get; set; }
+    [ObservableProperty] public partial string MysteriumLabel { get; set; } = "Off";
+    [ObservableProperty] public partial bool MysteriumIsEarning { get; set; }
+    [ObservableProperty] public partial bool MysteriumIsPaused { get; set; }
+    [ObservableProperty] public partial bool MysteriumIsProblem { get; set; }
+    [ObservableProperty] public partial string MysteriumWhat { get; set; } = "";
+    [ObservableProperty] public partial string MysteriumPerDay { get; set; } = "";
+    [ObservableProperty] public partial string MysteriumDetail { get; set; } = "";
+
+    /// <summary>"Internet sharing" in the totals when either kind is on.</summary>
+    public bool ShowSharingTotal => ShowSharing || ShowMysterium;
+
     [ObservableProperty] public partial string TotalEarned { get; set; } = "$0.000";
     [ObservableProperty] public partial string TotalElectricity { get; set; } = "$0.000";
     [ObservableProperty] public partial string TodayEarned { get; set; } = "$0.000";
@@ -151,17 +165,17 @@ public partial class DashboardViewModel : ViewModelBase
                 : active.OrderBy(d => Priority(d.Snapshot.State)).First().StatusText;
 
         var blocked = snapshots.FirstOrDefault(s => s.EngineBlocked);
-        IsBlocked = blocked is not null;
+        IsBlocked = blocked is not null || _host.Sharers.Any(s => s.Snapshot.EngineBlocked);
         // One exclusion covers every engine (CPU and GPU), so name their shared folder rather than the blocked one.
-        BlockedPath = blocked is null ? "" : _host.Paths.EnginesDir;
+        BlockedPath = IsBlocked ? _host.Paths.EnginesDir : "";
         if (IsBlocked)
             _ = _host.RefreshAntivirusAsync();
         AntivirusDetail = IsBlocked ? _host.AntivirusReport?.Describe(_host.Paths.EnginesDir) ?? "" : "";
         OnPropertyChanged(nameof(CanAllowAutomatically));
 
         RefreshSharing();
-        var bandwidth = _host.Bandwidth.Snapshot;
-        var sharingNow = bandwidth.State == BandwidthState.Sharing ? bandwidth.UserUsdPerDay : 0;
+        RefreshMysterium();
+        var sharingNow = _host.Sharers.Select(s => s.Snapshot).Where(s => s.State == BandwidthState.Sharing).Sum(s => s.UserUsdPerDay);
         var withNumbers = Devices.Where(d => d.HasNumbers).Select(d => d.Snapshot).ToList();
         var any = withNumbers.Count > 0 || sharingNow > 0;
         var user = withNumbers.Sum(s => s.UserUsdPerDay) + sharingNow;
@@ -175,7 +189,8 @@ public partial class DashboardViewModel : ViewModelBase
         IsNetNegative = any && user - cost < 0;
 
         TotalEarned = Format.Usd(snapshots.Sum(s => s.TotalUserUsd));
-        SharingEarned = Format.Usd(bandwidth.TotalUserUsd);
+        SharingEarned = Format.Usd(_host.Sharers.Sum(s => s.Snapshot.TotalUserUsd));
+        OnPropertyChanged(nameof(ShowSharingTotal));
         var kwh = Format.Kwh(snapshots.Sum(s => s.TotalEnergyKwh));
         TotalElectricity = freePower ? $"free ({kwh})" : $"{Format.Usd(snapshots.Sum(s => s.TotalElectricityUsd))} ({kwh})";
         // Today's profit counts internet sharing too: the history has both, the miners have today's electricity.
@@ -237,6 +252,32 @@ public partial class DashboardViewModel : ViewModelBase
         SharingDetail = b.TotalUserUsd > 0 ? $"{Format.Usd(b.TotalUserUsd)} earned so far"
             : estimate > 0 ? "estimate · nothing earned yet"
             : b.BytesToday > 0 ? $"{InternetSharingViewModel.FormatBytes(b.BytesToday)} today" : "";
+    }
+
+    /// <summary>The Mysterium row: its state, its pace in dollars (MYST at today's price) and what it earned in MYST.</summary>
+    private void RefreshMysterium()
+    {
+        var settings = _host.Settings;
+        ShowMysterium = _host.Mysterium is not null && settings.MysteriumEnabled && settings.MysteriumConsentAt is not null && _host.MysteriumOffered;
+        if (!ShowMysterium || _host.Mysterium is not { } sharer)
+            return;
+        var b = sharer.Snapshot;
+        MysteriumLabel = b.State switch
+        {
+            BandwidthState.Sharing => "Sharing",
+            BandwidthState.WaitingForIdle => "Waiting",
+            BandwidthState.LimitReached => "Limit reached",
+            BandwidthState.Starting => "Starting",
+            BandwidthState.Error or BandwidthState.Unavailable => "Problem",
+            _ => settings.EarningEnabled ? "Starting" : "Off",
+        };
+        MysteriumIsEarning = b.State == BandwidthState.Sharing;
+        MysteriumIsPaused = b.State is BandwidthState.WaitingForIdle or BandwidthState.LimitReached;
+        MysteriumIsProblem = b.State is BandwidthState.Error or BandwidthState.Unavailable;
+        MysteriumWhat = b.State is BandwidthState.Error or BandwidthState.Unavailable or BandwidthState.Starting ? b.StatusText : b.Earnings ?? "";
+        MysteriumPerDay = b.UserUsdPerDay > 0 ? $"{Format.Usd(b.UserUsdPerDay)}/day" : "";
+        MysteriumDetail = b.TotalUserUsd > 0 ? $"{Format.Usd(b.TotalUserUsd)} earned so far"
+            : b.BytesToday > 0 ? $"{InternetSharingViewModel.FormatBytes(b.BytesToday)} today" : "nothing earned yet";
     }
 
     private static int Priority(EngineState state) => state switch

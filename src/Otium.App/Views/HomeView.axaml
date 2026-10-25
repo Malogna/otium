@@ -447,6 +447,25 @@
                     </StackPanel>
                 </Border>
 
+                <!-- ===== Earn more: also share through Mysterium ===== -->
+                <Border Classes="card delay1" IsVisible="{Binding MysteriumSharing.ShowSuggestion}">
+                    <StackPanel Spacing="14" DataContext="{Binding MysteriumSharing}" x:DataType="vm:MysteriumSharingViewModel">
+                        <Grid ColumnDefinitions="Auto,*,Auto">
+                            <Border Classes="iconBadge" VerticalAlignment="Top"><Path Classes="icon" Data="{StaticResource IconGlobe}" /></Border>
+                            <StackPanel Grid.Column="1" Margin="14,0" VerticalAlignment="Center" Spacing="2">
+                                <TextBlock Classes="h2" Text="Also share through Mysterium" />
+                                <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap">
+                                    <Run Text="A second network for your unused internet, paid in MYST straight to your own address." />
+                                    <Run Text="{Binding EstimateText, Mode=OneWay, StringFormat='Typically {0}.'}" />
+                                </TextBlock>
+                            </StackPanel>
+                            <Button Grid.Column="2" Classes="accent" VerticalAlignment="Center" Content="Learn more"
+                                    Command="{Binding LearnMoreCommand}" IsVisible="{Binding !ShowConsent}" />
+                        </Grid>
+                        <views:MysteriumConsentView IsVisible="{Binding ShowConsent}" />
+                    </StackPanel>
+                </Border>
+
                 <!-- Protect the balance with an email (also how a second PC signs in) -->
                 <Border Classes="card" IsVisible="{Binding NeedsEmail}">
                     <Grid ColumnDefinitions="Auto,*">

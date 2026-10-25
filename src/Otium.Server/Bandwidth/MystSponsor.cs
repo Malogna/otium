@@ -19,6 +19,12 @@ public interface IMystWallet
 
     /// <summary>The wallet's MYST balance, for the admin dashboard.</summary>
     Task<decimal> GetBalanceAsync(CancellationToken ct);
+
+    /// <summary>The wallet's address, so the operator knows where to send MYST and POL; null without a key.</summary>
+    string? Address => null;
+
+    /// <summary>The wallet's POL balance (gas for each transfer), for the admin dashboard; null when unknown.</summary>
+    Task<decimal?> GetGasBalanceAsync(CancellationToken ct) => Task.FromResult<decimal?>(null);
 }
 
 /// <summary>An ERC-20 transfer of MYST on Polygon, signed with the sponsor key from <see cref="MysteriumOptions"/>.</summary>
@@ -30,6 +36,15 @@ public sealed class PolygonMystWallet(IOptions<MysteriumOptions> options) : IMys
     public bool IsConfigured => !string.IsNullOrWhiteSpace(_options.SponsorPrivateKey) && !string.IsNullOrWhiteSpace(_options.PolygonRpcUrl);
 
     private Web3 Connect() => new(new Account(_options.SponsorPrivateKey!.Trim(), _options.ChainId), _options.PolygonRpcUrl);
+
+    public string? Address => IsConfigured ? new Account(_options.SponsorPrivateKey!.Trim(), _options.ChainId).Address : null;
+
+    public async Task<decimal?> GetGasBalanceAsync(CancellationToken ct)
+    {
+        var web3 = Connect();
+        var wei = await web3.Eth.GetBalance.SendRequestAsync(web3.TransactionManager.Account.Address);
+        return (decimal)(wei.Value * 1_000_000 / WeiPerMyst) / 1_000_000m; // POL has 18 decimals too
+    }
 
     public async Task<string> SendAsync(string to, decimal amountMyst, CancellationToken ct)
     {

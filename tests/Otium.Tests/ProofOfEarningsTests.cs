@@ -502,7 +502,7 @@ public sealed class ProofOfEarningsTests
     private sealed class FakePrices : ICoinPrices
     {
         public Task<IReadOnlyDictionary<string, double>> GetUsdAsync(CancellationToken ct) =>
-            Task.FromResult<IReadOnlyDictionary<string, double>>(new Dictionary<string, double> { ["USDT"] = 1, ["XMR"] = 300 });
+            Task.FromResult<IReadOnlyDictionary<string, double>>(new Dictionary<string, double> { ["USDT"] = 1, ["XMR"] = 300, ["MYST"] = 0.08 });
     }
 
     private sealed class Server : IDisposable
@@ -644,6 +644,38 @@ public sealed class ProofOfEarningsTests
         var page = await (await server.Http.SendAsync(request)).Content.ReadAsStringAsync();
         Assert.Contains("the median of 3 Otium computers in Norway", page);
         Assert.Contains("<th scope=\"row\">Norway</th><td>3</td><td>$2.00</td>", page);
+    }
+
+    [Fact]
+    public async Task Mysterium_sharing_is_accepted_but_kept_out_of_proxybases_figures()
+    {
+        using var server = new Server(("RealEarnings:MinimumEarnedUsd", "0"), ("RealEarnings:MinimumUsers", "0"));
+        for (var i = 0; i < 3; i++)
+        {
+            var (device, secret, _) = await server.Register(TestAddresses.Usdt(i));
+            await server.Report(device, secret, new EarningsReport(1, T0 - TimeSpan.FromDays(1), T0,
+                [new DeviceEarnings("sharing", "NO", 24 * 3600, 1, 0), new DeviceEarnings("sharing-mysterium", "no", 24 * 3600, 0.05, 0)]));
+        }
+        server.AgeAccounts();
+
+        // The site's per-country figure is Proxybase's alone: $1 a day, not mixed with Mysterium's 5 cents.
+        var norway = Assert.Single(server.Factory.Services.GetRequiredService<RealEarningsService>().Compute(server.Time.GetUtcNow()).SharingByCountry);
+        Assert.Equal(1.0, norway.UsdPerSharingDay, precision: 6);
+
+        // Stored like Proxybase's, country upper-cased, for the admin's share analytics.
+        var kinds = server.Store.EarningsSince(T0 - TimeSpan.FromDays(2)).Select(r => (r.Kind, r.Model)).Distinct().ToList();
+        Assert.Contains(("sharing-mysterium", "NO"), kinds);
+    }
+
+    [Fact]
+    public async Task Account_summaries_carry_the_myst_price()
+    {
+        using var server = new Server();
+        var (device, secret, _) = await server.Register(TestAddresses.Usdt(0)); // starts the hourly read in the background
+
+        await server.Factory.Services.GetRequiredService<Otium.Server.Bandwidth.MystPrice>().RefreshAsync();
+        var summary = await new AccountClient(server.Http).GetSummaryAsync(device, secret, CancellationToken.None);
+        Assert.Equal(0.08, summary.MystUsd);
     }
 
     [Fact]

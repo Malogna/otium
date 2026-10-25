@@ -145,6 +145,26 @@
                     <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Margin="0,4,0,0" FontSize="13" TextWrapping="Wrap" Text="{Binding SharingWhat}"
                                IsVisible="{Binding SharingWhat, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                 </Grid>
+                <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" IsVisible="{Binding ShowMysterium}">
+                    <StackPanel Spacing="2">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Text="Internet connection" FontWeight="SemiBold" VerticalAlignment="Center" />
+                            <Border Classes="pill" Padding="8,1"
+                                    Classes.earning="{Binding MysteriumIsEarning}"
+                                    Classes.paused="{Binding MysteriumIsPaused}"
+                                    Classes.problem="{Binding MysteriumIsProblem}">
+                                <TextBlock Text="{Binding MysteriumLabel}" FontSize="12" />
+                            </Border>
+                        </StackPanel>
+                        <TextBlock Classes="muted" FontSize="12" Text="Unused bandwidth via Mysterium · paid in MYST to your Polygon address" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" HorizontalAlignment="Right" Spacing="2">
+                        <TextBlock HorizontalAlignment="Right" FontWeight="SemiBold" Text="{Binding MysteriumPerDay}" />
+                        <TextBlock HorizontalAlignment="Right" Classes="muted" FontSize="12" Text="{Binding MysteriumDetail}" />
+                    </StackPanel>
+                    <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Margin="0,4,0,0" FontSize="13" TextWrapping="Wrap" Text="{Binding MysteriumWhat}"
+                               IsVisible="{Binding MysteriumWhat, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                </Grid>
             </StackPanel>
         </Border>
 
@@ -156,8 +176,8 @@
                     <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="6">
                         <TextBlock Classes="muted" Text="Mining (estimate)" />
                         <TextBlock Grid.Column="1" Text="{Binding TotalEarned}" FontWeight="SemiBold" />
-                        <TextBlock Grid.Row="1" Classes="muted" Text="Internet sharing" IsVisible="{Binding ShowSharing}" />
-                        <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding SharingEarned}" FontWeight="SemiBold" IsVisible="{Binding ShowSharing}" />
+                        <TextBlock Grid.Row="1" Classes="muted" Text="Internet sharing" IsVisible="{Binding ShowSharingTotal}" />
+                        <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding SharingEarned}" FontWeight="SemiBold" IsVisible="{Binding ShowSharingTotal}" />
                         <TextBlock Grid.Row="2" Classes="muted" Text="Electricity used" />
                         <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding TotalElectricity}" />
                         <TextBlock Grid.Row="3" Classes="muted" Text="Today's profit" />

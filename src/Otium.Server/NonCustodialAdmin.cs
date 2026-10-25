@@ -63,13 +63,14 @@ public static class NonCustodialAdmin
             otiumError = "Set Unmineable:OtiumTarget to Otium's fee address (e.g. USDT:T…) to see its earnings here.";
         }
 
-        decimal? mystWalletBalance = null;
+        decimal? mystWalletBalance = null, mystWalletGas = null;
         string? mystError = null;
         if (myst.IsConfigured)
         {
             try
             {
                 mystWalletBalance = await myst.GetBalanceAsync(ct);
+                mystWalletGas = await myst.GetGasBalanceAsync(ct);
             }
             catch (Exception e) when (!ct.IsCancellationRequested)
             {
@@ -138,6 +139,8 @@ public static class NonCustodialAdmin
                 mystSpent = store.MystSponsoredSince(),
                 mystSpentPast24h = store.MystSponsoredSince(now.AddDays(-1)),
                 walletBalanceMyst = mystWalletBalance,
+                walletBalancePol = mystWalletGas,
+                walletAddress = myst.Address,
                 walletError = mystError,
             },
             accountsByCoin = store.PayoutCoinCounts().Select(c => new { c.Coin, c.Accounts }),
