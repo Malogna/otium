@@ -1,6 +1,6 @@
 # Otium privacy policy
 
-*Last updated: 22 October 2026*
+*Last updated: 25 October 2026*
 
 Otium is a desktop app that earns for you with your computer's idle processor and graphics card and, if you choose,
 your unused internet connection. Mining pools pay you directly at your own wallet address; Otium doesn't receive or
@@ -34,6 +34,7 @@ and computers. We treat it with the same care as your email.
 | **When the pools last showed your computers' miners working**, on your own address and on Otium's fee address, read from the pools' public APIs by your computer's worker name (kept 30 days) | Checking that copies of Otium mine Otium's fee, so a modified app can't skip it | Legitimate interest in being paid the disclosed fee (art. 6(1)(f)). Source: the pools' public APIs (art. 14) |
 | **Invite links opened:** when you open a friend's invite link (otium.lol/r/…), the invite code and a keyed one-way hash of your internet connection (your IPv4 address, or the first half of your IPv6 address), never the address itself | Filling in your friend's invite code when you install Otium on the same connection, so you don't have to type it. You can change or clear it during setup | Legitimate interest in making invites work for the people who use them (art. 6(1)(f)) |
 | **What the pools paid your address:** the coin, the total the pool reports as paid to your address and its last 30 days, read about twice a day from the pools' public APIs | Showing on otium.lol the total paid to Otium users (one sum over everyone, never per person) | Legitimate interest in showing what Otium is worth. Source: the pools' public APIs (art. 14) |
+| **Mysterium registrations**, only if you turn on sharing through Mysterium: your node's Mysterium identity and channel address, your computer, the internet address it asked from, and the Polygon transaction in which Otium paid the node's one-time registration. Not your Polygon payout address: your node gives that to Mysterium itself | Paying each node's registration once, and limiting how many we pay for per computer, account and internet connection | Contract; legitimate interest in preventing abuse (art. 6(1)(f)) |
 | **Earnings statistics**, only if you answer yes to "Share analytics": every few hours, your graphics card model, processor name, how long each mined, what it earned and the electricity it used, and, if you share your internet, your country, how long it shared and what sharing earned, linked to your computer's device id. Never your address | Publishing real per-card and per-country sharing earnings on otium.lol, only as medians across at least 3 computers | Consent (GDPR art. 6(1)(a)). You can withdraw it in Settings at any time; we then delete that computer's statistics. The app records when you answered |
 | **Problem reports**, only when you press "Send a problem report": the app version and operating system, your settings switches, what each miner is doing and its recent messages, your graphics card's test results, internet sharing's status, your pool balance and the name of your antivirus, with payout addresses, email addresses, keys, the device secret, your computer's name and your user name (also in file paths) removed, plus any note you write | Finding out why Otium isn't working for you, when you ask for help | Contract (support you asked for) |
 | **Server logs:** IP addresses and request details. Counts of requests per internet connection, kept in memory for at most a day and never written down | Security, troubleshooting and limiting abuse (for example how many sign-in emails or new accounts one connection can ask for) | Legitimate interest |
@@ -61,6 +62,8 @@ years) in its data folder (Settings → About → Open data folder). Uninstallin
 | **The miners' developers** (XMRig, SRBMiner) | Your computer's IP address: XMRig mines 1% of its time and SRBMiner a small developer fee on their developers' own pools, which these programs require. Not your address: that share is mined for them | Running the open-source miners Otium uses |
 | **Friends you invite** | Your payout address and coin: the Otium app of each friend who joins with your code mines your referral share straight to that address | Paying you the referral share. Anyone who has an address can see its history on the blockchain, so use a separate address for invites if you'd rather keep yours private |
 | **Proxybase** (PROXYBASE XYZ LLC, USA; only if you turn internet sharing on) | Runs its client on your computer, which relays its customers' traffic through your connection; sees your IP address and the traffic it relays, and a wallet address made on your computer for your earnings | Internet sharing. A separate controller under its own terms |
+| **Mysterium Network** (only if you turn on sharing through Mysterium) | Runs its node on your computer, which routes its business customers' traffic through your connection; sees your IP address and the traffic it routes, and pays MYST to your Polygon address | Internet sharing through Mysterium. A separate controller under its own terms and privacy notice |
+| **The Polygon blockchain** | Your node's channel address and Otium's registration payment for it; later, Mysterium's MYST payments to your Polygon address. Anyone can see these | Registering your node; paying you |
 | **Relay** (Uneven Labs, Inc., USA) and, for LTC or XMR payouts, **SideShift** (St Kitts and Nevis) or **ChangeNOW** (St Vincent and the Grenadines) | Your payout address and coin, the amount, the sharing client's wallet address (for refunds); SideShift and ChangeNOW also your computer's IP address, which they require | Converting internet sharing earnings to your coin and paying your address |
 | **Amazon Web Services** (Simple Email Service, London) | Your email address and the sign-in code | Sending codes (our processor, under the same AWS agreement as hosting) |
 | **Amazon Web Services** (Lightsail, London) | Everything on the server | Hosting (our processor) |
@@ -89,7 +92,9 @@ The mining pools are reached directly by your computer, not by Otium.
   payout address, invite code, the link between you and your mining worker, your computers and their keys, your
   sign-in codes, your problem reports, the earnings statistics you shared, the hashes of your internet connections, your
   app's reports of what it mined for the person who invited you, when the pools last showed your miners working, and
-  the record of what the pools paid your address. Only the hashes of payout addresses and computers that joined
+  the record of what the pools paid your address. Records of Mysterium registrations Otium paid lose their link to
+  your computer and its internet address; the node's identity and the payment stay, as they're public on Polygon
+  anyway and stop the same node being paid for twice. Only the hashes of payout addresses and computers that joined
   through an invite stay (see below).
   What the pools themselves keep about your address is up to them.
 - **Sign-in codes** stop working after 15 minutes.

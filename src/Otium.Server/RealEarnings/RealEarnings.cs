@@ -92,6 +92,12 @@ public sealed class EarningsReportService(OtiumStore store, TimeProvider time)
     /// <summary>Also generous: a 1.5 kW machine at $1/kWh.</summary>
     public const double MaxElectricityUsdPerDay = 36;
 
+    /// <summary>Internet sharing through Proxybase; the site's per-country figures are Proxybase's alone.</summary>
+    public const string Sharing = "sharing";
+
+    /// <summary>Internet sharing through Mysterium (MYST at the day's price), kept apart so the two networks never mix.</summary>
+    public const string SharingMysterium = "sharing-mysterium";
+
     public void Report(Session session, EarningsReport report)
     {
         var now = time.GetUtcNow();
@@ -105,11 +111,11 @@ public sealed class EarningsReportService(OtiumStore store, TimeProvider time)
             var days = d.EarningSeconds / 86400;
             // A computer with several cards reports "multi:N" (up to 16 cards) with the whole computer's earnings.
             var cards = d.Kind == "gpu" && MultiCardCount(d.Model) is { } n ? n : 1;
-            var maxUsd = d.Kind switch { "gpu" => MaxGpuUsdPerDay * cards, "sharing" => MaxSharingUsdPerDay, _ => MaxCpuUsdPerDay };
+            var maxUsd = d.Kind switch { "gpu" => MaxGpuUsdPerDay * cards, Sharing or SharingMysterium => MaxSharingUsdPerDay, _ => MaxCpuUsdPerDay };
             // Sharing's "model" is the computer's country: two letters, nothing else.
-            if (d.Kind == "sharing" && (d.Model is not { Length: 2 } || !d.Model.All(char.IsAsciiLetter) || d.ElectricityUsd != 0))
+            if (d.Kind is Sharing or SharingMysterium && (d.Model is not { Length: 2 } || !d.Model.All(char.IsAsciiLetter) || d.ElectricityUsd != 0))
                 throw new OtiumException(StatusCodes.Status400BadRequest, "This earnings report doesn't look right.");
-            if (d.Kind is not ("cpu" or "gpu" or "sharing") || d.Model is { Length: > 100 } || d.EarningSeconds < 0 || d.EarningSeconds > period + 600
+            if (d.Kind is not ("cpu" or "gpu" or Sharing or SharingMysterium) || d.Model is { Length: > 100 } || d.EarningSeconds < 0 || d.EarningSeconds > period + 600
                 || d.UserUsd < 0 || d.UserUsd > maxUsd * days + 0.01 || d.ElectricityUsd < 0 || d.ElectricityUsd > MaxElectricityUsdPerDay * cards * days + 0.01)
                 throw new OtiumException(StatusCodes.Status400BadRequest, "This earnings report doesn't look right.");
         }
@@ -118,7 +124,7 @@ public sealed class EarningsReportService(OtiumStore store, TimeProvider time)
         {
             Devices = report.Devices.Select(d => d with
             {
-                Model = d.Kind == "sharing" ? d.Model!.ToUpperInvariant() : MultiCardCount(d.Model) is not null ? d.Model : Clean(d.Model),
+                Model = d.Kind is Sharing or SharingMysterium ? d.Model!.ToUpperInvariant() : MultiCardCount(d.Model) is not null ? d.Model : Clean(d.Model),
             }).ToList(),
         };
         if (store.AddEarningsReport(session.Device.DeviceId, session.Account.AccountId, clean, now) == OtiumStore.EarningsReportOutcome.Overlaps)
@@ -147,7 +153,7 @@ public interface ICoinPrices
 
 public sealed class CoinGeckoPrices(HttpClient http, TimeProvider time) : ICoinPrices
 {
-    /// <summary>Payout coin symbol → CoinGecko id.</summary>
+    /// <summary>Payout coin symbol → CoinGecko id, plus MYST for Mysterium sharing's earnings in dollars.</summary>
     public static readonly IReadOnlyDictionary<string, string> Ids = new Dictionary<string, string>
     {
         ["USDT"] = "tether",
@@ -159,6 +165,7 @@ public sealed class CoinGeckoPrices(HttpClient http, TimeProvider time) : ICoinP
         ["ETH"] = "ethereum",
         ["XMR"] = "monero",
         ["DOGE"] = "dogecoin",
+        ["MYST"] = "mysterium",
     };
 
     private readonly SemaphoreSlim _lock = new(1, 1);
@@ -394,7 +401,7 @@ public sealed class RealEarningsService(OtiumStore store, IOptions<RealEarningsO
             .OrderByDescending(c => c.UsdPerEarningDay)
             .ToList();
         var sharing = rows
-            .Where(r => r.Kind == "sharing")
+            .Where(r => r.Kind == EarningsReportService.Sharing) // Proxybase only: Mysterium pays a different network's rates
             .GroupBy(r => r.Model)
             .Where(g => g.Select(r => r.AccountId).Distinct().Count() >= minimumAccounts)
             .Select(g => new RealSharing(

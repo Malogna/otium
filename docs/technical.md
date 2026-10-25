@@ -376,9 +376,21 @@ SOCKS5 access, mostly to AI agents and scraping/ad-verification jobs, and pays s
 the client makes a wallet key on the computer and signs in with it. Proxybase pays only USDC on the Tempo network, so
 each payout goes **through a one-time conversion to the user's own payout address and coin** (USDT on TRON, BTC, SOL…),
 and users never see Tempo. Otium's cut is paid separately, never from the conversion, and the server checks on Tempo
-that it arrived. (The earlier
-Mysterium node, `src/Otium.Providers.Mysterium`, stays in the code base but isn't offered; its "remove the network
-service" button in Advanced remains for computers that installed it.)
+that it arrived.
+
+Next to Proxybase, users can also share through a **Mysterium node** (`src/Otium.Providers.Mysterium`, the
+open-source `myst` 1.39.7 pinned for Windows x64, macOS and Linux x64), with its own switch, consent screen, daily
+limit and row on the overview. It runs Mysterium's business (B2B) services only: scraping, data transfer and business
+VPN. The node settles MYST on Polygon straight to the user's own 0x address at 5 MYST, minus Mysterium's 20% fee;
+Otium takes nothing, and the server pays each node's one-time registration from a small wallet of its own
+(`Mysterium:*` below). Otium can't convert MYST without holding it: Relay can swap it (SideShift and ChangeNOW don't
+list MYST), and the app links there. The app shows earnings in dollars from the MYST price the server sends
+(`MystUsd` in the account summary, from CoinGecko, refreshed hourly). Mysterium's network supervisor runs with full
+rights, so the app installs it once, with the system's administrator prompt, from a copy in a folder only
+administrators can change (`Program Files\Otium\Mysterium`, `/Library/Application Support/Otium/Mysterium`,
+`/usr/local/lib/otium-mysterium`). Microsoft Defender flags the Windows node (`Trojan:Win32/Pomal!rfn`, a reputation
+detection); the app's "Allow in Windows Security" fix covers it and the supervisor's folder. Share analytics report it
+as `sharing-mysterium`, kept apart from Proxybase's `sharing`.
 
 - **Consent first.** Sharing is off until the user agrees: Quick start lists it with the rest, Customize and the
   overview explain it on its own (who the buyers are, what websites see, paid in their coin, Proxybase's terms). Users
@@ -625,7 +637,7 @@ src/Otium.Core               engine, provider interface, fees, power, GPU detect
 src/Otium.Providers.XMRig    CPU miner provider
 src/Otium.Providers.SrbMiner GPU miner provider with benchmarking and profit switching
 src/Otium.Providers.Proxybase internet sharing through Proxybase's client, converted to the user's own coin
-src/Otium.Providers.Mysterium internet sharing as a Mysterium node (earlier choice, not offered now)
+src/Otium.Providers.Mysterium internet sharing as a Mysterium node, next to Proxybase (B2B only, paid in MYST)
 src/Otium.Providers.Honeygain internet sharing through the Honeygain SDK (custodial servers; loaded at runtime)
 src/Otium.App                desktop app (Welcome → Home ⇄ Advanced), Velopack updates
 src/Otium.Server             accounts and email sign-in, referrals, GPU policy, website (front page, /download,
