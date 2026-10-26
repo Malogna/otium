@@ -58,7 +58,7 @@ public class MysteriumNodeTests
         Assert.Contains("--tequilapi.address=127.0.0.1", args);
         Assert.Contains("--tequilapi.port=41234", args);
         Assert.Contains("--tequilapi.auth.password=secret", args);
-        Assert.Contains("--usermode", args);
+        Assert.Contains("--userspace", args);
         Assert.Equal("daemon", args[^1]);
         Assert.DoesNotContain(args, a => a.Contains("agreed-terms", StringComparison.Ordinal)); // terms come from Otium's consent
         Assert.Equal(["scraping", "data_transfer", "dvpn"], MysteriumBandwidthProvider.B2BServices);

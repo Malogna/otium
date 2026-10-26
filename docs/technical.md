@@ -385,12 +385,14 @@ VPN. The node settles MYST on Polygon straight to the user's own 0x address at 5
 Otium takes nothing, and the server pays each node's one-time registration from a small wallet of its own
 (`Mysterium:*` below). Otium can't convert MYST without holding it: Relay can swap it (SideShift and ChangeNOW don't
 list MYST), and the app links there. The app shows earnings in dollars from the MYST price the server sends
-(`MystUsd` in the account summary, from CoinGecko, refreshed hourly). Mysterium's network supervisor runs with full
-rights, so the app installs it once, with the system's administrator prompt, from a copy in a folder only
-administrators can change (`Program Files\Otium\Mysterium`, `/Library/Application Support/Otium/Mysterium`,
-`/usr/local/lib/otium-mysterium`). Microsoft Defender flags the Windows node (`Trojan:Win32/Pomal!rfn`, a reputation
-detection); the app's "Allow in Windows Security" fix covers it and the supervisor's folder. Share analytics report it
-as `sharing-mysterium`, kept apart from Proxybase's `sharing`.
+(`MystUsd` in the account summary, from CoinGecko, refreshed hourly). The node runs in Mysterium's userspace mode
+(`--userspace`): WireGuard and the forwarding of buyers' traffic run inside the node, so it needs no administrator
+rights, network service (supervisor), tunnel driver or system NAT settings. (Its other mode needs Windows connection
+sharing, iptables or pfctl to forward traffic, which a node running as the user can't set up: every buyer session
+failed that way in October 2026.) Test versions 0.1.2-rc.1 to rc.3 installed Mysterium's supervisor service; Advanced
+settings and the Windows uninstaller remove it. Microsoft Defender flags the Windows node (`Trojan:Win32/Pomal!rfn`, a
+reputation detection); the app's "Allow in Windows Security" fix covers it. Share analytics report it as
+`sharing-mysterium`, kept apart from Proxybase's `sharing`.
 
 - **Consent first.** Sharing is off until the user agrees: Quick start lists it with the rest, Customize and the
   overview explain it on its own (who the buyers are, what websites see, paid in their coin, Proxybase's terms). Users

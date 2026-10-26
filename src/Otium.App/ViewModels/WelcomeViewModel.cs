@@ -203,7 +203,7 @@ public partial class WelcomeViewModel : ViewModelBase
 
     public string MysteriumChoiceText =>
         "Business customers only. Paid in MYST to your own Polygon address; Otium takes nothing and pays the setup. " +
-        "Asks for administrator permission once. Ticking it means you agree to Mysterium's terms.";
+        "Ticking it means you agree to Mysterium's terms.";
 
     [RelayCommand]
     private void OpenMysteriumTerms() => Launch.Open(MysteriumSharingViewModel.TermsUrl);

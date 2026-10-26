@@ -7,24 +7,12 @@ public sealed record MystAsset(string FileName, string Sha256)
     public Uri DownloadUrl => new($"https://github.com/mysteriumnetwork/node/releases/download/{MystRelease.Version}/{FileName}");
 }
 
-/// <param name="Sha256">Of the zip.</param>
-/// <param name="DllSha256">Of the 64-bit wintun.dll inside it, checked again before it's copied next to the supervisor.</param>
-public sealed record WintunAsset(string Version, string Sha256, string DllSha256)
-{
-    public string FileName => $"wintun-{Version}.zip";
-
-    public Uri DownloadUrl => new($"https://www.wintun.net/builds/{FileName}");
-
-    /// <summary>The 64-bit driver's path inside the unpacked zip.</summary>
-    public static string AmdDll(string unpacked) => Path.Combine(unpacked, "wintun", "bin", "amd64", MystRelease.WintunDll);
-}
-
 /// <summary>
 /// The pinned Mysterium node release (open source, github.com/mysteriumnetwork/node), checked against the SHA-256
 /// GitHub publishes for each asset. Its executables aren't Authenticode-signed or notarized, so the checksum is what
-/// vouches for them. Each archive holds the node (<c>myst</c>) and its network supervisor (<c>myst_supervisor</c>), which
-/// Otium installs once with the system's administrator prompt: a Windows service, a launchd daemon on macOS or a systemd
-/// service on Linux (tried on Windows and Ubuntu, October 2026). Linux on ARM has only .deb packages, so it isn't offered.
+/// vouches for them. Otium runs only the node (<c>myst</c>), in userspace mode; the archive's network supervisor isn't
+/// installed (earlier test versions did, see <see cref="MystSupervisors"/>). Linux on ARM has only .deb packages, so it
+/// isn't offered.
 /// </summary>
 public static class MystRelease
 {
@@ -49,18 +37,4 @@ public static class MystRelease
     };
 
     public static string BinaryName => OperatingSystem.IsWindows() ? "myst.exe" : "myst";
-
-    /// <summary>
-    /// WireGuard's Wintun driver (wintun.net, signed by WireGuard LLC), which the Windows supervisor needs to create the
-    /// node's tunnel. Mysterium's own Windows app ships it, but the node's release zip doesn't (October 2026), so every
-    /// buyer session failed with "Error loading wintun.dll". The zip's SHA-256 is the one WireGuard publishes.
-    /// </summary>
-    public static readonly WintunAsset Wintun = new(
-        "0.14.1",
-        "07c256185d6ee3652e09fa55c0b673e2624b565e02c4b9091c79ca7d2f24ef51",
-        "e5da8447dc2c320edc0fc52fa01885c103de8c118481f683643cacc3220dafce");
-
-    public const string WintunDll = "wintun.dll";
-
-    public static string SupervisorName => OperatingSystem.IsWindows() ? "myst_supervisor.exe" : "myst_supervisor";
 }

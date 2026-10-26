@@ -60,7 +60,7 @@ public partial class SharingSetupViewModel : ViewModelBase
 
     public string MysteriumLine =>
         "Business customers only. Paid in MYST to your own Polygon address; Otium takes nothing and pays the one-time " +
-        "setup fee. Asks for administrator permission once.";
+        "setup fee.";
 
     public void Refresh()
     {
