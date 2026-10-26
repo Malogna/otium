@@ -64,11 +64,11 @@
         </Border>
 
         <StackPanel Spacing="4" IsVisible="{Binding NeedsPolygonAddress}">
-            <TextBlock Classes="label" Text="Your 0x address, for Mysterium's MYST and AIOZ" />
+            <TextBlock Classes="label" Text="Your 0x address on Polygon, for Mysterium's MYST" />
             <TextBox Text="{Binding PolygonAddress}" PlaceholderText="0x…" FontFamily="Consolas, Menlo, monospace"
                      AutomationProperties.Name="Your Polygon address" />
             <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
-                       Text="Your payout coin isn't on an 0x network, so these need the address of a wallet you hold the keys to (MetaMask, Rabby, Trust Wallet)." />
+                       Text="Your payout coin isn't on an 0x network, so Mysterium needs the address of a wallet you hold the keys to (MetaMask, Rabby, Trust Wallet)." />
             <TextBlock Classes="error" TextWrapping="Wrap" Text="{Binding PolygonAddressError}"
                        IsVisible="{Binding PolygonAddressError, Converter={x:Static ObjectConverters.IsNotNull}}" />
         </StackPanel>

@@ -63,8 +63,8 @@ public partial class SharingSetupViewModel : ViewModelBase
 
     public bool CanTurnOn => !IsBusy && ((OffersProxybase && UseProxybase) || (OffersMysterium && UseMysterium) || (OffersAioz && UseAioz));
 
-    /// <summary>Mysterium and AIOZ pay an 0x address (the same one works for both); asked for when the payout coin isn't on one.</summary>
-    public bool NeedsPolygonAddress => (OffersMysterium && UseMysterium && Mysterium.NeedsPayoutAddress) || (OffersAioz && UseAioz && Aioz.NeedsPayoutAddress);
+    /// <summary>Mysterium pays an 0x address, asked for when the payout coin isn't on one; it's used for AIOZ too.</summary>
+    public bool NeedsPolygonAddress => OffersMysterium && UseMysterium && Mysterium.NeedsPayoutAddress;
 
     public string ProxybaseLine =>
         "AI agents and businesses that collect public web pages. Paid in your coin, like mining (Otium keeps its usual share). " +
@@ -76,7 +76,7 @@ public partial class SharingSetupViewModel : ViewModelBase
 
     public string AiozLine =>
         "Stores and delivers files for AIOZ's network, using some disk space and upload bandwidth. Paid in AIOZ to your " +
-        "own 0x address; Otium takes nothing. Earnings are uncertain.";
+        "wallet; Otium takes nothing. Earnings are uncertain.";
 
     public void Refresh()
     {
@@ -117,10 +117,9 @@ public partial class SharingSetupViewModel : ViewModelBase
             }
             PolygonAddressError = null;
             var address = PolygonAddress.Trim().ToLowerInvariant();
-            if (OffersMysterium && UseMysterium)
-                _host.Settings.MysteriumPayoutAddress = address;
+            _host.Settings.MysteriumPayoutAddress = address;
             if (OffersAioz && UseAioz)
-                _host.Settings.AiozPayoutAddress = address;
+                _host.Settings.AiozPayoutAddress = address; // the same wallet, so AIOZ needn't wait on this computer
             _host.SaveSettings();
         }
 

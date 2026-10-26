@@ -780,13 +780,16 @@ public sealed class AppHost : IAsyncDisposable
     public bool AiozOffered => Aioz is not null && Settings.PayoutMode == PayoutMode.OwnWallet && AiozRelease.ForCurrentPlatform() is not null;
 
     /// <summary>
-    /// The 0x address AIOZ is withdrawn to: the one the user gave for it, or their payout address when it's an 0x address
-    /// (the same key works on the AIOZ network). Null until there is one.
+    /// The 0x address AIOZ is withdrawn to: the one the user gave for it, their payout address when it's an 0x address,
+    /// or the wallet they gave Mysterium (the same key works on the AIOZ network). Null until there is one: AIOZ then
+    /// waits in the node on this computer.
     /// </summary>
     public string? AiozPayoutAddress =>
         CryptoAddresses.TryValidate(AddressFormat.Evm, Settings.AiozPayoutAddress, out _)
             ? Settings.AiozPayoutAddress!.Trim().ToLowerInvariant()
-            : PayoutTarget.ParseOrNull(Settings.PayoutAddress) is { Coin.Format: AddressFormat.Evm } evm ? evm.Address : null;
+            : PayoutTarget.ParseOrNull(Settings.PayoutAddress) is { Coin.Format: AddressFormat.Evm } evm ? evm.Address
+            : CryptoAddresses.TryValidate(AddressFormat.Evm, Settings.MysteriumPayoutAddress, out _) ? Settings.MysteriumPayoutAddress!.Trim().ToLowerInvariant()
+            : null;
 
     /// <summary>The server pays new nodes' registration and this computer can run Mysterium's node.</summary>
     public bool MysteriumOffered => Mysterium is not null && Settings.PayoutMode == PayoutMode.OwnWallet && Settings.Account.MysteriumSponsored

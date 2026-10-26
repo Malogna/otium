@@ -16,17 +16,7 @@
                 </Button>
             </StackPanel>
         </Border>
-        <StackPanel Spacing="4" IsVisible="{Binding NeedsPayoutAddress}">
-            <TextBlock Classes="label" Text="Your 0x address, for AIOZ" />
-            <TextBox Text="{Binding PayoutAddress}" PlaceholderText="0x…" FontFamily="Consolas, Menlo, monospace"
-                     AutomationProperties.Name="Your 0x address for AIOZ" />
-            <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
-                       Text="Your payout address isn't an 0x address, so AIOZ needs one: the address of a wallet you hold the keys to (MetaMask, Rabby, Trust Wallet). Use an exchange deposit address only if the exchange says it accepts AIOZ on the AIOZ network." />
-            <TextBlock Classes="error" TextWrapping="Wrap" Text="{Binding PayoutAddressError}"
-                       IsVisible="{Binding PayoutAddressError, Converter={x:Static ObjectConverters.IsNotNull}}" />
-        </StackPanel>
-        <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap" Text="{Binding PaidToText}"
-                   IsVisible="{Binding !NeedsPayoutAddress}" />
+        <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap" Text="{Binding PaidToText}" />
         <TextBlock Classes="error" TextWrapping="Wrap" Text="{Binding Error}"
                    IsVisible="{Binding Error, Converter={x:Static ObjectConverters.IsNotNull}}" />
         <StackPanel Orientation="Horizontal" Spacing="10">

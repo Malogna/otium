@@ -55,19 +55,24 @@ public partial class AiozSharingViewModel : ViewModelBase
     [ObservableProperty] public partial bool OnlyWhenAway { get; set; }
     [ObservableProperty] public partial decimal? StorageLimitGb { get; set; }
 
-    /// <summary>The user's own 0x address, asked for only when the payout address isn't an 0x address.</summary>
+    /// <summary>
+    /// An 0x address for AIOZ, offered in Settings only when the payout address isn't one. Turning AIOZ on never needs
+    /// it: until there is one, AIOZ waits in the node on this computer.
+    /// </summary>
     [ObservableProperty] public partial string PayoutAddress { get; set; } = "";
 
     [ObservableProperty] public partial string? PayoutAddressError { get; set; }
 
-    /// <summary>The payout address isn't an 0x address, so AIOZ needs one.</summary>
+    [ObservableProperty] public partial string? PayoutAddressSaved { get; set; }
+
+    /// <summary>The payout address isn't an 0x address, so Settings offers a box for one.</summary>
     public bool NeedsPayoutAddress =>
         PayoutTarget.ParseOrNull(_host.Settings.PayoutAddress) is not { Coin.Format: AddressFormat.Evm };
 
-    /// <summary>Where the earnings go, once there's an address.</summary>
+    /// <summary>Where the earnings go: the payout wallet (or the 0x address given for AIOZ), or this computer until there is one.</summary>
     public string PaidToText => _host.AiozPayoutAddress is { } address
         ? $"Paid in AIOZ to {Shorten(address)} on the AIOZ network."
-        : "";
+        : "Your payout coin isn't on an 0x network, so AIOZ waits on this computer. Add an 0x address below whenever you like to receive it.";
 
     /// <summary>The explanation users agree to. Plain words, no small print.</summary>
     public string ConsentText =>
@@ -77,11 +82,12 @@ public partial class AiozSharingViewModel : ViewModelBase
         "passwords or browsing, and it needs no administrator rights. Otium can't see or control what it stores. " +
         "Some internet providers don't allow this kind of sharing: check yours if you're not sure.\n\n" +
         (SetupText is { Length: > 0 } setup ? setup + "\n\n" : "") +
-        $"AIOZ pays in its AIOZ token. The node collects it, and Otium sends it to your own 0x address on the AIOZ " +
-        $"network once {AiozBandwidthProvider.WithdrawAtAioz:0} AIOZ has built up (at most once a day). Otium takes " +
-        "nothing. Add the AIOZ network to your wallet to see it, and check your wallet or exchange supports AIOZ on " +
-        "that network before you rely on it. AIOZ has many more nodes than paying files, so earnings may be small or " +
-        "nothing for a while. AIOZ publishes no separate terms for its node; it's open source (Apache 2.0).";
+        $"AIOZ pays in its AIOZ token. The node collects it, and once {AiozBandwidthProvider.WithdrawAtAioz:0} AIOZ has " +
+        "built up Otium sends it to your payout wallet on the AIOZ network (at most once a day) when that's an 0x " +
+        "address. Otherwise it waits on this computer until you add one in Advanced settings: no exchange service " +
+        "converts AIOZ on its own network into other coins yet. Otium takes nothing. Add the AIOZ network to your " +
+        "wallet to see it. AIOZ has many more computers than paying files, so earnings may be small or nothing for a " +
+        "while. AIOZ publishes no separate terms for its node; it's open source (Apache 2.0).";
 
     /// <summary>The node isn't Authenticode-signed, so Windows Security may stop it.</summary>
     private static string SetupText =>
@@ -157,21 +163,28 @@ public partial class AiozSharingViewModel : ViewModelBase
     [RelayCommand]
     private void NotNow() => ShowConsent = false;
 
+    /// <summary>One click: no address needed (see <see cref="PaidToText"/>).</summary>
     [RelayCommand]
-    private Task Agree()
+    private Task Agree() => SetAsync(true);
+
+    /// <summary>Saves the 0x address AIOZ is sent to (Settings, when the payout address isn't one); empty clears it.</summary>
+    [RelayCommand]
+    private void SaveAddress()
     {
-        if (NeedsPayoutAddress)
+        PayoutAddressSaved = null;
+        if (PayoutAddress.Trim().Length == 0)
+            _host.Settings.AiozPayoutAddress = null;
+        else if (!CryptoAddresses.TryValidate(AddressFormat.Evm, PayoutAddress, out var error))
         {
-            if (!CryptoAddresses.TryValidate(AddressFormat.Evm, PayoutAddress, out var error))
-            {
-                PayoutAddressError = error ?? "That isn't a valid 0x address. Copy it from your wallet.";
-                return Task.CompletedTask;
-            }
-            PayoutAddressError = null;
-            _host.Settings.AiozPayoutAddress = PayoutAddress.Trim().ToLowerInvariant();
-            _host.SaveSettings();
+            PayoutAddressError = error ?? "That isn't a valid 0x address. Copy it from your wallet.";
+            return;
         }
-        return SetAsync(true);
+        else
+            _host.Settings.AiozPayoutAddress = PayoutAddress.Trim().ToLowerInvariant();
+        PayoutAddressError = null;
+        _host.SaveSettings();
+        PayoutAddressSaved = _host.Settings.AiozPayoutAddress is null ? "Removed: AIOZ waits on this computer." : "Saved.";
+        Refresh();
     }
 
     [RelayCommand]
