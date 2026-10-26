@@ -1039,12 +1039,7 @@ public sealed class AppHost : IAsyncDisposable
     /// </summary>
     public async Task<string?> AllowEnginesInWindowsSecurityAsync()
     {
-        // Mysterium's network service runs from its own folder under Program Files (only administrators can change it),
-        // so the same prompt allows that folder too once the user shares through Mysterium.
-        string[] folders = Settings.MysteriumConsentAt is not null && OperatingSystem.IsWindows()
-            ? [Paths.EnginesDir, WindowsMystSupervisor.ProtectedDirectory]
-            : [Paths.EnginesDir];
-        var problem = await WindowsSecurity.AllowFoldersAsync(folders);
+        var problem = await WindowsSecurity.AllowFolderAsync(Paths.EnginesDir);
         if (problem is null)
             ApplyDeviceSwitchesAfterBlock();
         return problem;

@@ -1,37 +1,16 @@
 using System.ComponentModel;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
-using Otium.Core.Providers;
 
 namespace Otium.Providers.Mysterium;
 
 /// <summary>
-/// The Mysterium node runs as the user and asks a small system service (its "supervisor") to set up its network
-/// tunnels. Installing that service is the one step that needs administrator rights, once per computer. The service runs
-/// with full rights, so Otium installs it from a copy in a folder only administrators can change, never from its own
-/// engines folder, which any program the user runs could rewrite.
+/// Mysterium's network service ("supervisor"), which test versions of Otium (0.1.2-rc.1 to rc.3, and the earlier
+/// Windows-only sharing) installed with the system's administrator prompt. The node now runs in userspace mode and needs
+/// none, so Otium only finds and removes the one it installed (Settings and the uninstaller); a service another app
+/// installed is left alone.
 /// </summary>
-public interface IMystSupervisor
-{
-    /// <summary>
-    /// Whether the supervisor service is installed from Otium's protected copy. One an earlier Otium installed straight
-    /// from the engines folder counts as not installed, so it's moved on the next start.
-    /// </summary>
-    bool IsInstalled { get; }
-
-    /// <summary>Installs the service, showing the system's administrator prompt. Throws a plain-words problem if declined.</summary>
-    Task InstallAsync(string supervisorPath, CancellationToken ct);
-}
-
-/// <summary>The supervisor for this operating system, and removing the one Otium installed (Settings and uninstall).</summary>
 public static class MystSupervisors
 {
-    public static IMystSupervisor? ForCurrentPlatform() =>
-        OperatingSystem.IsWindows() ? new WindowsMystSupervisor()
-        : OperatingSystem.IsMacOS() ? new MacMystSupervisor()
-        : OperatingSystem.IsLinux() ? new LinuxMystSupervisor()
-        : null;
-
     /// <summary>Whether a supervisor service Otium installed (from its engines folder or its protected copy) is present.</summary>
     public static bool OursInstalled(string enginesRoot) =>
         OperatingSystem.IsWindows() ? WindowsMystSupervisor.OurServiceBinary(enginesRoot) is not null
@@ -64,68 +43,21 @@ public static class MystSupervisors
             return (-1, "timed out");
         return (process.ExitCode, error.Result);
     }
-
-    [DllImport("libc", EntryPoint = "getuid")]
-    private static extern uint GetUid();
-
-    /// <summary>The user's numeric id (macOS and Linux), which the supervisor gives its socket to.</summary>
-    internal static uint CurrentUid() => GetUid();
 }
 
-public sealed class WindowsMystSupervisor : IMystSupervisor
+public static class WindowsMystSupervisor
 {
     public const string ServiceName = "MysteriumVPNSupervisor";
     private const int ErrorCancelled = 1223;
 
-    /// <summary>Where the service's executable lives: under Program Files, which only administrators can change.</summary>
+    /// <summary>Where test versions of Otium put the service's files (with WireGuard's Wintun driver, from rc.3).</summary>
     public static string ProtectedDirectory =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Otium", "Mysterium");
 
-    /// <summary>Installed from the protected folder, with WireGuard's Wintun driver beside it (earlier installs lacked it).</summary>
-    public bool IsInstalled => ServiceBinaryPath() is { } binary && IsUnder(binary, ProtectedDirectory)
-                               && File.Exists(Path.Combine(ProtectedDirectory, MystRelease.WintunDll));
-
     /// <summary>
-    /// The elevated command: stop an earlier service (it may hold the files), copy the supervisor and WireGuard's Wintun
-    /// driver (from beside the supervisor) into the protected folder, and install the service from there for this user.
-    /// </summary>
-    internal static string InstallCommand(string supervisorPath, string protectedDirectory, string user)
-    {
-        var folder = protectedDirectory.TrimEnd('\\'); // Windows paths, whatever the test machine
-        var target = folder + @"\myst_supervisor.exe";
-        var wintun = supervisorPath[..(supervisorPath.LastIndexOfAny(['\\', '/']) + 1)] + MystRelease.WintunDll;
-        return $"/d /s /c \"net stop {ServiceName} >nul 2>&1 & (if not exist \"{folder}\" mkdir \"{folder}\")"
-               + $" && copy /y \"{supervisorPath}\" \"{target}\" >nul && copy /y \"{wintun}\" \"{folder}\\{MystRelease.WintunDll}\" >nul"
-               + $" && \"{target}\" -install -uid \"{user}\"\"";
-    }
-
-    public async Task InstallAsync(string supervisorPath, CancellationToken ct)
-    {
-        try
-        {
-            using var install = Process.Start(new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "cmd.exe"),
-                InstallCommand(supervisorPath, ProtectedDirectory, Environment.UserName))
-            {
-                UseShellExecute = true,
-                Verb = "runas", // the Windows administrator prompt
-                WindowStyle = ProcessWindowStyle.Hidden,
-            }) ?? throw new ProviderProblemException("Couldn't start the Mysterium network setup.");
-            await install.WaitForExitAsync(ct);
-            if (install.ExitCode != 0 || !IsInstalled)
-                throw new ProviderProblemException(
-                    $"The Mysterium network setup failed (code {install.ExitCode}). If Windows Security blocked it, allow Otium in Windows Security, then turn Mysterium sharing off and on again.");
-        }
-        catch (Win32Exception e) when (e.NativeErrorCode == ErrorCancelled)
-        {
-            throw new ProviderProblemException(
-                "Sharing through Mysterium needs a one-time administrator permission to set up its network service. Turn it off and on again to be asked once more.");
-        }
-    }
-
-    /// <summary>
-    /// For Otium's uninstaller and Settings: removes the supervisor service, but only if Otium installed it (from its
-    /// engines folder or its protected copy); a Mysterium node installed by another app keeps its service. Windows asks
-    /// for administrator permission. Returns null when there was nothing to do or it was removed, otherwise a reason.
+    /// Removes the supervisor service, but only if Otium installed it (from its engines folder or its Program Files
+    /// copy), and that folder. Windows asks for administrator permission. Returns null when there was nothing to do or it
+    /// was removed, otherwise a reason.
     /// </summary>
     public static string? RemoveIfOurs(string enginesRoot, TimeSpan timeout)
     {
@@ -197,45 +129,22 @@ public sealed class WindowsMystSupervisor : IMystSupervisor
     internal static bool IsUnder(string path, string folder) => Core.Platform.WindowsPaths.IsUnder(path, folder);
 }
 
-/// <summary>macOS: the supervisor installs itself as a launchd daemon; the password prompt comes from AppleScript.</summary>
-public sealed class MacMystSupervisor : IMystSupervisor
+/// <summary>macOS: test versions installed it as a launchd daemon; removing it asks for the password through AppleScript.</summary>
+public static class MacMystSupervisor
 {
     public const string PlistFile = "/Library/LaunchDaemons/network.mysterium.myst_supervisor.plist";
-
-    /// <summary>Owned by root, so only an administrator can change what the daemon runs.</summary>
     public const string ProtectedDirectory = "/Library/Application Support/Otium/Mysterium";
-
     public const string ProtectedBinary = ProtectedDirectory + "/myst_supervisor";
 
-    private const string Prompt = "Otium needs your password once to set up Mysterium's network service for internet sharing.";
-
-    public bool IsInstalled => IsOurs();
+    private const string Prompt = "Otium needs your password to remove Mysterium's network service.";
 
     internal static bool IsOurs() => File.Exists(PlistFile) && File.ReadAllText(PlistFile).Contains(ProtectedDirectory, StringComparison.Ordinal);
-
-    /// <summary>The shell script run as root: copy the supervisor into the protected folder and install the daemon from there.</summary>
-    internal static string InstallScript(string supervisorPath, uint uid)
-    {
-        var target = MystSupervisors.ShellQuote(ProtectedBinary);
-        return $"/bin/mkdir -p {MystSupervisors.ShellQuote(ProtectedDirectory)} && /bin/cp -f {MystSupervisors.ShellQuote(supervisorPath)} {target}"
-               + $" && /usr/sbin/chown root:wheel {target} && /bin/chmod 755 {target} && {target} -install -uid {uid}";
-    }
 
     /// <summary>AppleScript that runs <paramref name="script"/> with the system's administrator password prompt.</summary>
     internal static string AppleScript(string script) =>
         $"do shell script \"{Escape(script)}\" with prompt \"{Escape(Prompt)}\" with administrator privileges";
 
     private static string Escape(string text) => text.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal);
-
-    public Task InstallAsync(string supervisorPath, CancellationToken ct) => Task.Run(() =>
-    {
-        var (code, error) = MystSupervisors.Run("/usr/bin/osascript", ["-e", AppleScript(InstallScript(supervisorPath, MystSupervisors.CurrentUid()))], TimeSpan.FromMinutes(5));
-        if (code != 0 && error.Contains("-128", StringComparison.Ordinal)) // "User canceled."
-            throw new ProviderProblemException(
-                "Sharing through Mysterium needs your password once to set up its network service. Turn it off and on again to be asked once more.");
-        if (code != 0 || !IsOurs())
-            throw new ProviderProblemException($"The Mysterium network setup failed ({error.Trim()}). Try turning Mysterium sharing off and on again.");
-    }, ct);
 
     internal static string? RemoveIfOurs(TimeSpan timeout)
     {
@@ -250,49 +159,17 @@ public sealed class MacMystSupervisor : IMystSupervisor
     }
 }
 
-/// <summary>Linux: the supervisor installs itself as a systemd service; the password prompt comes from PolicyKit (pkexec).</summary>
-public sealed class LinuxMystSupervisor : IMystSupervisor
+/// <summary>Linux: test versions installed it as a systemd service; removing it asks for the password through PolicyKit (pkexec).</summary>
+public static class LinuxMystSupervisor
 {
     public const string UnitFile = "/etc/systemd/system/myst_supervisor.service";
-
-    /// <summary>Owned by root, so only an administrator can change what the service runs.</summary>
     public const string ProtectedDirectory = "/usr/local/lib/otium-mysterium";
-
     public const string ProtectedBinary = ProtectedDirectory + "/myst_supervisor";
 
     /// <summary>pkexec's exit codes when the password prompt is dismissed or the user isn't allowed.</summary>
     private static readonly int[] Declined = [126, 127];
 
-    public bool IsInstalled => IsOurs();
-
     internal static bool IsOurs() => File.Exists(UnitFile) && File.ReadAllText(UnitFile).Contains(ProtectedDirectory, StringComparison.Ordinal);
-
-    /// <summary>The shell script run as root: copy the supervisor into the protected folder and install the service from there.</summary>
-    internal static string InstallScript(string supervisorPath, uint uid)
-    {
-        var target = MystSupervisors.ShellQuote(ProtectedBinary);
-        return $"set -e; install -d -m 755 {MystSupervisors.ShellQuote(ProtectedDirectory)}; install -m 755 {MystSupervisors.ShellQuote(supervisorPath)} {target}; {target} -install -uid {uid}";
-    }
-
-    public Task InstallAsync(string supervisorPath, CancellationToken ct) => Task.Run(() =>
-    {
-        int code;
-        string error;
-        try
-        {
-            (code, error) = MystSupervisors.Run("pkexec", ["/bin/sh", "-c", InstallScript(supervisorPath, MystSupervisors.CurrentUid())], TimeSpan.FromMinutes(5));
-        }
-        catch (Win32Exception)
-        {
-            throw new ProviderProblemException(
-                "Sharing through Mysterium needs PolicyKit (pkexec) to ask for your password once. Install your desktop's PolicyKit package and try again.");
-        }
-        if (Declined.Contains(code))
-            throw new ProviderProblemException(
-                "Sharing through Mysterium needs your password once to set up its network service. Turn it off and on again to be asked once more.");
-        if (code != 0 || !IsOurs())
-            throw new ProviderProblemException($"The Mysterium network setup failed ({error.Trim()}). Try turning Mysterium sharing off and on again.");
-    }, ct);
 
     internal static string? RemoveIfOurs(TimeSpan timeout)
     {

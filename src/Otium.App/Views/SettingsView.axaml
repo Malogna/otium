@@ -243,10 +243,10 @@
                                         <views:MysteriumConsentView />
                                     </StackPanel>
 
-                                    <!-- Off, with Mysterium's network service still installed -->
+                                    <!-- A network service an earlier test version installed, no longer used -->
                                     <StackPanel Spacing="6" IsVisible="{Binding CanRemoveService}">
                                         <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap"
-                                                   Text="Mysterium's network service, which Otium installed for sharing, is still on this computer. It does nothing while sharing through Mysterium is off; uninstalling Otium on Windows removes it too." />
+                                                   Text="Mysterium's network service, which an earlier test version of Otium installed, is still on this computer. Otium doesn't need it any more, so you can remove it; uninstalling Otium on Windows removes it too." />
                                         <Button Content="Remove Mysterium's network service" Command="{Binding RemoveServiceCommand}" IsEnabled="{Binding !IsBusy}"
                                                 ToolTip.Tip="Your computer asks for your permission" />
                                     </StackPanel>

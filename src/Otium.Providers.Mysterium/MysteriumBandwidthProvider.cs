@@ -56,9 +56,13 @@ public sealed record MystEarnedSample(DateTimeOffset At, decimal TotalMyst);
 /// nothing passes through Otium. Only B2B services run: data scraping, data transfer and business VPN.
 ///
 /// Every new node needs a one-time on-chain registration (about 0.13 MYST, a cent or so in October 2026). Otium pays it:
-/// the server sends the fee to the node's channel address, then the node registers with the user's address. The node
-/// also needs Mysterium's network service installed once, with the system's administrator prompt (see
-/// <see cref="IMystSupervisor"/>). Otium takes no fee from it.
+/// the server sends the fee to the node's channel address, then the node registers with the user's address. Otium takes
+/// no fee from it.
+///
+/// The node runs in Mysterium's userspace mode (<c>--userspace</c>): WireGuard and the forwarding of buyers' traffic
+/// run inside the node, so it needs no administrator rights, network service, tunnel driver or system NAT settings. In
+/// its other mode every buyer session failed on a home PC, because forwarding (Windows connection sharing, iptables,
+/// pfctl) needs administrator rights the node, running as the user, doesn't have (October 2026).
 /// </summary>
 public sealed class MysteriumBandwidthProvider : IBandwidthProvider
 {
@@ -69,13 +73,9 @@ public sealed class MysteriumBandwidthProvider : IBandwidthProvider
     private static readonly TimeSpan RegisterRetry = TimeSpan.FromSeconds(30);
 
     private readonly EngineInstaller _installer;
-
-    /// <summary>Windows only: WireGuard's Wintun driver, copied next to the node and its supervisor.</summary>
-    private readonly EngineInstaller? _wintun;
     private readonly string _dataDir;
     private readonly Func<string?> _beneficiary;
     private readonly Func<MystSponsorRequest, CancellationToken, Task<MystSponsorResult>> _sponsor;
-    private readonly IMystSupervisor? _supervisor;
     private readonly MystAsset? _asset;
     private readonly TimeProvider _time;
     private readonly Func<double?> _mystUsd;
@@ -88,7 +88,6 @@ public sealed class MysteriumBandwidthProvider : IBandwidthProvider
     private bool _funded;
     private DateTimeOffset _nextRegisterAttempt;
     private string? _registrationProblem;
-    private bool _supervisorDeclined;
 
     /// <param name="beneficiary">The user's own Polygon (0x…) address that earnings settle to; null until they set one.</param>
     /// <param name="sponsor">Asks the Otium server to pay the registration fee for a node.</param>
@@ -98,20 +97,16 @@ public sealed class MysteriumBandwidthProvider : IBandwidthProvider
         string enginesRoot,
         Func<string?> beneficiary,
         Func<MystSponsorRequest, CancellationToken, Task<MystSponsorResult>> sponsor,
-        IMystSupervisor? supervisor = null,
         MystAsset? asset = null,
         TimeProvider? time = null,
         Func<double?>? mystUsd = null)
     {
         var engineDir = Path.Combine(enginesRoot, $"myst-{MystRelease.Version}");
         _installer = new EngineInstaller(http, engineDir, MystRelease.BinaryName);
-        if (OperatingSystem.IsWindows())
-            _wintun = new EngineInstaller(http, Path.Combine(enginesRoot, $"wintun-{MystRelease.Wintun.Version}"), MystRelease.WintunDll);
         // Outside the versioned folder, so the node's identity (its keystore) survives an upgrade.
         _dataDir = Path.Combine(enginesRoot, "myst-data");
         _beneficiary = beneficiary;
         _sponsor = sponsor;
-        _supervisor = supervisor ?? MystSupervisors.ForCurrentPlatform();
         _asset = asset ?? MystRelease.ForCurrentPlatform();
         _time = time ?? TimeProvider.System;
         _mystUsd = mystUsd ?? (() => null);
@@ -157,54 +152,17 @@ public sealed class MysteriumBandwidthProvider : IBandwidthProvider
     public string DisplayName => "Mysterium Network";
 
     public string? UnavailableReason =>
-        _asset is null || _supervisor is null
+        _asset is null
             ? "Sharing through Mysterium isn't available on this computer (it needs Windows or Linux on a 64-bit Intel or AMD processor, or a Mac)."
         : _beneficiary() is null ? "Add a Polygon address (0x…) for internet sharing payouts."
         : null;
 
-    public bool IsInstalled => _installer.IsInstalled && (_wintun is null || WintunNextToNode() is not null);
+    public bool IsInstalled => _installer.IsInstalled;
 
-    public async Task InstallAsync(IProgress<InstallProgress>? progress, CancellationToken ct)
-    {
-        if (_asset is null)
-            throw new PlatformNotSupportedException("Mysterium has no node for this computer.");
-        await _installer.InstallAsync($"Mysterium node {MystRelease.Version}", _asset.DownloadUrl, _asset.FileName, _asset.Sha256, progress, ct);
-        if (_wintun is null)
-            return;
-
-        // The supervisor installs it from next to its own file (see WindowsMystSupervisor), so put it beside the node.
-        var w = MystRelease.Wintun;
-        await _wintun.InstallAsync($"WireGuard's Wintun driver {w.Version}", w.DownloadUrl, w.FileName, w.Sha256, progress, ct);
-        var source = WintunAsset.AmdDll(_wintun.EngineDirectory);
-        if (!HasHash(source, w.DllSha256))
-            throw new InvalidOperationException("WireGuard's Wintun driver didn't match its checksum. Retrying later.");
-        File.Copy(source, Path.Combine(Path.GetDirectoryName(_installer.FindBinary()!)!, MystRelease.WintunDll), overwrite: true);
-    }
-
-    /// <summary>The checked wintun.dll next to the node, or null.</summary>
-    private string? WintunNextToNode() =>
-        _installer.FindBinary() is { } node && Path.Combine(Path.GetDirectoryName(node)!, MystRelease.WintunDll) is var dll
-                                            && HasHash(dll, MystRelease.Wintun.DllSha256)
-            ? dll
-            : null;
-
-    private static bool HasHash(string path, string sha256)
-    {
-        if (!File.Exists(path))
-            return false;
-        using var file = File.OpenRead(path);
-        return Convert.ToHexStringLower(SHA256.HashData(file)) == sha256;
-    }
-
-    /// <summary>
-    /// The node's PATH, with Windows PowerShell added when it's missing: the node runs <c>powershell</c> to set up
-    /// connection sharing for its tunnels, and some PCs' PATH only has PowerShell 7 ("pwsh").
-    /// </summary>
-    internal static string WithWindowsPowerShell(string? path, string windowsPowerShellDir) =>
-        (path ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries)
-            .Any(p => string.Equals(p.TrimEnd('\\'), windowsPowerShellDir.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
-            ? path ?? ""
-            : string.IsNullOrEmpty(path) ? windowsPowerShellDir : $"{path.TrimEnd(';')};{windowsPowerShellDir}";
+    public Task InstallAsync(IProgress<InstallProgress>? progress, CancellationToken ct) =>
+        _asset is null
+            ? throw new PlatformNotSupportedException("Mysterium has no node for this computer.")
+            : _installer.InstallAsync($"Mysterium node {MystRelease.Version}", _asset.DownloadUrl, _asset.FileName, _asset.Sha256, progress, ct);
 
     public async Task StartAsync(BandwidthRunOptions options, CancellationToken ct)
     {
@@ -214,24 +172,6 @@ public sealed class MysteriumBandwidthProvider : IBandwidthProvider
             if (_process is { HasExited: false })
                 return;
             var binary = _installer.FindBinary() ?? throw new InvalidOperationException("The Mysterium node isn't installed.");
-            var supervisor = Path.Combine(Path.GetDirectoryName(binary)!, MystRelease.SupervisorName);
-            if (_supervisor is { IsInstalled: false })
-            {
-                // Ask for administrator rights once per opt-in, not on every retry.
-                if (_supervisorDeclined)
-                    throw new ProviderProblemException(
-                        "Internet sharing needs a one-time administrator permission to set up Mysterium's network service. Turn sharing off and on again to be asked once more.");
-                try
-                {
-                    await _supervisor.InstallAsync(supervisor, ct);
-                }
-                catch (ProviderProblemException)
-                {
-                    _supervisorDeclined = true;
-                    throw;
-                }
-            }
-
             Directory.CreateDirectory(_dataDir);
             var port = FreeLoopbackPort();
             var password = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(24));
@@ -245,12 +185,6 @@ public sealed class MysteriumBandwidthProvider : IBandwidthProvider
             };
             foreach (var arg in DaemonArguments(_dataDir, port, password))
                 start.ArgumentList.Add(arg);
-            if (OperatingSystem.IsWindows())
-            {
-                var windowsPowerShell = Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0");
-                if (Directory.Exists(windowsPowerShell))
-                    start.Environment["PATH"] = WithWindowsPowerShell(Environment.GetEnvironmentVariable("PATH"), windowsPowerShell);
-            }
             _process = Process.Start(start) ?? throw new InvalidOperationException("Could not start the Mysterium node.");
             MinerLifetime.Adopt(_process); // dies with Otium, even if Otium crashes
             // Drain its log so a full pipe never blocks it.
@@ -279,7 +213,7 @@ public sealed class MysteriumBandwidthProvider : IBandwidthProvider
         }
     }
 
-    /// <summary>The node's command line: no web UI, the local API on 127.0.0.1 only, network changes via the supervisor.</summary>
+    /// <summary>The node's command line: no web UI, the local API on 127.0.0.1 only, WireGuard and forwarding in userspace.</summary>
     internal static IReadOnlyList<string> DaemonArguments(string dataDir, int port, string password) =>
     [
         "--ui.enable=false",
@@ -289,7 +223,7 @@ public sealed class MysteriumBandwidthProvider : IBandwidthProvider
         "--tequilapi.address=127.0.0.1",
         $"--tequilapi.port={port.ToString(CultureInfo.InvariantCulture)}",
         $"--tequilapi.auth.password={password}",
-        "--usermode",
+        "--userspace",
         "daemon",
     ];
 
@@ -395,15 +329,8 @@ public sealed class MysteriumBandwidthProvider : IBandwidthProvider
         }
     }
 
-    /// <summary>
-    /// Consent is recorded with the node when it starts (terms agreed). Opting in again also allows one more
-    /// administrator prompt if the user declined the last one.
-    /// </summary>
-    public Task OptInAsync(CancellationToken ct)
-    {
-        _supervisorDeclined = false;
-        return Task.CompletedTask;
-    }
+    /// <summary>Consent is recorded with the node when it starts (terms agreed).</summary>
+    public Task OptInAsync(CancellationToken ct) => Task.CompletedTask;
 
     public async Task OptOutAsync(CancellationToken ct)
     {

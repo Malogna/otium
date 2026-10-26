@@ -86,18 +86,18 @@ public partial class MysteriumSharingViewModel : ViewModelBase
         "see your internet address, so sites may sometimes show you more CAPTCHAs. The node only passes their " +
         "connections on; it doesn't read your files, passwords or browsing. Otium can't see or control this traffic. " +
         "Some internet providers don't allow sharing a connection: check yours if you're not sure.\n\n" +
-        SetupText + "\n\n" +
+        (SetupText is { Length: > 0 } setup ? setup + "\n\n" : "") +
         "Mysterium pays in its MYST token, on the Polygon network, straight to your own address: automatically once " +
         "5 MYST has built up, minus Mysterium's 20% network fee. Otium takes nothing from it and pays the one-time " +
         "registration for you. You can swap MYST for another coin on Relay (relay.link). Turning this on means you " +
         "agree to Mysterium's terms.";
 
+    /// <summary>The node needs no administrator rights (it runs in userspace mode); only Windows Security may get in the way.</summary>
     private static string SetupText =>
         OperatingSystem.IsWindows()
-            ? "Setting it up needs Windows' administrator permission once, to install Mysterium's network service. " +
-              "Windows Security may flag Mysterium's node as harmful: it's open source, and Otium checks every download " +
+            ? "Windows Security may flag Mysterium's node as harmful: it's open source, and Otium checks every download " +
               "against the checksum Mysterium publishes. If it's blocked, Otium offers to allow it in Windows Security."
-            : "Setting it up asks for your computer's password once, to install Mysterium's network service.";
+            : "";
 
     public string LimitsText =>
         FormattableString.Invariant($"Uses at most {_host.Settings.MysteriumDailyLimitGb:0.#} GB a day (you can change this). ") +
@@ -116,7 +116,11 @@ public partial class MysteriumSharingViewModel : ViewModelBase
 
     [ObservableProperty] public partial string? ServiceMessage { get; set; }
 
-    public bool CanRemoveService => ServiceInstalled && !IsOn;
+    /// <summary>
+    /// A network service a test version installed is still there. The node doesn't use it any more (userspace mode),
+    /// so it can go whether or not sharing through Mysterium is on.
+    /// </summary>
+    public bool CanRemoveService => ServiceInstalled;
 
     private async Task CheckServiceAsync()
     {
