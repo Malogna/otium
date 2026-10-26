@@ -165,6 +165,26 @@
                     <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Margin="0,4,0,0" FontSize="13" TextWrapping="Wrap" Text="{Binding MysteriumWhat}"
                                IsVisible="{Binding MysteriumWhat, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                 </Grid>
+                <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" IsVisible="{Binding ShowAioz}">
+                    <StackPanel Spacing="2">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Text="Storage: AIOZ" FontWeight="SemiBold" VerticalAlignment="Center" />
+                            <Border Classes="pill" Padding="8,1"
+                                    Classes.earning="{Binding AiozIsEarning}"
+                                    Classes.paused="{Binding AiozIsPaused}"
+                                    Classes.problem="{Binding AiozIsProblem}">
+                                <TextBlock Text="{Binding AiozLabel}" FontSize="12" />
+                            </Border>
+                        </StackPanel>
+                        <TextBlock Classes="muted" FontSize="12" Text="Disk space and upload bandwidth · paid in AIOZ to your 0x address" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" HorizontalAlignment="Right" Spacing="2">
+                        <TextBlock HorizontalAlignment="Right" FontWeight="SemiBold" Text="{Binding AiozPerDay}" />
+                        <TextBlock HorizontalAlignment="Right" Classes="muted" FontSize="12" Text="{Binding AiozDetail}" />
+                    </StackPanel>
+                    <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Margin="0,4,0,0" FontSize="13" TextWrapping="Wrap" Text="{Binding AiozWhat}"
+                               IsVisible="{Binding AiozWhat, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                </Grid>
             </StackPanel>
         </Border>
 

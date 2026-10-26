@@ -98,6 +98,9 @@ public sealed class EarningsReportService(OtiumStore store, TimeProvider time)
     /// <summary>Internet sharing through Mysterium (MYST at the day's price), kept apart so the two networks never mix.</summary>
     public const string SharingMysterium = "sharing-mysterium";
 
+    /// <summary>Storage and delivery through AIOZ (AIOZ at the day's price), kept apart like Mysterium.</summary>
+    public const string SharingAioz = "sharing-aioz";
+
     public void Report(Session session, EarningsReport report)
     {
         var now = time.GetUtcNow();
@@ -111,11 +114,11 @@ public sealed class EarningsReportService(OtiumStore store, TimeProvider time)
             var days = d.EarningSeconds / 86400;
             // A computer with several cards reports "multi:N" (up to 16 cards) with the whole computer's earnings.
             var cards = d.Kind == "gpu" && MultiCardCount(d.Model) is { } n ? n : 1;
-            var maxUsd = d.Kind switch { "gpu" => MaxGpuUsdPerDay * cards, Sharing or SharingMysterium => MaxSharingUsdPerDay, _ => MaxCpuUsdPerDay };
+            var maxUsd = d.Kind switch { "gpu" => MaxGpuUsdPerDay * cards, Sharing or SharingMysterium or SharingAioz => MaxSharingUsdPerDay, _ => MaxCpuUsdPerDay };
             // Sharing's "model" is the computer's country: two letters, nothing else.
-            if (d.Kind is Sharing or SharingMysterium && (d.Model is not { Length: 2 } || !d.Model.All(char.IsAsciiLetter) || d.ElectricityUsd != 0))
+            if (d.Kind is Sharing or SharingMysterium or SharingAioz && (d.Model is not { Length: 2 } || !d.Model.All(char.IsAsciiLetter) || d.ElectricityUsd != 0))
                 throw new OtiumException(StatusCodes.Status400BadRequest, "This earnings report doesn't look right.");
-            if (d.Kind is not ("cpu" or "gpu" or Sharing or SharingMysterium) || d.Model is { Length: > 100 } || d.EarningSeconds < 0 || d.EarningSeconds > period + 600
+            if (d.Kind is not ("cpu" or "gpu" or Sharing or SharingMysterium or SharingAioz) || d.Model is { Length: > 100 } || d.EarningSeconds < 0 || d.EarningSeconds > period + 600
                 || d.UserUsd < 0 || d.UserUsd > maxUsd * days + 0.01 || d.ElectricityUsd < 0 || d.ElectricityUsd > MaxElectricityUsdPerDay * cards * days + 0.01)
                 throw new OtiumException(StatusCodes.Status400BadRequest, "This earnings report doesn't look right.");
         }
@@ -124,7 +127,7 @@ public sealed class EarningsReportService(OtiumStore store, TimeProvider time)
         {
             Devices = report.Devices.Select(d => d with
             {
-                Model = d.Kind is Sharing or SharingMysterium ? d.Model!.ToUpperInvariant() : MultiCardCount(d.Model) is not null ? d.Model : Clean(d.Model),
+                Model = d.Kind is Sharing or SharingMysterium or SharingAioz ? d.Model!.ToUpperInvariant() : MultiCardCount(d.Model) is not null ? d.Model : Clean(d.Model),
             }).ToList(),
         };
         if (store.AddEarningsReport(session.Device.DeviceId, session.Account.AccountId, clean, now) == OtiumStore.EarningsReportOutcome.Overlaps)
@@ -166,6 +169,7 @@ public sealed class CoinGeckoPrices(HttpClient http, TimeProvider time) : ICoinP
         ["XMR"] = "monero",
         ["DOGE"] = "dogecoin",
         ["MYST"] = "mysterium",
+        ["AIOZ"] = "aioz-network",
     };
 
     private readonly SemaphoreSlim _lock = new(1, 1);

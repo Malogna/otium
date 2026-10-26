@@ -59,6 +59,8 @@ public static class ProblemReportBuilder
         // The node's own MYST figures only; its payout (Polygon) address is left out like every other address.
         if (host.Mysterium?.Snapshot is { } myst)
             Line($"Mysterium sharing: on {s.MysteriumEnabled}, {myst.State}, \"{myst.StatusText}\"{(myst.Earnings is { } me ? $", {me}" : "")}");
+        if (host.Aioz?.Snapshot is { } aioz)
+            Line($"AIOZ sharing: on {s.AiozEnabled}, {aioz.State}, \"{aioz.StatusText}\"{(aioz.Earnings is { } ae ? $", {ae}" : "")}");
 
         if (host.PoolBalance is { } pool)
             Line(Invariant($"Pool: {pool.PoolName}, pending {pool.Pending} {pool.Coin}, paid {pool.Paid}, auto pay {pool.AutoPay}, problems: {string.Join("; ", pool.Problems ?? [])}"));

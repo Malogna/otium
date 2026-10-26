@@ -394,6 +394,22 @@ settings and the Windows uninstaller remove it. Microsoft Defender flags the Win
 reputation detection); the app's "Allow in Windows Security" fix covers it. Share analytics report it as
 `sharing-mysterium`, kept apart from Proxybase's `sharing`.
 
+Users can also share disk space and upload bandwidth through an **AIOZ DePIN node** (`src/Otium.Providers.Aioz`,
+AIOZ's official `aioz-depin-cli`, Apache-2.0, pinned to 1.2.5 for Windows x64 and Linux x64), with its own switch,
+consent screen, storage limit and row. AIOZ's network stores pieces of files on the node and has it deliver them
+(storage and CDN), and credits AIOZ tokens to the node's own key. The app reads `GET /stats` and
+`GET /worker/balance` from the node's local API and, once 5 AIOZ is waiting, runs `reward withdraw` (at most daily) to
+the user's own 0x address on the AIOZ network; Otium takes nothing. Dollar figures use `AiozUsd` in the account
+summary (CoinGecko `aioz-network`, hourly). The node runs as the user and listens on `127.0.0.1` on a free port of
+its own (`--laddr`; AIOZ's default 1317 is often reserved on Windows), with `--home` in `engines/aioz-data` so its
+key (`privkey.json`, created without a password; the recovery words it prints are discarded), files and helper
+programs stay there (without `--home` it uses `~/.aiozworker`), and `--no-auto-update`. 1.2.6 doesn't start (its
+issue #10) and 1.2.5 has no storage limit of its own, so the app measures `home/data` every ten minutes and stops the
+node at the user's limit (20 GB by default). macOS isn't offered: 1.2.5's two Mac archives are labelled `amd64` and
+`x86_64`. Demand is thin (a test node in October 2026 got two storage tasks in ten minutes, both aborted with "client
+credit is not enough"), and the consent screen says earnings are uncertain. Share analytics report it as
+`sharing-aioz`.
+
 - **Consent first.** Sharing is off until the user agrees: Quick start lists it with the rest, Customize and the
   overview explain it on its own (who the buyers are, what websites see, paid in their coin, Proxybase's terms). Users
   can share only while away.
@@ -640,6 +656,7 @@ src/Otium.Providers.XMRig    CPU miner provider
 src/Otium.Providers.SrbMiner GPU miner provider with benchmarking and profit switching
 src/Otium.Providers.Proxybase internet sharing through Proxybase's client, converted to the user's own coin
 src/Otium.Providers.Mysterium internet sharing as a Mysterium node, next to Proxybase (B2B only, paid in MYST)
+src/Otium.Providers.Aioz     storage and upload sharing as an AIOZ DePIN node (paid in AIOZ, withdrawn to the user)
 src/Otium.Providers.Honeygain internet sharing through the Honeygain SDK (custodial servers; loaded at runtime)
 src/Otium.App                desktop app (Welcome → Home ⇄ Advanced), Velopack updates
 src/Otium.Server             accounts and email sign-in, referrals, GPU policy, website (front page, /download,

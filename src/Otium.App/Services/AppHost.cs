@@ -15,6 +15,7 @@ using Otium.Core.Settings;
 using Otium.Core.Switching;
 using Otium.Core.Wallets;
 using Otium.Providers.Honeygain;
+using Otium.Providers.Aioz;
 using Otium.Providers.Mysterium;
 using Otium.Providers.Proxybase;
 using Otium.Providers.SrbMiner;
@@ -37,6 +38,7 @@ public sealed class AppHost : IAsyncDisposable
     private volatile EngineConfig _gpuConfig;
     private volatile BandwidthConfig _bandwidthConfig;
     private volatile BandwidthConfig _mysteriumConfig;
+    private volatile BandwidthConfig _aiozConfig;
     private volatile GpuPolicy? _gpuPolicy;
     private readonly JsonFileStore<CachedGpuPolicy> _gpuPolicyStore;
     private bool _gpuPolicyFetched;
@@ -133,6 +135,7 @@ public sealed class AppHost : IAsyncDisposable
             UsesProxybase ? null : (report, ct) => CreateClient().ReportBandwidthAsync(DeviceId, Settings.DeviceSecret, report, ct),
             bandwidthLedger.Load(), bandwidthLedger.Save);
         _mysteriumConfig = BuildMysteriumConfig();
+        _aiozConfig = BuildAiozConfig();
         if (UsesProxybase)
         {
             var mysteriumLedger = new JsonFileStore<BandwidthLedger>(Paths.MysteriumLedgerFile);
@@ -141,6 +144,13 @@ public sealed class AppHost : IAsyncDisposable
                     (request, ct) => CreateClient().SponsorMysteriumAsync(DeviceId, Settings.DeviceSecret, request, ct),
                     mystUsd: () => Settings.Account.MystUsd),
                 idle, () => _mysteriumConfig, null, mysteriumLedger.Load(), mysteriumLedger.Save);
+
+            // And through an AIOZ DePIN node, which stores and delivers files for AIOZ's network and pays AIOZ tokens.
+            var aiozLedger = new JsonFileStore<BandwidthLedger>(Paths.AiozLedgerFile);
+            Aioz = new BandwidthSharer(
+                new AiozBandwidthProvider(_http, Paths.EnginesDir, () => AiozPayoutAddress, () => Settings.AiozStorageLimitGb,
+                    aiozUsd: () => Settings.Account.AiozUsd),
+                idle, () => _aiozConfig, null, aiozLedger.Load(), aiozLedger.Save);
         }
 
         foreach (var engine in Engines)
@@ -311,6 +321,8 @@ public sealed class AppHost : IAsyncDisposable
         // Mysterium on its own line, so the two networks' figures never mix.
         if (Mysterium?.Snapshot is { TotalSharingTime.Ticks: > 0 } myst && CountryCode() is { } mystCountry)
             devices.Add(new ReportedDevice("sharing-mysterium", mystCountry, new EarningsTotals(myst.TotalSharingTime, myst.TotalUserUsd, 0)));
+        if (Aioz?.Snapshot is { TotalSharingTime.Ticks: > 0 } aioz && CountryCode() is { } aiozCountry)
+            devices.Add(new ReportedDevice("sharing-aioz", aiozCountry, new EarningsTotals(aioz.TotalSharingTime, aioz.TotalUserUsd, 0)));
         return devices;
     }
 
@@ -755,8 +767,26 @@ public sealed class AppHost : IAsyncDisposable
     /// </summary>
     public BandwidthSharer? Mysterium { get; }
 
-    /// <summary>Both kinds of internet sharing this build has, for totals and switches that cover every one.</summary>
-    public IEnumerable<BandwidthSharer> Sharers => Mysterium is null ? [Bandwidth] : [Bandwidth, Mysterium];
+    /// <summary>
+    /// Sharing through AIOZ: its node stores and delivers files for AIOZ's network, and Otium withdraws the AIOZ it earns
+    /// to the user's own 0x address. Null in builds that don't share through Proxybase.
+    /// </summary>
+    public BandwidthSharer? Aioz { get; }
+
+    /// <summary>Every kind of sharing this build has, for totals and switches that cover every one.</summary>
+    public IEnumerable<BandwidthSharer> Sharers => new[] { Bandwidth, Mysterium, Aioz }.OfType<BandwidthSharer>();
+
+    /// <summary>This computer can run AIOZ's node and the user is paid to their own address.</summary>
+    public bool AiozOffered => Aioz is not null && Settings.PayoutMode == PayoutMode.OwnWallet && AiozRelease.ForCurrentPlatform() is not null;
+
+    /// <summary>
+    /// The 0x address AIOZ is withdrawn to: the one the user gave for it, or their payout address when it's an 0x address
+    /// (the same key works on the AIOZ network). Null until there is one.
+    /// </summary>
+    public string? AiozPayoutAddress =>
+        CryptoAddresses.TryValidate(AddressFormat.Evm, Settings.AiozPayoutAddress, out _)
+            ? Settings.AiozPayoutAddress!.Trim().ToLowerInvariant()
+            : PayoutTarget.ParseOrNull(Settings.PayoutAddress) is { Coin.Format: AddressFormat.Evm } evm ? evm.Address : null;
 
     /// <summary>The server pays new nodes' registration and this computer can run Mysterium's node.</summary>
     public bool MysteriumOffered => Mysterium is not null && Settings.PayoutMode == PayoutMode.OwnWallet && Settings.Account.MysteriumSponsored
@@ -854,6 +884,20 @@ public sealed class AppHost : IAsyncDisposable
             await provider.OptOutAsync(CancellationToken.None);
     }
 
+    /// <summary>Opts in to (or out of) sharing through AIOZ, on its own consent screen. Turning it off stops the node.</summary>
+    public async Task SetAiozSharingAsync(bool on)
+    {
+        if (Aioz is null)
+            return;
+        Settings.AiozEnabled = on;
+        Settings.AiozConsentAt = on ? Settings.AiozConsentAt ?? DateTimeOffset.UtcNow : null;
+        SaveSettings();
+        ApplyDeviceSwitches();
+
+        if (!on)
+            await Aioz.Provider.OptOutAsync(CancellationToken.None);
+    }
+
     /// <summary>The main switch: turns earning on for every device the user has enabled, or off for all.</summary>
     public void SetEarning(bool on)
     {
@@ -873,8 +917,9 @@ public sealed class AppHost : IAsyncDisposable
     /// <param name="shareInternet">Share through Proxybase, agreed on the welcome screen.</param>
     /// <param name="shareMysterium">Also share through Mysterium, agreed on the same screen.</param>
     /// <param name="mysteriumAddress">The Polygon (0x…) address Mysterium pays, when the payout address isn't an 0x address.</param>
+    /// <param name="shareAioz">Also share through AIOZ, agreed on the same screen; it's withdrawn to the same 0x address.</param>
     public async Task StartFirstTimeAsync(string? inviteCode, string? payoutTarget = null, bool shareEarnings = false, bool keepMinerReady = false,
-        bool shareInternet = false, bool shareMysterium = false, string? mysteriumAddress = null)
+        bool shareInternet = false, bool shareMysterium = false, string? mysteriumAddress = null, bool shareAioz = false)
     {
         SetShareEarningsStats(shareEarnings);
         Settings.KeepMinerReadyWhenBack = keepMinerReady;
@@ -934,6 +979,12 @@ public sealed class AppHost : IAsyncDisposable
                 SaveSettings();
             }
         }
+        if (shareAioz && AiozOffered)
+        {
+            if (CryptoAddresses.TryValidate(AddressFormat.Evm, mysteriumAddress, out _))
+                Settings.AiozPayoutAddress = mysteriumAddress!.Trim().ToLowerInvariant();
+            await SetAiozSharingAsync(true);
+        }
 
         // Measure this PC right away (the user is watching), so the overview shows its own numbers, not a table's.
         if (Settings.Measurement is null && !Settings.MeasurementSkipped)
@@ -955,6 +1006,10 @@ public sealed class AppHost : IAsyncDisposable
             Mysterium?.Enable();
         else
             Mysterium?.Disable();
+        if (on && Settings.AiozEnabled && Settings.AiozConsentAt is not null)
+            Aioz?.Enable();
+        else
+            Aioz?.Disable();
 
         static void Toggle(EarningsEngine engine, bool enabled)
         {
@@ -1085,6 +1140,7 @@ public sealed class AppHost : IAsyncDisposable
         _gpuConfig = BuildConfig(100, "g");
         _bandwidthConfig = BuildBandwidthConfig();
         _mysteriumConfig = BuildMysteriumConfig();
+        _aiozConfig = BuildAiozConfig();
         foreach (var engine in Engines)
             engine.Nudge();
         foreach (var sharer in Sharers)
@@ -1189,6 +1245,19 @@ public sealed class AppHost : IAsyncDisposable
         Settings.MysteriumOnlyWhenIdle,
         TimeSpan.FromMinutes(Math.Max(1, Settings.IdleMinutes)),
         (long)(Math.Clamp(Settings.MysteriumDailyLimitGb, 0.1, 100) * 1024 * 1024 * 1024),
+        0,
+        0,
+        Settings.Account.WorkerId ?? "");
+
+    /// <summary>
+    /// AIOZ's node: the user's own switch and idle choice; AIOZ pays it, not the server. Its limit is on storage (the
+    /// provider enforces it), and the node doesn't report traffic, so there's no daily data limit.
+    /// </summary>
+    private BandwidthConfig BuildAiozConfig() => new(
+        Settings.AiozEnabled && Settings.AiozConsentAt is not null && Settings.PayoutMode == PayoutMode.OwnWallet,
+        Settings.AiozOnlyWhenIdle,
+        TimeSpan.FromMinutes(Math.Max(1, Settings.IdleMinutes)),
+        long.MaxValue,
         0,
         0,
         Settings.Account.WorkerId ?? "");
@@ -1515,6 +1584,7 @@ public sealed class AppHost : IAsyncDisposable
         account.BandwidthAvailable = summary.Bandwidth?.Available ?? false;
         account.MysteriumSponsored = summary.MysteriumSponsored;
         account.MystUsd = summary.MystUsd ?? account.MystUsd;
+        account.AiozUsd = summary.AiozUsd ?? account.AiozUsd;
         account.ProxybaseDisabled = summary.ProxybaseDisabled;
         if (summary.Fees is not null && summary.Fees != account.Fees)
         {

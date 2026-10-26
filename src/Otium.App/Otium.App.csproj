@@ -31,6 +31,7 @@
     <ProjectReference Include="..\Otium.Providers.SrbMiner\Otium.Providers.SrbMiner.csproj" />
     <ProjectReference Include="..\Otium.Providers.Honeygain\Otium.Providers.Honeygain.csproj" />
     <ProjectReference Include="..\Otium.Providers.Mysterium\Otium.Providers.Mysterium.csproj" />
+    <ProjectReference Include="..\Otium.Providers.Aioz\Otium.Providers.Aioz.csproj" />
     <ProjectReference Include="..\Otium.Providers.Proxybase\Otium.Providers.Proxybase.csproj" />
   </ItemGroup>
 </Project>

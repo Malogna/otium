@@ -166,6 +166,27 @@ public sealed class AppSettings
     /// <summary>The user answered "Not now" to the overview's suggestion to also share through Mysterium.</summary>
     public bool MysteriumPromptDismissed { get; set; }
 
+    /// <summary>
+    /// Also share storage and upload bandwidth through an AIOZ DePIN node: it pays AIOZ, which Otium withdraws to the
+    /// user's own 0x address. Off until the user opts in on its own explanation screen.
+    /// </summary>
+    public bool AiozEnabled { get; set; }
+
+    /// <summary>When the user agreed to AIOZ's explanation; its node never runs without it.</summary>
+    public DateTimeOffset? AiozConsentAt { get; set; }
+
+    /// <summary>Share through AIOZ only while the user is away.</summary>
+    public bool AiozOnlyWhenIdle { get; set; }
+
+    /// <summary>Most disk space AIOZ's files may use, in GB.</summary>
+    public double AiozStorageLimitGb { get; set; } = 20;
+
+    /// <summary>The user's own 0x address AIOZ is withdrawn to, when their payout address isn't an 0x address.</summary>
+    public string? AiozPayoutAddress { get; set; }
+
+    /// <summary>The user answered "Not now" to the overview's suggestion to also share through AIOZ.</summary>
+    public bool AiozPromptDismissed { get; set; }
+
     /// <summary>The last "measure my PC" test, or null until one finished.</summary>
     public Projections.PcMeasurement? Measurement { get; set; }
 
@@ -268,6 +289,9 @@ public sealed class AccountState
 
     /// <summary>Today's MYST price in US dollars as the server last sent it, for Mysterium sharing earnings; null until then.</summary>
     public double? MystUsd { get; set; }
+
+    /// <summary>Today's AIOZ price in US dollars as the server last sent it, for AIOZ sharing earnings; null until then.</summary>
+    public double? AiozUsd { get; set; }
 
     /// <summary>The fee and invite terms the server last announced; null until it has.</summary>
     public Accounts.FeeTerms? Fees { get; set; }

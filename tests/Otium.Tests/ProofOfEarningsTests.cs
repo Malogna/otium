@@ -502,7 +502,7 @@ public sealed class ProofOfEarningsTests
     private sealed class FakePrices : ICoinPrices
     {
         public Task<IReadOnlyDictionary<string, double>> GetUsdAsync(CancellationToken ct) =>
-            Task.FromResult<IReadOnlyDictionary<string, double>>(new Dictionary<string, double> { ["USDT"] = 1, ["XMR"] = 300, ["MYST"] = 0.08 });
+            Task.FromResult<IReadOnlyDictionary<string, double>>(new Dictionary<string, double> { ["USDT"] = 1, ["XMR"] = 300, ["MYST"] = 0.08, ["AIOZ"] = 0.25 });
     }
 
     private sealed class Server : IDisposable
@@ -676,6 +676,29 @@ public sealed class ProofOfEarningsTests
         await server.Factory.Services.GetRequiredService<Otium.Server.Bandwidth.MystPrice>().RefreshAsync();
         var summary = await new AccountClient(server.Http).GetSummaryAsync(device, secret, CancellationToken.None);
         Assert.Equal(0.08, summary.MystUsd);
+    }
+
+    [Fact]
+    public async Task Account_summaries_carry_the_aioz_price()
+    {
+        using var server = new Server();
+        var (device, secret, _) = await server.Register(TestAddresses.Usdt(0));
+
+        await server.Factory.Services.GetRequiredService<Otium.Server.Bandwidth.AiozPrice>().RefreshAsync();
+        var summary = await new AccountClient(server.Http).GetSummaryAsync(device, secret, CancellationToken.None);
+        Assert.Equal(0.25, summary.AiozUsd);
+    }
+
+    [Fact]
+    public async Task Aioz_sharing_is_accepted_on_its_own_line()
+    {
+        using var server = new Server(("RealEarnings:MinimumEarnedUsd", "0"), ("RealEarnings:MinimumUsers", "0"));
+        var (device, secret, _) = await server.Register(TestAddresses.Usdt(0));
+        await server.Report(device, secret, new EarningsReport(1, T0 - TimeSpan.FromDays(1), T0,
+            [new DeviceEarnings("sharing-aioz", "no", 24 * 3600, 0.02, 0)]));
+
+        var kinds = server.Store.EarningsSince(T0 - TimeSpan.FromDays(2)).Select(r => (r.Kind, r.Model)).Distinct().ToList();
+        Assert.Contains(("sharing-aioz", "NO"), kinds);
     }
 
     [Fact]

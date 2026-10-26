@@ -125,6 +125,7 @@ builder.Services.AddSingleton<EarningsReportService>();
 builder.Services.AddSingleton<Otium.Server.Support.ProblemReportService>();
 builder.Services.AddHttpClient<ICoinPrices, CoinGeckoPrices>();
 builder.Services.AddSingleton<Otium.Server.Bandwidth.MystPrice>();
+builder.Services.AddSingleton<Otium.Server.Bandwidth.AiozPrice>();
 builder.Services.AddSingleton<PoolPayoutChecker>();
 builder.Services.AddSingleton<FeeSliceWatcher>();
 builder.Services.AddSingleton<RealEarningsService>();

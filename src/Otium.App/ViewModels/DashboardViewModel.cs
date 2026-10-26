@@ -60,6 +60,8 @@ public partial class DashboardViewModel : ViewModelBase
         host.Bandwidth.SnapshotChanged += _ => Dispatcher.UIThread.Post(Recalculate);
         if (host.Mysterium is { } mysterium)
             mysterium.SnapshotChanged += _ => Dispatcher.UIThread.Post(Recalculate);
+        if (host.Aioz is { } aioz)
+            aioz.SnapshotChanged += _ => Dispatcher.UIThread.Post(Recalculate);
         host.Updates.Changed += () => Dispatcher.UIThread.Post(RefreshUpdate);
         host.AntivirusChanged += () => Dispatcher.UIThread.Post(Recalculate);
         RefreshUpdate();
@@ -124,8 +126,20 @@ public partial class DashboardViewModel : ViewModelBase
     [ObservableProperty] public partial string MysteriumPerDay { get; set; } = "";
     [ObservableProperty] public partial string MysteriumDetail { get; set; } = "";
 
-    /// <summary>"Internet sharing" in the totals when either kind is on.</summary>
-    public bool ShowSharingTotal => ShowSharing || ShowMysterium;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowSharingTotal))]
+    public partial bool ShowAioz { get; set; }
+
+    [ObservableProperty] public partial string AiozLabel { get; set; } = "Off";
+    [ObservableProperty] public partial bool AiozIsEarning { get; set; }
+    [ObservableProperty] public partial bool AiozIsPaused { get; set; }
+    [ObservableProperty] public partial bool AiozIsProblem { get; set; }
+    [ObservableProperty] public partial string AiozWhat { get; set; } = "";
+    [ObservableProperty] public partial string AiozPerDay { get; set; } = "";
+    [ObservableProperty] public partial string AiozDetail { get; set; } = "";
+
+    /// <summary>"Internet sharing" in the totals when any kind is on.</summary>
+    public bool ShowSharingTotal => ShowSharing || ShowMysterium || ShowAioz;
 
     [ObservableProperty] public partial string TotalEarned { get; set; } = "$0.000";
     [ObservableProperty] public partial string TotalElectricity { get; set; } = "$0.000";
@@ -175,6 +189,7 @@ public partial class DashboardViewModel : ViewModelBase
 
         RefreshSharing();
         RefreshMysterium();
+        RefreshAioz();
         var sharingNow = _host.Sharers.Select(s => s.Snapshot).Where(s => s.State == BandwidthState.Sharing).Sum(s => s.UserUsdPerDay);
         var withNumbers = Devices.Where(d => d.HasNumbers).Select(d => d.Snapshot).ToList();
         var any = withNumbers.Count > 0 || sharingNow > 0;
@@ -278,6 +293,31 @@ public partial class DashboardViewModel : ViewModelBase
         MysteriumPerDay = b.UserUsdPerDay > 0 ? $"{Format.Usd(b.UserUsdPerDay)}/day" : "";
         MysteriumDetail = b.TotalUserUsd > 0 ? $"{Format.Usd(b.TotalUserUsd)} earned so far"
             : b.BytesToday > 0 ? $"{InternetSharingViewModel.FormatBytes(b.BytesToday)} today" : "nothing earned yet";
+    }
+
+    /// <summary>The AIOZ row: its state, its pace in dollars (AIOZ at today's price) and what it earned in AIOZ.</summary>
+    private void RefreshAioz()
+    {
+        var settings = _host.Settings;
+        ShowAioz = _host.Aioz is not null && settings.AiozEnabled && settings.AiozConsentAt is not null && _host.AiozOffered;
+        if (!ShowAioz || _host.Aioz is not { } sharer)
+            return;
+        var b = sharer.Snapshot;
+        AiozLabel = b.State switch
+        {
+            BandwidthState.Sharing => "Sharing",
+            BandwidthState.WaitingForIdle => "Waiting",
+            BandwidthState.Starting => "Starting",
+            BandwidthState.Error or BandwidthState.Unavailable => "Problem",
+            _ => settings.EarningEnabled ? "Starting" : "Off",
+        };
+        AiozIsEarning = b.State == BandwidthState.Sharing;
+        AiozIsPaused = b.State is BandwidthState.WaitingForIdle;
+        AiozIsProblem = b.State is BandwidthState.Error or BandwidthState.Unavailable;
+        AiozWhat = b.State is BandwidthState.Error or BandwidthState.Unavailable or BandwidthState.Starting ? b.StatusText
+            : string.Join(" · ", new[] { b.Activity, b.Earnings }.Where(x => !string.IsNullOrEmpty(x)));
+        AiozPerDay = b.UserUsdPerDay > 0 ? $"{Format.Usd(b.UserUsdPerDay)}/day" : "";
+        AiozDetail = b.TotalUserUsd > 0 ? $"{Format.Usd(b.TotalUserUsd)} earned so far" : "nothing earned yet";
     }
 
     private static int Priority(EngineState state) => state switch

@@ -25,6 +25,7 @@ public sealed record InviteLinkResponse(string Code);
 /// <param name="Fees">The server's current fee and invite terms; null from servers that don't send them.</param>
 /// <param name="MystUsd">Today's MYST price in US dollars, so the app can show Mysterium sharing earnings in dollars; null
 /// when the server has none.</param>
+/// <param name="AiozUsd">Today's AIOZ price in US dollars, for AIOZ sharing earnings; null when the server has none.</param>
 /// <param name="Custodial">
 /// False when the server holds no balances (non-custodial): the app then offers only own-address payouts, and
 /// <paramref name="Balance"/> is empty.
@@ -52,7 +53,8 @@ public sealed record AccountSummary(
     double ReferralEarnedUsd = 0,
     string? FeeGrant = null,
     string? FeeGrantSignature = null,
-    double? MystUsd = null);
+    double? MystUsd = null,
+    double? AiozUsd = null);
 
 /// <summary>
 /// A referred friend's app: how much of Otium's fee it has mined for the person who invited them so far (an estimate

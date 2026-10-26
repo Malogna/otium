@@ -24,6 +24,9 @@ public sealed class AppPaths(string root)
     /// <summary>Sharing through Mysterium keeps its own record, next to Proxybase's.</summary>
     public string MysteriumLedgerFile => Path.Combine(Root, "bandwidth-mysterium.json");
 
+    /// <summary>Sharing through AIOZ keeps its own record too.</summary>
+    public string AiozLedgerFile => Path.Combine(Root, "bandwidth-aioz.json");
+
     /// <summary>Downloaded engines live in one folder, so an antivirus exclusion can be kept this narrow.</summary>
     public string EnginesDir => Path.Combine(Root, "engines");
 
