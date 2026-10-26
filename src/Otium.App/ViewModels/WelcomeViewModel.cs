@@ -196,7 +196,7 @@ public partial class WelcomeViewModel : ViewModelBase
     [NotifyCanExecuteChangedFor(nameof(StartCommand))]
     public partial string PolygonAddress { get; set; } = "";
 
-    public bool NeedsPolygonAddress => ShareInternet && ((ShareMysterium && CanShareMysterium) || (ShareAioz && CanShareAioz))
+    public bool NeedsPolygonAddress => ShareInternet && ShareMysterium && CanShareMysterium
                                        && Payout.Target is not { Coin.Format: Otium.Core.Wallets.AddressFormat.Evm };
 
     public string? PolygonAddressError =>
@@ -219,7 +219,7 @@ public partial class WelcomeViewModel : ViewModelBase
 
     public string AiozChoiceText =>
         "Stores and delivers files for AIOZ's network, using some disk space (20 GB at most) and upload bandwidth. " +
-        "Paid in AIOZ to your own 0x address; Otium takes nothing. Earnings are uncertain.";
+        "Paid in AIOZ to your wallet; Otium takes nothing. Earnings are uncertain.";
 
     [RelayCommand]
     private void OpenAiozTerms() => Launch.Open(AiozSharingViewModel.TermsUrl);

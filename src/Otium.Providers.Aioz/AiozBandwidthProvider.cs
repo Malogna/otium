@@ -63,6 +63,11 @@ internal sealed record AiozBalance(decimal Waiting, decimal Storage, decimal Del
 /// default 1317 is often reserved on Windows). Everything it keeps, its key and AIOZ's helper programs included, stays in
 /// <c>engines/aioz-data</c>: every command gets <c>--home</c>, or the node would use <c>~/.aiozworker</c>.
 ///
+/// No service converts AIOZ on its own network into other coins (October 2026: Relay and LI.FI don't support the AIOZ
+/// chain; ChangeNOW and SideShift only take its Ethereum and BNB Chain copies), so AIOZ can't be routed to the user's
+/// payout coin the way Proxybase's earnings are. It needs no address to run: when the payout address is an 0x address
+/// it's withdrawn there, otherwise it waits in the node's own key on this computer until the user adds one.
+///
 /// AIOZ's network has many more nodes than paying files (October 2026: a test node got two storage tasks in ten minutes,
 /// both aborted with "client credit is not enough"), so earnings are uncertain; the consent screen says so.
 /// </summary>
@@ -93,7 +98,7 @@ public sealed class AiozBandwidthProvider : IBandwidthProvider
     private DateTimeOffset _measuredAt = DateTimeOffset.MinValue;
     private string? _withdrawProblem;
 
-    /// <param name="payoutAddress">The user's own 0x address AIOZ is withdrawn to; null until they set one.</param>
+    /// <param name="payoutAddress">The user's own 0x address AIOZ is withdrawn to; null until there is one (it then waits in the node).</param>
     /// <param name="storageLimitGb">Most disk space the node may use, in GB (the user's choice).</param>
     /// <param name="aiozUsd">Today's AIOZ price in dollars from the Otium server, or null when it has none.</param>
     public AiozBandwidthProvider(
@@ -162,8 +167,7 @@ public sealed class AiozBandwidthProvider : IBandwidthProvider
     public string? UnavailableReason =>
         _asset is null
             ? "Sharing through AIOZ isn't available on this computer (it needs Windows or Linux on a 64-bit Intel or AMD processor)."
-        : _payoutAddress() is null ? "Add an 0x address for AIOZ payouts."
-        : null;
+            : null;
 
     public bool IsInstalled => _installer.IsInstalled;
 
@@ -287,7 +291,7 @@ public sealed class AiozBandwidthProvider : IBandwidthProvider
         var earned = Earned.With(_time.GetUtcNow(), balance.Earned, _aiozUsd());
         SaveEarned(earned);
         await WithdrawIfDueAsync(balance, ct);
-        return new BandwidthStatus(BandwidthProviderState.Online, 0, null, EarningsText(balance, _withdrawProblem),
+        return new BandwidthStatus(BandwidthProviderState.Online, 0, null, EarningsText(balance, _payoutAddress() is not null, _withdrawProblem),
             earned.UserUsd, earned.UserUsdPerDay(_time.GetUtcNow()), ActivityText(stats));
     }
 
@@ -451,11 +455,16 @@ public sealed class AiozBandwidthProvider : IBandwidthProvider
         return total;
     }
 
-    internal static string EarningsText(AiozBalance balance, string? withdrawProblem)
+    /// <param name="hasAddress">There's an 0x address to withdraw to; without one the AIOZ waits on this computer.</param>
+    internal static string EarningsText(AiozBalance balance, bool hasAddress, string? withdrawProblem)
     {
-        var text = $"{balance.Earned.ToString("0.####", CultureInfo.InvariantCulture)} AIOZ earned in total; " +
-                   $"{balance.Waiting.ToString("0.####", CultureInfo.InvariantCulture)} AIOZ waiting, sent to your 0x address on the AIOZ network " +
-                   $"once it reaches {WithdrawAtAioz.ToString(CultureInfo.InvariantCulture)} AIOZ.";
+        var earned = $"{balance.Earned.ToString("0.####", CultureInfo.InvariantCulture)} AIOZ earned in total; ";
+        var waiting = balance.Waiting.ToString("0.####", CultureInfo.InvariantCulture);
+        var text = hasAddress
+            ? earned + $"{waiting} AIOZ waiting, sent to your 0x address on the AIOZ network once it reaches {WithdrawAtAioz.ToString(CultureInfo.InvariantCulture)} AIOZ."
+            : balance.Waiting >= WithdrawAtAioz
+                ? earned + $"{waiting} AIOZ waiting on this computer. Add an 0x address in Advanced settings to receive it."
+                : earned + $"{waiting} AIOZ waiting on this computer, kept safe until there's enough to send.";
         return withdrawProblem is null ? text : $"{text} {withdrawProblem}";
     }
 

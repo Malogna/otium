@@ -399,7 +399,11 @@ AIOZ's official `aioz-depin-cli`, Apache-2.0, pinned to 1.2.5 for Windows x64 an
 consent screen, storage limit and row. AIOZ's network stores pieces of files on the node and has it deliver them
 (storage and CDN), and credits AIOZ tokens to the node's own key. The app reads `GET /stats` and
 `GET /worker/balance` from the node's local API and, once 5 AIOZ is waiting, runs `reward withdraw` (at most daily) to
-the user's own 0x address on the AIOZ network; Otium takes nothing. Dollar figures use `AiozUsd` in the account
+the user's own 0x address on the AIOZ network; Otium takes nothing. That address is the payout address when it's an
+0x one, else the one given for Mysterium or for AIOZ in Settings; with none, the AIOZ waits in the node's key, so
+turning AIOZ on never asks for an address. It can't be routed to the payout coin like Proxybase's earnings: Relay and
+LI.FI don't support the AIOZ chain, and ChangeNOW and SideShift take only AIOZ's Ethereum and BNB Chain tokens
+(October 2026). Dollar figures use `AiozUsd` in the account
 summary (CoinGecko `aioz-network`, hourly). The node runs as the user and listens on `127.0.0.1` on a free port of
 its own (`--laddr`; AIOZ's default 1317 is often reserved on Windows), with `--home` in `engines/aioz-data` so its
 key (`privkey.json`, created without a password; the recovery words it prints are discarded), files and helper

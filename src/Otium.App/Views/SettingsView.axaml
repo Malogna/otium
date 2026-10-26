@@ -286,6 +286,21 @@
                                             <NumericUpDown Value="{Binding StorageLimitGb}" Minimum="1" Maximum="1000" Increment="5" FormatString="0.#" Width="140" />
                                             <TextBlock VerticalAlignment="Center" Text="GB of disk space at most" />
                                         </StackPanel>
+                                        <!-- Only when the payout wallet isn't an 0x address: where AIOZ is sent (optional) -->
+                                        <StackPanel Spacing="4" IsVisible="{Binding NeedsPayoutAddress}">
+                                            <TextBlock Classes="label" Text="Your 0x address for AIOZ (optional)" />
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <TextBox Text="{Binding PayoutAddress}" PlaceholderText="0x…" FontFamily="Consolas, Menlo, monospace" Width="360"
+                                                         AutomationProperties.Name="Your 0x address for AIOZ" />
+                                                <Button Content="Save" Command="{Binding SaveAddressCommand}" />
+                                            </StackPanel>
+                                            <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
+                                                       Text="A wallet you hold the keys to (MetaMask, Rabby, Trust Wallet). Use an exchange deposit address only if the exchange accepts AIOZ on the AIOZ network." />
+                                            <TextBlock Classes="error" TextWrapping="Wrap" Text="{Binding PayoutAddressError}"
+                                                       IsVisible="{Binding PayoutAddressError, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                                            <TextBlock Classes="muted" FontSize="12" Text="{Binding PayoutAddressSaved}"
+                                                       IsVisible="{Binding PayoutAddressSaved, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                                        </StackPanel>
                                         <ToggleButton x:Name="AiozHow" Classes="link" HorizontalAlignment="Left" Content="How AIOZ works" />
                                         <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap" Text="{Binding ConsentText}"
                                                    IsVisible="{Binding #AiozHow.IsChecked}" />

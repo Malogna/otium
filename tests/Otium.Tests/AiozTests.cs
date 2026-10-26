@@ -124,11 +124,20 @@ public class AiozTests
     }
 
     [Fact]
-    public void Without_an_0x_address_it_asks_for_one()
+    public void It_runs_without_an_0x_address_and_keeps_aioz_on_this_computer_until_there_is_one()
     {
+        // One click, like the other networks: no converter takes AIOZ on its own network, so with a non-0x payout coin
+        // the AIOZ waits in the node's own key instead of blocking the switch.
         var provider = new AiozBandwidthProvider(new HttpClient(), Path.GetTempPath(), () => null, () => 20,
             AiozRelease.For(OSPlatform.Windows, Architecture.X64));
-        Assert.Equal("Add an 0x address for AIOZ payouts.", provider.UnavailableReason);
+        Assert.Null(provider.UnavailableReason);
         Assert.Equal("aioz", provider.Id);
+
+        var little = new AiozBalance(1.5m, 1.5m, 0, 0, 0);
+        Assert.EndsWith("1.5 AIOZ waiting on this computer, kept safe until there's enough to send.",
+            AiozBandwidthProvider.EarningsText(little, hasAddress: false, null));
+        var enough = little with { Waiting = 6, Storage = 6 };
+        Assert.EndsWith("Add an 0x address in Advanced settings to receive it.", AiozBandwidthProvider.EarningsText(enough, hasAddress: false, null));
+        Assert.Contains("sent to your 0x address on the AIOZ network once it reaches 5 AIOZ", AiozBandwidthProvider.EarningsText(enough, hasAddress: true, null));
     }
 }
