@@ -167,8 +167,17 @@ public partial class WelcomeViewModel : ViewModelBase
     /// <summary>Mysterium has a node for this computer (whether the server pays its setup is known only after Start).</summary>
     public bool CanShareMysterium => _host.Mysterium is not null && Otium.Providers.Mysterium.MystRelease.ForCurrentPlatform() is not null;
 
+    /// <summary>AIOZ has a node for this computer.</summary>
+    public bool CanShareAioz => _host.Aioz is not null && Otium.Providers.Aioz.AiozRelease.ForCurrentPlatform() is not null;
+
     /// <summary>Some network can share this computer's internet: the one tick offers them all.</summary>
-    public bool CanShareAny => CanShareInternet || CanShareMysterium;
+    public bool CanShareAny => CanShareInternet || CanShareMysterium || CanShareAioz;
+
+    /// <summary>Share through AIOZ too, under the one tick (on unless the user unticks it).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(NeedsPolygonAddress))]
+    [NotifyCanExecuteChangedFor(nameof(StartCommand))]
+    public partial bool ShareAioz { get; set; } = true;
 
     /// <summary>Share through Proxybase, under the one tick (on unless the user unticks it).</summary>
     [ObservableProperty]
@@ -187,7 +196,7 @@ public partial class WelcomeViewModel : ViewModelBase
     [NotifyCanExecuteChangedFor(nameof(StartCommand))]
     public partial string PolygonAddress { get; set; } = "";
 
-    public bool NeedsPolygonAddress => ShareInternet && ShareMysterium && CanShareMysterium
+    public bool NeedsPolygonAddress => ShareInternet && ((ShareMysterium && CanShareMysterium) || (ShareAioz && CanShareAioz))
                                        && Payout.Target is not { Coin.Format: Otium.Core.Wallets.AddressFormat.Evm };
 
     public string? PolygonAddressError =>
@@ -207,6 +216,13 @@ public partial class WelcomeViewModel : ViewModelBase
 
     [RelayCommand]
     private void OpenMysteriumTerms() => Launch.Open(MysteriumSharingViewModel.TermsUrl);
+
+    public string AiozChoiceText =>
+        "Stores and delivers files for AIOZ's network, using some disk space (20 GB at most) and upload bandwidth. " +
+        "Paid in AIOZ to your own 0x address; Otium takes nothing. Earnings are uncertain.";
+
+    [RelayCommand]
+    private void OpenAiozTerms() => Launch.Open(AiozSharingViewModel.TermsUrl);
 
     /// <summary>Mining on, then straight to where to be paid. Internet sharing waits for its own tick on the summary.</summary>
     [RelayCommand]
@@ -470,6 +486,6 @@ public partial class WelcomeViewModel : ViewModelBase
         _started(); // show the home screen right away; it reports progress while the account connects
         await _host.StartFirstTimeAsync(InviteCode, Payout.Target?.ToString(), ShareEarnings == true, KeepMinerReady,
             ShareInternet && ShareProxybase && CanShareInternet, ShareInternet && ShareMysterium && CanShareMysterium,
-            NeedsPolygonAddress ? PolygonAddress : null);
+            NeedsPolygonAddress ? PolygonAddress : null, ShareInternet && ShareAioz && CanShareAioz);
     }
 }

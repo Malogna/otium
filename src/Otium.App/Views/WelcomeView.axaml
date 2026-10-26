@@ -278,12 +278,24 @@
                                         <TextBlock Text="Mysterium's terms" FontSize="12.5" Foreground="{DynamicResource GoodBrush}" />
                                     </Button>
                                 </StackPanel>
+                                <StackPanel Spacing="2" IsVisible="{Binding CanShareAioz}">
+                                    <CheckBox IsChecked="{Binding ShareAioz}" AutomationProperties.Name="Share through AIOZ">
+                                        <StackPanel Spacing="2">
+                                            <TextBlock FontWeight="SemiBold" Text="AIOZ" />
+                                            <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap" Text="{Binding AiozChoiceText}" />
+                                        </StackPanel>
+                                    </CheckBox>
+                                    <Button Classes="link" HorizontalAlignment="Left" Margin="28,0,0,0" Command="{Binding OpenAiozTermsCommand}"
+                                            AutomationProperties.Name="Open AIOZ's node source">
+                                        <TextBlock Text="AIOZ's node (open source)" FontSize="12.5" Foreground="{DynamicResource GoodBrush}" />
+                                    </Button>
+                                </StackPanel>
                                 <StackPanel Spacing="4" IsVisible="{Binding NeedsPolygonAddress}">
-                                    <TextBlock Classes="label" Text="Your 0x address on Polygon, for Mysterium's MYST" />
+                                    <TextBlock Classes="label" Text="Your 0x address, for Mysterium's MYST and AIOZ" />
                                     <TextBox Text="{Binding PolygonAddress}" PlaceholderText="0x…" FontFamily="Consolas, Menlo, monospace"
                                              AutomationProperties.Name="Your Polygon address" />
                                     <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
-                                               Text="Your payout coin isn't on an 0x network, so Mysterium needs the address of a wallet you hold the keys to (MetaMask, Rabby, Trust Wallet). Or untick Mysterium." />
+                                               Text="Your payout coin isn't on an 0x network, so Mysterium and AIOZ need the address of a wallet you hold the keys to (MetaMask, Rabby, Trust Wallet). Or untick them." />
                                     <TextBlock Classes="error" TextWrapping="Wrap" Text="{Binding PolygonAddressError}"
                                                IsVisible="{Binding PolygonAddressError, Converter={x:Static ObjectConverters.IsNotNull}}" />
                                 </StackPanel>
@@ -326,12 +338,24 @@
                                         <TextBlock Text="Mysterium's terms" FontSize="12.5" Foreground="{DynamicResource GoodBrush}" />
                                     </Button>
                                 </StackPanel>
+                                <StackPanel Spacing="2" IsVisible="{Binding CanShareAioz}">
+                                    <CheckBox IsChecked="{Binding ShareAioz}" AutomationProperties.Name="Share through AIOZ">
+                                        <StackPanel Spacing="2">
+                                            <TextBlock FontWeight="SemiBold" Text="AIOZ" />
+                                            <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap" Text="{Binding AiozChoiceText}" />
+                                        </StackPanel>
+                                    </CheckBox>
+                                    <Button Classes="link" HorizontalAlignment="Left" Margin="28,0,0,0" Command="{Binding OpenAiozTermsCommand}"
+                                            AutomationProperties.Name="Open AIOZ's node source">
+                                        <TextBlock Text="AIOZ's node (open source)" FontSize="12.5" Foreground="{DynamicResource GoodBrush}" />
+                                    </Button>
+                                </StackPanel>
                                 <StackPanel Spacing="4" IsVisible="{Binding NeedsPolygonAddress}">
-                                    <TextBlock Classes="label" Text="Your 0x address on Polygon, for Mysterium's MYST" />
+                                    <TextBlock Classes="label" Text="Your 0x address, for Mysterium's MYST and AIOZ" />
                                     <TextBox Text="{Binding PolygonAddress}" PlaceholderText="0x…" FontFamily="Consolas, Menlo, monospace"
                                              AutomationProperties.Name="Your Polygon address" />
                                     <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
-                                               Text="Your payout coin isn't on an 0x network, so Mysterium needs the address of a wallet you hold the keys to (MetaMask, Rabby, Trust Wallet). Or untick Mysterium." />
+                                               Text="Your payout coin isn't on an 0x network, so Mysterium and AIOZ need the address of a wallet you hold the keys to (MetaMask, Rabby, Trust Wallet). Or untick them." />
                                     <TextBlock Classes="error" TextWrapping="Wrap" Text="{Binding PolygonAddressError}"
                                                IsVisible="{Binding PolygonAddressError, Converter={x:Static ObjectConverters.IsNotNull}}" />
                                 </StackPanel>

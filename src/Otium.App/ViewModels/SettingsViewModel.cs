@@ -79,8 +79,23 @@ public partial class SettingsViewModel : ViewModelBase
 
     private MysteriumSharingViewModel? _mysteriumSharing;
 
+    public AiozSharingViewModel AiozSharing => _aiozSharing ??= CreateAioz();
+
+    private AiozSharingViewModel? _aiozSharing;
+
     /// <summary>The one "Internet sharing" card: shown while any network is offered here, on, or left something to remove.</summary>
-    public bool ShowSharingSection => InternetSharing.ShowInSettings || MysteriumSharing.ShowInSettings;
+    public bool ShowSharingSection => InternetSharing.ShowInSettings || MysteriumSharing.ShowInSettings || AiozSharing.ShowInSettings;
+
+    private AiozSharingViewModel CreateAioz()
+    {
+        var aioz = new AiozSharingViewModel(_host);
+        aioz.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(AiozSharingViewModel.ShowInSettings))
+                OnPropertyChanged(nameof(ShowSharingSection));
+        };
+        return aioz;
+    }
 
     private MysteriumSharingViewModel CreateMysterium()
     {

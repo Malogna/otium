@@ -4,12 +4,22 @@ namespace Otium.Server.Bandwidth;
 
 /// <summary>
 /// MYST's dollar price, sent in every account summary so the app can show Mysterium sharing earnings (paid in MYST) in
-/// dollars. Read from the coin price source at most hourly, in the background, so a summary never waits on it; until
-/// the first read (or while the source is down) it's the last known price, or null.
+/// dollars.
 /// </summary>
 public sealed class MystPrice(IServiceProvider services, TimeProvider time, ILogger<MystPrice> logger)
+    : TokenPrice("MYST", services, time, logger);
+
+/// <summary>AIOZ's dollar price, sent in every account summary for AIOZ sharing earnings (paid in AIOZ).</summary>
+public sealed class AiozPrice(IServiceProvider services, TimeProvider time, ILogger<AiozPrice> logger)
+    : TokenPrice("AIOZ", services, time, logger);
+
+/// <summary>
+/// A sharing network's token price in dollars. Read from the coin price source at most hourly, in the background, so a
+/// summary never waits on it; until the first read (or while the source is down) it's the last known price, or null.
+/// </summary>
+public abstract class TokenPrice(string symbol, IServiceProvider services, TimeProvider time, ILogger logger)
 {
-    public const string Symbol = "MYST";
+    public string Symbol => symbol;
 
     public static readonly TimeSpan RefreshEvery = TimeSpan.FromHours(1);
 
@@ -40,11 +50,11 @@ public sealed class MystPrice(IServiceProvider services, TimeProvider time, ILog
         }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
         {
-            logger.LogWarning(e, "MYST price unavailable; keeping the last one");
+            logger.LogWarning(e, "{Symbol} price unavailable; keeping the last one", symbol);
         }
         finally
         {
-            // A failed read waits the same hour: the app keeps showing MYST amounts meanwhile.
+            // A failed read waits the same hour: the app keeps showing token amounts meanwhile.
             _readAt = time.GetUtcNow();
             Interlocked.Exchange(ref _refreshing, 0);
         }

@@ -539,7 +539,7 @@ internal static class AdminDashboard
             $("pp-rewarded").textContent = usd(pp.rewarded30dUsd);
 
             const an = s.analytics || { devices: 0, byKind: [] };
-            const names = { cpu: "Processor", gpu: "Graphics card", sharing: "Internet sharing (Proxybase)", "sharing-mysterium": "Internet sharing (Mysterium)" };
+            const names = { cpu: "Processor", gpu: "Graphics card", sharing: "Internet sharing (Proxybase)", "sharing-mysterium": "Internet sharing (Mysterium)", "sharing-aioz": "Storage sharing (AIOZ)" };
             $("an-summary").textContent = an.devices
               ? `${n(an.devices)} computer(s) shared their numbers this week.`
               : "No computer has shared its numbers this week (Share analytics is opt-in).";

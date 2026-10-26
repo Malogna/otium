@@ -44,12 +44,31 @@
             </StackPanel>
         </Border>
 
+        <Border Classes="tile" IsVisible="{Binding OffersAioz}">
+            <StackPanel Spacing="6">
+                <CheckBox IsChecked="{Binding UseAioz}" AutomationProperties.Name="Share through AIOZ">
+                    <StackPanel Spacing="2">
+                        <TextBlock FontWeight="SemiBold" Text="AIOZ" />
+                        <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap" Text="{Binding AiozLine}" />
+                    </StackPanel>
+                </CheckBox>
+                <StackPanel Orientation="Horizontal" Spacing="16" Margin="28,0,0,0">
+                    <ToggleButton x:Name="AiozHow" Classes="link" Content="How it works" />
+                    <Button Classes="link" Command="{Binding Aioz.OpenTermsCommand}" AutomationProperties.Name="Open AIOZ's node source">
+                        <TextBlock Text="AIOZ's node (open source)" FontSize="12.5" Foreground="{DynamicResource GoodBrush}" />
+                    </Button>
+                </StackPanel>
+                <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap" Margin="28,0,0,0" Text="{Binding Aioz.ConsentText}"
+                           IsVisible="{Binding #AiozHow.IsChecked}" />
+            </StackPanel>
+        </Border>
+
         <StackPanel Spacing="4" IsVisible="{Binding NeedsPolygonAddress}">
-            <TextBlock Classes="label" Text="Your 0x address on Polygon, for Mysterium's MYST" />
+            <TextBlock Classes="label" Text="Your 0x address, for Mysterium's MYST and AIOZ" />
             <TextBox Text="{Binding PolygonAddress}" PlaceholderText="0x…" FontFamily="Consolas, Menlo, monospace"
                      AutomationProperties.Name="Your Polygon address" />
             <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
-                       Text="Your payout coin isn't on an 0x network, so Mysterium needs the address of a wallet you hold the keys to (MetaMask, Rabby, Trust Wallet)." />
+                       Text="Your payout coin isn't on an 0x network, so these need the address of a wallet you hold the keys to (MetaMask, Rabby, Trust Wallet)." />
             <TextBlock Classes="error" TextWrapping="Wrap" Text="{Binding PolygonAddressError}"
                        IsVisible="{Binding PolygonAddressError, Converter={x:Static ObjectConverters.IsNotNull}}" />
         </StackPanel>

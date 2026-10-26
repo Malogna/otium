@@ -79,7 +79,8 @@ public partial class HomeViewModel : ViewModelBase
         _internetRow = new ActivityRow { Icon = Icon("IconGlobe"), Title = "Internet connection" };
         InternetSharing = new InternetSharingViewModel(host);
         MysteriumSharing = new MysteriumSharingViewModel(host);
-        SharingSetup = new SharingSetupViewModel(host, InternetSharing, MysteriumSharing) { CanDismiss = true };
+        AiozSharing = new AiozSharingViewModel(host);
+        SharingSetup = new SharingSetupViewModel(host, InternetSharing, MysteriumSharing, AiozSharing) { CanDismiss = true };
         SharingSetup.Dismissed += () =>
         {
             ShowSharingSetup = false;
@@ -95,12 +96,19 @@ public partial class HomeViewModel : ViewModelBase
             if (e.PropertyName == nameof(InternetSharingViewModel.IsOn))
                 Refresh();
         };
+        AiozSharing.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(AiozSharingViewModel.IsOn))
+                Refresh();
+        };
 
         foreach (var engine in host.Engines)
             engine.SnapshotChanged += _ => Dispatcher.UIThread.Post(Refresh);
         host.Bandwidth.SnapshotChanged += _ => Dispatcher.UIThread.Post(Refresh);
         if (host.Mysterium is { } mysterium)
             mysterium.SnapshotChanged += _ => Dispatcher.UIThread.Post(Refresh);
+        if (host.Aioz is { } aioz)
+            aioz.SnapshotChanged += _ => Dispatcher.UIThread.Post(Refresh);
         host.AccountChanged += () => Dispatcher.UIThread.Post(Refresh);
         host.Updates.Changed += () => Dispatcher.UIThread.Post(Refresh);
         host.HistoryChanged += () => Dispatcher.UIThread.Post(Refresh);
@@ -124,6 +132,9 @@ public partial class HomeViewModel : ViewModelBase
 
     /// <summary>Sharing through Mysterium, next to Proxybase: its own suggestion card and overview row.</summary>
     public MysteriumSharingViewModel MysteriumSharing { get; }
+
+    /// <summary>Sharing disk space and upload bandwidth through AIOZ: its line in the internet row and the sharing setup.</summary>
+    public AiozSharingViewModel AiozSharing { get; }
 
     /// <summary>The overview's one card for turning internet sharing on: every network at once.</summary>
     public SharingSetupViewModel SharingSetup { get; }
@@ -504,6 +515,8 @@ public partial class HomeViewModel : ViewModelBase
             lines.Add(ProxybaseLine(settings));
         if (_host.Mysterium is { } mysterium && settings.MysteriumEnabled && settings.MysteriumConsentAt is not null && _host.MysteriumOffered)
             lines.Add(MysteriumLine(settings, mysterium.Snapshot));
+        if (_host.Aioz is { } aioz && settings.AiozEnabled && settings.AiozConsentAt is not null && _host.AiozOffered)
+            lines.Add(AiozLine(settings, aioz.Snapshot));
 
         var on = lines.Count > 0;
         if (on && !Activity.Contains(_internetRow))
@@ -570,6 +583,17 @@ public partial class HomeViewModel : ViewModelBase
         return (new ProviderLine { Name = "Mysterium", What = what, Amount = amount, IsActive = sharing }, perDay, false, b.TotalUserUsd, what);
     }
 
+    /// <summary>AIOZ: paid in AIOZ, shown in dollars at today's price once the node has earned something.</summary>
+    private static (ProviderLine, double, bool, double, string) AiozLine(Core.Settings.AppSettings settings, BandwidthSnapshot b)
+    {
+        var sharing = b.State == BandwidthState.Sharing;
+        var perDay = sharing ? b.UserUsdPerDay : 0;
+        var what = SharingWhat(settings, b, null, "Storing and delivering files for AIOZ");
+        var amount = (perDay > 0 ? $"{Format.Usd(perDay)}/day · " : "")
+                     + (b.TotalUserUsd > 0 ? $"{Format.Usd(b.TotalUserUsd)} earned in AIOZ" : "nothing earned yet");
+        return (new ProviderLine { Name = "AIOZ", What = what, Amount = amount, IsActive = sharing }, perDay, false, b.TotalUserUsd, what);
+    }
+
     private static string SharingWhat(Core.Settings.AppSettings settings, BandwidthSnapshot b, string? note, string sharing = "Sharing unused bandwidth") =>
         note ?? b.State switch
         {
@@ -588,8 +612,9 @@ public partial class HomeViewModel : ViewModelBase
         SharingSetup.Refresh();
         var proxybase = InternetSharing.CanTurnOn && !settings.BandwidthPromptDismissed;
         var mysterium = MysteriumSharing.CanTurnOn && !settings.MysteriumPromptDismissed;
-        ShowSharingSuggestion = settings.OnboardingComplete && (proxybase || mysterium);
-        var sharingAlready = InternetSharing.IsOn || MysteriumSharing.IsOn;
+        var aioz = AiozSharing.CanTurnOn && !settings.AiozPromptDismissed;
+        ShowSharingSuggestion = settings.OnboardingComplete && (proxybase || mysterium || aioz);
+        var sharingAlready = InternetSharing.IsOn || MysteriumSharing.IsOn || AiozSharing.IsOn;
         SharingSuggestionTitle = sharingAlready ? "Add another network" : "Earn from your internet too";
         SharingSuggestionText = sharingAlready
             ? "Share your unused internet through one more network too, for more buyers and more earnings."

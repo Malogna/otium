@@ -14,19 +14,23 @@ public partial class SharingSetupViewModel : ViewModelBase
 {
     private readonly AppHost _host;
 
-    public SharingSetupViewModel(AppHost host, InternetSharingViewModel proxybase, MysteriumSharingViewModel mysterium)
+    public SharingSetupViewModel(AppHost host, InternetSharingViewModel proxybase, MysteriumSharingViewModel mysterium, AiozSharingViewModel aioz)
     {
         _host = host;
         Proxybase = proxybase;
         Mysterium = mysterium;
-        PolygonAddress = host.Settings.MysteriumPayoutAddress ?? "";
+        Aioz = aioz;
+        PolygonAddress = host.Settings.MysteriumPayoutAddress ?? host.Settings.AiozPayoutAddress ?? "";
         proxybase.PropertyChanged += (_, _) => Refresh();
         mysterium.PropertyChanged += (_, _) => Refresh();
+        aioz.PropertyChanged += (_, _) => Refresh();
     }
 
     public InternetSharingViewModel Proxybase { get; }
 
     public MysteriumSharingViewModel Mysterium { get; }
+
+    public AiozSharingViewModel Aioz { get; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanTurnOn))]
@@ -35,6 +39,10 @@ public partial class SharingSetupViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanTurnOn), nameof(NeedsPolygonAddress))]
     public partial bool UseMysterium { get; set; } = true;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanTurnOn), nameof(NeedsPolygonAddress))]
+    public partial bool UseAioz { get; set; } = true;
 
     [ObservableProperty] public partial string PolygonAddress { get; set; } = "";
     [ObservableProperty] public partial string? PolygonAddressError { get; set; }
@@ -47,12 +55,16 @@ public partial class SharingSetupViewModel : ViewModelBase
     /// <summary>Mysterium is offered here and still off.</summary>
     public bool OffersMysterium => Mysterium.CanTurnOn;
 
+    /// <summary>AIOZ is offered here and still off.</summary>
+    public bool OffersAioz => Aioz.CanTurnOn;
+
     /// <summary>At least one network can still be turned on.</summary>
-    public bool HasAnything => OffersProxybase || OffersMysterium;
+    public bool HasAnything => OffersProxybase || OffersMysterium || OffersAioz;
 
-    public bool CanTurnOn => !IsBusy && ((OffersProxybase && UseProxybase) || (OffersMysterium && UseMysterium));
+    public bool CanTurnOn => !IsBusy && ((OffersProxybase && UseProxybase) || (OffersMysterium && UseMysterium) || (OffersAioz && UseAioz));
 
-    public bool NeedsPolygonAddress => OffersMysterium && UseMysterium && Mysterium.NeedsPayoutAddress;
+    /// <summary>Mysterium and AIOZ pay an 0x address (the same one works for both); asked for when the payout coin isn't on one.</summary>
+    public bool NeedsPolygonAddress => (OffersMysterium && UseMysterium && Mysterium.NeedsPayoutAddress) || (OffersAioz && UseAioz && Aioz.NeedsPayoutAddress);
 
     public string ProxybaseLine =>
         "AI agents and businesses that collect public web pages. Paid in your coin, like mining (Otium keeps its usual share). " +
@@ -62,10 +74,15 @@ public partial class SharingSetupViewModel : ViewModelBase
         "Business customers only. Paid in MYST to your own Polygon address; Otium takes nothing and pays the one-time " +
         "setup fee.";
 
+    public string AiozLine =>
+        "Stores and delivers files for AIOZ's network, using some disk space and upload bandwidth. Paid in AIOZ to your " +
+        "own 0x address; Otium takes nothing. Earnings are uncertain.";
+
     public void Refresh()
     {
         OnPropertyChanged(nameof(OffersProxybase));
         OnPropertyChanged(nameof(OffersMysterium));
+        OnPropertyChanged(nameof(OffersAioz));
         OnPropertyChanged(nameof(HasAnything));
         OnPropertyChanged(nameof(CanTurnOn));
         OnPropertyChanged(nameof(NeedsPolygonAddress));
@@ -81,6 +98,7 @@ public partial class SharingSetupViewModel : ViewModelBase
     {
         _host.Settings.BandwidthPromptDismissed = true;
         _host.Settings.MysteriumPromptDismissed = true;
+        _host.Settings.AiozPromptDismissed = true;
         _host.SaveSettings();
         Dismissed?.Invoke();
     }
@@ -98,7 +116,11 @@ public partial class SharingSetupViewModel : ViewModelBase
                 return;
             }
             PolygonAddressError = null;
-            _host.Settings.MysteriumPayoutAddress = PolygonAddress.Trim().ToLowerInvariant();
+            var address = PolygonAddress.Trim().ToLowerInvariant();
+            if (OffersMysterium && UseMysterium)
+                _host.Settings.MysteriumPayoutAddress = address;
+            if (OffersAioz && UseAioz)
+                _host.Settings.AiozPayoutAddress = address;
             _host.SaveSettings();
         }
 
@@ -111,6 +133,8 @@ public partial class SharingSetupViewModel : ViewModelBase
                 await _host.SetBandwidthSharingAsync(true);
             if (OffersMysterium && UseMysterium)
                 await _host.SetMysteriumSharingAsync(true);
+            if (OffersAioz && UseAioz)
+                await _host.SetAiozSharingAsync(true);
         }
         catch (InvalidOperationException e)
         {
