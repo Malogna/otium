@@ -197,6 +197,14 @@ public sealed class AppSettings
     public string? MonthlyReportDismissed { get; set; }
 
     /// <summary>
+    /// The pool's paid-out total (in <see cref="PayoutSeenCoin"/>) when the user last closed the "You've been paid" card;
+    /// the card shows again when the total grows past it. Null until the first payout is seen.
+    /// </summary>
+    public double? PayoutSeenPaid { get; set; }
+
+    public string? PayoutSeenCoin { get; set; }
+
+    /// <summary>
     /// Send what this computer earns (graphics card model, processor name, hours, amounts; never an address) for the
     /// real-earnings table on otium.lol. Asked as a plain yes or no on the welcome screen (nothing preselected: it's
     /// consent); Settings turns it on or off.

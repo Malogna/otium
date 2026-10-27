@@ -77,9 +77,36 @@ public partial class ResultsViewModel : ViewModelBase
     // its result, then "while you were away", then last month. Closing one shows the next.
     public bool ShowMeasureResultNow => ShowMeasureResult && !IsMeasuring;
 
-    public bool ShowAwayNow => ShowAway && !IsMeasuring && !ShowMeasureResult;
+    /// <summary>The pool paid the user: the moment they're most likely to tell a friend, so it comes before the rest.</summary>
+    public bool ShowPayoutNow => ShowPayout && !IsMeasuring && !ShowMeasureResult;
 
-    public bool ShowMonthlyNow => ShowMonthly && !IsMeasuring && !ShowMeasureResult && !ShowAway;
+    public bool ShowAwayNow => ShowAway && !IsMeasuring && !ShowMeasureResult && !ShowPayout;
+
+    public bool ShowMonthlyNow => ShowMonthly && !IsMeasuring && !ShowMeasureResult && !ShowAway && !ShowPayout;
+
+    // ---------- you've been paid ----------
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowPayoutNow), nameof(ShowAwayNow), nameof(ShowMonthlyNow))]
+    public partial bool ShowPayout { get; set; }
+
+    [ObservableProperty] public partial string PayoutAmount { get; set; } = "";
+    [ObservableProperty] public partial string PayoutText { get; set; } = "";
+
+    /// <summary>What a friend who joins with the user's code gets, and what the user gets, in one sentence.</summary>
+    public string PayoutInviteText
+    {
+        get
+        {
+            var fees = _host.Fees;
+            var friendDays = fees.RefereeFeeHoliday.TotalDays.ToString("0", System.Globalization.CultureInfo.InvariantCulture);
+            var yourDays = fees.ReferrerFeeHolidayPerVerifiedFriend.TotalDays.ToString("0", System.Globalization.CultureInfo.InvariantCulture);
+            return $"Share it with your invite code: a friend who joins gets {friendDays} days without Otium's fee. You get {yourDays} fee-free " +
+                   FormattableString.Invariant($"days once they've mined for a day, and {fees.ReferrerShareOfFee * 100:0}% of Otium's fee on their mining for ") +
+                   FormattableString.Invariant($"{fees.ReferrerRewardPeriod.TotalDays / 30:0} months, paid to your address. It never comes out of their earnings.");
+        }
+    }
+
     [ObservableProperty] public partial string MonthlyTitle { get; set; } = "";
     [ObservableProperty] public partial string MonthlyAmount { get; set; } = "";
     [ObservableProperty] public partial string MonthlyText { get; set; } = "";
@@ -127,6 +154,21 @@ public partial class ResultsViewModel : ViewModelBase
         MeasuredLine = settings.Measurement is { } last && !ShowMeasureResult
             ? $"Measured {Format.Date(last.MeasuredAt)}: about {Format.Money((decimal)Counted(last).PerMonth(HoursPerDay))} a month at {HoursPerDay.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)} hours a day."
             : "";
+
+        // You've been paid
+        if (settings.PayoutMode == Core.Settings.PayoutMode.OwnWallet
+            && PayoutNotice.ToShow(_host.PoolBalance, settings.PayoutSeenPaid, settings.PayoutSeenCoin) is { } payout)
+        {
+            ShowPayout = true;
+            var coin = _host.PoolBalance!.Coin;
+            PayoutAmount = Format.Coin(payout.NewlyPaid, coin);
+            PayoutText = payout.Total > payout.NewlyPaid + 1e-9
+                ? $"sent straight to your own wallet by the pool. {Format.Coin(payout.Total, coin)} paid to you so far."
+                : "sent straight to your own wallet by the pool. Otium never held it.";
+            OnPropertyChanged(nameof(PayoutInviteText));
+        }
+        else
+            ShowPayout = false;
 
         // While you were away
         if (_host.LastAway is { } away)
@@ -240,6 +282,25 @@ public partial class ResultsViewModel : ViewModelBase
         ShareStatus = "";
         _host.DismissAway();
     }
+
+    [RelayCommand]
+    private void ClosePayout()
+    {
+        if (_host.PoolBalance is { } balance)
+        {
+            _host.Settings.PayoutSeenPaid = balance.Paid;
+            _host.Settings.PayoutSeenCoin = balance.Coin;
+            _host.SaveSettings();
+        }
+        ShareStatus = "";
+        Refresh();
+    }
+
+    [RelayCommand]
+    private Task CopyPayout() => CopyAsync($"My PC just paid me {PayoutAmount}, straight to my own wallet");
+
+    [RelayCommand]
+    private Task SavePayoutPicture() => SavePictureAsync("My PC just paid me", PayoutAmount, "straight to my own wallet, while I wasn't using it");
 
     [RelayCommand]
     private void CloseMonthly()
