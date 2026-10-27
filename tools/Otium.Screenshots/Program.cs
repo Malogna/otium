@@ -86,6 +86,8 @@ foreach (var variant in new[] { ThemeVariant.Light, ThemeVariant.Dark })
     results.MonthlyAmount = "$24.18";
     results.MonthlyText = "earned by this PC in 212 hours of earning, after Otium's fee, and used about $8.400 of electricity.";
     results.ShareStatus = "Copied, with your invite code. Paste it anywhere.";
+    homeVm.ShowElectricityPause = true;
+    homeVm.ElectricityPauseText = "At $0.25/kWh, your processor would earn about $0.06 a day but use about $0.36 of electricity, so Otium paused it to save you money. It checks again every 30 minutes, and sooner when the hourly price drops. If your electricity is included in your rent, paid by someone else or free, tell Otium and it earns whenever you're away.";
     homeVm.InternetSharing.ShowSuggestion = true;
     homeVm.InternetSharing.ShowConsent = true;
     Shoot(new HomeView { DataContext = homeVm }, $"home-{theme}", 900, 2800);

@@ -172,6 +172,14 @@ public partial class HomeViewModel : ViewModelBase
     [ObservableProperty] public partial bool IsRunning { get; set; }
     [ObservableProperty] public partial string ToggleText { get; set; } = "Start";
     [ObservableProperty] public partial bool NeedsAntivirusFix { get; set; }
+
+    /// <summary>
+    /// A device is paused because electricity would cost more than it earns: the overview says what each side comes to
+    /// and offers "I don't pay for electricity" for users whose power is included or free.
+    /// </summary>
+    [ObservableProperty] public partial bool ShowElectricityPause { get; set; }
+
+    [ObservableProperty] public partial string ElectricityPauseText { get; set; } = "";
     [ObservableProperty] public partial string? AllowResult { get; set; }
     [ObservableProperty] public partial bool IsAllowing { get; set; }
 
@@ -350,6 +358,7 @@ public partial class HomeViewModel : ViewModelBase
         IsEarning = states.Contains(EngineState.Earning);
         IsWaiting = !IsEarning && settings.EarningEnabled && states.Contains(EngineState.WaitingForIdle);
         IsProblem = NeedsAntivirusFix || (!IsEarning && states.Contains(EngineState.Error));
+        RefreshElectricityPause(engines);
         var sharers = _host.Sharers.Select(s => s.Snapshot).Where(s => s.State == BandwidthState.Sharing).ToList();
         var sharing = sharers.Count > 0;
         (StateLabel, StatusText) = Describe(settings, snapshots, earningNow.Sum(s => s.UserUsdPerDay));
@@ -496,7 +505,9 @@ public partial class HomeViewModel : ViewModelBase
                 EngineState.Starting => "Starting up…",
                 EngineState.Installing => "Downloading its engine (one time)…",
                 EngineState.WaitingForIdle => WaitingText(s),
-                EngineState.PausedUnprofitable => "Paused: electricity would cost more than it earns",
+                EngineState.PausedUnprofitable => s.ElectricityUsdPerDay > 0
+                    ? $"Paused: would earn {Format.Usd(s.UserUsdPerDay)}/day but use {Format.Usd(s.ElectricityUsdPerDay)}/day of electricity"
+                    : "Paused: electricity would cost more than it earns",
                 EngineState.Error => s.EngineBlocked ? "Blocked by antivirus" : "Hit a problem, retrying…",
                 _ => settings.EarningEnabled ? "Waiting…" : "Paused",
             };
@@ -676,7 +687,7 @@ public partial class HomeViewModel : ViewModelBase
         if (states.Contains(EngineState.WaitingForIdle))
             return ("Ready", "Otium starts earning when you step away from your computer.");
         if (states.Contains(EngineState.PausedUnprofitable))
-            return ("Paused", "Electricity would cost more than you'd earn right now. Otium checks again every 30 minutes.");
+            return ("Paused", "Paused to save you money: electricity would cost more than it earns right now.");
         if (snapshots.FirstOrDefault(s => s.State == EngineState.Error && s.Problem is not null) is { } explained)
             return ("Needs attention", explained.Problem!);
         if (states.Contains(EngineState.Error))
@@ -704,6 +715,36 @@ public partial class HomeViewModel : ViewModelBase
         : t.TotalDays < 1 ? $"{t.TotalHours:0} hours"
         : t.TotalDays < 2 ? "a day"
         : $"{t.TotalDays:0} days";
+
+    /// <summary>The electricity card: shown while a switched-on device is paused for electricity and the user counts it.</summary>
+    private void RefreshElectricityPause(IReadOnlyList<EarningsEngine> engines)
+    {
+        var settings = _host.Settings;
+        var paused = engines
+            .Select((engine, i) => (Name: i == 0 ? "processor" : "graphics card", Enabled: i == 0 ? settings.CpuEnabled : settings.GpuEnabled, engine.Snapshot))
+            .Where(d => d.Enabled && d.Snapshot.State == EngineState.PausedUnprofitable)
+            .ToList();
+        ShowElectricityPause = settings.EarningEnabled && settings.PayForElectricity && paused.Count > 0;
+        if (!ShowElectricityPause)
+            return;
+        var parts = paused.Select(d => d.Snapshot.ElectricityUsdPerDay > 0
+            ? $"your {d.Name} would earn about {Format.Usd(d.Snapshot.UserUsdPerDay)} a day but use about {Format.Usd(d.Snapshot.ElectricityUsdPerDay)} of electricity"
+            : $"your {d.Name} would cost more in electricity than it earns");
+        var price = Format.Money((decimal)settings.ElectricityPricePerKwh);
+        ElectricityPauseText =
+            $"At {price}/kWh, {string.Join(", and ", parts)}, so Otium paused it to save you money. It checks again every 30 minutes, " +
+            "and sooner when the hourly price drops. If your electricity is included in your rent, paid by someone else or free, " +
+            "tell Otium and it earns whenever you're away.";
+    }
+
+    /// <summary>"I don't pay for electricity": electricity is no longer counted, and paused devices start at once.</summary>
+    [RelayCommand]
+    private void StopCountingElectricity()
+    {
+        _host.Settings.PayForElectricity = false;
+        _host.SaveSettings();
+        Refresh();
+    }
 
     private static Geometry? Icon(string key) =>
         Avalonia.Application.Current?.TryGetResource(key, null, out var value) == true ? value as Geometry : null;

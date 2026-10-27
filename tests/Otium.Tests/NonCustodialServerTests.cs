@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Otium.Core;
 using Otium.Core.Accounts;
+using Otium.Core.Engine;
 using Otium.Core.Pools;
 using Otium.Core.Switching;
 using Otium.Core.Wallets;
@@ -290,6 +291,35 @@ public sealed class NonCustodialServerTests : IDisposable
         Assert.Equal(1, activity.GetProperty("daily").EnumerateArray().Last().GetProperty("cpuMining").GetInt64());
         var version = Assert.Single(activity.GetProperty("appVersions").EnumerateArray());
         Assert.Equal("0.1.1", version.GetProperty("version").GetString()); // without the commit
+    }
+
+    [Fact]
+    public async Task The_admin_dashboard_counts_what_processors_and_graphics_cards_are_doing()
+    {
+        var (paused, pausedSecret, _) = await Register(Usdt);
+        var (earning, earningSecret, _) = await Register(TestAddresses.Usdt(1));
+        var (odd, oddSecret, _) = await Register(TestAddresses.Usdt(2));
+        var client = new AccountClient(_http);
+        await client.GetSummaryAsync(paused, pausedSecret, CancellationToken.None,
+            new MiningTimeReport(TimeSpan.Zero, TimeSpan.Zero, EngineStateTags.PausedForElectricity, EngineStateTags.None));
+        await client.GetSummaryAsync(earning, earningSecret, CancellationToken.None,
+            new MiningTimeReport(TimeSpan.Zero, TimeSpan.Zero, EngineStateTags.Earning, EngineStateTags.WaitingForIdle));
+        // Only words from the fixed list are kept.
+        await client.GetSummaryAsync(odd, oddSecret, CancellationToken.None,
+            new MiningTimeReport(TimeSpan.Zero, TimeSpan.Zero, "my-own-words", "anything"));
+
+        var request = new HttpRequestMessage(HttpMethod.Get, "/admin/summary");
+        request.Headers.Add("X-Admin-Token", AdminToken);
+        using var doc = JsonDocument.Parse(await (await _http.SendAsync(request)).Content.ReadAsStringAsync());
+        var states = doc.RootElement.GetProperty("activity").GetProperty("engineStates").EnumerateArray()
+            .Select(e => (e.GetProperty("device").GetString(), e.GetProperty("state").GetString(), e.GetProperty("computers").GetInt64()))
+            .ToHashSet();
+        Assert.Equal(
+            new HashSet<(string?, string?, long)>
+            {
+                ("cpu", "paused-electricity", 1), ("cpu", "earning", 1), ("gpu", "none", 1), ("gpu", "waiting-for-idle", 1),
+            },
+            states);
     }
 
     [Fact]

@@ -231,6 +231,20 @@ public class EarningsEngineTests
     }
 
     [Fact]
+    public async Task Saying_electricity_is_free_lifts_the_pause_at_once()
+    {
+        var h = new Harness { PricePerKwh = 1.00 };
+        h.Engine.Enable();
+        await h.TickFor(EarningsEngine.Warmup + EarningsEngine.LossTolerance + TimeSpan.FromMinutes(1));
+        Assert.Equal(EngineState.PausedUnprofitable, h.Engine.Snapshot.State);
+
+        // "I don't pay for electricity": the price becomes 0. No waiting for the 30-minute recheck.
+        h.PricePerKwh = 0;
+        await h.TickFor(TimeSpan.FromSeconds(10));
+        Assert.True(h.Provider.Running);
+    }
+
+    [Fact]
     public async Task Waits_while_the_user_is_active_when_idle_only_is_on()
     {
         var h = new Harness { OnlyWhenIdle = true };

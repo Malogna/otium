@@ -96,7 +96,7 @@ public sealed record EmailCodeRecord(long Id, string Email, string DeviceId, str
 public sealed class OtiumStore
 {
     public const long MicrosPerDollar = 1_000_000;
-    private const int SchemaVersion = 16;
+    private const int SchemaVersion = 17;
 
     private readonly string _connectionString;
 
@@ -438,6 +438,14 @@ public sealed class OtiumStore
         // Version 16: the operator's own test accounts, left out of every count (dashboard and otium.lol).
         if (Scalar<long>("SELECT COUNT(*) FROM pragma_table_info('accounts') WHERE name = 'is_test'") == 0)
             Execute("ALTER TABLE accounts ADD COLUMN is_test INTEGER NOT NULL DEFAULT 0;");
+
+        // Version 17: what each computer's processor and graphics card were doing at its last check-in (a word from
+        // EngineStateTags), so the admin dashboard can count where computers get stuck.
+        foreach (var column in new[] { "cpu_state TEXT NULL", "gpu_state TEXT NULL" })
+        {
+            if (Scalar<long>($"SELECT COUNT(*) FROM pragma_table_info('devices') WHERE name = '{column.Split(' ')[0]}'") == 0)
+                Execute($"ALTER TABLE devices ADD COLUMN {column};");
+        }
 
         Execute($"PRAGMA user_version = {SchemaVersion};");
     }
@@ -1806,6 +1814,31 @@ public sealed class OtiumStore
     public (long Joined, long StillSeen) Retention(DateTimeOffset joinedBefore, DateTimeOffset seenSince) => (
         Scalar<long>($"SELECT COUNT(*) FROM devices WHERE created_at < $j AND {NotTest}", ("$j", Format(joinedBefore))),
         Scalar<long>($"SELECT COUNT(*) FROM devices WHERE created_at < $j AND last_seen_at >= $s AND {NotTest}", ("$j", Format(joinedBefore)), ("$s", Format(seenSince))));
+
+    /// <summary>Records what the computer's processor and graphics card are doing (tags already checked against the list).</summary>
+    public void SetEngineStates(string deviceId, string cpuState, string gpuState) =>
+        Execute("UPDATE devices SET cpu_state = $c, gpu_state = $g WHERE device_id = $d", ("$c", cpuState), ("$g", gpuState), ("$d", deviceId));
+
+    /// <summary>
+    /// How many computers seen since <paramref name="since"/> were in each state at their last check-in, for the processor
+    /// ("cpu") and the graphics card ("gpu"); computers whose app doesn't report states (before 0.1.3) are left out.
+    /// </summary>
+    public IReadOnlyList<(string Device, string State, long Computers)> EngineStatesSince(DateTimeOffset since)
+    {
+        using var connection = Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText =
+            $"SELECT 'cpu', cpu_state, COUNT(*) FROM devices WHERE last_seen_at >= $s AND cpu_state IS NOT NULL AND {NotTest} GROUP BY cpu_state " +
+            "UNION ALL " +
+            $"SELECT 'gpu', gpu_state, COUNT(*) FROM devices WHERE last_seen_at >= $s AND gpu_state IS NOT NULL AND {NotTest} GROUP BY gpu_state " +
+            "ORDER BY 1, 3 DESC";
+        Bind(cmd, [("$s", Format(since))]);
+        using var r = cmd.ExecuteReader();
+        var list = new List<(string, string, long)>();
+        while (r.Read())
+            list.Add((r.GetString(0), r.GetString(1), r.GetInt64(2)));
+        return list;
+    }
 
     /// <summary>App versions of the computers seen since <paramref name="since"/>, most used first (null: too old to say).</summary>
     public IReadOnlyList<(string? Version, long Devices)> AppVersionsSince(DateTimeOffset since)

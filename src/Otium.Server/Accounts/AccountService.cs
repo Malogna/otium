@@ -236,6 +236,9 @@ public sealed class AccountService(
         store.SetReferralShare(session.Device.DeviceId, account.AccountId, Math.Clamp(report.EstimatedUsd, 0, cap), now);
     }
 
+    private static string? KnownState(string? tag) =>
+        tag is not null && Otium.Core.Engine.EngineStateTags.Known.Contains(tag) ? tag : null;
+
     /// <summary>"0.1.1" from "0.1.1+abc123"; null when it isn't an Otium version number.</summary>
     internal static string? CleanVersion(string? version) =>
         version is { Length: <= 64 } && Otium.Core.AppVersions.Parse(version) is not null ? version.Trim().TrimStart('v').Split('+')[0] : null;
@@ -251,12 +254,17 @@ public sealed class AccountService(
     /// <param name="cpuMinedSeconds">How long the computer's processor has mined in all, as its app reports (null from older apps).</param>
     /// <param name="gpuMinedSeconds">The same for its graphics card.</param>
     /// <param name="appVersion">The <see cref="Otium.Core.AppVersions.Header"/> the app sent (none before 0.1.1).</param>
+    /// <param name="cpuState">What the processor is doing (<see cref="Otium.Core.Engine.EngineStateTags"/>; none before 0.1.3).</param>
+    /// <param name="gpuState">The same for the graphics card.</param>
     public async Task<AccountSummary> GetSummaryAsync(string deviceId, string secret, string publicBaseUrl, CancellationToken ct, System.Net.IPAddress? from = null,
-        double? cpuMinedSeconds = null, double? gpuMinedSeconds = null, string? appVersion = null)
+        double? cpuMinedSeconds = null, double? gpuMinedSeconds = null, string? appVersion = null, string? cpuState = null, string? gpuState = null)
     {
         var session = Authenticate(deviceId, secret);
         // The app's regular check-in (every minute): what the admin dashboard's "online now" and "seen in 24 h" count.
         store.TouchDevice(deviceId, time.GetUtcNow(), TimeSpan.FromMinutes(5), CleanVersion(appVersion));
+        // Only tags from the fixed list are kept: the dashboard counts them, nothing else.
+        if (KnownState(cpuState) is { } cpu)
+            store.SetEngineStates(deviceId, cpu, KnownState(gpuState) ?? Otium.Core.Engine.EngineStateTags.None);
         // Kept so the signed fee grant can give it back (see FeeGrant.CpuMiningFloor).
         store.RecordMiningTime(deviceId, cpuMinedSeconds, gpuMinedSeconds, time.GetUtcNow());
         if (connections.Of(from) is { } network)

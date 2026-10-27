@@ -1287,7 +1287,9 @@ public sealed class AppHost : IAsyncDisposable
             var summary = needsRegister
                 ? await client.RegisterAsync(new RegisterDeviceRequest(DeviceId, Settings.DeviceSecret, ownWallet, referral.CodeUsed, HardwareId()), ct)
                 : await client.GetSummaryAsync(DeviceId, Settings.DeviceSecret, ct,
-                    new MiningTimeReport(Engine.Totals.MiningTime, GpuEngine?.Totals.MiningTime ?? TimeSpan.Zero));
+                    new MiningTimeReport(Engine.Totals.MiningTime, GpuEngine?.Totals.MiningTime ?? TimeSpan.Zero,
+                        EngineStateTags.For(Engine.Snapshot, Settings.CpuEnabled, Settings.EarningEnabled, MiningBlocker is not null),
+                        EngineStateTags.For(GpuEngine?.Snapshot, Settings.GpuEnabled, Settings.EarningEnabled, MiningBlocker is not null)));
 
             Apply(summary);
             ApplyMiningFloors();
