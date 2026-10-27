@@ -292,6 +292,27 @@
                         </StackPanel>
                     </Border>
 
+                    <!-- The pool paid the user: share it, with what an invite gives -->
+                    <Border Classes="card" IsVisible="{Binding ShowPayoutNow}">
+                        <StackPanel Spacing="12">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Classes="h2" Text="You've been paid" />
+                                <Button Grid.Column="1" Classes="link" Content="Close" Command="{Binding ClosePayoutCommand}" />
+                            </Grid>
+                            <StackPanel Spacing="2">
+                                <TextBlock FontSize="34" FontWeight="Bold" Text="{Binding PayoutAmount}" />
+                                <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Text="{Binding PayoutText}" />
+                            </StackPanel>
+                            <TextBlock FontSize="13" TextWrapping="Wrap" Text="{Binding PayoutInviteText}" />
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button Classes="accent" Content="Copy to share" Command="{Binding CopyPayoutCommand}" />
+                                <Button Content="Save picture" Command="{Binding SavePayoutPictureCommand}" />
+                                <TextBlock Classes="good" FontSize="12" VerticalAlignment="Center" TextWrapping="Wrap" Text="{Binding ShareStatus}"
+                                           IsVisible="{Binding ShareStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
                     <!-- While you were away -->
                     <Border Classes="card" IsVisible="{Binding ShowAwayNow}">
                         <StackPanel Spacing="12">

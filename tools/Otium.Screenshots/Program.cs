@@ -92,6 +92,18 @@ foreach (var variant in new[] { ThemeVariant.Light, ThemeVariant.Dark })
     homeVm.InternetSharing.ShowConsent = true;
     Shoot(new HomeView { DataContext = homeVm }, $"home-{theme}", 900, 2800);
 
+    // The pool just paid: "You've been paid", which comes before the other result cards.
+    results.IsMeasuring = false;
+    results.ShowMeasureResult = false;
+    results.ShowMeasureOffer = false;
+    results.ShowPayout = true;
+    results.PayoutAmount = "1.5 USDT";
+    results.PayoutText = "sent straight to your own wallet by the pool. 3 USDT paid to you so far.";
+    results.ShareStatus = "";
+    homeVm.ShowElectricityPause = false;
+    homeVm.InternetSharing.ShowSuggestion = false;
+    Shoot(new HomeView { DataContext = homeVm }, $"home-payout-{theme}", 900, 1400);
+
     // Settings.
     var settings = new SettingsViewModel(host);
     Shoot(new SettingsView { DataContext = settings }, $"settings-{theme}", 900, 2800);
