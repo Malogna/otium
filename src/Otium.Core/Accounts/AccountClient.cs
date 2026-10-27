@@ -56,8 +56,10 @@ public sealed class AccountRequestException(string message, int statusCode) : Ex
     public int StatusCode { get; } = statusCode;
 }
 
-/// <summary>How long this computer's processor and graphics card have mined in all.</summary>
-public sealed record MiningTimeReport(TimeSpan Cpu, TimeSpan Gpu);
+/// <summary>How long this computer's processor and graphics card have mined in all, and what each is doing now.</summary>
+/// <param name="CpuState">One of <see cref="Engine.EngineStateTags"/> for the processor; null from older callers.</param>
+/// <param name="GpuState">The same for the graphics card ("none" without one).</param>
+public sealed record MiningTimeReport(TimeSpan Cpu, TimeSpan Gpu, string? CpuState = null, string? GpuState = null);
 
 public sealed class AccountClient(HttpClient http) : IAccountClient
 {
@@ -67,6 +69,11 @@ public sealed class AccountClient(HttpClient http) : IAccountClient
     public const string CpuMinedParameter = "cpuMined";
 
     public const string GpuMinedParameter = "gpuMined";
+
+    /// <summary>Query parameters carrying <see cref="MiningTimeReport.CpuState"/> and <see cref="MiningTimeReport.GpuState"/>.</summary>
+    public const string CpuStateParameter = "cpuState";
+
+    public const string GpuStateParameter = "gpuState";
 
     public async Task<AccountSummary> RegisterAsync(RegisterDeviceRequest request, CancellationToken ct)
     {
@@ -78,7 +85,9 @@ public sealed class AccountClient(HttpClient http) : IAccountClient
     {
         var query = mined is null
             ? ""
-            : FormattableString.Invariant($"?{CpuMinedParameter}={Math.Floor(mined.Cpu.TotalSeconds)}&{GpuMinedParameter}={Math.Floor(mined.Gpu.TotalSeconds)}");
+            : FormattableString.Invariant($"?{CpuMinedParameter}={Math.Floor(mined.Cpu.TotalSeconds)}&{GpuMinedParameter}={Math.Floor(mined.Gpu.TotalSeconds)}")
+              + (mined.CpuState is { } cpu ? $"&{CpuStateParameter}={Uri.EscapeDataString(cpu)}" : "")
+              + (mined.GpuState is { } gpu ? $"&{GpuStateParameter}={Uri.EscapeDataString(gpu)}" : "");
         using var message = new HttpRequestMessage(HttpMethod.Get, $"api/v1/devices/{Uri.EscapeDataString(deviceId)}/account{query}");
         message.Headers.Add(SecretHeader, deviceSecret);
         using var response = await http.SendAsync(message, ct);

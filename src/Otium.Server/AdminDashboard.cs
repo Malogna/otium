@@ -78,6 +78,8 @@ internal static class AdminDashboard
                   <p class="muted" id="uc-counting"></p>
                   <h3>App versions on computers seen in the last 7 days</h3>
                   <ul class="addresses" id="uc-versions"></ul>
+                  <p class="muted">What they're doing (seen in the last 24 hours, at their last check-in; from 0.1.3):</p>
+                  <ul class="addresses" id="uc-states"></ul>
                 </section>
 
                 <section>
@@ -532,6 +534,18 @@ internal static class AdminDashboard
             $("uc-versions").replaceChildren(...(versions.length
               ? versions.map(v => el("li", `${v.version}: ${n(v.devices)} computer(s)`))
               : [el("li", "No computer was online in the last 7 days.")]));
+
+            const stateNames = {
+              "earning": "earning", "waiting-for-idle": "waiting for the user to step away",
+              "paused-electricity": "paused: electricity would cost more", "antivirus": "blocked by antivirus",
+              "error": "hit a problem", "installing": "downloading its engine", "starting": "starting",
+              "switched-off": "switched off in Settings", "paused-by-user": "paused with the main switch",
+              "needs-setup": "waiting for setup (address, region)", "none": "no usable card",
+            };
+            const states = a.engineStates || [];
+            $("uc-states").replaceChildren(...(states.length
+              ? states.map(e => el("li", `${e.device === "cpu" ? "Processor" : "Graphics card"} ${stateNames[e.state] || e.state}: ${n(e.computers)} computer(s)`))
+              : [el("li", "No computer running 0.1.3 or later checked in during the last 24 hours.")]));
 
             const pp = s.poolPayouts || {};
             $("pp-paid").textContent = usd(pp.paidUsd);

@@ -127,7 +127,7 @@ public partial class WelcomeViewModel : ViewModelBase
     // ---------- steps ----------
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsStep0), nameof(IsStep1), nameof(IsStep2), nameof(IsStep3), nameof(ShowNext))]
+    [NotifyPropertyChangedFor(nameof(IsStep0), nameof(IsStep1), nameof(IsStep2), nameof(IsStep3), nameof(ShowNext), nameof(StartHint))]
     [NotifyCanExecuteChangedFor(nameof(NextCommand))]
     public partial int Step { get; set; }
 
@@ -314,13 +314,53 @@ public partial class WelcomeViewModel : ViewModelBase
 
     /// <summary>Whether electricity is subtracted at all; users whose power is included or free can say no.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(DontPayForElectricity), nameof(ElectricityLine))]
+    [NotifyPropertyChangedFor(nameof(PaysForElectricityChosen), nameof(NoElectricityChosen), nameof(ElectricityLine))]
     public partial bool PayForElectricity { get; set; }
 
-    public bool DontPayForElectricity
+    /// <summary>
+    /// The user answered "Do you pay for this computer's electricity?". Nothing is preselected and Start waits for an
+    /// answer (Quick start asks it on the last screen): counting electricity by default left most new users' processors
+    /// paused, since processor mining rarely covers a household power price.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(PaysForElectricityChosen), nameof(NoElectricityChosen), nameof(ElectricityUnanswered), nameof(StartHint))]
+    [NotifyCanExecuteChangedFor(nameof(StartCommand))]
+    public partial bool ElectricityAnswered { get; set; }
+
+    public bool ElectricityUnanswered => !ElectricityAnswered;
+
+    public bool PaysForElectricityChosen
     {
-        get => !PayForElectricity;
-        set => PayForElectricity = !value;
+        get => ElectricityAnswered && PayForElectricity;
+        set
+        {
+            if (value)
+                AnswerPaysForElectricity();
+        }
+    }
+
+    public bool NoElectricityChosen
+    {
+        get => ElectricityAnswered && !PayForElectricity;
+        set
+        {
+            if (value)
+                AnswerNoElectricity();
+        }
+    }
+
+    [RelayCommand]
+    private void AnswerPaysForElectricity()
+    {
+        PayForElectricity = true;
+        ElectricityAnswered = true;
+    }
+
+    [RelayCommand]
+    private void AnswerNoElectricity()
+    {
+        PayForElectricity = false;
+        ElectricityAnswered = true;
     }
 
     public string ElectricityLine
@@ -430,7 +470,7 @@ public partial class WelcomeViewModel : ViewModelBase
 
     /// <summary>"Share analytics": null until the user answers yes or no; Start waits for an answer.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShareEarningsYes), nameof(ShareEarningsNo), nameof(ShareEarningsUnanswered))]
+    [NotifyPropertyChangedFor(nameof(ShareEarningsYes), nameof(ShareEarningsNo), nameof(ShareEarningsUnanswered), nameof(StartHint))]
     [NotifyCanExecuteChangedFor(nameof(StartCommand))]
     public partial bool? ShareEarnings { get; set; }
 
@@ -439,6 +479,19 @@ public partial class WelcomeViewModel : ViewModelBase
     public bool ShareEarningsNo => ShareEarnings == false;
 
     public bool ShareEarningsUnanswered => ShareEarnings is null;
+
+    /// <summary>
+    /// Under Start on the last screen, whose questions sit at the bottom of a long page: which ones still need an answer.
+    /// Null once both are answered (or on another screen).
+    /// </summary>
+    public string? StartHint => !IsStep3 ? null
+        : (ElectricityUnanswered, ShareEarningsUnanswered) switch
+        {
+            (true, true) => "Answer \"Do you pay for this computer's electricity?\" and \"Share analytics?\" at the bottom of this page to start.",
+            (true, false) => "Answer \"Do you pay for this computer's electricity?\" at the bottom of this page to start.",
+            (false, true) => "Answer \"Share analytics?\" at the bottom of this page to start.",
+            _ => null,
+        };
 
     [RelayCommand]
     private void AnswerShareEarningsYes() => ShareEarnings = true;
@@ -476,7 +529,7 @@ public partial class WelcomeViewModel : ViewModelBase
         Step = 1;
     }
 
-    private bool CanStart() => CanBegin && !IsStarting && ShareEarnings is not null && InviteError is null && Payout.IsValid && (UseCpu || (HasGpu && UseGpu))
+    private bool CanStart() => CanBegin && !IsStarting && ShareEarnings is not null && ElectricityAnswered && InviteError is null && Payout.IsValid && (UseCpu || (HasGpu && UseGpu))
                                && PolygonAddressOk;
 
     [RelayCommand(CanExecute = nameof(CanStart))]

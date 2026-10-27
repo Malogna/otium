@@ -394,6 +394,12 @@ settings and the Windows uninstaller remove it. Microsoft Defender flags the Win
 reputation detection); the app's "Allow in Windows Security" fix covers it. Share analytics report it as
 `sharing-mysterium`, kept apart from Proxybase's `sharing`.
 
+**Where computers get stuck.** The app's regular check-in also carries one word per device from a fixed list
+(`EngineStateTags`: earning, waiting-for-idle, paused-electricity, antivirus, error, installing, starting,
+switched-off, paused-by-user, needs-setup, none). The server keeps only the latest word per computer (`devices.cpu_state`,
+`gpu_state`, schema 17) and drops anything off the list; the admin dashboard counts them for computers seen in the last
+24 hours.
+
 Users can also share disk space and upload bandwidth through an **AIOZ DePIN node** (`src/Otium.Providers.Aioz`,
 AIOZ's official `aioz-depin-cli`, Apache-2.0, pinned to 1.2.5 for Windows x64 and Linux x64), with its own switch,
 consent screen, storage limit and row. AIOZ's network stores pieces of files on the node and has it deliver them

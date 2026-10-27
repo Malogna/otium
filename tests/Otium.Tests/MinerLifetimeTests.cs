@@ -4,7 +4,8 @@ using Otium.Core.Providers;
 namespace Otium.Tests;
 
 /// <summary>
-/// Uses a harmless stand-in (a copy of ping on Windows, sleep elsewhere) named like XMRig, so no real miner runs.
+/// Uses a harmless stand-in (a copy of ping on Windows, of the shell on Linux, of sleep on macOS) named like XMRig, so
+/// no real miner runs.
 /// </summary>
 public sealed class MinerLifetimeTests : IDisposable
 {
@@ -24,6 +25,16 @@ public sealed class MinerLifetimeTests : IDisposable
             var exe = Path.Combine(folder, "xmrig.exe");
             File.Copy(Path.Combine(Environment.SystemDirectory, "PING.EXE"), exe);
             start = new ProcessStartInfo(exe, "-n 120 127.0.0.1");
+        }
+        else if (OperatingSystem.IsLinux())
+        {
+            // A copy of the shell, not of sleep: Ubuntu 26.04's sleep is a multi-call binary (Rust coreutils) that picks its
+            // tool from its own name, so a copy named xmrig exits at once. The shell doesn't care what it's called; the
+            // trailing ":" keeps it from exec-ing into sleep, so the process stays the copy under the engines folder.
+            var exe = Path.Combine(folder, "xmrig");
+            File.Copy("/bin/sh", exe);
+            File.SetUnixFileMode(exe, UnixFileMode.UserRead | UnixFileMode.UserExecute | UnixFileMode.UserWrite);
+            start = new ProcessStartInfo(exe) { ArgumentList = { "-c", "sleep 120; :" } };
         }
         else
         {

@@ -68,6 +68,25 @@
                     </Grid>
                 </Border>
 
+                <!-- Paused for electricity: both sides of the sum, and the fix for users who don't pay for power -->
+                <Border Classes="card" IsVisible="{Binding ShowElectricityPause}">
+                    <Grid ColumnDefinitions="Auto,*">
+                        <Border Classes="iconBadge" VerticalAlignment="Top" Background="{DynamicResource WarnSoft}">
+                            <Path Classes="icon" Data="{StaticResource IconBolt}" Stroke="{DynamicResource WarnBrush}" />
+                        </Border>
+                        <StackPanel Grid.Column="1" Margin="14,0,0,0" Spacing="10">
+                            <StackPanel Spacing="2">
+                                <TextBlock Classes="h2" Text="Paused: electricity would cost more than it earns" TextWrapping="Wrap" />
+                                <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Text="{Binding ElectricityPauseText}" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button Classes="accent" Content="I don't pay for electricity" Command="{Binding StopCountingElectricityCommand}" />
+                                <Button Content="Electricity settings" Command="{Binding OpenAdvancedCommand}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
                 <!-- ===== Hero: balance, projection, main actions, cash-out goal ===== -->
                 <Border Classes="hero">
                     <StackPanel Spacing="18">

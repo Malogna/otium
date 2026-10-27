@@ -54,6 +54,9 @@ public sealed class EarningsEngine : IAsyncDisposable
     private long _miningFloorTicks;
     private DateTimeOffset? _lossSince;
     private DateTimeOffset? _pausedUntil;
+
+    /// <summary>The electricity price the unprofitable pause was decided at: a lower one (or none) lifts it at once.</summary>
+    private double _pausedAtPrice;
     private DateTimeOffset? _retryAt;
     private DateTimeOffset? _runNowUntil;
     private DateTimeOffset? _suspendedSince;
@@ -370,6 +373,7 @@ public sealed class EarningsEngine : IAsyncDisposable
             {
                 await StopRunningAsync(ct);
                 _pausedUntil = now + UnprofitableRecheck;
+                _pausedAtPrice = config.PricePerKwh;
                 PublishUnprofitable(userPerDay, costPerDay);
                 return;
             }
@@ -434,7 +438,8 @@ public sealed class EarningsEngine : IAsyncDisposable
     /// <param name="usagePercent">The share of the device the miner would start with (its power depends on it).</param>
     private async Task<bool> PassesProfitGateAsync(EngineConfig config, int usagePercent, DateTimeOffset now, CancellationToken ct)
     {
-        if (_pausedUntil is { } until && now < until)
+        // Waits out the recheck unless the user stopped counting electricity, or it got cheaper, since the pause.
+        if (_pausedUntil is { } until && now < until && config.NeverRunAtLoss && config.PricePerKwh >= _pausedAtPrice)
         {
             PublishUnprofitable(Snapshot.UserUsdPerDay, Snapshot.ElectricityUsdPerDay);
             return false;
@@ -468,6 +473,7 @@ public sealed class EarningsEngine : IAsyncDisposable
             return true;
 
         _pausedUntil = now + UnprofitableRecheck;
+        _pausedAtPrice = config.PricePerKwh;
         PublishUnprofitable(userPerDay, costPerDay);
         return false;
     }

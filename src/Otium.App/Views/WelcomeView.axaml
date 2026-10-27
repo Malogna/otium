@@ -150,8 +150,8 @@
                             <StackPanel Spacing="4">
                                 <TextBlock FontWeight="SemiBold" FontSize="13" Text="Do you pay for this computer's electricity?" />
                                 <StackPanel Orientation="Horizontal" Spacing="16">
-                                    <RadioButton GroupName="power" IsChecked="{Binding PayForElectricity}" Content="Yes, count it" />
-                                    <RadioButton GroupName="power" IsChecked="{Binding DontPayForElectricity}" Content="No, it's included or free" />
+                                    <RadioButton GroupName="power" IsChecked="{Binding PaysForElectricityChosen}" Content="Yes, count it" />
+                                    <RadioButton GroupName="power" IsChecked="{Binding NoElectricityChosen}" Content="No, it's included or free" />
                                 </StackPanel>
                             </StackPanel>
                             <Grid ColumnDefinitions="Auto,*,Auto">
@@ -370,6 +370,23 @@
                         </StackPanel>
                     </Border>
 
+                    <!-- Electricity: asked in both setups with nothing preselected; it decides whether the processor runs at all -->
+                    <Border Classes="card delay2" Padding="16">
+                        <StackPanel Spacing="10">
+                            <TextBlock FontWeight="SemiBold" Text="Do you pay for this computer's electricity?" TextWrapping="Wrap" />
+                            <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap"
+                                       Text="If you do, Otium mines only while it earns more than the power costs, so on a household price a processor often stays paused. If electricity is included in your rent, paid by someone else or free, Otium counts it as zero and earns whenever you're away. You can change this in Settings." />
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <Button Content="Yes, count it" Classes.accent="{Binding PaysForElectricityChosen}" Command="{Binding AnswerPaysForElectricityCommand}"
+                                        AutomationProperties.Name="Yes, I pay for this computer's electricity" />
+                                <Button Content="No, it's included or free" Classes.accent="{Binding NoElectricityChosen}" Command="{Binding AnswerNoElectricityCommand}"
+                                        AutomationProperties.Name="No, this computer's electricity is included or free" />
+                            </StackPanel>
+                            <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap" IsVisible="{Binding ElectricityUnanswered}"
+                                       Text="Choose one to start." />
+                        </StackPanel>
+                    </Border>
+
                     <!-- Sharing earnings figures: consent, so a plain yes or no with nothing preselected (both setups) -->
                     <Border Classes="card delay2" Padding="16">
                         <StackPanel Spacing="10">
@@ -410,16 +427,10 @@
 
         <!-- ===== Footer: progress dots and navigation ===== -->
         <StackPanel Grid.Row="1">
-        <!-- The last question sits at the bottom of a long page: say why Start earning is waiting. -->
+        <!-- The last questions sit at the bottom of a long page: say why Start earning is waiting. -->
         <TextBlock Classes="muted" FontSize="12.5" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"
-                   Margin="28,8,28,0" MaxWidth="560" Text="Answer &quot;Share analytics?&quot; at the bottom of this page to start.">
-            <TextBlock.IsVisible>
-                <MultiBinding Converter="{x:Static BoolConverters.And}">
-                    <Binding Path="IsStep3" />
-                    <Binding Path="ShareEarningsUnanswered" />
-                </MultiBinding>
-            </TextBlock.IsVisible>
-        </TextBlock>
+                   Margin="28,8,28,0" MaxWidth="560" Text="{Binding StartHint}"
+                   IsVisible="{Binding StartHint, Converter={x:Static ObjectConverters.IsNotNull}}" />
         <Grid ColumnDefinitions="*,Auto,*" Margin="28,8,28,28" MaxWidth="560">
             <Button Classes="link" HorizontalAlignment="Left" IsVisible="{Binding !IsStep0}" AutomationProperties.Name="Back" Command="{Binding BackCommand}">
                 <StackPanel Orientation="Horizontal" Spacing="6">
