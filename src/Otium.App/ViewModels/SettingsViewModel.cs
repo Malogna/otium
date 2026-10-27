@@ -40,6 +40,8 @@ public partial class SettingsViewModel : ViewModelBase
         ShareEarningsStats = s.ShareEarningsStats;
         GpuEfficiencyMode = s.GpuEfficiencyMode;
         EarnWhileBrowsing = s.EarnWhileBrowsing;
+        YieldGpuToSalad = s.YieldGpuToSalad;
+        host.SaladChanged += () => Dispatcher.UIThread.Post(RefreshSalad);
         NotificationsEnabled = s.NotificationsEnabled;
         KeepMinerReadyWhenBack = s.KeepMinerReadyWhenBack;
         InstallUpdatesWhileAway = s.InstallUpdatesWhileAway;
@@ -401,6 +403,45 @@ public partial class SettingsViewModel : ViewModelBase
     public bool BrowsingSupported => OperatingSystem.IsWindows() && _host.GpuEngine is not null;
 
     [ObservableProperty] public partial bool EarnWhileBrowsing { get; set; }
+
+    /// <summary>Salad's tile: Windows computers with a graphics card Otium can use.</summary>
+    public bool ShowSalad => OperatingSystem.IsWindows() && HasGpu;
+
+    public bool SaladInstalled => _host.SaladInstalled;
+
+    public bool SaladNotInstalled => !_host.SaladInstalled;
+
+    [ObservableProperty] public partial bool YieldGpuToSalad { get; set; }
+
+    public string SaladStatus => !_host.SaladInstalled ? ""
+        : _host.SaladRunsJob
+            ? _host.Settings.YieldGpuToSalad
+                ? "Salad is running a job now, so Otium's graphics-card miner is paused."
+                : "Salad is running a job now. Both use the card, so each earns less."
+            : "No Salad job is running right now.";
+
+    partial void OnYieldGpuToSaladChanged(bool value)
+    {
+        if (_loading)
+            return;
+        _host.Settings.YieldGpuToSalad = value;
+        _host.SaveSettings();
+        _host.ApplyDeviceSwitches();
+        OnPropertyChanged(nameof(SaladStatus));
+    }
+
+    [RelayCommand]
+    private static void OpenSaladDownload() => Launch.Open(Otium.Core.Platform.Salad.DownloadUrl);
+
+    [RelayCommand]
+    private static void OpenSaladTerms() => Launch.Open(Otium.Core.Platform.Salad.TermsUrl);
+
+    private void RefreshSalad()
+    {
+        OnPropertyChanged(nameof(SaladInstalled));
+        OnPropertyChanged(nameof(SaladNotInstalled));
+        OnPropertyChanged(nameof(SaladStatus));
+    }
 
     [ObservableProperty] public partial bool NotificationsEnabled { get; set; }
 

@@ -97,6 +97,30 @@
                         </StackPanel>
                         <TextBlock Classes="muted" Text="{Binding GpuSummary}" TextWrapping="Wrap" />
 
+                        <!-- Salad: a handoff, never driven by Otium. The user installs it and signs in in Salad's own app. -->
+                        <Border Classes="tile" IsVisible="{Binding ShowSalad}">
+                            <StackPanel Spacing="8">
+                                <TextBlock FontWeight="SemiBold" Text="Salad" />
+                                <StackPanel Spacing="8" IsVisible="{Binding SaladInstalled}">
+                                    <ToggleSwitch IsChecked="{Binding YieldGpuToSalad}"
+                                                  OnContent="Pause my graphics-card miner while Salad runs a job" OffContent="Pause my graphics-card miner while Salad runs a job" />
+                                    <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Text="{Binding SaladStatus}" />
+                                </StackPanel>
+                                <StackPanel Spacing="8" IsVisible="{Binding SaladNotInstalled}">
+                                    <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap"
+                                               Text="Salad rents graphics cards to AI companies and pays in Salad Balance, which you can redeem for PayPal or gift cards. Its own rates for an RTX 4070 are about $0.05 to $0.09 an hour while it has work (September 2026). It needs Windows virtualization (WSL2), administrator rights to install and about 32 GB of memory. Otium doesn't install or run it: set it up in Salad's own app, and Otium pauses its graphics-card miner whenever Salad has a job, so the two never fight over the card." />
+                                    <StackPanel Orientation="Horizontal" Spacing="16">
+                                        <Button Classes="link" Command="{Binding OpenSaladDownloadCommand}" AutomationProperties.Name="Open Salad's download page">
+                                            <TextBlock Text="Get Salad (salad.com)" FontSize="12.5" Foreground="{DynamicResource GoodBrush}" />
+                                        </Button>
+                                        <Button Classes="link" Command="{Binding OpenSaladTermsCommand}" AutomationProperties.Name="Read Salad's terms">
+                                            <TextBlock Text="Salad's terms" FontSize="12.5" Foreground="{DynamicResource GoodBrush}" />
+                                        </Button>
+                                    </StackPanel>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
                         <StackPanel Spacing="10" IsVisible="{Binding HasGpu}">
                             <TextBlock Classes="muted" FontSize="13" Text="{Binding GpuPowerNote}" TextWrapping="Wrap" />
                             <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding !GpuPowerMeasured}">

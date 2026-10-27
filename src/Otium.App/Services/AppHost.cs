@@ -839,6 +839,44 @@ public sealed class AppHost : IAsyncDisposable
         _ => null,
     };
 
+    /// <summary>Salad's app is installed on this computer (Windows; checked every minute).</summary>
+    public bool SaladInstalled { get; private set; }
+
+    /// <summary>Salad is running a job right now (its WSL distribution is up).</summary>
+    public bool SaladRunsJob { get; private set; }
+
+    /// <summary>The graphics-card miner steps aside because Salad is using the card.</summary>
+    public bool GpuYieldsToSalad => SaladRunsJob && Settings.YieldGpuToSalad;
+
+    public event Action? SaladChanged;
+
+    private int _checkingSalad;
+
+    /// <summary>
+    /// Looks for Salad and whether it runs a job (every minute), and pauses or resumes the graphics-card miner when that
+    /// changes. Otium never installs, starts or drives Salad; see <see cref="Otium.Core.Platform.Salad"/>.
+    /// </summary>
+    public async Task CheckSaladAsync(CancellationToken ct)
+    {
+        if (!OperatingSystem.IsWindows() || Interlocked.Exchange(ref _checkingSalad, 1) == 1)
+            return;
+        try
+        {
+            var installed = await Task.Run(Otium.Core.Platform.Salad.IsInstalled, ct);
+            var running = installed && GpuEngine is not null
+                          && Otium.Core.Platform.Salad.RunsJob(await Otium.Core.Platform.Salad.RunningDistributionsAsync(ct));
+            if (installed == SaladInstalled && running == SaladRunsJob)
+                return;
+            (SaladInstalled, SaladRunsJob) = (installed, running);
+            ApplyDeviceSwitches();
+            SaladChanged?.Invoke();
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _checkingSalad, 0);
+        }
+    }
+
     public void StartEngines()
     {
         foreach (var engine in Engines)
@@ -1000,7 +1038,7 @@ public sealed class AppHost : IAsyncDisposable
         var on = Settings.EarningEnabled && Settings.OnboardingComplete && MiningBlocker is null;
         Toggle(Engine, on && Settings.CpuEnabled);
         if (GpuEngine is not null)
-            Toggle(GpuEngine, on && Settings.GpuEnabled);
+            Toggle(GpuEngine, on && Settings.GpuEnabled && !GpuYieldsToSalad);
         if (on && Settings.BandwidthEnabled && Settings.BandwidthConsentAt is not null)
             Bandwidth.Enable();
         else

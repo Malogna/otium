@@ -113,6 +113,7 @@ public partial class HomeViewModel : ViewModelBase
         host.Updates.Changed += () => Dispatcher.UIThread.Post(Refresh);
         host.HistoryChanged += () => Dispatcher.UIThread.Post(Refresh);
         host.AntivirusChanged += () => Dispatcher.UIThread.Post(Refresh);
+        host.SaladChanged += () => Dispatcher.UIThread.Post(Refresh);
 
         Refresh();
         _ = LoadEstimateAsync();
@@ -498,6 +499,7 @@ public partial class HomeViewModel : ViewModelBase
             row.What = s.State switch
             {
                 _ when !enabled => "Switched off in settings",
+                _ when i == 1 && _host.GpuYieldsToSalad => "Paused while Salad uses your graphics card",
                 EngineState.Starting or EngineState.Error when s.Problem is { } problem => problem,
                 EngineState.Earning => $"Mining {Coins.ForAlgorithm(s.Detail ?? (i == 0 ? "rx/0" : null)).Name}" +
                                        (s.CurrentRole != PayoutRole.User ? " (short fee slice)" : ""),

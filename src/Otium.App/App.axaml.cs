@@ -77,6 +77,7 @@ public partial class App : Application
                 _ = _host.ReportEarningsAsync(CancellationToken.None); // opt-in; sends only every few hours
                 _host.ObserveMeasurement(); // the test also ends on time when the engines go quiet
                 _ = _host.InstallUpdateIfAwayAsync(); // a downloaded update installs itself while the user is away
+                _ = _host.CheckSaladAsync(CancellationToken.None); // the graphics card steps aside while Salad uses it
             };
             historyTimer.Start();
 

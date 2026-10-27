@@ -42,6 +42,9 @@ public sealed class AppSettings
     /// </summary>
     public bool PayForElectricity { get; set; } = true;
 
+    /// <summary>Pause the graphics-card miner while Salad (installed by the user) runs a job on the card.</summary>
+    public bool YieldGpuToSalad { get; set; } = true;
+
     /// <summary>Day-ahead bidding zone for live hourly prices (e.g. "NO1"); null until resolved for the region.</summary>
     public string? ElectricityZone { get; set; } = SpotPriceZone.DefaultForCurrentRegion()?.Code;
 

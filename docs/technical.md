@@ -394,6 +394,15 @@ settings and the Windows uninstaller remove it. Microsoft Defender flags the Win
 reputation detection); the app's "Allow in Windows Security" fix covers it. Share analytics report it as
 `sharing-mysterium`, kept apart from Proxybase's `sharing`.
 
+**Salad (handoff only).** Salad has no CLI or local API and its Chef terms forbid automated use, so Otium never
+installs, starts or drives it. On Windows the app checks every minute whether Salad is installed (its registry key
+`HKCU|HKLM\SOFTWARE\7a0ebc42-7f71-5caa-9738-b7dda7589c77\InstallLocation`, its Run value, or a Salad folder that still
+holds a program) and whether a Salad WSL distribution is running (`wsl --list --running --quiet`, read as UTF-16). While
+one runs, the graphics-card engine is switched off (`YieldGpuToSalad`, on by default) and the overview says why.
+Settings → Devices links to salad.com/download for users who want it. Darkbloom (Apple Silicon inference) was
+considered and left out for now: its installer is `curl | bash` with no checksum to pin, it needs an MDM profile and
+about 36 GB of memory, and measured earnings were around $0.60 a day in 2026.
+
 **Where computers get stuck.** The app's regular check-in also carries one word per device from a fixed list
 (`EngineStateTags`: earning, waiting-for-idle, paused-electricity, antivirus, error, installing, starting,
 switched-off, paused-by-user, needs-setup, none). The server keeps only the latest word per computer (`devices.cpu_state`,
