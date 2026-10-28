@@ -58,6 +58,7 @@ public partial class DashboardViewModel : ViewModelBase
         Recalculate();
 
         host.Bandwidth.SnapshotChanged += _ => Dispatcher.UIThread.Post(Recalculate);
+        host.EarningSwitched += () => Dispatcher.UIThread.Post(Recalculate);
         if (host.Mysterium is { } mysterium)
             mysterium.SnapshotChanged += _ => Dispatcher.UIThread.Post(Recalculate);
         if (host.Aioz is { } aioz)

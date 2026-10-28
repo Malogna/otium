@@ -815,7 +815,11 @@ public sealed class AppHost : IAsyncDisposable
 
     public FeeSchedule FeeSchedule => _cpuConfig.FeeSchedule;
 
-    public bool IsEarning => Engines.Any(e => e.Enabled);
+    /// <summary>
+    /// The main Start/Pause switch, for the tray menu and the dashboard's button. It covers mining and sharing alike: a
+    /// computer that only shares (processor and graphics card switched off) is still earning, and Pause stops it.
+    /// </summary>
+    public bool IsEarning => Settings.EarningEnabled;
 
     public UpdateService Updates { get; } = UpdateService.Create();
 
@@ -907,7 +911,11 @@ public sealed class AppHost : IAsyncDisposable
         Settings.EarningEnabled = on;
         ApplyDeviceSwitches();
         SaveSettings();
+        EarningSwitched?.Invoke();
     }
+
+    /// <summary>The main switch changed (from the overview, the dashboard or the tray), so every label of it can follow.</summary>
+    public event Action? EarningSwitched;
 
     /// <summary>
     /// The one-click start: accepts the terms shown on the welcome screen, turns on start-at-sign-in and
