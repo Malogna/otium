@@ -125,6 +125,8 @@ public partial class App : Application
         };
         tray.Clicked += (_, _) => ShowWindow();
         TrayIcon.SetIcons(this, new TrayIcons { tray });
+        if (_host is not null)
+            _host.EarningSwitched += () => Dispatcher.UIThread.Post(UpdateTrayMenu); // e.g. Pause on the overview
         UpdateTrayMenu();
     }
 
