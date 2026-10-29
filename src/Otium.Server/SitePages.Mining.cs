@@ -156,7 +156,7 @@ internal static partial class SitePages
 
         var title = $"{name} mining profitability today | Otium";
         var description = perDay is { } d1
-            ? $"An {name} earns about {Usd(d1)} a day mining Pearl at today's prices, before electricity ({Th(card.PearlTh)}, {card.Watts:0} W), and breaks even at {Kwh(BreakEven(d1, card.Watts))}. Live figures, after every fee."
+            ? $"{name} mining: about {Usd(d1)} a day at today's prices, after every fee and before electricity ({Th(card.PearlTh)}, {card.Watts:0} W). Breaks even at {Kwh(BreakEven(d1, card.Watts))}."
             : $"What an {name} earns mining Pearl: typical speed ({Th(card.PearlTh)}) and power ({card.Watts:0} W), with live earnings after every fee.";
         var root = baseUrl.TrimEnd('/');
         var head = JsonLd(
@@ -277,10 +277,10 @@ internal static partial class SitePages
                 </section>
             """;
         var description = best.PerDay is { } t
-            ? $"GPU mining profitability today: what {cards.Count} NVIDIA cards earn mining Pearl per day and month, and the electricity price each breaks even at. The {best.Card.Name} leads at {Usd(t)} a day."
+            ? $"What {cards.Count} NVIDIA graphics cards earn mining today, after every fee, and the power price each breaks even at. The {best.Card.Name} leads at {Usd(t)} a day."
             : $"GPU mining profitability: typical speed and power for {cards.Count} NVIDIA cards mining Pearl, with live earnings after every fee.";
         var root = baseUrl.TrimEnd('/');
-        return Layout("GPU mining profitability today: what every graphics card earns | Otium", description, body, legalLinks, "/download",
+        return Layout("GPU mining profitability: what each graphics card earns today", description, body, legalLinks, "/download",
             baseUrl, "/mining", head: JsonLd(Breadcrumbs(root, ("Otium", "/"), ("GPU mining", "/mining"))), image: MiningPreviewImage(null));
     }
 

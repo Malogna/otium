@@ -124,8 +124,8 @@ internal static partial class SitePages
                 </section>
             """;
         var root = baseUrl.TrimEnd('/');
-        return Layout("Antivirus flags the miner (Trojan:Win32/CoinMiner): how to allow Otium | Otium",
-            "Why antivirus tools flag crypto miners like XMRig as Trojan:Win32/CoinMiner, and how to allow only Otium's engines folder in Windows Defender, Avast, Norton, Bitdefender, Kaspersky, ESET and more.",
+        return Layout("Antivirus flags Trojan:Win32/CoinMiner? How to allow Otium",
+            "Why antivirus tools flag miners like XMRig as Trojan:Win32/CoinMiner, and how to allow just Otium's folder in Defender, Avast, Norton, ESET and more.",
             body, legalLinks, "/download", baseUrl, "/antivirus",
             head: JsonLd(Breadcrumbs(root, ("Otium", "/"), ("Antivirus help", "/antivirus")), FaqPage(AntivirusFaq)));
     }

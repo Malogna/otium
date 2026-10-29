@@ -88,8 +88,8 @@ internal static partial class SitePages
                 </section>
             """;
         var root = baseUrl.TrimEnd('/');
-        return Layout("What is Pearl (PRL)? Proof of useful work mining explained | Otium",
-            "Pearl (PRL) is a proof-of-useful-work coin mined by matrix multiplication, which NVIDIA tensor cores do best. How it works, what it pays gaming cards today, its supply and its risks.",
+        return Layout("What is Pearl (PRL)? Proof-of-useful-work mining explained",
+            "Pearl (PRL) is a proof-of-useful-work coin mined with AI-style matrix math, best on NVIDIA cards. How it works, what it pays today, and its risks.",
             body, legalLinks, "/download", baseUrl, "/pearl",
             head: JsonLd(Breadcrumbs(root, ("Otium", "/"), ("What is Pearl?", "/pearl")), FaqPage(PearlFaq)));
     }
