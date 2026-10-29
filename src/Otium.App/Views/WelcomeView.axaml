@@ -147,6 +147,12 @@
                             <CheckBox IsVisible="{Binding HasGpu}" IsChecked="{Binding UseGpu}">
                                 <TextBlock Text="{Binding GpuName, StringFormat='Also use my {0}'}" TextWrapping="Wrap" />
                             </CheckBox>
+                            <CheckBox IsVisible="{Binding HasGpu}" IsEnabled="{Binding UseGpu}" IsChecked="{Binding OptimizeGpu}" Margin="28,0,0,0">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Text="Optimize my graphics card" TextWrapping="Wrap" />
+                                    <TextBlock Classes="muted" FontSize="12.5" Text="{Binding OptimizeGpuText}" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </CheckBox>
                             <StackPanel Spacing="4">
                                 <TextBlock FontWeight="SemiBold" FontSize="13" Text="Do you pay for this computer's electricity?" />
                                 <StackPanel Orientation="Horizontal" Spacing="16">

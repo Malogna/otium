@@ -261,11 +261,11 @@ public sealed class SrbMinerProviderTests : IDisposable
 
     private SrbMinerGpuProvider CreateProvider(Func<GpuPolicy?>? policy, double pricePerKwh, string? benchmarks = null, Func<GpuInfo, double?>? freeMemoryGb = null,
         IUnmineableApi? unmineable = null, Func<string, int, CancellationToken, Task<string?>>? poolBlocked = null, IReadOnlyList<GpuInfo>? gpus = null,
-        Func<bool>? quiet = null, Func<GpuInfo, GpuStats?>? stats = null) =>
+        Func<bool>? optimize = null, Func<GpuInfo, GpuStats?>? stats = null) =>
         new(new HttpClient(), _pool, Path.Combine(_dir, "engines"), Path.Combine(_dir, benchmarks ?? $"bench-{Guid.NewGuid():N}.json"),
             gpus ?? [Rtx3080], _meter, () => pricePerKwh, _factory, _time,
             asset: _asset, policy: policy, freeMemoryGb: freeMemoryGb, unmineable: unmineable,
-            poolBlocked: poolBlocked, quiet: quiet, stats: stats);
+            poolBlocked: poolBlocked, optimize: optimize ?? (() => true), stats: stats);
 
     [Fact]
     public async Task A_pool_blocked_on_this_computer_is_explained_instead_of_failing_the_coin()
@@ -896,6 +896,20 @@ public sealed class SrbMinerProviderTests : IDisposable
     }
 
     [Fact]
+    public async Task With_optimizing_off_the_miner_keeps_its_own_settings()
+    {
+        FakeQuantusCard();
+        var unmineable = new CreditingUnmineable();
+        unmineable.Workers.Add(new UnmineableWorker("quantus", "ot1234abcdg", true, 2.7e8, 2.7e8));
+        var provider = CreateProvider(QuantusOnlyPolicy, pricePerKwh: 0.15, optimize: () => false, unmineable: unmineable,
+            stats: g => new GpuStats(g.Name, 85, 100, 90, 250, 1900, 2, 12)); // loud and hot, but not optimizing
+        var options = new ProviderRunOptions(new MiningTarget(TestAddresses.Usdt(14), PayoutRole.User), "ot1234abcdg", 100);
+        await provider.StartAsync(options, CancellationToken.None);
+        await RunForProvider(provider, IntensityTuner.SteadyBeforeTrial + IntensityTuner.BetweenTrials * 2);
+        Assert.All(_factory.Intensities, i => Assert.Null(i)); // no trials, no easing off
+    }
+
+    [Fact]
     public async Task Quiet_mode_eases_off_while_the_fan_runs_loud_and_steps_back_up_once_cool()
     {
         FakeQuantusCard();
@@ -904,7 +918,7 @@ public sealed class SrbMinerProviderTests : IDisposable
         var quiet = true;
         var unmineable = new CreditingUnmineable();
         unmineable.Workers.Add(new UnmineableWorker("quantus", "ot1234abcdg", true, 4.6e8, 4.6e8));
-        var provider = CreateProvider(QuantusOnlyPolicy, pricePerKwh: 0, quiet: () => quiet, unmineable: unmineable,
+        var provider = CreateProvider(QuantusOnlyPolicy, pricePerKwh: 0, optimize: () => quiet, unmineable: unmineable,
             stats: g => new GpuStats(g.Name, 70, 100, fan, 250, 1900, 2, 12));
         var options = new ProviderRunOptions(new MiningTarget(TestAddresses.Usdt(13), PayoutRole.User), "ot1234abcdg", 100);
         await provider.StartAsync(options, CancellationToken.None);
@@ -923,7 +937,7 @@ public sealed class SrbMinerProviderTests : IDisposable
         status = await RunForProvider(provider, IntensityTuner.Warmup + SrbMinerGpuProvider.CoolFor + TimeSpan.FromSeconds(30));
         Assert.Equal(21, _factory.Intensities[^1]);
 
-        // Turned off: straight back to full speed, and loud fans no longer change anything.
+        // Optimizing turned off: straight back to the miner's own setting, and loud fans no longer change anything.
         quiet = false;
         fan = 90;
         await RunForProvider(provider, TimeSpan.FromSeconds(10));

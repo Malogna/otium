@@ -96,7 +96,7 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
     private readonly Func<GpuInfo, double?> _freeMemoryGb;
     private readonly Func<string, int, CancellationToken, Task<string?>> _poolBlocked;
     private readonly List<(double Hashrate, double? Watts)> _samples = [];
-    private readonly Func<bool> _quiet;
+    private readonly Func<bool> _optimize;
     private readonly Func<GpuInfo, GpuStats?> _stats;
 
     /// <summary>Hash rate and measured watts while mining normally, for the intensity tuner (IntensityTuner).</summary>
@@ -144,7 +144,8 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
     private sealed record SetAside(string Reason, DateTimeOffset Until, int Failures);
 
     /// <param name="freeMemoryGb">Free graphics memory of a GPU right now, or null if unknown (NVML reads it for NVIDIA cards).</param>
-    /// <param name="quiet">Quiet mode: ease the miner off while a card's fan or temperature runs high.</param>
+    /// <param name="optimize">"Optimize my graphics card": tune the miner's intensity and ease it off while a card's fan or
+    /// temperature runs high; off, the miner runs at its own settings.</param>
     /// <param name="stats">A card's temperature, fan and power right now (NVML), or null if unknown.</param>
     public SrbMinerGpuProvider(
         HttpClient http,
@@ -168,10 +169,10 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         Func<string, int, CancellationToken, Task<string?>>? poolBlocked = null,
         Func<bool>? isUnitedStates = null,
         Func<string, IReadOnlyDictionary<string, int>?>? listDevices = null,
-        Func<bool>? quiet = null,
+        Func<bool>? optimize = null,
         Func<GpuInfo, GpuStats?>? stats = null)
     {
-        _quiet = quiet ?? (() => false);
+        _optimize = optimize ?? (() => false);
         _stats = stats ?? (_ => null);
         _listDevices = listDevices ?? ListDevices;
         _listDevicesGiven = listDevices is not null;
@@ -436,9 +437,11 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         _minerPicks.TryGetValue(algorithm.PoolName, out var pick) ? pick
         : _store.Tuning(algorithm.PoolName).FirstOrDefault(t => t.Intensity is null)?.MinerPick;
 
-    /// <summary>The best measured intensity for this algorithm (IntensityTuner), within quiet mode's cap.</summary>
+    /// <summary>The best measured intensity for this algorithm (IntensityTuner), within quiet mode's cap; none when not optimizing.</summary>
     private async Task<int?> TunedIntensityAsync(GpuAlgorithm algorithm, CancellationToken ct)
     {
+        if (!_optimize())
+            return null;
         var trials = _store.Tuning(algorithm.PoolName);
         var best = trials.Count == 0 ? null : IntensityTuner.Best(trials, await NetUsdPerDayAsync(algorithm, ct));
         if (_quietCap is not { } cap)
@@ -511,7 +514,7 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         }
 
         // Now and then, after a steady stretch, try another setting (not while quiet mode is easing off).
-        if (!_trial && _quietCap is null && now - _launchedAt >= IntensityTuner.SteadyBeforeTrial && now - _lastTrialAt >= IntensityTuner.BetweenTrials)
+        if (_optimize() && !_trial && _quietCap is null && now - _launchedAt >= IntensityTuner.SteadyBeforeTrial && now - _lastTrialAt >= IntensityTuner.BetweenTrials)
         {
             var next = IntensityTuner.NextTrial(IntensityTuner.Candidates(algorithm.PoolName, MinerPick(algorithm)), _store.Tuning(algorithm.PoolName), out var any);
             if (any && next != _intensity)
@@ -530,13 +533,15 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
     /// </summary>
     private async Task<ProviderStatus?> QuietAsync(GpuAlgorithm algorithm, DateTimeOffset now, CancellationToken ct)
     {
-        if (!_quiet())
+        if (!_optimize())
         {
-            if (_quietCap is null)
+            // Turned off: back to the miner's own settings (from a tuned, tried or eased-off one).
+            if (_quietCap is null && _intensity is null)
                 return null;
             _quietCap = null;
+            _trial = false;
             await LaunchAsync(algorithm, ct);
-            return new ProviderStatus(ProviderState.Starting, 0, "Quiet mode off: back to full speed…", algorithm.PoolName);
+            return new ProviderStatus(ProviderState.Starting, 0, "Graphics card optimization off: back to the miner's own settings…", algorithm.PoolName);
         }
 
         // Judged only once the miner has settled after a launch (a relaunch briefly changes the load).

@@ -28,7 +28,7 @@ public static class ProblemReportBuilder
         Line("");
         Line("Settings:");
         Line(Invariant($"  earning {s.EarningEnabled}, processor {s.CpuEnabled} ({s.CpuUsagePercent}%), graphics card {s.GpuEnabled}, only when away {s.OnlyWhenIdle} ({s.IdleMinutes} min)"));
-        Line($"  keep awake {s.KeepAwakeWhileEarning}, keep miner ready {s.KeepMinerReadyWhenBack}, efficiency mode {s.GpuEfficiencyMode}, earn while browsing {s.EarnWhileBrowsing}");
+        Line($"  keep awake {s.KeepAwakeWhileEarning}, keep miner ready {s.KeepMinerReadyWhenBack}, optimize GPU {s.GpuOptimize} (power part {s.GpuEfficiencyMode}), earn while browsing {s.EarnWhileBrowsing}");
         Line(Invariant($"  pay for electricity {s.PayForElectricity} ({s.ElectricityPricePerKwh:0.###}/kWh), never at a loss {s.NeverRunAtLoss}"));
         Line($"  payout coin {Core.Wallets.PayoutTarget.ParseOrNull(s.PayoutAddress)?.Coin.Ticker ?? "none"}, mode {s.PayoutMode}, United States {AppHost.InUnitedStates}");
         Line($"  internet sharing {s.BandwidthEnabled} (offered {host.BandwidthOffered}), share earnings {s.ShareEarningsStats}");

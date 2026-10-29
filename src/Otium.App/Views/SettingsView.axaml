@@ -87,19 +87,14 @@
                             <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap"
                                        Text="The graphics card also mines while you're at the computer doing ordinary things like browsing, documents or videos in a window. It stops the moment a game or any full-screen app starts, and never on battery. You may notice the computer is a little less smooth, and the fans may run." />
                         </StackPanel>
-                        <StackPanel Spacing="2" IsVisible="{Binding GpuEfficiencySupported}">
-                            <ToggleSwitch IsChecked="{Binding GpuEfficiencyMode}" IsEnabled="{Binding !GpuEfficiencyBusy}"
-                                          OnContent="Efficiency mode for my graphics card" OffContent="Efficiency mode for my graphics card" />
-                            <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap"
-                                       Text="While it mines, the card runs at 70% of its usual power limit: it mines a little slower but uses much less electricity, so you keep more. Back to full power the moment mining stops, so games aren't affected. Windows asks for permission once." />
-                            <TextBlock Classes="good" FontSize="12.5" TextWrapping="Wrap" Text="{Binding GpuEfficiencyMessage}"
-                                       IsVisible="{Binding GpuEfficiencyMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                        </StackPanel>
                         <StackPanel Spacing="2" IsVisible="{Binding HasGpu}">
-                            <ToggleSwitch IsChecked="{Binding GpuQuiet}"
-                                          OnContent="Keep my graphics card quiet" OffContent="Keep my graphics card quiet" />
-                            <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap"
-                                       Text="When the card's fan or temperature runs high while it mines, Otium eases off a little, and steps back up once it's cool. It earns slightly less on hot nights, but the computer stays quiet. Otium also tunes the miner's settings for your card by itself, a few minutes at a time." />
+                            <ToggleSwitch IsChecked="{Binding GpuOptimize}" IsEnabled="{Binding !GpuOptimizeBusy}"
+                                          OnContent="Optimize my graphics card" OffContent="Optimize my graphics card" />
+                            <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Text="{Binding GpuOptimizeText}" />
+                            <Button Classes="link" HorizontalAlignment="Left" Content="Lower its power too (Windows asks once)"
+                                    Command="{Binding AllowGpuPowerCommand}" IsVisible="{Binding CanAllowGpuPower}" IsEnabled="{Binding !GpuOptimizeBusy}" />
+                            <TextBlock Classes="good" FontSize="12.5" TextWrapping="Wrap" Text="{Binding GpuOptimizeMessage}"
+                                       IsVisible="{Binding GpuOptimizeMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                         </StackPanel>
                         <TextBlock Classes="muted" Text="{Binding GpuSummary}" TextWrapping="Wrap" />
 
