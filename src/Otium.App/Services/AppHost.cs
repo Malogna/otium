@@ -111,7 +111,7 @@ public sealed class AppHost : IAsyncDisposable
             referralCode: ReferralCode,
             isUnitedStates: () => InUnitedStates,
             poolBlocked: PoolReachability.BlockedReasonAsync,
-            optimize: () => Settings.GpuOptimize,
+            optimize: () => GpuOptimizeOn,
             powerCap: SetGpuPowerCap,
             stats: gpu => Hardware.ReadGpus([gpu]).FirstOrDefault());
         if (IsSimulated)
@@ -425,56 +425,39 @@ public sealed class AppHost : IAsyncDisposable
     public bool GpuEfficiencySupported => GpuEfficiency.IsSupported && !IsSimulated && Gpus.Any(g => g.Vendor == GpuVendor.Nvidia);
 
     /// <summary>
-    /// Turns efficiency mode on (setting up its tasks with one administrator prompt, the first time) or off. Returns
-    /// what to tell the user.
+    /// "Optimize my graphics card" needs Windows' permission first: an NVIDIA card on Windows whose power limit Otium
+    /// hasn't been allowed to change yet (only an administrator can).
     /// </summary>
-    public async Task<string> SetGpuEfficiencyAsync(bool on)
-    {
-        if (on && !GpuEfficiency.IsSetUp())
-        {
-            if (Environment.ProcessPath is not { } self)
-                return "Couldn't find Otium's program file to ask Windows for permission.";
-            try
-            {
-                using var helper = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(self, [GpuEfficiency.SetupArgument])
-                {
-                    UseShellExecute = true,
-                    Verb = "runas", // the Windows administrator prompt
-                    WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden,
-                });
-                if (helper is null)
-                    return "Couldn't ask Windows for permission. Try again.";
-                await helper.WaitForExitAsync();
-                if (helper.ExitCode != 0)
-                    return $"Windows didn't set it up (error {helper.ExitCode}). Your graphics card mines at full power as before.";
-            }
-            catch (System.ComponentModel.Win32Exception e) when (e.NativeErrorCode == 1223)
-            {
-                return "Nothing changed, because the Windows permission prompt was cancelled.";
-            }
-        }
-        Settings.GpuEfficiencyMode = on;
-        SaveSettings();
-        UpdateGpuPowerCap();
-        return on
-            ? $"While it mines, your graphics card runs at {GpuEfficiency.CapPercent}% of its usual power limit, and back at full power the moment it stops."
-            : "Your graphics card mines at its usual power limit.";
-    }
+    public bool GpuOptimizeNeedsPermission => GpuEfficiencySupported && !Settings.GpuEfficiencyMode;
+
+    /// <summary>"Optimize my graphics card" is on: chosen, and allowed where Windows has to allow it. One option, all of it.</summary>
+    public bool GpuOptimizeOn => Settings.GpuOptimize && !GpuOptimizeNeedsPermission;
 
     /// <summary>
-    /// "Optimize my graphics card" on or off. Turning it on also sets up the lower power limit when Windows hasn't
-    /// allowed it yet (one administrator prompt); declining keeps the rest of it on. Returns what to tell the user.
+    /// "Optimize my graphics card" on or off. Turning it on where Windows' permission is needed asks for it (one
+    /// administrator prompt, which sets up the power tasks); without it the option stays off. Returns what to tell the
+    /// user when something went wrong; null when it's done or the user said no.
     /// </summary>
     public async Task<string?> SetGpuOptimizeAsync(bool on)
     {
+        string? problem = null;
+        if (on && GpuOptimizeNeedsPermission && !GpuEfficiency.IsSetUp())
+        {
+            var run = await Elevation.RunSelfAsync([GpuEfficiency.SetupArgument]);
+            if (!run.Succeeded)
+            {
+                on = false;
+                problem = run.Cancelled ? null
+                    : run.Failure is { } failure ? $"Windows couldn't ask for permission ({failure}). Try again."
+                    : $"Windows didn't set it up (error {run.ExitCode}). Try again.";
+            }
+        }
+        if (on && GpuEfficiencySupported)
+            Settings.GpuEfficiencyMode = true;
         Settings.GpuOptimize = on;
         SaveSettings();
         UpdateGpuPowerCap();
-        if (!on)
-            return null;
-        if (GpuEfficiencySupported && !Settings.GpuEfficiencyMode)
-            return await SetGpuEfficiencyAsync(true);
-        return null;
+        return problem;
     }
 
     /// <summary>
@@ -516,27 +499,14 @@ public sealed class AppHost : IAsyncDisposable
     {
         if (!OperatingSystem.IsWindows())
             return "Large memory pages are set up by your system administrator on this operating system.";
-        if (Environment.ProcessPath is not { } self)
-            return "Couldn't find Otium's program file to ask Windows for permission.";
-        try
+        var run = await Elevation.RunSelfAsync([LargePages.GrantArgument, LargePages.CurrentUserSid()]);
+        return run switch
         {
-            using var helper = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(self, [LargePages.GrantArgument, LargePages.CurrentUserSid()])
-            {
-                UseShellExecute = true,
-                Verb = "runas", // the Windows administrator prompt
-                WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden,
-            });
-            if (helper is null)
-                return "Couldn't ask Windows for permission. Try again.";
-            await helper.WaitForExitAsync();
-            return helper.ExitCode == 0
-                ? "Done. Sign out of Windows and back in (or restart) to finish; processor mining is faster from then on."
-                : $"Windows didn't allow it (error {helper.ExitCode}). Processor mining keeps working as before.";
-        }
-        catch (System.ComponentModel.Win32Exception e) when (e.NativeErrorCode == 1223)
-        {
-            return "Nothing changed, because the Windows permission prompt was cancelled. Processor mining keeps working as before.";
-        }
+            { Cancelled: true } => "Nothing changed, because the Windows permission prompt was cancelled. Processor mining keeps working as before.",
+            { Failure: { } failure } => $"Windows couldn't ask for permission ({failure}). Processor mining keeps working as before.",
+            { ExitCode: 0 } => "Done. Sign out of Windows and back in (or restart) to finish; processor mining is faster from then on.",
+            _ => $"Windows didn't allow it (error {run.ExitCode}). Processor mining keeps working as before.",
+        };
     }
 
     /// <summary>Whether Otium is currently keeping the computer awake because it's earning.</summary>

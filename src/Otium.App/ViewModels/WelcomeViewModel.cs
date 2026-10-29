@@ -32,7 +32,7 @@ public partial class WelcomeViewModel : ViewModelBase
         _started = started;
         InviteCode = host.Settings.Referral.CodeUsed ?? "";
         UseGpu = host.Settings.GpuEnabled;
-        OptimizeGpu = host.Settings.GpuOptimize;
+        OptimizeGpu = host.Settings.GpuOptimize; // on unless the user unticks it
         UseCpu = host.Settings.CpuEnabled;
         ElectricityPrice = (decimal)host.Settings.ElectricityPricePerKwh;
         PayForElectricity = host.Settings.PayForElectricity;
@@ -284,8 +284,8 @@ public partial class WelcomeViewModel : ViewModelBase
                 list.Add((_host.GpuProvider?.Gpus.Count ?? 1) > 1
                     ? $"Your graphics cards ({GpuName}) mine the best-paying coin each can mine while you're away."
                     : $"Your {GpuName} mines the best-paying coin while you're away.");
-                list.Add("It's optimized: lower power, tuned settings and quiet fans, earning about the same on less electricity"
-                         + (AsksForGpuPower ? " (Windows asks for permission once)." : "."));
+                list.Add("It's optimized: lower power, tuned settings and quiet fans, earning about the same on less electricity."
+                         + (AsksForGpuPower ? " " + GpuPermissionLine : ""));
             }
             list.Add("The processor miner pauses instead of closing when you come back, so it earns again the moment you leave (it keeps about 2.5 GB of memory for up to 10 minutes).");
             return list;
@@ -542,21 +542,28 @@ public partial class WelcomeViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(QuickList))]
     public partial bool OptimizeGpu { get; set; }
 
-    public string OptimizeGpuText => SettingsViewModel.OptimizeGpuText(AsksForGpuPower);
+    /// <summary>What it does, plus why Windows will ask when it will (setup's one place to say so).</summary>
+    public string OptimizeGpuText => SettingsViewModel.OptimizeGpuText + (AsksForGpuPower ? " " + GpuPermissionLine : "");
+
+    private const string GpuPermissionLine =
+        "When you press Start, Windows asks you to allow Otium once: only an administrator can change a graphics card's power limit.";
 
     /// <summary>Starting will ask Windows once for the lower power limit (an NVIDIA card on Windows, not allowed yet).</summary>
-    private bool AsksForGpuPower => _host.GpuEfficiencySupported && !_host.Settings.GpuEfficiencyMode;
+    private bool AsksForGpuPower => _host.GpuOptimizeNeedsPermission;
 
     [RelayCommand(CanExecute = nameof(CanStart))]
     private async Task Start()
     {
-        // The power part of "Optimize my graphics card" needs Windows' permission once: asked here, during setup, before
-        // mining starts. Declining keeps the rest of it (tuning, quiet fans) on.
+        // "Optimize my graphics card" needs Windows' permission once on an NVIDIA card: asked here, during setup, before
+        // mining starts. Without it the option stays off (Settings can turn it on later).
         IsStarting = true; // also while Windows asks below, so a second click can't start twice
-        _host.Settings.GpuOptimize = OptimizeGpu;
-        _host.SaveSettings();
-        if (HasGpu && UseGpu && OptimizeGpu && AsksForGpuPower)
-            await _host.SetGpuEfficiencyAsync(true);
+        if (HasGpu && UseGpu)
+            await _host.SetGpuOptimizeAsync(OptimizeGpu);
+        else
+        {
+            _host.Settings.GpuOptimize = OptimizeGpu;
+            _host.SaveSettings();
+        }
 
         _started(); // show the home screen right away; it reports progress while the account connects
         await _host.StartFirstTimeAsync(InviteCode, Payout.Target?.ToString(), ShareEarnings == true, KeepMinerReady,

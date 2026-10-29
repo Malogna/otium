@@ -38,7 +38,7 @@ public partial class SettingsViewModel : ViewModelBase
         OnlyWhenIdle = s.OnlyWhenIdle;
         KeepAwakeWhileEarning = s.KeepAwakeWhileEarning;
         ShareEarningsStats = s.ShareEarningsStats;
-        GpuOptimize = s.GpuOptimize;
+        GpuOptimize = host.GpuOptimizeOn;
         EarnWhileBrowsing = s.EarnWhileBrowsing;
         NotificationsEnabled = s.NotificationsEnabled;
         KeepMinerReadyWhenBack = s.KeepMinerReadyWhenBack;
@@ -421,29 +421,49 @@ public partial class SettingsViewModel : ViewModelBase
     }
 
     /// <summary>What "Optimize my graphics card" does, the same words in setup and Settings.</summary>
-    public static string OptimizeGpuText(bool asksForPower) =>
-        "Otium lowers your graphics card's power draw, tunes the miner for your card and keeps the fans quiet, so it " +
-        "earns about the same while using less electricity and making less noise." +
-        (asksForPower ? " Windows asks for permission once, for the power part." : "");
+    public const string OptimizeGpuText =
+        "Lowers your graphics card's power draw, tunes it and keeps the fans quiet, so it earns about the same on less " +
+        "electricity and noise.";
 
-    /// <summary>"Optimize my graphics card": tuning, quiet fans and (once Windows allowed it) a lower power limit.</summary>
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CanAllowGpuPower), nameof(GpuOptimizeText))]
-    public partial bool GpuOptimize { get; set; }
+    /// <summary>Why Windows asks, said once, just before it does (in Settings, and in setup's own words).</summary>
+    public const string GpuPermissionText =
+        "Windows will ask you to allow Otium once: only an administrator can change a graphics card's power limit. " +
+        "Otium uses it for nothing else, and the card is back at full power the moment mining stops.";
+
+    /// <summary>"Optimize my graphics card": on only once Windows allowed it, where it has to (see AppHost.GpuOptimizeOn).</summary>
+    [ObservableProperty] public partial bool GpuOptimize { get; set; }
 
     [ObservableProperty] public partial bool GpuOptimizeBusy { get; set; }
     [ObservableProperty] public partial string? GpuOptimizeMessage { get; set; }
 
-    public string GpuOptimizeText => OptimizeGpuText(CanAllowGpuPower);
-
-    /// <summary>On, with an NVIDIA card whose lower power limit Windows hasn't allowed yet (it was declined, or Otium was updated).</summary>
-    public bool CanAllowGpuPower => GpuOptimize && _host.GpuEfficiencySupported && !_host.Settings.GpuEfficiencyMode;
+    /// <summary>Turning it on needs Windows' permission: say why first, with Allow and Cancel.</summary>
+    [ObservableProperty] public partial bool IsAskingGpuPermission { get; set; }
 
     partial void OnGpuOptimizeChanged(bool value)
     {
-        if (_loading || value == _host.Settings.GpuOptimize)
+        if (_loading || value == _host.GpuOptimizeOn)
             return;
+        GpuOptimizeMessage = null;
+        if (value && _host.GpuOptimizeNeedsPermission)
+        {
+            IsAskingGpuPermission = true;
+            return;
+        }
         _ = ApplyGpuOptimizeAsync(value);
+    }
+
+    [RelayCommand]
+    private Task AllowGpuOptimize()
+    {
+        IsAskingGpuPermission = false;
+        return ApplyGpuOptimizeAsync(true);
+    }
+
+    [RelayCommand]
+    private void CancelGpuOptimize()
+    {
+        IsAskingGpuPermission = false;
+        ShowGpuOptimize();
     }
 
     private async Task ApplyGpuOptimizeAsync(bool on)
@@ -451,19 +471,15 @@ public partial class SettingsViewModel : ViewModelBase
         GpuOptimizeBusy = true;
         GpuOptimizeMessage = await _host.SetGpuOptimizeAsync(on);
         GpuOptimizeBusy = false;
-        OnPropertyChanged(nameof(CanAllowGpuPower));
-        OnPropertyChanged(nameof(GpuOptimizeText));
+        ShowGpuOptimize();
     }
 
-    /// <summary>The power part on its own, for when Windows didn't allow it before.</summary>
-    [RelayCommand]
-    private async Task AllowGpuPower()
+    /// <summary>The switch shows what's really on (off again when Windows didn't allow it), without asking again.</summary>
+    private void ShowGpuOptimize()
     {
-        GpuOptimizeBusy = true;
-        GpuOptimizeMessage = await _host.SetGpuEfficiencyAsync(true);
-        GpuOptimizeBusy = false;
-        OnPropertyChanged(nameof(CanAllowGpuPower));
-        OnPropertyChanged(nameof(GpuOptimizeText));
+        _loading = true;
+        GpuOptimize = _host.GpuOptimizeOn;
+        _loading = false;
     }
 
     /// <summary>Pause the processor miner instead of stopping it when the user comes back (opt-in).</summary>

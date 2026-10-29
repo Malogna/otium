@@ -27,16 +27,8 @@ public static class UninstallCleanup
         {
             // Graphics card efficiency mode: its two tasks were created with administrator rights, so removing them (and
             // putting the power limit back) asks Windows once more.
-            if (Otium.Core.Gpu.GpuEfficiency.IsSetUp() && Environment.ProcessPath is { } self)
-            {
-                using var helper = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(self, [Otium.Core.Gpu.GpuEfficiency.RemoveArgument])
-                {
-                    UseShellExecute = true,
-                    Verb = "runas",
-                    WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden,
-                });
-                helper?.WaitForExit(15_000);
-            }
+            if (Otium.Core.Gpu.GpuEfficiency.IsSetUp())
+                Elevation.RunSelfAsync([Otium.Core.Gpu.GpuEfficiency.RemoveArgument]).Wait(15_000);
         }
         catch (System.ComponentModel.Win32Exception)
         {
