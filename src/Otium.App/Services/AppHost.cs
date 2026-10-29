@@ -112,6 +112,7 @@ public sealed class AppHost : IAsyncDisposable
             isUnitedStates: () => InUnitedStates,
             poolBlocked: PoolReachability.BlockedReasonAsync,
             optimize: () => Settings.GpuOptimize,
+            powerCap: SetGpuPowerCap,
             stats: gpu => Hardware.ReadGpus([gpu]).FirstOrDefault());
         if (IsSimulated)
         {
@@ -166,6 +167,9 @@ public sealed class AppHost : IAsyncDisposable
                 idle, () => _aiozConfig, null, aiozLedger.Load(), aiozLedger.Save);
         }
 
+        // Each start caps at the usual percentage; quiet mode lowers it again only if the card runs loud.
+        if (GpuEfficiencySupported)
+            GpuEfficiency.WriteCap(Paths.Root, GpuEfficiency.CapPercent);
         foreach (var engine in Engines)
         {
             engine.SnapshotChanged += _ =>
@@ -471,6 +475,20 @@ public sealed class AppHost : IAsyncDisposable
         if (GpuEfficiencySupported && !Settings.GpuEfficiencyMode)
             return await SetGpuEfficiencyAsync(true);
         return null;
+    }
+
+    /// <summary>
+    /// Quiet mode's lower power limit for coins whose miner setting doesn't change the load (Pearl): the percentage the
+    /// cap applies from now on, applied at once while capped. False when the power part isn't on (not an NVIDIA card on
+    /// Windows, "Optimize my graphics card" off, or Windows never allowed it): quiet mode can't ease those coins off.
+    /// </summary>
+    public bool SetGpuPowerCap(int percent)
+    {
+        if (!GpuEfficiencySupported || !Settings.GpuOptimize || !Settings.GpuEfficiencyMode || !GpuEfficiency.WriteCap(Paths.Root, percent))
+            return false;
+        if (Volatile.Read(ref _capApplied) == 1)
+            _ = Task.Run(() => GpuEfficiency.Trigger(cap: true));
+        return true;
     }
 
     /// <summary>

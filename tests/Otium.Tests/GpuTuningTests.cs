@@ -17,8 +17,8 @@ public class GpuTuningTests
     {
         Assert.Equal([null, 21, 19, 25], IntensityTuner.Candidates("quantus", 23));
         Assert.Equal([null, 28, 26], IntensityTuner.Candidates("quantus", 30)); // never past 31
-        // Pearl prints no pick (SRBMiner tunes it itself): fixed steps to compare against that.
-        Assert.Equal([null, 12, 16, 20, 24], IntensityTuner.Candidates("pearlhash", null));
+        // Pearl prints no pick and ignores the setting (an RTX 3080 drew 348 W at every intensity): nothing to try.
+        Assert.Equal([(int?)null], IntensityTuner.Candidates("pearlhash", null));
         Assert.Equal([(int?)null], IntensityTuner.Candidates("xelishash", null)); // nothing known to try
     }
 
@@ -95,6 +95,16 @@ public class GpuTuningTests
             File.Delete(path);
         }
     }
+
+    [Theory]
+    [InlineData("60", 70, 60)]
+    [InlineData(" 55\r\n", 70, 55)]
+    [InlineData("20", 70, 50)] // never below the floor
+    [InlineData("150", 70, 100)]
+    [InlineData("loud", 70, 70)] // unreadable: the task's own percentage
+    [InlineData(null, 70, 70)]
+    public void The_power_task_applies_the_percentage_otium_wrote(string? file, int fallback, int applied) =>
+        Assert.Equal(applied, Otium.Core.Gpu.GpuEfficiency.CapFrom(file, fallback));
 
     [Fact]
     public void The_intensity_goes_to_srbminer_as_one_value_for_every_card()

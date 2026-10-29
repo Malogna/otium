@@ -261,11 +261,11 @@ public sealed class SrbMinerProviderTests : IDisposable
 
     private SrbMinerGpuProvider CreateProvider(Func<GpuPolicy?>? policy, double pricePerKwh, string? benchmarks = null, Func<GpuInfo, double?>? freeMemoryGb = null,
         IUnmineableApi? unmineable = null, Func<string, int, CancellationToken, Task<string?>>? poolBlocked = null, IReadOnlyList<GpuInfo>? gpus = null,
-        Func<bool>? optimize = null, Func<GpuInfo, GpuStats?>? stats = null) =>
+        Func<bool>? optimize = null, Func<GpuInfo, GpuStats?>? stats = null, Func<int, bool>? powerCap = null) =>
         new(new HttpClient(), _pool, Path.Combine(_dir, "engines"), Path.Combine(_dir, benchmarks ?? $"bench-{Guid.NewGuid():N}.json"),
             gpus ?? [Rtx3080], _meter, () => pricePerKwh, _factory, _time,
             asset: _asset, policy: policy, freeMemoryGb: freeMemoryGb, unmineable: unmineable,
-            poolBlocked: poolBlocked, optimize: optimize ?? (() => true), stats: stats);
+            poolBlocked: poolBlocked, optimize: optimize ?? (() => true), stats: stats, powerCap: powerCap);
 
     [Fact]
     public async Task A_pool_blocked_on_this_computer_is_explained_instead_of_failing_the_coin()
@@ -896,6 +896,68 @@ public sealed class SrbMinerProviderTests : IDisposable
     }
 
     [Fact]
+    public async Task A_coin_that_ignores_intensity_is_eased_off_with_the_power_limit_instead()
+    {
+        // Pearl on the RTX 3080: 348 W at its own setting and at every intensity tried (29 October 2026).
+        _meter.Watts = () => 348;
+        var caps = new List<int>();
+        var fan = 88.0;
+        var unmineable = new CreditingUnmineable();
+        unmineable.Workers.Add(new UnmineableWorker("pearlpow", "ot1234abcdg", true, 9.2e13, 9.2e13));
+        var provider = CreateProvider(() => UnmineablePearlPolicy(), pricePerKwh: 0.15, unmineable: unmineable,
+            stats: g => new GpuStats(g.Name, 70, 100, fan, 348, 1845, 2, 12), powerCap: percent => { caps.Add(percent); return true; });
+        var options = new ProviderRunOptions(new MiningTarget(TestAddresses.Usdt(15), PayoutRole.User), "ot1234abcdg", 100);
+        await provider.StartAsync(options, CancellationToken.None);
+        await RunForProvider(provider, SrbMinerGpuProvider.BenchmarkDuration + TimeSpan.FromSeconds(10)); // Pearl tested (the only coin on paid power)
+        Assert.Equal("pearlhash", provider.CurrentAlgorithm);
+        var launches = _factory.Intensities.Count;
+
+        // Loud: one intensity step (18), which doesn't lower the power, so back to its own setting for good.
+        await RunForProvider(provider, IntensityTuner.Warmup + SrbMinerGpuProvider.HotFor + TimeSpan.FromSeconds(10));
+        Assert.Equal(18, _factory.Intensities[^1]);
+        await RunForProvider(provider, IntensityTuner.Warmup + TimeSpan.FromSeconds(10));
+        Assert.Null(_factory.Intensities[^1]);
+        Assert.Equal(launches + 2, _factory.Intensities.Count);
+
+        // Still loud: the power limit comes down a step at a time to 50%, with no more restarts.
+        await RunForProvider(provider, IntensityTuner.Warmup + SrbMinerGpuProvider.HotFor * 4);
+        Assert.Equal([60, 50], caps);
+        Assert.Equal(launches + 2, _factory.Intensities.Count);
+        Assert.Contains("power at 50%", (await provider.GetStatusAsync(CancellationToken.None)).Detail);
+
+        // Quiet again: back up, a step per quarter hour, to the usual 70%.
+        fan = 40;
+        await RunForProvider(provider, SrbMinerGpuProvider.CoolFor * 2 + TimeSpan.FromMinutes(1));
+        Assert.Equal([60, 50, 60, 70], caps);
+        Assert.Equal(launches + 2, _factory.Intensities.Count);
+
+        // Remembered: after a restart, loud fans go straight to the power limit, with no intensity step.
+        await provider.StopAsync(CancellationToken.None);
+        await provider.StartAsync(options, CancellationToken.None);
+        fan = 88;
+        await RunForProvider(provider, IntensityTuner.Warmup + SrbMinerGpuProvider.HotFor + TimeSpan.FromSeconds(10));
+        Assert.Null(_factory.Intensities[^1]);
+        Assert.Equal(60, caps[^1]);
+    }
+
+    [Fact]
+    public async Task Without_the_power_part_a_coin_that_ignores_intensity_isnt_restarted_for_nothing()
+    {
+        _meter.Watts = () => 348;
+        var unmineable = new CreditingUnmineable();
+        unmineable.Workers.Add(new UnmineableWorker("pearlpow", "ot1234abcdg", true, 9.2e13, 9.2e13));
+        var provider = CreateProvider(() => UnmineablePearlPolicy(), pricePerKwh: 0.15, unmineable: unmineable,
+            stats: g => new GpuStats(g.Name, 70, 100, 88, 348, 1845, 2, 12)); // no power part: powerCap says no
+        var options = new ProviderRunOptions(new MiningTarget(TestAddresses.Usdt(16), PayoutRole.User), "ot1234abcdg", 100);
+        await provider.StartAsync(options, CancellationToken.None);
+        await RunForProvider(provider, SrbMinerGpuProvider.BenchmarkDuration * 2 + TimeSpan.FromSeconds(20));
+        await RunForProvider(provider, IntensityTuner.Warmup * 2 + SrbMinerGpuProvider.HotFor + TimeSpan.FromSeconds(20)); // one step, found useless
+        var launches = _factory.Intensities.Count;
+        await RunForProvider(provider, TimeSpan.FromMinutes(30));
+        Assert.Equal(launches, _factory.Intensities.Count);
+    }
+
+    [Fact]
     public async Task With_optimizing_off_the_miner_keeps_its_own_settings()
     {
         FakeQuantusCard();
@@ -914,6 +976,7 @@ public sealed class SrbMinerProviderTests : IDisposable
     {
         FakeQuantusCard();
         _factory.SpeedAt = (_, intensity) => intensity is { } i ? i * 20e6 : 460e6; // works at every setting
+        _meter.Watts = () => (_factory.Intensities.Count == 0 ? 23 : _factory.Intensities[^1] ?? 23) * 12; // less load, less power
         var fan = 72.0;
         var quiet = true;
         var unmineable = new CreditingUnmineable();
