@@ -39,6 +39,13 @@ public sealed class SharingOptions
     /// <summary>Otium's share of each sharing payout, in basis points (100 = 1%). Defaults to the mining fee.</summary>
     public int? FeeBps { get; set; }
 
+    /// <summary><see cref="FeeRecipient"/> when it's a valid 0x address (lowercase), or null: no sharing fee then.</summary>
+    public string? ValidFeeRecipient =>
+        CryptoAddresses.TryValidate(AddressFormat.Evm, FeeRecipient, out _) ? FeeRecipient!.Trim().ToLowerInvariant() : null;
+
+    /// <summary>Otium's cut in basis points: <see cref="FeeBps"/>, or the mining fee (at most 10%).</summary>
+    public int EffectiveFeeBps(double miningFeePercent) => Math.Clamp(FeeBps ?? (int)Math.Round(miningFeePercent * 100), 0, 1000);
+
     /// <summary>Wait for more to build up while the conversion's own network costs are above this share.</summary>
     public double MaxNetworkCostPercent { get; set; } = 5;
 
@@ -267,7 +274,7 @@ public sealed class SharingRouteService(
     private DateTimeOffset _nextSweep = DateTimeOffset.MinValue;
 
     /// <summary>Otium's cut in basis points: the configured one, or the mining fee (at most 10%).</summary>
-    public int FeeBps => Math.Clamp(options.Value.FeeBps ?? (int)Math.Round(fees.Value.FeePercent * 100), 0, 1000);
+    public int FeeBps => options.Value.EffectiveFeeBps(fees.Value.FeePercent);
 
     public async Task<SharingRoute> RouteAsync(Session session, SharingRouteRequest request, System.Net.IPAddress? client, CancellationToken ct)
     {
@@ -327,8 +334,7 @@ public sealed class SharingRouteService(
     }
 
     /// <summary>Otium's address for its sharing fee, or null when none is configured (no fee then).</summary>
-    private string? FeeRecipient =>
-        CryptoAddresses.TryValidate(AddressFormat.Evm, options.Value.FeeRecipient, out _) ? options.Value.FeeRecipient!.Trim().ToLowerInvariant() : null;
+    private string? FeeRecipient => options.Value.ValidFeeRecipient;
 
     /// <summary>Otium's share of <paramref name="available"/>.</summary>
     private long Fee(long available) => FeeRecipient is null ? 0 : (long)Math.Round(available * FeeBps / 10_000d);

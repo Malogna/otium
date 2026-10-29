@@ -155,7 +155,7 @@ internal static partial class SitePages
                       <span class="label">Internet sharing</span>
                       <h2 id="sharing-title" class="mt-18">Get paid for internet bandwidth you aren't using.</h2>
                       <p class="muted mt-20">Optional, and off until you tick it. Proxybase's customers, mostly AI agents and businesses that collect public web pages, use some of the internet bandwidth you aren't using. It's paid to your wallet in your coin, like mining.</p>
-                      <p class="fine mt-14">The same tick adds two more networks, with no fee from Otium: Mysterium carries traffic for its business customers and pays its MYST token straight to your own address, and AIOZ uses some spare disk space to store and deliver files, paying its AIOZ token. Untick any you don't want.</p>
+                      <p class="fine mt-14">The same tick adds two more networks: Mysterium carries traffic for its business customers and pays its MYST token straight to your own address, with no fee from Otium, and AIOZ uses some spare disk space to store and deliver files, paying its AIOZ token. Untick any you don't want.</p>
                     </div>
                     <div class="panel reveal">
                       <p class="keep" data-count>{(s.IsReal ? "" : "≈ ")}{UsdWhole(s.PerDay * 30)}<small>{explain}</small></p>
@@ -656,7 +656,7 @@ internal static partial class SitePages
                           <li><strong>The conversion goes through Relay</strong> (and SideShift for Litecoin, ChangeNOW for Monero). One that fails comes back to the wallet on your computer.</li>
                         </ol>
                         <p class="fine mt-14">Otium's {fee} of sharing earnings comes off; the rest reaches your address. Payouts only ever go to the address you registered, never anywhere the app or anyone else asks.</p>
-                        <p class="fine mt-14">Mysterium and AIOZ skip the conversion: Mysterium pays MYST on Polygon straight to your address from 5 MYST, and Otium sends AIOZ to your 0x address from 5 AIOZ. Otium takes nothing from either.</p>
+                        <p class="fine mt-14">Mysterium and AIOZ skip the conversion. Mysterium pays MYST on Polygon straight to your address from 5 MYST, and Otium takes nothing from it. Otium sends AIOZ to your 0x address from 5 AIOZ; its {fee} of what the node earns goes to Otium's address separately.</p>
                       </div>
                     </div>
                   </div>

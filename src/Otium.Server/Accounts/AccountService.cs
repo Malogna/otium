@@ -46,7 +46,8 @@ public sealed class AccountService(
     IOptions<FeeOptions> feeOptions,
     IOptions<ProxybaseOptions> proxybaseOptions,
     ConnectionHashes connections,
-    ReferralRedemptions redemptions)
+    ReferralRedemptions redemptions,
+    IOptions<Sharing.SharingOptions> sharingOptions)
 {
     /// <summary>
     /// How long a connection one of an account's computers used still counts as theirs: an invite from a computer on it
@@ -646,7 +647,10 @@ public sealed class AccountService(
             !proxybaseOptions.Value.Enabled,
             store.ReferralShareTotal(codes),
             MystUsd: mystPrice.Current,
-            AiozUsd: aiozPrice.Current);
+            AiozUsd: aiozPrice.Current,
+            // Otium's sharing fee address and rate, for the networks the app pays out itself (AIOZ).
+            SharingFeeAddress: sharingOptions.Value.ValidFeeRecipient,
+            SharingFeeBps: sharingOptions.Value.EffectiveFeeBps(feeOptions.Value.FeePercent));
         return deviceId is null ? summary : WithFeeGrant(summary, deviceId, now);
     }
 

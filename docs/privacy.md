@@ -1,6 +1,6 @@
 # Otium privacy policy
 
-*Last updated: 27 October 2026*
+*Last updated: 29 October 2026*
 
 Otium is a desktop app that earns for you with your computer's idle processor and graphics card and, if you choose,
 your unused internet connection. Mining pools pay you directly at your own wallet address; Otium doesn't receive or
@@ -65,7 +65,7 @@ years) in its data folder (Settings → About → Open data folder). Uninstallin
 | **Mysterium Network** (only if you turn on sharing through Mysterium) | Runs its node on your computer, which routes its business customers' traffic through your connection; sees your IP address and the traffic it routes, and pays MYST to your Polygon address | Internet sharing through Mysterium. A separate controller under its own terms and privacy notice |
 | **The Polygon blockchain** | Your node's channel address and Otium's registration payment for it; later, Mysterium's MYST payments to your Polygon address. Anyone can see these | Registering your node; paying you |
 | **AIOZ Network** (only if you turn on sharing through AIOZ) | Runs its node on your computer, which stores pieces of its customers' files and delivers them to viewers; sees your IP address and how much the node stores and delivers, and credits AIOZ to the node, which the Otium app withdraws to your 0x address | Sharing storage and upload bandwidth through AIOZ. A separate controller under its own terms. Your computer reaches it directly, not through Otium |
-| **The AIOZ Network blockchain** | Your node's address and the AIOZ withdrawn from it to your 0x address. Anyone can see these | Paying you |
+| **The AIOZ Network blockchain** | Your node's address and the AIOZ withdrawn from it to your 0x address, and to Otium's address for Otium's share. Anyone can see these, including that your node pays Otium | Paying you, and Otium's fee |
 | **Relay** (Uneven Labs, Inc., USA) and, for LTC or XMR payouts, **SideShift** (St Kitts and Nevis) or **ChangeNOW** (St Vincent and the Grenadines) | Your payout address and coin, the amount, the sharing client's wallet address (for refunds); SideShift and ChangeNOW also your computer's IP address, which they require | Converting internet sharing earnings to your coin and paying your address |
 | **Amazon Web Services** (Simple Email Service, London) | Your email address and the sign-in code | Sending codes (our processor, under the same AWS agreement as hosting) |
 | **Amazon Web Services** (Lightsail, London) | Everything on the server | Hosting (our processor) |

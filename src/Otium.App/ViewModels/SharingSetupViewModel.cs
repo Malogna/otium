@@ -76,7 +76,7 @@ public partial class SharingSetupViewModel : ViewModelBase
 
     public string AiozLine =>
         "Stores and delivers files for AIOZ's network, using some disk space and upload bandwidth. Paid in AIOZ to your " +
-        "wallet; Otium takes nothing. Earnings are uncertain.";
+        "wallet (Otium keeps its usual share). Earnings are uncertain.";
 
     public void Refresh()
     {

@@ -149,7 +149,9 @@ public sealed class AppHost : IAsyncDisposable
             var aiozLedger = new JsonFileStore<BandwidthLedger>(Paths.AiozLedgerFile);
             Aioz = new BandwidthSharer(
                 new AiozBandwidthProvider(_http, Paths.EnginesDir, () => AiozPayoutAddress, () => Settings.AiozStorageLimitGb,
-                    aiozUsd: () => Settings.Account.AiozUsd),
+                    aiozUsd: () => Settings.Account.AiozUsd,
+                    feeAddress: () => Settings.Account.SharingFeeAddress,
+                    feePercent: () => Settings.Account.SharingFeeBps / 100.0),
                 idle, () => _aiozConfig, null, aiozLedger.Load(), aiozLedger.Save);
         }
 
@@ -777,7 +779,10 @@ public sealed class AppHost : IAsyncDisposable
     public IEnumerable<BandwidthSharer> Sharers => new[] { Bandwidth, Mysterium, Aioz }.OfType<BandwidthSharer>();
 
     /// <summary>This computer can run AIOZ's node and the user is paid to their own address.</summary>
-    public bool AiozOffered => Aioz is not null && Settings.PayoutMode == PayoutMode.OwnWallet && AiozRelease.ForCurrentPlatform() is not null;
+    /// <summary>Otium's share of AIOZ sharing in percent, for the explanations: the server's, or the mining fee until it names one.</summary>
+    public double AiozFeePercent => Settings.Account.SharingFeeBps > 0 ? Settings.Account.SharingFeeBps / 100.0 : Fees.FeePercent;
+
+    public bool AiozOffered =>Aioz is not null && Settings.PayoutMode == PayoutMode.OwnWallet && AiozRelease.ForCurrentPlatform() is not null;
 
     /// <summary>
     /// The 0x address AIOZ is withdrawn to: the one the user gave for it, their payout address when it's an 0x address,
@@ -1598,6 +1603,8 @@ public sealed class AppHost : IAsyncDisposable
         account.MysteriumSponsored = summary.MysteriumSponsored;
         account.MystUsd = summary.MystUsd ?? account.MystUsd;
         account.AiozUsd = summary.AiozUsd ?? account.AiozUsd;
+        account.SharingFeeAddress = summary.SharingFeeAddress;
+        account.SharingFeeBps = summary.SharingFeeBps ?? 0;
         account.ProxybaseDisabled = summary.ProxybaseDisabled;
         if (summary.Fees is not null && summary.Fees != account.Fees)
         {

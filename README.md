@@ -73,7 +73,7 @@ Iran, China and Egypt).
     no fee and pays the one-time registration for you; you can swap MYST for another coin on Relay.
   - [AIOZ](https://aioz.network): stores and delivers pieces of files for AIOZ's customers, using up to 20 GB of disk
     (your choice) and upload bandwidth. It pays the AIOZ token, which Otium sends to your 0x payout address once 5 AIOZ
-    has built up. Otium takes no fee. Windows and Linux for now; AIOZ has many more computers than paying files today,
+    has built up, less Otium's 2%. Windows and Linux for now; AIOZ has many more computers than paying files today,
     so earnings may be small for a while.
 - **Plain reports.** "While you were away: $0.84 in 7 h 40 min", a monthly summary, and notifications for payouts and
   problems. When the pool pays your wallet, the overview says "You've been paid" with the amount and your total. Each
@@ -93,7 +93,7 @@ Iran, China and Egypt).
 | Otium | 2% of mining time (about 29 minutes per day of mining), mined to Otium's address. Nothing while paused. |
 | Mining software | XMRig 1% (processor), SRBMiner 0.85–2% (graphics card, depending on the coin) |
 | Pool | unMineable 0.75% (1% without Otium's referral code; unMineable pays Otium part of its own fee for the code) |
-| Internet sharing | Proxybase: 2% of sharing earnings, paid to Otium's address before the rest is converted to your coin (the conversion itself has no Otium fee). Mysterium and AIOZ: nothing (Mysterium keeps 20% of what it pays out) |
+| Internet sharing | Proxybase: 2% of sharing earnings, paid to Otium's address before the rest is converted to your coin (the conversion itself has no Otium fee). AIOZ: 2% of what the node earns, sent to Otium's address separately. Mysterium: nothing (Mysterium keeps 20% of what it pays out) |
 
 In total about 3.75% on the processor and 3.6–4.75% on the graphics card. The app shows the same breakdown before you
 start.

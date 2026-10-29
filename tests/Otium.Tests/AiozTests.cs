@@ -133,11 +133,79 @@ public class AiozTests
         Assert.Null(provider.UnavailableReason);
         Assert.Equal("aioz", provider.Id);
 
+        var noFee = AiozFee.StartAt(0);
         var little = new AiozBalance(1.5m, 1.5m, 0, 0, 0);
         Assert.EndsWith("1.5 AIOZ waiting on this computer, kept safe until there's enough to send.",
-            AiozBandwidthProvider.EarningsText(little, hasAddress: false, null));
+            AiozBandwidthProvider.EarningsText(little, noFee, 0, hasAddress: false, null));
         var enough = little with { Waiting = 6, Storage = 6 };
-        Assert.EndsWith("Add an 0x address in Advanced settings to receive it.", AiozBandwidthProvider.EarningsText(enough, hasAddress: false, null));
-        Assert.Contains("sent to your 0x address on the AIOZ network once it reaches 5 AIOZ", AiozBandwidthProvider.EarningsText(enough, hasAddress: true, null));
+        Assert.EndsWith("Add an 0x address in Advanced settings to receive it.", AiozBandwidthProvider.EarningsText(enough, noFee, 0, hasAddress: false, null));
+        Assert.Contains("sent to your 0x address on the AIOZ network once it reaches 5 AIOZ", AiozBandwidthProvider.EarningsText(enough, noFee, 0, hasAddress: true, null));
+    }
+
+    [Fact]
+    public void Otiums_share_builds_up_only_on_what_the_node_earns_after_it_starts()
+    {
+        // The first reading after the update: 3 AIOZ earned before stays fee-free.
+        var fee = AiozFee.StartAt(3m).Accrue(3m, 2);
+        Assert.Equal(0m, fee.Owed);
+
+        fee = fee.Accrue(13m, 2); // 10 AIOZ more: 2% of it is Otium's
+        Assert.Equal(0.2m, fee.Owed);
+        Assert.Equal(0.2m, fee.Kept);
+        Assert.Equal(13m, fee.ChargedThrough);
+
+        Assert.Equal(fee, fee.Accrue(13m, 2)); // nothing new, nothing added
+        Assert.Equal(fee, fee.Accrue(12m, 2)); // a lower reading never charges twice later on
+        Assert.Equal(0.2m + 0.5m, fee.Accrue(18m, 99).Owed); // capped at the built-in most (10%)
+
+        // Without a fee address the share is 0, and those earnings are counted as fee-free.
+        var free = fee.Accrue(20m, 0);
+        Assert.Equal(0.2m, free.Owed);
+        Assert.Equal(20m, free.ChargedThrough);
+
+        var restored = JsonSerializer.Deserialize<AiozFee>(JsonSerializer.Serialize(fee))!;
+        Assert.Equal(fee, restored);
+    }
+
+    [Fact]
+    public void The_users_payout_leaves_otiums_share_in_the_node_and_otium_is_paid_on_a_day_of_its_own()
+    {
+        const string user = "0xuser", otium = "0xotium";
+
+        // 6.3 waiting, 0.3 of it Otium's: the user gets 6 whole AIOZ, Otium's share stays behind.
+        var fee = new AiozFee(100m, Owed: 0.3m, Kept: 0.3m);
+        Assert.Equal(new AiozWithdrawal(user, 6m, ToOtium: false), AiozBandwidthProvider.NextWithdrawal(6.3m, fee, user, otium));
+
+        // Not enough for the user yet, and under a whole AIOZ owed: nothing.
+        Assert.Null(AiozBandwidthProvider.NextWithdrawal(2.3m, fee, user, otium));
+
+        // A whole AIOZ owed and no payout for the user due: Otium's share goes to Otium's address.
+        var owed = fee with { Owed = 1.4m };
+        Assert.Equal(new AiozWithdrawal(otium, 1m, ToOtium: true), AiozBandwidthProvider.NextWithdrawal(3m, owed, user, otium));
+        // The user comes first when both are due.
+        Assert.False(AiozBandwidthProvider.NextWithdrawal(7m, owed, user, otium)!.ToOtium);
+        // Never more than the node holds, and nothing to Otium without its address.
+        Assert.Null(AiozBandwidthProvider.NextWithdrawal(0.5m, owed, user, otium));
+        Assert.Null(AiozBandwidthProvider.NextWithdrawal(3m, owed, user, feeAddress: null));
+        // Without a user address Otium's share can still go.
+        Assert.True(AiozBandwidthProvider.NextWithdrawal(3m, owed, userAddress: null, otium)!.ToOtium);
+
+        // Only what reached Otium stops being owed.
+        Assert.Equal(0.4m, owed.Sent(1m).Owed);
+        Assert.Equal(0m, owed.Sent(5m).Owed);
+        Assert.Equal(owed.Kept, owed.Sent(1m).Kept); // sending doesn't change what the user has earned
+
+        var args = AiozBandwidthProvider.WithdrawArguments("/data/home", "/data/privkey.json", 41234, otium, 1m);
+        Assert.Contains("--address=0xotium", args);
+        Assert.Contains("--amount=1aioz", args);
+    }
+
+    [Fact]
+    public void The_user_sees_earnings_and_waiting_without_otiums_share()
+    {
+        var balance = new AiozBalance(Waiting: 4.3m, Storage: 15m, Delivery: 0, Transcoding: 0, Withdrawn: 10m);
+        var fee = new AiozFee(15m, Owed: 0.3m, Kept: 0.3m);
+        var text = AiozBandwidthProvider.EarningsText(balance, fee, 2, hasAddress: true, null);
+        Assert.StartsWith("14.7 AIOZ earned in total after Otium's 2%; 4 AIOZ waiting", text);
     }
 }

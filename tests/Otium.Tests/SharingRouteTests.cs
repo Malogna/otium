@@ -241,6 +241,21 @@ public sealed class SharingRouteTests : IDisposable
     }
 
     [Fact]
+    public async Task The_summary_names_otiums_sharing_fee_address_and_rate_for_aioz()
+    {
+        using var server = new Server();
+        var (device, secret) = await server.Register(TestAddresses.Usdt(3));
+        var summary = await new AccountClient(server.Http).GetSummaryAsync(device, secret, CancellationToken.None);
+        Assert.Equal(OtiumFee, summary.SharingFeeAddress);
+        Assert.Equal(200, summary.SharingFeeBps); // the mining fee, 2%
+
+        // No valid fee address configured: none is named, so the app keeps nothing back.
+        using var without = new Server(("Sharing:FeeRecipient", "not-an-address"));
+        var (device2, secret2) = await without.Register(TestAddresses.Usdt(4));
+        Assert.Null((await new AccountClient(without.Http).GetSummaryAsync(device2, secret2, CancellationToken.None)).SharingFeeAddress);
+    }
+
+    [Fact]
     public async Task Payouts_always_go_to_the_accounts_own_address_in_its_coin()
     {
         using var server = new Server();
