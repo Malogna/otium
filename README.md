@@ -5,7 +5,7 @@ card mine the best-paying coin, and the mining pool pays **your own wallet**, in
 up, switches coins for you and steps aside the moment you touch the mouse.
 
 **[Download at otium.lol](https://otium.lol/download)** (it starts the installer for your system) · Windows · macOS and
-Linux (beta)
+Linux (beta) · **[Join our Discord](https://discord.gg/4FtFDrz97t)**
 
 <table>
   <tr>
@@ -33,11 +33,13 @@ two-minute test on your PC.</sub>
    (see what this PC could earn and choose each part).
 2. **Paste one wallet address.** USDT on TRON is the default; BTC, LTC, ETH, BNB, SOL, TRX and Monero work too. The app
    checks the address and its network as you type. That address is the only place money goes.
-3. **Press Start earning.** A two-minute test measures what this PC really earns, after fees and electricity (if the
+3. **Say whether you pay for this computer's electricity.** If it's included in your rent, paid by someone else or
+   free, Otium counts it as zero and earns whenever you're away; otherwise it counts your price.
+4. **Press Start earning.** A two-minute test measures what this PC really earns, after fees and electricity (if the
    graphics card earns at least ten times what the processor would, it leaves the processor off; Settings turns it
    back on). From then on Otium earns only while you're away (after 3 minutes without keyboard or mouse) and stops the
    moment you come back.
-4. **The pool pays you.** [unMineable](https://unmineable.com) pays your address once a day after you reach its minimum
+5. **The pool pays you.** [unMineable](https://unmineable.com) pays your address once a day after you reach its minimum
    (for example 1.5 USDT). The app shows how far you are from the next payout. US citizens and residents (the app asks)
    are paid in Monero by [MoneroOcean](https://moneroocean.stream), because unMineable doesn't serve them.
 
@@ -48,21 +50,34 @@ Iran, China and Egypt).
 
 ## What you get
 
-- **Watches the price of power.** Otium pauses when electricity would likely cost more than it earns. The price is
-  estimated for your country (or enter your own), or follows live hourly prices in Norway, Sweden, Denmark and
-  Finland. Grid fees and taxes may not be included, so treat it as an estimate.
+- **Watches the price of power.** If you pay for electricity, Otium pauses when it would likely cost more than mining
+  earns. The price is estimated for your country (or enter your own), or follows live hourly prices in Norway, Sweden,
+  Denmark and Finland. Grid fees and taxes may not be included, so treat it as an estimate. While it's paused, the
+  overview shows what mining would earn a day and what the power would cost, with a one-click "I don't pay for
+  electricity".
 - **Steps aside for you.** Mining runs only while you're away and stops within a second when you're back (if you let
   it mine while you work, it runs at the lowest priority). It keeps the computer awake
   while it earns (the screen still turns off), never keeps a laptop on battery awake, and makes the computer warmer
   and its fans louder.
 - **The best coin for your card.** The graphics card tests the coins it can mine, mines whichever pays most for it
   right now, and moves on if the pool stops crediting one. A coin that fails its test is tried again later.
-- **Internet sharing (optional).** Earn from internet you're not using through [Proxybase](https://proxybase.xyz),
-  paid to the same wallet in the same coin. It's off until you tick it, and the app explains who uses it first. Until
-  your own numbers come in, the app and otium.lol estimate it from Proxybase's rate where you live (about $62 a month
-  in Norway, for 1 GB a day); then the app shows what it really earns.
+- **Internet and disk sharing (optional).** Earn from internet and disk space you're not using, through three
+  networks. They're off until you tick them, one tick turns them all on (untick any you don't want), and the app
+  explains each one first. None needs administrator permission.
+  - [Proxybase](https://proxybase.xyz): businesses and AI agents use some of your spare bandwidth to load public web
+    pages. Paid to the same wallet in the same coin as mining. Until your own numbers come in, the app and otium.lol
+    estimate it from Proxybase's rate where you live (about $62 a month in Norway, for 1 GB a day); then the app shows
+    what it really earns.
+  - [Mysterium](https://www.mysterium.network): carries traffic for Mysterium's business customers only. It pays its
+    MYST token on Polygon straight to your own address once 5 MYST has built up (minus Mysterium's 20%). Otium takes
+    no fee and pays the one-time registration for you; you can swap MYST for another coin on Relay.
+  - [AIOZ](https://aioz.network): stores and delivers pieces of files for AIOZ's customers, using up to 20 GB of disk
+    (your choice) and upload bandwidth. It pays the AIOZ token, which Otium sends to your 0x payout address once 5 AIOZ
+    has built up. Otium takes no fee. Windows and Linux for now; AIOZ has many more computers than paying files today,
+    so earnings may be small for a while.
 - **Plain reports.** "While you were away: $0.84 in 7 h 40 min", a monthly summary, and notifications for payouts and
-  problems. Each can be shared as a picture with your invite code.
+  problems. When the pool pays your wallet, the overview says "You've been paid" with the amount and your total. Each
+  can be shared as a picture with your invite code.
 - **Options in Settings:** efficiency mode for NVIDIA cards (70% power while mining), let the graphics card earn while
   you browse (stops for games and full-screen video), and keep the miner ready so it starts again instantly.
 - **Invites.** Bring a friend and you both get 30 days without Otium's fee. Then, for 6 months, 25% of Otium's fee on
@@ -78,7 +93,7 @@ Iran, China and Egypt).
 | Otium | 2% of mining time (about 29 minutes per day of mining), mined to Otium's address. Nothing while paused. |
 | Mining software | XMRig 1% (processor), SRBMiner 0.85–2% (graphics card, depending on the coin) |
 | Pool | unMineable 0.75% (1% without Otium's referral code; unMineable pays Otium part of its own fee for the code) |
-| Internet sharing | 2% of sharing earnings, paid to Otium's address before the rest is converted to your coin (the conversion itself has no Otium fee) |
+| Internet sharing | Proxybase: 2% of sharing earnings, paid to Otium's address before the rest is converted to your coin (the conversion itself has no Otium fee). Mysterium and AIOZ: nothing (Mysterium keeps 20% of what it pays out) |
 
 In total about 3.75% on the processor and 3.6–4.75% on the graphics card. The app shows the same breakdown before you
 start.
@@ -95,8 +110,9 @@ start.
 
 - Otium runs well-known miners, [XMRig](https://github.com/xmrig/xmrig) (open source) and
   [SRBMiner-Multi](https://github.com/doktor83/SRBMiner-Multi), downloaded from their official releases and checked
-  against fixed SHA-256 hashes. Some antivirus tools flag any miner; the app tells you if yours blocks it and how to
-  allow it. The miners only make outgoing connections.
+  against fixed SHA-256 hashes. So are the sharing networks' own clients (Proxybase's, Mysterium's node and AIOZ's
+  node), each pinned to one version. Some antivirus tools flag any miner; the app tells you if yours blocks it and
+  how to allow it. The miners only make outgoing connections.
 - **Signed updates.** Otium updates itself while you're away, and only installs a version signed with the developer's
   key, which never goes to GitHub or Otium's server. Someone who took over either couldn't push an update to your computer.
 - Otium's server keeps your payout address, your computers and invite codes (and, to keep invites fair, one-way hashes
@@ -142,7 +158,7 @@ Otium is free software under the [GNU Affero General Public License v3.0](LICENS
 share it. If you distribute a changed version, or run a changed version of the server for other people, you must
 publish your changes under the same license.
 
-XMRig, SRBMiner-Multi and Proxybase's client are separate programs under their own licenses. They aren't part of this
+XMRig, SRBMiner-Multi, Proxybase's client, Mysterium's node and AIOZ's node are separate programs under their own licenses. They aren't part of this
 repository: the app downloads them from their official releases on each computer.
 
 ## Trademarks

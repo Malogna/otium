@@ -104,6 +104,12 @@ public sealed class SitePagesTests : IDisposable
         Assert.Contains("""<input id="price" type="range" min="0" max="0.60" step="0.01" value="0.15">""", html);
         Assert.DoesNotContain("typical in", html);
         Assert.True(html.IndexOf("est-month", StringComparison.Ordinal) < html.IndexOf("id=\"night-shift\"", StringComparison.Ordinal));
+        // The Discord server sits beside Download and How it works, not only in the footer.
+        var actions = html[html.IndexOf("<div class=\"actions\">", StringComparison.Ordinal)..html.IndexOf("<ul class=\"facts\">", StringComparison.Ordinal)];
+        Assert.Contains("""<a class="button ghost" href="#night-shift">How it works</a>""", actions);
+        Assert.Contains("""<a class="button ghost discord" href="https://discord.gg/4FtFDrz97t" title="Join our Discord" aria-label="Join our Discord">""", actions);
+        Assert.Contains("</svg>Discord</a>", actions);
+        Assert.Contains("""<li><a href="https://github.com/Malogna/otium">Open source</a></li>""", html);
         // At first sight: the figure, one sentence on what it assumes, and the card list; the breakdown and the sliders
         // wait behind a closed "See the breakdown and adjust".
         Assert.Contains("""<p class="est-summary" id="est-summary">An RTX 4090 mining while you're away (16 h a day), plus internet sharing.</p>""", html);
