@@ -414,7 +414,12 @@ public sealed class UnmineableOptions
         // 7900 XTX on it), although unMineable's support article still says NVIDIA only. If unMineable rejects an AMD
         // card's shares, the app's share-rejection failover sets Pearl aside for that card and it mines the next coin.
         ["pearlhash"] = new() { WhatToMineId = 469, Host = "pearlpow.unmineable.com" },
-        // Loses money at $0.15/kWh on every card checked (October 2026).
+        // Pays more than $0.15/kWh on most cards that can't mine Pearl (a GTX 1660 Super about $0.30 a day after power,
+        // an RTX 3060 about $0.53, October 2026) and needs little graphics memory: the coin for cards without Pearl, paid
+        // in the user's own coin. (WhatToMine's id 450, tagged QTC, is Qubitcoin, not Quantus.)
+        ["quantus"] = new() { WhatToMineId = 473, Host = "quantus.unmineable.com" },
+        // Loses money at $0.15/kWh on every card checked (October 2026): mined on free power, and as the last resort of
+        // cards no primary coin works on, when it earns more than their power (the app judges each card).
         ["xelishash"] = new() { WhatToMineId = 459, Host = "xelishash.unmineable.com", Tier = "free-power-only" },
     };
 }

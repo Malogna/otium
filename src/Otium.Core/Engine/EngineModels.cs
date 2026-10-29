@@ -71,6 +71,9 @@ public sealed record EngineSnapshot
     /// <summary>A problem the provider explained in plain words (e.g. "Graphics card isn't mining: …"), shown as is.</summary>
     public string? Problem { get; init; }
 
+    /// <summary>What kind of problem <see cref="Problem"/> is (<see cref="Providers.ProblemKinds"/>), when the provider says.</summary>
+    public string? ProblemKind { get; init; }
+
     /// <summary>The provider is still measuring itself (e.g. testing graphics card algorithms one by one).</summary>
     public bool IsCalibrating { get; init; }
 

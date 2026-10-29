@@ -326,7 +326,8 @@ public sealed class QuantusAndPearlForkTests
         Assert.Equal(_policyOptions.PearlFork.SupportedGpus, pearl.OnlyGpus);
         Assert.Contains("only Hopper and Blackwell cards", pearl.Note);
         Assert.Null(policy.For("quantus")!.OnlyGpus);
-        Assert.Equal(GpuRoutes.KryptexAddress, policy.Route(policy.For("quantus")!.Route)!.Kind);
+        // On unMineable (paid in the user's coin) rather than Kryptex's address login, which needs a Quantus wallet.
+        Assert.Equal(GpuRoutes.Unmineable, policy.Route(policy.For("quantus")!.Route)!.Kind);
 
         // The policy reaches apps as JSON: the whitelist must survive the trip.
         var json = JsonSerializer.Serialize(policy, new JsonSerializerOptions(JsonSerializerDefaults.Web));

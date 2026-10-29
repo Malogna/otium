@@ -5,6 +5,28 @@ namespace Otium.Tests;
 
 public class ProjectionTests
 {
+    [Fact]
+    public async Task Before_any_test_cards_without_pearl_are_estimated_on_quantus()
+    {
+        var policy = new Otium.Core.Switching.GpuPolicy(DateTimeOffset.UtcNow,
+        [
+            new("pearlhash", Otium.Core.Switching.GpuTiers.Primary, "unmineable-pearlhash", 3.4e-14, 0.75),
+            new("quantus", Otium.Core.Switching.GpuTiers.Primary, "unmineable-quantus", 4.3e-9, 0.75),
+        ], []);
+        var cards = new[]
+        {
+            new GpuInfo(GpuVendor.Nvidia, 0, "NVIDIA GeForce GTX 1660 SUPER", 6), // no tensor cores: no Pearl
+            new GpuInfo(GpuVendor.Nvidia, 1, "NVIDIA GeForce RTX 4090", 24),
+        };
+        var estimate = await new EarningsEstimator(new GpuPolicyTests.FakePool()).EstimateAsync(
+            "CPU", 8, 50, new Otium.Core.Power.CpuPowerModel(100, 10), cards, 0.15, 2, CancellationToken.None, policy);
+
+        var gpus = estimate.Devices.Where(d => d.Device == Otium.Core.Providers.DeviceKind.Gpu).ToList();
+        Assert.Equal("Quantus", gpus[0].Coin);
+        Assert.Equal(113e6, gpus[0].Hashrate);
+        Assert.Equal("Pearl", gpus[1].Coin); // the better of the two on an RTX 4090
+    }
+
     private static readonly DateTimeOffset Now = new(2026, 10, 15, 12, 30, 0, TimeSpan.Zero);
 
     [Fact]

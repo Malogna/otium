@@ -60,7 +60,9 @@ Iran, China and Egypt).
   while it earns (the screen still turns off), never keeps a laptop on battery awake, and makes the computer warmer
   and its fans louder.
 - **The best coin for your card.** The graphics card tests the coins it can mine, mines whichever pays most for it
-  right now, and moves on if the pool stops crediting one. A coin that fails its test is tried again later.
+  right now, and moves on if the pool stops crediting one. A coin that fails its test is tried again later. Cards with
+  6 GB or more mine Pearl, others Quantus, both paid in your coin; a card neither works on tries the remaining coins
+  and mines the best one that earns more than its electricity.
 - **Internet and disk sharing (optional).** Earn from internet and disk space you're not using, through three
   networks. They're off until you tick them, one tick turns them all on (untick any you don't want), and the app
   explains each one first. None needs administrator permission.

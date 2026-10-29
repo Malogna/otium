@@ -1,3 +1,5 @@
+using Otium.Core.Providers;
+
 namespace Otium.Core.Engine;
 
 /// <summary>
@@ -19,12 +21,14 @@ public static class EngineStateTags
     public const string NeedsSetup = "needs-setup";
     public const string None = "none";
 
+    /// <summary>"error-memory", "error-failed"…: an error whose kind the provider named (<see cref="ProblemKinds"/>).</summary>
+    public static string ErrorOf(string kind) => $"{Error}-{kind}";
+
     /// <summary>Every tag the server accepts; anything else is dropped.</summary>
-    public static readonly IReadOnlySet<string> Known = new HashSet<string>(StringComparer.Ordinal)
-    {
-        Earning, WaitingForIdle, PausedForElectricity, Antivirus, Error, Installing, Starting, SwitchedOff, PausedByUser,
-        NeedsSetup, None,
-    };
+    public static readonly IReadOnlySet<string> Known = new HashSet<string>(
+        new[] { Earning, WaitingForIdle, PausedForElectricity, Antivirus, Error, Installing, Starting, SwitchedOff, PausedByUser, NeedsSetup, None }
+            .Concat(ProblemKinds.All.Select(ErrorOf)),
+        StringComparer.Ordinal);
 
     /// <param name="snapshot">The engine's state; null when the computer has no such device (no usable graphics card).</param>
     /// <param name="enabled">The device's own switch in Settings.</param>
@@ -37,6 +41,8 @@ public static class EngineStateTags
         _ when !earningOn => PausedByUser,
         _ when needsSetup => NeedsSetup,
         { EngineBlocked: true } => Antivirus,
+        // A problem the provider named, whether it stopped the device or it keeps trying (a blocked pool).
+        { State: EngineState.Error or EngineState.Starting, ProblemKind: { } kind } when Known.Contains(ErrorOf(kind)) => ErrorOf(kind),
         { State: EngineState.Earning } => Earning,
         { State: EngineState.WaitingForIdle } => WaitingForIdle,
         { State: EngineState.PausedUnprofitable } => PausedForElectricity,

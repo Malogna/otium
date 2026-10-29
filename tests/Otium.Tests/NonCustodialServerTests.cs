@@ -181,8 +181,10 @@ public sealed class NonCustodialServerTests : IDisposable
         // No feed for Xelis in this test: it's listed but switched off until its data is back.
         Assert.Equal(GpuTiers.Disabled, policy.For("xelishash")!.Tier);
 
-        // Quantus would need a second (Quantus) wallet; everything is paid to the one payout address, so it isn't offered.
-        Assert.Null(policy.For("quantus"));
+        // Quantus is mined on unMineable, paid in the user's coin (not on Kryptex, which would need a Quantus wallet). No
+        // feed for it in this test: listed but switched off until its data is back.
+        Assert.Equal("quantus.unmineable.com", policy.Route(policy.For("quantus")!.Route)!.Host);
+        Assert.Equal(GpuTiers.Disabled, policy.For("quantus")!.Tier);
         Assert.DoesNotContain(policy.Routes, r => r.Kind == GpuRoutes.KryptexAddress);
         Assert.Null(pearl.OnlyGpus); // AMD cards try Pearl too (failover if unMineable rejects them); the fork isn't active
     }

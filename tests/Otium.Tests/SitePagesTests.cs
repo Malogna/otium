@@ -120,8 +120,9 @@ public sealed class SitePagesTests : IDisposable
         // Every card in the list, grouped by series.
         Assert.Contains("""<optgroup label="RTX 50 series"><option value="rtx5090">RTX 5090 · NVIDIA &#183; 32 GB</option>""", html);
         Assert.Contains("""<option value="rtx4090" selected>RTX 4090 · NVIDIA &#183; 24 GB</option>""", html);
-        Assert.DoesNotContain("AMD Radeon", html); // no card list entry without a coin it can mine to the user's wallet
-        Assert.Equal(30, System.Text.RegularExpressions.Regex.Matches(html, "<option value=").Count);
+        // Cards without Pearl are listed with Quantus, paid in the user's coin too.
+        Assert.Contains("""<optgroup label="AMD Radeon"><option value="rx6700xt">""", html);
+        Assert.Equal(32, System.Text.RegularExpressions.Regex.Matches(html, "<option value=").Count);
         Assert.Contains("""<script type="application/json" id="otium-data">{"cards":[{"id":"rtx5090","name":"RTX 5090",""", html);
         Assert.Contains("\"payoutUsdt\":1.5", html);
         Assert.Contains("Estimate from today's coin prices (18 October 2026, 15:00 UTC)", html);
@@ -156,13 +157,16 @@ public sealed class SitePagesTests : IDisposable
     }
 
     [Fact]
-    public async Task Cards_that_cant_mine_pearl_arent_listed_since_quantus_needs_a_second_wallet()
+    public async Task Cards_without_pearl_are_listed_with_quantus_paid_in_the_users_coin()
     {
         var html = (await Get("/")).Html;
         var data = html[html.IndexOf("""id="otium-data">""", StringComparison.Ordinal)..];
-        Assert.DoesNotContain("\"id\":\"rtx2060\"", data); // 6 GB: Pearl needs 8
-        Assert.DoesNotContain("\"id\":\"rx6700xt\"", data);
-        Assert.DoesNotContain("Quantus", data);
+        Assert.Contains("\"id\":\"rtx2060\"", data); // 6 GB: Pearl too
+        // The RX 6700 XT: Quantus only (its coins end at the first "]").
+        var amd = data[data.IndexOf("\"id\":\"rx6700xt\"", StringComparison.Ordinal)..];
+        amd = amd[..amd.IndexOf(']')];
+        Assert.Contains("\"coin\":\"Quantus\"", amd);
+        Assert.DoesNotContain("\"coin\":\"Pearl\"", amd);
     }
 
     [Theory]
@@ -301,7 +305,8 @@ public sealed class SitePagesTests : IDisposable
         Assert.Equal(HttpStatusCode.MovedPermanently, moved.StatusCode);
         Assert.Equal("/mining/rtx-4090", moved.Headers.Location?.OriginalString);
         Assert.Equal(HttpStatusCode.NotFound, (await Get("/mining/rtx-9999")).Status);
-        Assert.Equal(HttpStatusCode.NotFound, (await Get("/mining/rtx-2060")).Status);
+        Assert.Equal(HttpStatusCode.NotFound, (await Get("/mining/rx-6700-xt")).Status);
+        Assert.Equal(HttpStatusCode.OK, (await Get("/mining/rtx-2060")).Status); // 6 GB cards mine Pearl
     }
 
     [Fact]
@@ -313,7 +318,7 @@ public sealed class SitePagesTests : IDisposable
         Assert.Contains("The RTX 5090 leads at", html);
         var rows = System.Text.RegularExpressions.Regex.Matches(html, """<tr><th scope="row"><a href="/mining/([a-z0-9-]+)">""")
             .Select(m => m.Groups[1].Value).ToList();
-        Assert.Equal(30, rows.Count);
+        Assert.Equal(31, rows.Count);
         Assert.Equal("rtx-5090", rows[0]);
         Assert.True(rows.IndexOf("rtx-4090") < rows.IndexOf("rtx-3060"));
         Assert.Contains("""<a href="/mining">Graphics cards</a>""", html); // in the nav, on every page
@@ -481,7 +486,7 @@ public sealed class SitePagesTests : IDisposable
         // tools/render-site-previews.ps1 draws one per mining page; a card added without running it fails here.
         var sitemap = (await Get("/sitemap.xml")).Html;
         var paths = System.Text.RegularExpressions.Regex.Matches(sitemap, "<loc>http://localhost(/mining[^<]*)</loc>").Select(m => m.Groups[1].Value).ToList();
-        Assert.Equal(31, paths.Count);
+        Assert.Equal(32, paths.Count);
         foreach (var path in paths)
         {
             var html = (await Get(path)).Html;
@@ -499,7 +504,7 @@ public sealed class SitePagesTests : IDisposable
         // The pages the pictures are drawn from (development only).
         Assert.Contains("<h1>RTX 4090</h1>", (await Get("/dev/preview/mining/rtx-4090")).Html);
         Assert.Contains("""<h1 class="long">What every graphics card earns</h1>""", (await Get("/dev/preview/mining")).Html);
-        Assert.Equal(HttpStatusCode.NotFound, (await Get("/dev/preview/mining/rtx-2060")).Status);
+        Assert.Equal(HttpStatusCode.NotFound, (await Get("/dev/preview/mining/rx-6700-xt")).Status);
     }
 
     [Fact]
@@ -666,7 +671,8 @@ public sealed class SitePagesTests : IDisposable
         Assert.Contains("<loc>http://localhost/download</loc>", sitemap);
         Assert.Contains("<loc>http://localhost/mining</loc>", sitemap);
         Assert.Contains("<loc>http://localhost/mining/rtx-4070-ti-super</loc>", sitemap);
-        Assert.DoesNotContain("rtx-2060<", sitemap); // 6 GB: can't mine Pearl
+        Assert.Contains("<loc>http://localhost/mining/rtx-2060</loc>", sitemap); // 6 GB cards mine Pearl
+        Assert.DoesNotContain("rx-6700-xt<", sitemap); // no Pearl, so no Pearl page
         Assert.DoesNotContain("/privacy", sitemap); // no legal pages yet
     }
 

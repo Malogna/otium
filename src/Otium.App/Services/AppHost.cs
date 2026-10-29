@@ -569,9 +569,9 @@ public sealed class AppHost : IAsyncDisposable
     public string? OwnPayoutTarget => PayoutTarget.ParseOrNull(Settings.PayoutAddress)?.ToString();
 
     /// <summary>
-    /// Always null: everything Otium earns is paid to the user's one payout address, so the graphics card no longer
-    /// mines Quantus (which Kryptex pays only to a separate Quantus wallet). A Quantus wallet saved by an earlier
-    /// version is ignored. The Quantus code stays in the code base, unused.
+    /// Always null: everything Otium earns is paid to the user's one payout address, so the graphics card mines Quantus
+    /// only on unMineable (paid in the user's coin), not on Kryptex, which pays only a separate Quantus wallet. A Quantus
+    /// wallet saved by an earlier version is ignored. The Kryptex address-login code stays in the code base, unused.
     /// </summary>
     public string? QuantusTarget => null;
 

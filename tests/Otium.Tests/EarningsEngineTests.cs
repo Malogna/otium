@@ -310,6 +310,20 @@ public class EarningsEngineTests
     }
 
     [Fact]
+    public async Task An_untested_coin_runs_to_find_out_whatever_was_measured_before()
+    {
+        // A coin newly on offer after a restart: the last hash rate isn't the new coin's, so the engine mustn't pause
+        // on it (it would never get tested).
+        var h = new Harness();
+        h.Ledger.LastHashrateHps = 100;
+        h.Provider.Offer = new ProfitOffer(0, null, "Testing coins", NeedsTesting: true);
+        h.Engine.Enable();
+        await h.Engine.TickAsync(CancellationToken.None);
+        Assert.Single(h.Provider.Starts);
+        Assert.NotEqual(EngineState.PausedUnprofitable, h.Engine.Snapshot.State);
+    }
+
+    [Fact]
     public async Task Snapshot_carries_provider_detail()
     {
         var h = new Harness();

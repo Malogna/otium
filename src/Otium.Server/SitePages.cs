@@ -232,9 +232,9 @@ internal static partial class SitePages
 
     /// <summary>
     /// Typical tuned speeds and power from WhatToMine's card pages (18 October 2026): Pearl in TH/s and Quantus in MH/s,
-    /// each with its watts; 0 where WhatToMine lists none. Pearl needs 8 GB of graphics memory in SRBMiner, so 6 GB cards
-    /// mine only Quantus. AMD cards can't mine Pearl on unMineable and WhatToMine lists no Quantus speed for them; the
-    /// RX 6700 XT takes the middle of Kryptex's and hashrate.no's figures, which differ by about 2×.
+    /// each with its watts; 0 where WhatToMine lists none. The app offers Pearl to cards with 6 GB or more, and Quantus
+    /// (both on unMineable, paid in the user's coin) to every card. WhatToMine lists no Pearl or Quantus speeds for most
+    /// AMD cards; the RX 6700 XT's Quantus figure takes the middle of Kryptex's and hashrate.no's, which differ by about 2×.
     /// </summary>
     private static readonly (string Id, string Name, string Group, int MemoryGb, double PearlTh, double PearlW, double QuantusMh, double QuantusW)[] Cards =
     [
@@ -272,8 +272,8 @@ internal static partial class SitePages
         ("rx6700xt", "RX 6700 XT", "AMD Radeon", 12, 0, 0, 130, 90),
     ];
 
-    /// <summary>SRBMiner's graphics memory floor for Pearl (GpuAlgorithms in the app).</summary>
-    private const int PearlMinMemoryGb = 8;
+    /// <summary>The card size the app offers Pearl from (GpuAlgorithms in the app).</summary>
+    private const int PearlMinMemoryGb = 6;
 
     /// <summary>What each example card earns per coin today, from the live policy; empty when prices are unavailable.</summary>
     public static IReadOnlyList<CardEarnings> Earnings(GpuPolicy? policy, FeePolicy fees)
@@ -281,6 +281,7 @@ internal static partial class SitePages
         if (policy is null)
             return [];
         var pearl = Usable(policy, "pearlhash");
+        var quantus = Usable(policy, "quantus");
         var otium = 1 - fees.FeePercent / 100;
         var list = new List<CardEarnings>();
         foreach (var c in Cards)
@@ -288,6 +289,8 @@ internal static partial class SitePages
             var coins = new List<CardCoin>();
             if (pearl is { } p && c.PearlTh > 0 && c.MemoryGb >= PearlMinMemoryGb && p.Allows([$"NVIDIA GeForce {c.Name}"]))
                 coins.Add(new("Pearl", c.PearlTh * 1e12 * p.UsdPerHashPerSecondDay * 0.98 * (1 - p.PoolFeePercent / 100) * otium, c.PearlW, "paid in your coin"));
+            if (quantus is { } q && c.QuantusMh > 0 && q.Allows([$"NVIDIA GeForce {c.Name}"]))
+                coins.Add(new("Quantus", c.QuantusMh * 1e6 * q.UsdPerHashPerSecondDay * 0.975 * (1 - q.PoolFeePercent / 100) * otium, c.QuantusW, "paid in your coin"));
             if (coins.Count > 0)
                 list.Add(new(c.Id, c.Name, $"{(c.Id.StartsWith("rx", StringComparison.Ordinal) ? "AMD" : "NVIDIA")} · {c.MemoryGb} GB", coins, c.Group));
         }
