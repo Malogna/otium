@@ -118,7 +118,7 @@ internal static partial class SitePages
             """;
         var root = baseUrl.TrimEnd('/');
         return Layout($"{c.Name} alternative: Otium vs {c.Name} compared | Otium",
-            $"Looking for a {c.Name} alternative? Otium pays your own wallet directly, with no account or ID. How it compares with {c.Name} on payouts, fees and platforms, from {c.Name}'s own pages.",
+            $"A {c.Name} alternative that pays your own wallet, with no account or ID. How Otium compares on payouts, fees and platforms, from {c.Name}'s own pages.",
             body, legalLinks, "/download", baseUrl, $"/compare/{slug}",
             head: JsonLd(Breadcrumbs(root, ("Otium", "/"), ($"Otium vs {c.Name}", $"/compare/{slug}"))));
     }
