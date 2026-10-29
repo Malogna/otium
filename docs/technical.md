@@ -405,7 +405,11 @@ AIOZ's official `aioz-depin-cli`, Apache-2.0, pinned to 1.2.5 for Windows x64 an
 consent screen, storage limit and row. AIOZ's network stores pieces of files on the node and has it deliver them
 (storage and CDN), and credits AIOZ tokens to the node's own key. The app reads `GET /stats` and
 `GET /worker/balance` from the node's local API and, once 5 AIOZ is waiting, runs `reward withdraw` (at most daily) to
-the user's own 0x address on the AIOZ network; Otium takes nothing. That address is the payout address when it's an
+the user's own 0x address on the AIOZ network. Otium's share (the account summary's `SharingFeeAddress` and
+`SharingFeeBps`: the server's `Sharing__FeeRecipient` and the sharing fee) builds up on what the node earns from
+0.1.4 on (`otium-fee.json` in the node's folder; earlier earnings stay fee-free), stays in the node, and on a day
+with no payout to the user is withdrawn to Otium's address in whole AIOZ once 1 AIOZ is owed. Without a fee address
+nothing is kept back. That address is the payout address when it's an
 0x one, else the one given for Mysterium or for AIOZ in Settings; with none, the AIOZ waits in the node's key, so
 turning AIOZ on never asks for an address. It can't be routed to the payout coin like Proxybase's earnings: Relay and
 LI.FI don't support the AIOZ chain, and ChangeNOW and SideShift take only AIOZ's Ethereum and BNB Chain tokens

@@ -301,6 +301,12 @@ public sealed class AccountState
     /// <summary>Today's AIOZ price in US dollars as the server last sent it, for AIOZ sharing earnings; null until then.</summary>
     public double? AiozUsd { get; set; }
 
+    /// <summary>Otium's 0x address for its AIOZ sharing fee, as the server last sent it; null means no fee is kept back.</summary>
+    public string? SharingFeeAddress { get; set; }
+
+    /// <summary>Otium's share of AIOZ sharing in basis points, as the server last sent it.</summary>
+    public int SharingFeeBps { get; set; }
+
     /// <summary>The fee and invite terms the server last announced; null until it has.</summary>
     public Accounts.FeeTerms? Fees { get; set; }
 

@@ -17,7 +17,7 @@ public sealed record AiozEarned(IReadOnlyList<AiozEarnedSample> Samples, double?
 
     public decimal TotalAioz => Samples.Count == 0 ? 0 : Samples[^1].TotalAioz;
 
-    /// <summary>Everything earned so far, in dollars at the last known price (AIOZ pays it all; Otium takes nothing).</summary>
+    /// <summary>Everything earned so far, in dollars at the last known price (the samples are already without Otium's share).</summary>
     public double? UserUsd => AiozUsd is { } price ? (double)TotalAioz * price : null;
 
     /// <summary>Earnings per day at the pace of the last day (from an hour of history on); null before that or without a price.</summary>
@@ -57,7 +57,8 @@ internal sealed record AiozBalance(decimal Waiting, decimal Storage, decimal Del
 /// Sharing storage and upload bandwidth as an AIOZ DePIN node (AIOZ's official command-line node, run headless). AIOZ's
 /// network stores and delivers files (its decentralized storage and CDN) through it and pays AIOZ tokens on the AIOZ
 /// Network chain. The node holds what it earns until it's withdrawn; Otium withdraws it to the user's own 0x address
-/// once there's enough, so nothing passes through Otium, which takes no fee.
+/// once there's enough. Otium's share (<see cref="AiozFee"/>, the sharing fee the server names) stays behind in the
+/// node and goes to Otium's address in withdrawals of its own, so the user's payouts never pass through Otium.
 ///
 /// The node runs as the user (no administrator rights) and listens only on 127.0.0.1, on a port of its own (AIOZ's
 /// default 1317 is often reserved on Windows). Everything it keeps, its key and AIOZ's helper programs included, stays in
@@ -89,6 +90,8 @@ public sealed class AiozBandwidthProvider : IBandwidthProvider
     private readonly AiozAsset? _asset;
     private readonly TimeProvider _time;
     private readonly Func<double?> _aiozUsd;
+    private readonly Func<string?> _feeAddress;
+    private readonly Func<double> _feePercent;
     private readonly SemaphoreSlim _lock = new(1, 1);
 
     private Process? _process;
@@ -101,6 +104,8 @@ public sealed class AiozBandwidthProvider : IBandwidthProvider
     /// <param name="payoutAddress">The user's own 0x address AIOZ is withdrawn to; null until there is one (it then waits in the node).</param>
     /// <param name="storageLimitGb">Most disk space the node may use, in GB (the user's choice).</param>
     /// <param name="aiozUsd">Today's AIOZ price in dollars from the Otium server, or null when it has none.</param>
+    /// <param name="feeAddress">Otium's 0x address for its share, from the Otium server; null means no share is kept.</param>
+    /// <param name="feePercent">Otium's share of what the node earns, in percent.</param>
     public AiozBandwidthProvider(
         HttpClient http,
         string enginesRoot,
@@ -108,7 +113,9 @@ public sealed class AiozBandwidthProvider : IBandwidthProvider
         Func<double> storageLimitGb,
         AiozAsset? asset = null,
         TimeProvider? time = null,
-        Func<double?>? aiozUsd = null)
+        Func<double?>? aiozUsd = null,
+        Func<string?>? feeAddress = null,
+        Func<double>? feePercent = null)
     {
         _asset = asset ?? AiozRelease.ForCurrentPlatform();
         _installer = new EngineInstaller(http, Path.Combine(enginesRoot, $"aioz-{AiozRelease.Version}"),
@@ -119,6 +126,8 @@ public sealed class AiozBandwidthProvider : IBandwidthProvider
         _storageLimitGb = storageLimitGb;
         _time = time ?? TimeProvider.System;
         _aiozUsd = aiozUsd ?? (() => null);
+        _feeAddress = feeAddress ?? (() => null);
+        _feePercent = feePercent ?? (() => 0);
     }
 
     private string HomeDir => Path.Combine(_dataDir, "home");
@@ -129,6 +138,40 @@ public sealed class AiozBandwidthProvider : IBandwidthProvider
     private string EarnedFile => Path.Combine(_dataDir, "otium-earned.json");
 
     private string WithdrawnFile => Path.Combine(_dataDir, "otium-withdrawn.txt");
+
+    private string FeeFile => Path.Combine(_dataDir, "otium-fee.json");
+
+    /// <summary>Otium's share so far, or null before the first reading that starts it.</summary>
+    internal AiozFee? Fee
+    {
+        get
+        {
+            try
+            {
+                return File.Exists(FeeFile) ? JsonSerializer.Deserialize<AiozFee>(File.ReadAllText(FeeFile)) : null;
+            }
+            catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException)
+            {
+                return null;
+            }
+        }
+    }
+
+    private void SaveFee(AiozFee fee)
+    {
+        try
+        {
+            Directory.CreateDirectory(_dataDir);
+            File.WriteAllText(FeeFile, JsonSerializer.Serialize(fee));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // Counted again from the last saved reading next time.
+        }
+    }
+
+    /// <summary>Otium's share in percent: none without an address to send it to.</summary>
+    private double FeePercent => _feeAddress() is null ? 0 : _feePercent();
 
     public AiozEarned Earned
     {
@@ -288,18 +331,39 @@ public sealed class AiozBandwidthProvider : IBandwidthProvider
 
         var stats = ParseStats(statsJson);
         var balance = ParseBalance(balanceJson);
-        var earned = Earned.With(_time.GetUtcNow(), balance.Earned, _aiozUsd());
+        var percent = FeePercent;
+        var fee = (Fee ?? AiozFee.StartAt(balance.Earned)).Accrue(balance.Earned, percent);
+        SaveFee(fee);
+        // The user's own earnings: the node's, less Otium's share.
+        var earned = Earned.With(_time.GetUtcNow(), balance.Earned - fee.Kept, _aiozUsd());
         SaveEarned(earned);
-        await WithdrawIfDueAsync(balance, ct);
-        return new BandwidthStatus(BandwidthProviderState.Online, 0, null, EarningsText(balance, _payoutAddress() is not null, _withdrawProblem),
+        await WithdrawIfDueAsync(balance, fee, ct);
+        return new BandwidthStatus(BandwidthProviderState.Online, 0, null,
+            EarningsText(balance, fee, percent, _payoutAddress() is not null, _withdrawProblem),
             earned.UserUsd, earned.UserUsdPerDay(_time.GetUtcNow()), ActivityText(stats));
     }
 
-    /// <summary>Withdraws everything waiting (whole AIOZ) to the user's address, once there's enough and at most once a day.</summary>
-    private async Task WithdrawIfDueAsync(AiozBalance balance, CancellationToken ct)
+    /// <summary>
+    /// What to withdraw next, if anything: the user's AIOZ (whole AIOZ, leaving Otium's share in the node) once there's
+    /// enough, otherwise Otium's share once a whole AIOZ of it has built up.
+    /// </summary>
+    internal static AiozWithdrawal? NextWithdrawal(decimal waiting, AiozFee fee, string? userAddress, string? feeAddress)
     {
-        var amount = decimal.Floor(balance.Waiting);
-        if (amount < WithdrawAtAioz || _payoutAddress() is not { } address || _process is null || LastWithdrawal() is { } last && _time.GetUtcNow() - last < WithdrawEvery)
+        var users = decimal.Floor(waiting - fee.Owed);
+        if (userAddress is not null && users >= WithdrawAtAioz)
+            return new AiozWithdrawal(userAddress, users, ToOtium: false);
+        var otiums = decimal.Floor(Math.Min(fee.Owed, waiting));
+        if (feeAddress is not null && otiums >= AiozFee.SendAtAioz)
+            return new AiozWithdrawal(feeAddress, otiums, ToOtium: true);
+        return null;
+    }
+
+    /// <summary>Makes the next withdrawal (<see cref="NextWithdrawal"/>), at most once a day.</summary>
+    private async Task WithdrawIfDueAsync(AiozBalance balance, AiozFee fee, CancellationToken ct)
+    {
+        if (_process is null || LastWithdrawal() is { } last && _time.GetUtcNow() - last < WithdrawEvery)
+            return;
+        if (NextWithdrawal(balance.Waiting, fee, _payoutAddress(), _feeAddress()) is not { } withdrawal)
             return;
         var binary = _installer.FindBinary();
         if (binary is null)
@@ -307,7 +371,7 @@ public sealed class AiozBandwidthProvider : IBandwidthProvider
         RecordWithdrawal(); // also after a failure: tried again tomorrow, not every few seconds
 
         var start = NodeProcess(binary);
-        foreach (var arg in WithdrawArguments(HomeDir, KeyFile, _port, address, amount))
+        foreach (var arg in WithdrawArguments(HomeDir, KeyFile, _port, withdrawal.Address, withdrawal.Amount))
             start.ArgumentList.Add(arg);
         using var process = Process.Start(start);
         if (process is null)
@@ -317,7 +381,17 @@ public sealed class AiozBandwidthProvider : IBandwidthProvider
         var errors = process.StandardError.ReadToEndAsync(ct);
         await process.WaitForExitAsync(ct);
         await Task.WhenAll(output, errors);
-        _withdrawProblem = process.ExitCode == 0 ? null : "AIOZ didn't accept the last withdrawal; Otium tries again tomorrow.";
+        var ok = process.ExitCode == 0;
+        if (withdrawal.ToOtium)
+        {
+            // Only what really left the node stops being owed; a failure is tried again another day, without a message.
+            if (ok)
+                SaveFee(fee.Sent(withdrawal.Amount));
+        }
+        else
+        {
+            _withdrawProblem = ok ? null : "AIOZ didn't accept the last withdrawal; Otium tries again tomorrow.";
+        }
     }
 
     internal static IReadOnlyList<string> WithdrawArguments(string homeDir, string keyFile, int port, string address, decimal amount) =>
@@ -455,14 +529,18 @@ public sealed class AiozBandwidthProvider : IBandwidthProvider
         return total;
     }
 
+    /// <summary>The user's side of the node's numbers: what they earned and what's waiting for them, both without Otium's share.</summary>
+    /// <param name="feePercent">Otium's share in percent (0 without a fee address).</param>
     /// <param name="hasAddress">There's an 0x address to withdraw to; without one the AIOZ waits on this computer.</param>
-    internal static string EarningsText(AiozBalance balance, bool hasAddress, string? withdrawProblem)
+    internal static string EarningsText(AiozBalance balance, AiozFee fee, double feePercent, bool hasAddress, string? withdrawProblem)
     {
-        var earned = $"{balance.Earned.ToString("0.####", CultureInfo.InvariantCulture)} AIOZ earned in total; ";
-        var waiting = balance.Waiting.ToString("0.####", CultureInfo.InvariantCulture);
+        var afterFee = feePercent > 0 ? $" after Otium's {feePercent.ToString("0.##", CultureInfo.InvariantCulture)}%" : "";
+        var earned = $"{Math.Max(0, balance.Earned - fee.Kept).ToString("0.####", CultureInfo.InvariantCulture)} AIOZ earned in total{afterFee}; ";
+        var yours = Math.Max(0, balance.Waiting - fee.Owed);
+        var waiting = yours.ToString("0.####", CultureInfo.InvariantCulture);
         var text = hasAddress
             ? earned + $"{waiting} AIOZ waiting, sent to your 0x address on the AIOZ network once it reaches {WithdrawAtAioz.ToString(CultureInfo.InvariantCulture)} AIOZ."
-            : balance.Waiting >= WithdrawAtAioz
+            : yours >= WithdrawAtAioz
                 ? earned + $"{waiting} AIOZ waiting on this computer. Add an 0x address in Advanced settings to receive it."
                 : earned + $"{waiting} AIOZ waiting on this computer, kept safe until there's enough to send.";
         return withdrawProblem is null ? text : $"{text} {withdrawProblem}";

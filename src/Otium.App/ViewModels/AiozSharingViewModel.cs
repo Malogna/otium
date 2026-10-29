@@ -10,7 +10,7 @@ namespace Otium.App.ViewModels;
 
 /// <summary>
 /// Opting in to (and out of) sharing storage and upload bandwidth through AIOZ's DePIN node, next to Proxybase and
-/// Mysterium. AIOZ pays its AIOZ token, which Otium withdraws to the user's own 0x address; Otium takes nothing. Used by
+/// Mysterium. AIOZ pays its AIOZ token, which Otium withdraws to the user's own 0x address, less Otium's share. Used by
 /// the sharing setup and Advanced settings, so the explanation a user agrees to is the same everywhere. The node never
 /// runs without that agreement.
 /// </summary>
@@ -85,7 +85,9 @@ public partial class AiozSharingViewModel : ViewModelBase
         $"AIOZ pays in its AIOZ token. The node collects it, and once {AiozBandwidthProvider.WithdrawAtAioz:0} AIOZ has " +
         "built up Otium sends it to your payout wallet on the AIOZ network (at most once a day) when that's an 0x " +
         "address. Otherwise it waits on this computer until you add one in Advanced settings: no exchange service " +
-        "converts AIOZ on its own network into other coins yet. Otium takes nothing. Add the AIOZ network to your " +
+        "converts AIOZ on its own network into other coins yet. Otium keeps " +
+        $"{_host.AiozFeePercent.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}% of what the node " +
+        "earns, which stays in the node and goes to Otium's own address separately. Add the AIOZ network to your " +
         "wallet to see it. AIOZ has many more computers than paying files, so earnings may be small or nothing for a " +
         "while. AIOZ publishes no separate terms for its node; it's open source (Apache 2.0).";
 

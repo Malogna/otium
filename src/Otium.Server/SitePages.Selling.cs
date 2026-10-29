@@ -60,7 +60,7 @@ internal static partial class SitePages
                       <dl class="card-facts">
                         <div><dt>Proxybase</dt><dd>Bandwidth<small>paid per GB, converted to your coin, Otium's {fee}</small></dd></div>
                         <div><dt>Mysterium</dt><dd>Bandwidth<small>paid in MYST to your address; Mysterium keeps 20%, Otium nothing</small></dd></div>
-                        <div><dt>AIOZ</dt><dd>Spare disk space<small>stores and delivers files, paid in AIOZ, no Otium fee; demand is thin so far</small></dd></div>
+                        <div><dt>AIOZ</dt><dd>Spare disk space<small>stores and delivers files, paid in AIOZ, Otium's {fee}; demand is thin so far</small></dd></div>
                       </dl>
                       <p>Proxybase's earnings are converted to the coin you choose (USDT, BTC, LTC, BNB, SOL, TRX, ETH or XMR) and sent to your own address from $1, once network fees are a small part of the payout. Mysterium pays from 5 MYST, AIOZ from 5 AIOZ (Windows and Linux only). Untick any network you don't want.</p>
                     </div>
