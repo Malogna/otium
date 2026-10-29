@@ -506,6 +506,24 @@ app.MapGet("/pearl", async (HttpRequest request, IOptions<FeeOptions> fees, IOpt
     return Results.Content(SitePages.Pearl(SitePages.Earnings(gpu, policy), SitePages.AvailableLegalPages(site.Value.PagesDirectory),
         PublicBase(request, referral)), "text/html; charset=utf-8");
 }).RequireRateLimiting("per-ip");
+// For what people search before they know Otium: selling unused bandwidth and idle processing power.
+app.MapGet("/sell-bandwidth", (HttpRequest request, IOptions<FeeOptions> fees, IOptions<SiteOptions> site, IOptions<ReferralOptions> referral,
+    RealEarningsService realEarnings) =>
+{
+    var policy = Otium.Core.Fees.FeePolicy.FromTerms(fees.Value.ToTerms());
+    // Cloudflare's visitor country, for that country's rate (as on the front page).
+    var sharing = SitePages.SharingFor(request.Headers["CF-IPCountry"].ToString(), policy, realEarnings.Get());
+    return Results.Content(SitePages.SellBandwidth(policy, sharing, SitePages.AvailableLegalPages(site.Value.PagesDirectory),
+        PublicBase(request, referral)), "text/html; charset=utf-8");
+}).RequireRateLimiting("per-ip");
+app.MapGet("/sell-computing-power", async (HttpRequest request, IOptions<FeeOptions> fees, IOptions<SiteOptions> site,
+    IOptions<ReferralOptions> referral, GpuPolicyService gpuPolicy, ILogger<Program> logger, CancellationToken ct) =>
+{
+    var policy = Otium.Core.Fees.FeePolicy.FromTerms(fees.Value.ToTerms());
+    var gpu = await SiteGpuPolicy(gpuPolicy, logger, ct);
+    return Results.Content(SitePages.SellComputingPower(policy, SitePages.Earnings(gpu, policy),
+        SitePages.AvailableLegalPages(site.Value.PagesDirectory), PublicBase(request, referral)), "text/html; charset=utf-8");
+}).RequireRateLimiting("per-ip");
 app.MapGet("/antivirus", (HttpRequest request, IOptions<SiteOptions> site, IOptions<ReferralOptions> referral) =>
     Results.Content(SitePages.Antivirus(SitePages.AvailableLegalPages(site.Value.PagesDirectory), PublicBase(request, referral)),
         "text/html; charset=utf-8")).RequireRateLimiting("per-ip");

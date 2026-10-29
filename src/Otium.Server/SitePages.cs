@@ -154,7 +154,7 @@ internal static partial class SitePages
                     <div class="reveal">
                       <span class="label">Internet sharing</span>
                       <h2 id="sharing-title" class="mt-18">Get paid for internet bandwidth you aren't using.</h2>
-                      <p class="muted mt-20">Optional, and off until you tick it. Proxybase's customers, mostly AI agents and businesses that collect public web pages, use some of the internet bandwidth you aren't using. It's paid to your wallet in your coin, like mining.</p>
+                      <p class="muted mt-20">Optional, and off until you tick it. Proxybase's customers, mostly AI agents and businesses that collect public web pages, use some of the internet bandwidth you aren't using. It's paid to your wallet in your coin, like mining. <a href="/sell-bandwidth">How selling bandwidth works</a></p>
                       <p class="fine mt-14">The same tick adds two more networks, with no fee from Otium: Mysterium carries traffic for its business customers and pays its MYST token straight to your own address, and AIOZ uses some spare disk space to store and deliver files, paying its AIOZ token. Untick any you don't want.</p>
                     </div>
                     <div class="panel reveal">
@@ -363,7 +363,7 @@ internal static partial class SitePages
           <footer>
             <div class="wrap">
               <span>Otium · <i>otium</i> is Latin for leisure</span>
-              <nav aria-label="Site">{{string.Concat(legalLinks.Select(p => $"""<a href="/{p}">{Capitalize(p)}</a>"""))}}<a href="{{HelpUrl}}">Help</a><a href="/pearl">What is Pearl?</a><a href="/antivirus">Antivirus help</a><a href="/compare/nicehash">vs NiceHash</a><a href="/compare/honeygain">vs Honeygain</a><a href="{{Core.AppIdentity.DiscordUrl}}">Discord</a>{{ContactLink}}<a href="https://github.com/Malogna/otium">Source code</a><a href="https://github.com/Malogna/otium/releases">Releases</a></nav>
+              <nav aria-label="Site">{{string.Concat(legalLinks.Select(p => $"""<a href="/{p}">{Capitalize(p)}</a>"""))}}<a href="{{HelpUrl}}">Help</a><a href="/sell-computing-power">Sell processing power</a><a href="/sell-bandwidth">Sell bandwidth</a><a href="/pearl">What is Pearl?</a><a href="/antivirus">Antivirus help</a><a href="/compare/nicehash">vs NiceHash</a><a href="/compare/honeygain">vs Honeygain</a><a href="{{Core.AppIdentity.DiscordUrl}}">Discord</a>{{ContactLink}}<a href="https://github.com/Malogna/otium">Source code</a><a href="https://github.com/Malogna/otium/releases">Releases</a></nav>
             </div>
           </footer>
           <script src="{{SiteAssets.Url("site.js")}}" defer></script>
@@ -392,11 +392,11 @@ internal static partial class SitePages
         """.ReplaceLineEndings("\n");
 
     /// <summary>The pages that show today's coin prices, so they change every day: the front page and the mining pages.</summary>
-    public static IEnumerable<string> PricedPaths => MiningPaths.Prepend("/");
+    public static IEnumerable<string> PricedPaths => MiningPaths.Prepend("/").Append("/sell-computing-power");
 
     /// <summary>The pages worth finding: the priced pages, the download, Pearl, help and comparison pages, and whichever legal pages exist.</summary>
     public static IEnumerable<string> SitemapPaths(IEnumerable<string> legalLinks) =>
-        PricedPaths.Concat(["/download", "/pearl", "/antivirus"]).Concat(ComparisonSlugs.Select(s => "/compare/" + s))
+        PricedPaths.Concat(["/sell-bandwidth", "/download", "/pearl", "/antivirus"]).Concat(ComparisonSlugs.Select(s => "/compare/" + s))
             .Concat(legalLinks.Select(p => "/" + p));
 
     /// <param name="pricesAt">When today's coin prices were read: the priced pages' last change, or null to leave it out.</param>
@@ -516,7 +516,7 @@ internal static partial class SitePages
                   <div class="wrap">
                     <div class="hero-copy">
                       <h1 id="hero-title">Your computer works the night shift. <span class="shift">You get paid.</span></h1>
-                      <p class="lede">Otium earns with your PC while you're away, and pays your own wallet directly.</p>
+                      <p class="lede">Otium sells your PC's idle processing power, and unused bandwidth if you choose, while you're away. It pays your own wallet directly.</p>
                       <div class="actions">
                         <a class="button" href="{download}"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M11 3h2v10.2l3.6-3.6 1.4 1.4-6 6-6-6 1.4-1.4 3.6 3.6z"/><path fill="currentColor" d="M5 19h14v2H5z"/></svg><span data-download-label>Download Otium</span></a>
                         <a class="button ghost" href="#night-shift">How it works</a>
@@ -697,8 +697,8 @@ internal static partial class SitePages
                   </div>
                 </section>
             """;
-        const string description = "Otium earns crypto with your idle PC and, if you choose, unused internet bandwidth while you're away, paid to your own wallet. Windows, macOS, Linux.";
-        return Layout("Otium: get paid for your PC's spare power and bandwidth", description, body, legalLinks, downloadUrl, baseUrl, "/",
+        const string description = "Otium sells your PC's idle processing power and, if you choose, unused internet bandwidth while you're away, paid to your own wallet. Windows, macOS, Linux.";
+        return Layout("Otium: sell your PC's idle processing power and bandwidth", description, body, legalLinks, downloadUrl, baseUrl, "/",
             head: StructuredData(baseUrl, description));
     }
 
@@ -834,7 +834,8 @@ internal static partial class SitePages
                 </section>
             """;
         var head = mine is null ? null : $"""<meta http-equiv="refresh" content="1;url=/download/{E(mine.Os)}">""";
-        return Layout($"Download Otium {release.Version}", $"Download Otium {release.Version} for Windows, macOS and Linux.", body, legalLinks,
+        return Layout($"Download Otium {release.Version} for Windows, macOS and Linux",
+            $"Download Otium {release.Version}, the app that earns with your idle PC and unused bandwidth. Installers for Windows, macOS and Linux, with checksums.", body, legalLinks,
             "/download", baseUrl, "/download", head: head);
     }
 

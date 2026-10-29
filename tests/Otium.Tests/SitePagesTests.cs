@@ -70,8 +70,8 @@ public sealed class SitePagesTests : IDisposable
         Assert.Equal(HttpStatusCode.OK, status);
         Assert.Contains("Your computer works the night shift.", html);
         // What search results show: both ways it earns, for people searching for either.
-        Assert.Contains("<title>Otium: get paid for your PC&#39;s spare power and bandwidth</title>", html);
-        Assert.Contains("""<meta name="description" content="Otium earns crypto with your idle PC and, if you choose, unused internet bandwidth""", html);
+        Assert.Contains("<title>Otium: sell your PC&#39;s idle processing power and bandwidth</title>", html);
+        Assert.Contains("""<meta name="description" content="Otium sells your PC&#39;s idle processing power and, if you choose, unused internet bandwidth""", html);
         Assert.Contains("""<a class="button" href="/download">""", html); // straight to the installer
         // The cost list comes from the same breakdown the app shows, with the server's 3% fee.
         Assert.Contains("<dt>Otium</dt><dd>3% of mining time, about 43 minutes per day of mining", html);
@@ -500,6 +500,33 @@ public sealed class SitePagesTests : IDisposable
         Assert.Contains("<h1>RTX 4090</h1>", (await Get("/dev/preview/mining/rtx-4090")).Html);
         Assert.Contains("""<h1 class="long">What every graphics card earns</h1>""", (await Get("/dev/preview/mining")).Html);
         Assert.Equal(HttpStatusCode.NotFound, (await Get("/dev/preview/mining/rtx-2060")).Status);
+    }
+
+    [Fact]
+    public async Task The_selling_pages_answer_what_people_search_for()
+    {
+        var (status, html) = await Get("/sell-bandwidth");
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.Contains("<h1 class=\"mt-14\">Sell your unused internet bandwidth, paid to your own wallet</h1>", html);
+        Assert.Contains("""<link rel="canonical" href="http://localhost/sell-bandwidth">""", html);
+        // Without a visitor country: Proxybase's worldwide rate, at 1 GB a day, after the server's 3% fee ($43.65 a month).
+        Assert.Contains("At 1 GB a day, that&#39;s about <strong>$44 a month</strong> after Otium&#39;s 3%", html.Replace("'", "&#39;"));
+        Assert.Contains("Some providers' terms forbid reselling your connection.".Replace("'", "&#39;"), html.Replace("'", "&#39;"));
+        Assert.Contains("\"@type\":\"FAQPage\"", html);
+
+        (status, html) = await Get("/sell-computing-power");
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.Contains("<h1 class=\"mt-14\">Sell your PC's idle processing power</h1>", html);
+        Assert.Contains("""<tr><th scope="row"><a href="/mining/rtx-4090">RTX 4090</a></th><td>$9.94</td><td>$298</td><td>$1.04/kWh</td></tr>""", html);
+        Assert.Contains("""<a href="/sell-bandwidth">sell your unused bandwidth</a>""", html);
+
+        // Found from every page's footer, the front page's sharing section and the sitemap (the compute page dated by today's prices).
+        var home = (await Get("/")).Html;
+        Assert.Contains("""<a href="/sell-computing-power">Sell processing power</a><a href="/sell-bandwidth">Sell bandwidth</a>""", home);
+        Assert.Contains("""<a href="/sell-bandwidth">How selling bandwidth works</a>""", home);
+        var sitemap = (await Get("/sitemap.xml")).Html;
+        Assert.Contains("<url><loc>http://localhost/sell-computing-power</loc><lastmod>2026-10-18T15:00:00Z</lastmod></url>", sitemap);
+        Assert.Contains("<url><loc>http://localhost/sell-bandwidth</loc></url>", sitemap);
     }
 
     [Fact]
