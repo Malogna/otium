@@ -39,6 +39,7 @@ public partial class SettingsViewModel : ViewModelBase
         KeepAwakeWhileEarning = s.KeepAwakeWhileEarning;
         ShareEarningsStats = s.ShareEarningsStats;
         GpuEfficiencyMode = s.GpuEfficiencyMode;
+        GpuQuiet = s.GpuQuiet;
         EarnWhileBrowsing = s.EarnWhileBrowsing;
         NotificationsEnabled = s.NotificationsEnabled;
         KeepMinerReadyWhenBack = s.KeepMinerReadyWhenBack;
@@ -417,6 +418,17 @@ public partial class SettingsViewModel : ViewModelBase
         if (_loading)
             return;
         _host.Settings.EarnWhileBrowsing = value;
+        _host.SaveSettings();
+    }
+
+    /// <summary>Quiet graphics card: the miner eases off while the card's fan or temperature runs high.</summary>
+    [ObservableProperty] public partial bool GpuQuiet { get; set; }
+
+    partial void OnGpuQuietChanged(bool value)
+    {
+        if (_loading || value == _host.Settings.GpuQuiet)
+            return;
+        _host.Settings.GpuQuiet = value;
         _host.SaveSettings();
     }
 

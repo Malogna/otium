@@ -96,6 +96,14 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
     private readonly Func<GpuInfo, double?> _freeMemoryGb;
     private readonly Func<string, int, CancellationToken, Task<string?>> _poolBlocked;
     private readonly List<(double Hashrate, double? Watts)> _samples = [];
+    private readonly Func<bool> _quiet;
+    private readonly Func<GpuInfo, GpuStats?> _stats;
+
+    /// <summary>Hash rate and measured watts while mining normally, for the intensity tuner (IntensityTuner).</summary>
+    private readonly List<(DateTimeOffset At, double Hashrate, double? Watts)> _tuneSamples = [];
+
+    /// <summary>The intensity each algorithm's miner picked by itself, when it said (it may differ per card set).</summary>
+    private readonly Dictionary<string, int> _minerPicks = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, SetAside> _setAside = new(StringComparer.OrdinalIgnoreCase);
 
     private IMinerProcess? _process;
@@ -116,10 +124,28 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
     private string? _lastProblem;
     private string? _lastProblemKind;
 
+    /// <summary>The intensity the running miner was given; null for its own pick.</summary>
+    private int? _intensity;
+
+    /// <summary>The running intensity is being tried out (IntensityTuner), not the tuned best.</summary>
+    private bool _trial;
+    private DateTimeOffset _lastTrialAt = DateTimeOffset.MinValue;
+
+    /// <summary>The cards the running miner uses.</summary>
+    private IReadOnlyList<GpuInfo> _cards = [];
+
+    /// <summary>Quiet mode's highest intensity while the cards run hot or loud; null when not easing off.</summary>
+    private int? _quietCap;
+    private string? _quietNote;
+    private DateTimeOffset? _hotSince;
+    private DateTimeOffset? _coolSince;
+
     /// <summary>An algorithm that failed and isn't tried again until <paramref name="Until"/>.</summary>
     private sealed record SetAside(string Reason, DateTimeOffset Until, int Failures);
 
     /// <param name="freeMemoryGb">Free graphics memory of a GPU right now, or null if unknown (NVML reads it for NVIDIA cards).</param>
+    /// <param name="quiet">Quiet mode: ease the miner off while a card's fan or temperature runs high.</param>
+    /// <param name="stats">A card's temperature, fan and power right now (NVML), or null if unknown.</param>
     public SrbMinerGpuProvider(
         HttpClient http,
         IMoneroPoolApi pool,
@@ -141,8 +167,12 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         bool unitedStates = false,
         Func<string, int, CancellationToken, Task<string?>>? poolBlocked = null,
         Func<bool>? isUnitedStates = null,
-        Func<string, IReadOnlyDictionary<string, int>?>? listDevices = null)
+        Func<string, IReadOnlyDictionary<string, int>?>? listDevices = null,
+        Func<bool>? quiet = null,
+        Func<GpuInfo, GpuStats?>? stats = null)
     {
+        _quiet = quiet ?? (() => false);
+        _stats = stats ?? (_ => null);
         _listDevices = listDevices ?? ListDevices;
         _listDevicesGiven = listDevices is not null;
         _poolBlocked = poolBlocked ?? ((_, _, _) => Task.FromResult<string?>(null));
@@ -326,6 +356,9 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
             return await FailOverAsync(reason, ct);
         }
 
+        if (await TuneAsync(hashrate, inDevFeeRound, now, ct) is { } tuning)
+            return tuning;
+
         if (now - _lastEvaluation >= ReevaluateEvery)
         {
             _lastEvaluation = now;
@@ -358,6 +391,10 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         }
 
         var detail = _switchNote is null ? _current.PoolName : $"{_current.PoolName} ({_switchNote})";
+        if (_quietCap is not null && _quietNote is not null)
+            detail += $" · quiet: {_quietNote}";
+        else if (_trial)
+            detail += $" · trying intensity {_intensity?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "auto"}";
         var waiting = inDevFeeRound
             ? $"Starting {_current.PoolName} (the miner's own short fee round runs first)…"
             : $"Starting {_current.PoolName} (preparing the GPU can take a minute)…";
@@ -368,6 +405,181 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
             detail,
             Problem: hashrate > 0 ? null : _notice);
     }
+
+    // ---------- Intensity tuning and quiet mode (no administrator rights needed) ----------
+
+    /// <summary>Quiet mode eases off once a card's fan is at least this fast (percent)…</summary>
+    public const double HotFanPercent = 65;
+
+    /// <summary>…or it's at least this warm (°C), for <see cref="HotFor"/>.</summary>
+    public const double HotTemperatureC = 78;
+
+    /// <summary>It steps back up once every card is at most this loud and warm for <see cref="CoolFor"/>.</summary>
+    public const double CoolFanPercent = 50;
+
+    public const double CoolTemperatureC = 70;
+
+    public static readonly TimeSpan HotFor = TimeSpan.FromMinutes(2);
+
+    public static readonly TimeSpan CoolFor = TimeSpan.FromMinutes(15);
+
+    /// <summary>Quiet mode never goes below this intensity, and steps by <see cref="QuietStep"/>.</summary>
+    public const int QuietFloor = 10;
+
+    public const int QuietStep = 2;
+
+    /// <summary>The intensity used when the miner didn't say what it picked by itself.</summary>
+    private const int UnknownPick = 20;
+
+    /// <summary>The intensity the miner picked by itself for this algorithm, from this run or an earlier one.</summary>
+    private int? MinerPick(GpuAlgorithm algorithm) =>
+        _minerPicks.TryGetValue(algorithm.PoolName, out var pick) ? pick
+        : _store.Tuning(algorithm.PoolName).FirstOrDefault(t => t.Intensity is null)?.MinerPick;
+
+    /// <summary>The best measured intensity for this algorithm (IntensityTuner), within quiet mode's cap.</summary>
+    private async Task<int?> TunedIntensityAsync(GpuAlgorithm algorithm, CancellationToken ct)
+    {
+        var trials = _store.Tuning(algorithm.PoolName);
+        var best = trials.Count == 0 ? null : IntensityTuner.Best(trials, await NetUsdPerDayAsync(algorithm, ct));
+        if (_quietCap is not { } cap)
+            return best;
+        return Math.Min(best ?? MinerPick(algorithm) ?? UnknownPick, cap);
+    }
+
+    /// <summary>What a hash rate and wattage earn the user a day on this algorithm after fees and electricity.</summary>
+    private async Task<Func<double, double?, double>> NetUsdPerDayAsync(GpuAlgorithm algorithm, CancellationToken ct)
+    {
+        AlgorithmQuote? quote = null;
+        try
+        {
+            quote = (await QuotesAsync(ct)).FirstOrDefault(q => q.Algorithm == algorithm).Quote;
+        }
+        catch (HttpRequestException)
+        {
+            // No prices right now: compare by speed below.
+        }
+        var price = _pricePerKwh();
+        return (hashrate, watts) => quote is null
+            ? hashrate
+            : hashrate * quote.RevenuePerHashPerSecondDay * (1 - quote.DevFeePercent / 100) * (1 - (quote.PoolFeePercent ?? _switcher.PoolFeePercent) / 100)
+              - Electricity.CostPerDay(watts ?? 0, price);
+    }
+
+    /// <summary>
+    /// While mining normally for the user: quiet mode first, then measuring the running intensity and, now and then,
+    /// trying another (IntensityTuner). Returns a status when it relaunched the miner.
+    /// </summary>
+    private async Task<ProviderStatus?> TuneAsync(double hashrate, bool inDevFeeRound, DateTimeOffset now, CancellationToken ct)
+    {
+        if (_benchmarking || _current is not { } algorithm || _process is null)
+            return null;
+        if (_intensity is null && _process.AutoIntensity is { } pick)
+            _minerPicks[algorithm.PoolName] = pick;
+
+        if (await QuietAsync(algorithm, now, ct) is { } quiet)
+            return quiet;
+        // Settings are measured and tried only on the user's own mining, not in fee slices.
+        if (_options is not { Target.Role: PayoutRole.User })
+            return null;
+
+        // Not measured while quiet mode holds it back: those numbers say how quiet it was, not what the setting can do.
+        if (hashrate > 0 && !inDevFeeRound && _quietCap is null && now - _launchedAt >= IntensityTuner.Warmup)
+        {
+            var power = _meter.Read(100);
+            _tuneSamples.Add((now, hashrate, power.IsMeasured ? power.ExtraWatts : null));
+        }
+
+        // Ten minutes of steady mining measure the running intensity (once, or at the end of a trial).
+        var measured = _store.Tuning(algorithm.PoolName).Any(t => t.Intensity == _intensity && !t.Failed);
+        if (_tuneSamples.Count > 0 && now - _tuneSamples[0].At >= IntensityTuner.TrialLength && (_trial || !measured))
+        {
+            var watts = _tuneSamples.All(s => s.Watts is not null) ? _tuneSamples.Average(s => s.Watts!.Value) : (double?)null;
+            _store.RecordTrial(new IntensityTrial(algorithm.PoolName, _intensity, _tuneSamples.Average(s => s.Hashrate), watts, now,
+                MinerPick: _intensity is null ? MinerPick(algorithm) : null));
+            _tuneSamples.Clear();
+            if (_trial)
+            {
+                _trial = false;
+                _lastTrialAt = now;
+                var tuned = await TunedIntensityAsync(algorithm, ct);
+                if (tuned != _intensity)
+                {
+                    await LaunchAsync(algorithm, ct);
+                    return new ProviderStatus(ProviderState.Starting, 0, $"Tuning done: {algorithm.PoolName} at {IntensityText(tuned)}…", algorithm.PoolName);
+                }
+            }
+        }
+
+        // Now and then, after a steady stretch, try another setting (not while quiet mode is easing off).
+        if (!_trial && _quietCap is null && now - _launchedAt >= IntensityTuner.SteadyBeforeTrial && now - _lastTrialAt >= IntensityTuner.BetweenTrials)
+        {
+            var next = IntensityTuner.NextTrial(IntensityTuner.Candidates(algorithm.PoolName, MinerPick(algorithm)), _store.Tuning(algorithm.PoolName), out var any);
+            if (any && next != _intensity)
+            {
+                _lastTrialAt = now;
+                await LaunchAsync(algorithm, ct, next, trial: true);
+                return new ProviderStatus(ProviderState.Starting, 0, $"Tuning the graphics card: trying {algorithm.PoolName} at {IntensityText(next)}…", algorithm.PoolName);
+            }
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Quiet mode: when a mining card's fan or temperature stays high, lower the intensity a step (to <see
+    /// cref="QuietFloor"/> at most); when they've been low for a while, step back up, never past the tuned setting.
+    /// </summary>
+    private async Task<ProviderStatus?> QuietAsync(GpuAlgorithm algorithm, DateTimeOffset now, CancellationToken ct)
+    {
+        if (!_quiet())
+        {
+            if (_quietCap is null)
+                return null;
+            _quietCap = null;
+            await LaunchAsync(algorithm, ct);
+            return new ProviderStatus(ProviderState.Starting, 0, "Quiet mode off: back to full speed…", algorithm.PoolName);
+        }
+
+        // Judged only once the miner has settled after a launch (a relaunch briefly changes the load).
+        var readings = _cards.Select(_stats).OfType<GpuStats>().Where(s => s.FanPercent is not null || s.TemperatureC is not null).ToList();
+        if (readings.Count == 0 || now - _launchedAt < IntensityTuner.Warmup)
+            return null;
+        var hot = readings.FirstOrDefault(s => s.FanPercent >= HotFanPercent || s.TemperatureC >= HotTemperatureC);
+        var cool = readings.All(s => (s.FanPercent ?? 0) <= CoolFanPercent && (s.TemperatureC ?? 0) <= CoolTemperatureC);
+
+        if (hot is not null)
+        {
+            _coolSince = null;
+            _hotSince ??= now;
+            var running = _intensity ?? MinerPick(algorithm) ?? UnknownPick;
+            if (now - _hotSince < HotFor || running - QuietStep < QuietFloor)
+                return null;
+            _quietCap = running - QuietStep;
+            _quietNote = hot.FanPercent >= HotFanPercent
+                ? FormattableString.Invariant($"eased off (fan {hot.FanPercent:0}%)")
+                : FormattableString.Invariant($"eased off ({hot.TemperatureC:0} °C)");
+            await LaunchAsync(algorithm, ct);
+            return new ProviderStatus(ProviderState.Starting, 0, $"Quiet mode: easing off to keep the graphics card quiet ({_quietNote})…", algorithm.PoolName);
+        }
+
+        _hotSince = null;
+        if (!cool || _quietCap is not { } cap)
+        {
+            _coolSince = null;
+            return null;
+        }
+        _coolSince ??= now;
+        if (now - _coolSince < CoolFor)
+            return null;
+        // Back up a step, or all the way once that reaches the tuned setting.
+        _quietCap = null;
+        var full = await TunedIntensityAsync(algorithm, ct) ?? MinerPick(algorithm) ?? UnknownPick;
+        _quietCap = cap + QuietStep >= full ? null : cap + QuietStep;
+        await LaunchAsync(algorithm, ct);
+        return new ProviderStatus(ProviderState.Starting, 0, "Quiet mode: the graphics card is cool again, stepping back up…", algorithm.PoolName);
+    }
+
+    private static string IntensityText(int? intensity) =>
+        intensity is { } i ? $"intensity {i.ToString(System.Globalization.CultureInfo.InvariantCulture)}" : "the miner's own setting";
 
     /// <summary>USD per day for the current algorithm (rates are in USD, so "coin" here is USD).</summary>
     public async Task<RevenueEstimate> EstimateRevenueAsync(double hashrateHps, CancellationToken ct)
@@ -576,6 +788,15 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
     /// <summary>The current algorithm failed: set it aside and try the next best, or report plainly that the card isn't mining.</summary>
     private async Task<ProviderStatus> FailOverAsync(string reason, CancellationToken ct)
     {
+        // A setting being tried out failed, not the coin: note it and go back to the tuned setting.
+        if (_trial && _current is { } tried)
+        {
+            _store.RecordTrial(new IntensityTrial(tried.PoolName, _intensity, 0, null, _time.GetUtcNow(), Failed: true));
+            _lastTrialAt = _time.GetUtcNow();
+            await LaunchAsync(tried, ct);
+            return new ProviderStatus(ProviderState.Starting, 0, $"Intensity {_intensity?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "auto"} didn't work for {tried.PoolName}; going back…", tried.PoolName);
+        }
+
         var failed = _current!;
         await KillAsync();
         SetAsideFor(failed, reason, stalled: true);
@@ -708,8 +929,13 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         return new ProviderProblemException($"Graphics card isn't mining: {_lastProblem}. Otium tries again in {when}.", _lastProblemKind ?? ProblemKinds.Failed);
     }
 
-    private async Task LaunchAsync(GpuAlgorithm algorithm, CancellationToken ct)
+    /// <param name="trialIntensity">With <paramref name="trial"/>: the intensity to try; otherwise the tuned one is used.</param>
+    private async Task LaunchAsync(GpuAlgorithm algorithm, CancellationToken ct, int? trialIntensity = null, bool trial = false)
     {
+        var intensity = trial ? trialIntensity : _benchmarking ? null : await TunedIntensityAsync(algorithm, ct);
+        // A running miner restarted at once on the same coin (a tuning trial, quiet mode) keeps the credit check's
+        // schedule: unMineable counts the worker's last hour, which such a restart doesn't empty. After a stop it starts over.
+        var liveRelaunch = _process is not null && _current == algorithm;
         await KillAsync();
         _meter.CaptureBaseline();
 
@@ -726,17 +952,24 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
             _current = algorithm;
             _currentSince = now;
         }
+        if (!liveRelaunch)
+            _nextCreditCheck = now + CreditGrace;
         _launchedAt = now;
         _lastHashingAt = now;
         _devFeeSeenAt = null;
         _lastEvaluation = now;
-        _nextCreditCheck = now + CreditGrace;
         _samples.Clear();
+        _tuneSamples.Clear();
+        _intensity = intensity;
+        _trial = trial;
+        _hotSince = null;
+        _coolSince = null;
 
         var login = LoginFor(algorithm, options);
         _currentPool = login.Pool;
         var cards = RunnableCards(algorithm) is { Count: > 0 } runnable ? runnable : CardsFor(algorithm, _policy()?.For(algorithm.PoolName));
-        var args = SrbMinerArgs.Build(algorithm, login, cards, options.LowPriority, _gpus, DeviceIds(cards));
+        var args = SrbMinerArgs.Build(algorithm, login, cards, options.LowPriority, _gpus, DeviceIds(cards), intensity);
+        _cards = cards;
         ct.ThrowIfCancellationRequested();
         _process = _factory.Start(binary, args, options.LowPriority);
     }

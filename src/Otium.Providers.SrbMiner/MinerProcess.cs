@@ -19,6 +19,9 @@ public interface IMinerProcess : IAsyncDisposable
 
     /// <summary>Shares the pool has accepted and rejected since launch, as of the last hashrate read; null if unknown.</summary>
     ShareCounts? Shares => null;
+
+    /// <summary>The intensity the miner picked by itself (its startup line), or null when it didn't say or tunes itself.</summary>
+    int? AutoIntensity => null;
 }
 
 /// <summary>Shares sent to the pool since the miner started.</summary>
@@ -94,6 +97,8 @@ internal sealed class SrbMinerProcess : IMinerProcess
 
     public ShareCounts? Shares { get; private set; }
 
+    public int? AutoIntensity { get; private set; }
+
     /// <summary>
     /// From the console: SRBMiner's statistics API can't be limited to this computer, so it isn't turned on (see
     /// SrbMinerArgs). SRBMiner prints a "Total" line every 30 s; an older one means the miner has stopped (e.g. frozen).
@@ -110,6 +115,8 @@ internal sealed class SrbMinerProcess : IMinerProcess
         if (string.IsNullOrWhiteSpace(line))
             return;
         _log.Enqueue(line);
+        if (SrbMinerStats.ParseIntensity(line, out _) is { } intensity)
+            AutoIntensity ??= intensity; // the first card's (Otium sets one value for all of them)
         while (_log.Count > 300 && _log.TryDequeue(out _))
         {
         }

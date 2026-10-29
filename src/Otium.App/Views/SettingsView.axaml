@@ -95,6 +95,12 @@
                             <TextBlock Classes="good" FontSize="12.5" TextWrapping="Wrap" Text="{Binding GpuEfficiencyMessage}"
                                        IsVisible="{Binding GpuEfficiencyMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                         </StackPanel>
+                        <StackPanel Spacing="2" IsVisible="{Binding HasGpu}">
+                            <ToggleSwitch IsChecked="{Binding GpuQuiet}"
+                                          OnContent="Keep my graphics card quiet" OffContent="Keep my graphics card quiet" />
+                            <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap"
+                                       Text="When the card's fan or temperature runs high while it mines, Otium eases off a little, and steps back up once it's cool. It earns slightly less on hot nights, but the computer stays quiet. Otium also tunes the miner's settings for your card by itself, a few minutes at a time." />
+                        </StackPanel>
                         <TextBlock Classes="muted" Text="{Binding GpuSummary}" TextWrapping="Wrap" />
 
                         <StackPanel Spacing="10" IsVisible="{Binding HasGpu}">

@@ -81,6 +81,17 @@ internal static partial class SrbMinerStats
         return generic is null ? null : $"the miner reported \"{generic}\"";
     }
 
+    /// <summary>
+    /// The intensity SRBMiner picked for a card, from its startup line "GPU0 |A0|quantus |INTENSITY: 23|": the number,
+    /// or null with <paramref name="found"/> true for "AUTO" (it tunes itself, as for FishHash).
+    /// </summary>
+    public static int? ParseIntensity(string line, out bool found)
+    {
+        var match = IntensityRegex().Match(line);
+        found = match.Success;
+        return match.Success && int.TryParse(match.Groups["value"].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) ? value : null;
+    }
+
     /// <summary>Strips SRBMiner's "[2026-10-16 15:02:23] " timestamp and trailing " [0]" device tag.</summary>
     private static string Clean(string line)
     {
@@ -124,4 +135,7 @@ internal static partial class SrbMinerStats
 
     [GeneratedRegex(@"\bA:(?<a>\d+)\s+R:(?<r>\d+)\b")]
     private static partial Regex ConsoleSharesRegex();
+
+    [GeneratedRegex(@"(?i)\|INTENSITY:\s*(?<value>\d+|AUTO)\s*\|")]
+    private static partial Regex IntensityRegex();
 }

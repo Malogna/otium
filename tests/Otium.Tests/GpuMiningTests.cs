@@ -260,11 +260,12 @@ public sealed class SrbMinerProviderTests : IDisposable
     }
 
     private SrbMinerGpuProvider CreateProvider(Func<GpuPolicy?>? policy, double pricePerKwh, string? benchmarks = null, Func<GpuInfo, double?>? freeMemoryGb = null,
-        IUnmineableApi? unmineable = null, Func<string, int, CancellationToken, Task<string?>>? poolBlocked = null, IReadOnlyList<GpuInfo>? gpus = null) =>
+        IUnmineableApi? unmineable = null, Func<string, int, CancellationToken, Task<string?>>? poolBlocked = null, IReadOnlyList<GpuInfo>? gpus = null,
+        Func<bool>? quiet = null, Func<GpuInfo, GpuStats?>? stats = null) =>
         new(new HttpClient(), _pool, Path.Combine(_dir, "engines"), Path.Combine(_dir, benchmarks ?? $"bench-{Guid.NewGuid():N}.json"),
             gpus ?? [Rtx3080], _meter, () => pricePerKwh, _factory, _time,
             asset: _asset, policy: policy, freeMemoryGb: freeMemoryGb, unmineable: unmineable,
-            poolBlocked: poolBlocked);
+            poolBlocked: poolBlocked, quiet: quiet, stats: stats);
 
     [Fact]
     public async Task A_pool_blocked_on_this_computer_is_explained_instead_of_failing_the_coin()
@@ -376,7 +377,10 @@ public sealed class SrbMinerProviderTests : IDisposable
         {
         }
 
-        public PowerReading Read(int usagePercent) => new(200, true, "fake");
+        /// <summary>Extra watts the fake card draws right now (e.g. by the intensity it was started with).</summary>
+        public Func<double> Watts { get; set; } = () => 200;
+
+        public PowerReading Read(int usagePercent) => new(Watts(), true, "fake");
     }
 
     private sealed class FakeProcess(double hashrate) : IMinerProcess
@@ -390,6 +394,7 @@ public sealed class SrbMinerProviderTests : IDisposable
         public List<string> Log { get; } = ["not enough GPU memory"];
         public IReadOnlyList<string> RecentLog => Log.ToArray();
         public ShareCounts? Shares { get; set; }
+        public int? AutoIntensity { get; set; }
         public bool Disposed { get; private set; }
 
         public Task<double?> ReadHashrateAsync(CancellationToken ct) => Task.FromResult<double?>(Script?.Invoke() ?? Hashrate);
@@ -411,14 +416,22 @@ public sealed class SrbMinerProviderTests : IDisposable
         public List<string> StartupLog { get; } = [];
         public Action<string, FakeProcess>? OnStart { get; set; }
         public List<(string Algorithm, string Password, FakeProcess Process, string Pool, string Wallet)> Launches { get; } = [];
+        /// <summary>Each launch's --gpu-intensity (null: the miner's own pick).</summary>
+        public List<int?> Intensities { get; } = [];
+        /// <summary>When set, the hashrate by algorithm and intensity (0: the miner crashes), instead of <see cref="Speeds"/>.</summary>
+        public Func<string, int?, double>? SpeedAt { get; set; }
+        /// <summary>The intensity the fake miner says it picked by itself when given none.</summary>
+        public int? MinerPick { get; set; }
 
         public IMinerProcess Start(string binary, IReadOnlyList<string> arguments, bool lowPriority)
         {
             string Arg(string flag) => arguments[arguments.ToList().IndexOf(flag) + 1];
             var algo = Arg("--algorithm");
-            var speed = Speeds.GetValueOrDefault(algo);
+            int? intensity = arguments.Contains("--gpu-intensity") ? int.Parse(Arg("--gpu-intensity"), System.Globalization.CultureInfo.InvariantCulture) : null;
+            Intensities.Add(intensity);
+            var speed = SpeedAt?.Invoke(algo, intensity) ?? Speeds.GetValueOrDefault(algo);
             var stalls = Stalls.Contains(algo);
-            var process = new FakeProcess(stalls ? 0 : speed) { Exited = speed == 0 && !stalls };
+            var process = new FakeProcess(stalls ? 0 : speed) { Exited = speed == 0 && !stalls, AutoIntensity = intensity is null ? MinerPick : null };
             process.Log.InsertRange(0, StartupLog);
             if (stalls)
                 process.Log.AddRange(RealDevFeeThenEpochFailure);
@@ -829,6 +842,96 @@ public sealed class SrbMinerProviderTests : IDisposable
         Assert.Equal("quantus.unmineable.com", login.Pool.Host);
         Assert.True(login.Pool.Tls);
         Assert.StartsWith($"{target}.ot1234abcdg", login.Wallet);
+    }
+
+    /// <summary>Quantus alone on unMineable, so the tuning tests mine one coin.</summary>
+    private static GpuPolicy QuantusOnlyPolicy() => new(
+        DateTimeOffset.UtcNow,
+        [new GpuAlgorithmPolicy("quantus", GpuTiers.Primary, "unmineable-quantus", 4.5e-9, 0.75)],
+        [new GpuPoolRoute("unmineable-quantus", GpuRoutes.Unmineable, "quantus.unmineable.com", 443, null, Tls: true)]);
+
+    /// <summary>The RTX 3080 run on Quantus: its own pick (23) is slower than 21, which earns more after power; 19 crashes.</summary>
+    private void FakeQuantusCard()
+    {
+        _factory.MinerPick = 23;
+        _factory.SpeedAt = (_, intensity) => intensity switch { null => 268e6, 21 => 480e6, 19 => 0, _ => 200e6 };
+        _meter.Watts = () => _factory.Intensities.Count == 0 ? 0 : _factory.Intensities[^1] switch { null => 180, 21 => 314, _ => 250 };
+    }
+
+    [Fact]
+    public async Task While_it_mines_it_tries_other_intensities_and_keeps_the_one_that_earns_most()
+    {
+        FakeQuantusCard();
+        var unmineable = new CreditingUnmineable();
+        unmineable.Workers.Add(new UnmineableWorker("quantus", "ot1234abcdg", true, 4.8e8, 4.8e8)); // its work is credited
+        var provider = CreateProvider(QuantusOnlyPolicy, pricePerKwh: 0.15, unmineable: unmineable);
+        var options = new ProviderRunOptions(new MiningTarget(TestAddresses.Usdt(12), PayoutRole.User), "ot1234abcdg", 100);
+        await provider.StartAsync(options, CancellationToken.None);
+        await RunForProvider(provider, SrbMinerGpuProvider.BenchmarkDuration + TimeSpan.FromSeconds(10)); // tested at its own pick
+        Assert.Equal([null, null], _factory.Intensities); // the test, then mining at its own pick
+
+        // A steady half hour, then 21 is tried for ten minutes, and kept: it nets more after electricity.
+        await RunForProvider(provider, IntensityTuner.SteadyBeforeTrial + IntensityTuner.TrialLength + TimeSpan.FromMinutes(5));
+        Assert.Equal(21, _factory.Intensities[^1]);
+
+        // Two hours on, 19 is tried; it crashes, so it's noted as failed and mining goes back to 21 straight away.
+        await RunForProvider(provider, IntensityTuner.BetweenTrials + TimeSpan.FromMinutes(1));
+        Assert.Contains(19, _factory.Intensities);
+        Assert.Equal(21, _factory.Intensities[^1]);
+        Assert.Equal("quantus", provider.CurrentAlgorithm);
+        Assert.Null(provider.SetAsideReason("quantus")); // a failed setting isn't a failed coin
+
+        // Then 25, slower for more power: tried, and mining returns to 21. Nothing is tried again after that.
+        await RunForProvider(provider, IntensityTuner.BetweenTrials + IntensityTuner.TrialLength + TimeSpan.FromMinutes(5));
+        Assert.Contains(25, _factory.Intensities);
+        Assert.Equal(21, _factory.Intensities[^1]);
+        var launches = _factory.Intensities.Count;
+        await RunForProvider(provider, IntensityTuner.BetweenTrials * 2);
+        Assert.Equal(launches, _factory.Intensities.Count);
+
+        // After a restart it starts straight at the tuned setting.
+        await provider.StopAsync(CancellationToken.None);
+        await provider.StartAsync(options, CancellationToken.None);
+        Assert.Equal(21, _factory.Intensities[^1]);
+    }
+
+    [Fact]
+    public async Task Quiet_mode_eases_off_while_the_fan_runs_loud_and_steps_back_up_once_cool()
+    {
+        FakeQuantusCard();
+        _factory.SpeedAt = (_, intensity) => intensity is { } i ? i * 20e6 : 460e6; // works at every setting
+        var fan = 72.0;
+        var quiet = true;
+        var unmineable = new CreditingUnmineable();
+        unmineable.Workers.Add(new UnmineableWorker("quantus", "ot1234abcdg", true, 4.6e8, 4.6e8));
+        var provider = CreateProvider(QuantusOnlyPolicy, pricePerKwh: 0, quiet: () => quiet, unmineable: unmineable,
+            stats: g => new GpuStats(g.Name, 70, 100, fan, 250, 1900, 2, 12));
+        var options = new ProviderRunOptions(new MiningTarget(TestAddresses.Usdt(13), PayoutRole.User), "ot1234abcdg", 100);
+        await provider.StartAsync(options, CancellationToken.None);
+        await RunForProvider(provider, SrbMinerGpuProvider.BenchmarkDuration + TimeSpan.FromSeconds(10));
+        Assert.Null(_factory.Intensities[^1]);
+
+        // Loud for two minutes once settled: one step below its own pick (23).
+        var status = await RunForProvider(provider, IntensityTuner.Warmup + SrbMinerGpuProvider.HotFor + TimeSpan.FromSeconds(10));
+        Assert.Equal(21, _factory.Intensities[^1]);
+        // Still loud: another step, and so on down to the floor at most.
+        await RunForProvider(provider, IntensityTuner.Warmup + SrbMinerGpuProvider.HotFor + TimeSpan.FromSeconds(10));
+        Assert.Equal(19, _factory.Intensities[^1]);
+
+        // Quiet again for a quarter of an hour: a step back up.
+        fan = 40;
+        status = await RunForProvider(provider, IntensityTuner.Warmup + SrbMinerGpuProvider.CoolFor + TimeSpan.FromSeconds(30));
+        Assert.Equal(21, _factory.Intensities[^1]);
+
+        // Turned off: straight back to full speed, and loud fans no longer change anything.
+        quiet = false;
+        fan = 90;
+        await RunForProvider(provider, TimeSpan.FromSeconds(10));
+        var full = _factory.Intensities[^1];
+        Assert.NotEqual(21, full);
+        var launches = _factory.Intensities.Count;
+        await RunForProvider(provider, IntensityTuner.Warmup + SrbMinerGpuProvider.HotFor * 2);
+        Assert.Equal(launches, _factory.Intensities.Count);
     }
 
     [Theory]

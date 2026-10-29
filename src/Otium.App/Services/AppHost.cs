@@ -101,7 +101,9 @@ public sealed class AppHost : IAsyncDisposable
             freeMemoryGb: gpu => gpu.Vendor == GpuVendor.Nvidia ? _nvml?.ReadFreeMemoryGb(gpu.Index) : null,
             referralCode: ReferralCode,
             isUnitedStates: () => InUnitedStates,
-            poolBlocked: PoolReachability.BlockedReasonAsync);
+            poolBlocked: PoolReachability.BlockedReasonAsync,
+            quiet: () => Settings.GpuQuiet,
+            stats: gpu => Hardware.ReadGpus([gpu]).FirstOrDefault());
         if (IsSimulated)
         {
             var gpuLedger = new JsonFileStore<EarningsLedger>(Paths.GpuLedgerFile);

@@ -71,6 +71,13 @@ public sealed class AppSettings
     public bool GpuEfficiencyMode { get; set; }
 
     /// <summary>
+    /// Quiet graphics card: while it mines, the miner eases off when a card's fan or temperature runs high, and steps
+    /// back up once it's cool (SrbMinerGpuProvider). On unless the user turns it off; settings files from before it
+    /// existed get it on too.
+    /// </summary>
+    public bool GpuQuiet { get; set; } = true;
+
+    /// <summary>
     /// "Earn while I browse": the graphics card also mines while the user is at the computer doing ordinary things
     /// (never during full-screen apps or games, or on battery). Off unless the user turns it on.
     /// </summary>
