@@ -15,6 +15,12 @@ public sealed class BenchmarkFile
 
     /// <summary>Intensities tried per algorithm (IntensityTuner); missing in files from before tuning.</summary>
     public List<IntensityTrial> Tuning { get; set; } = [];
+
+    /// <summary>
+    /// Algorithms whose load doesn't change with the miner's intensity on these cards (a quiet-mode step didn't lower the
+    /// power: Pearl on an RTX 3080), so neither tuning nor quiet mode steps it.
+    /// </summary>
+    public List<string> IntensityIgnored { get; set; } = [];
 }
 
 /// <summary>Persists per-algorithm benchmark results so profit switching works immediately on the next start.</summary>
@@ -72,6 +78,24 @@ public sealed class BenchmarkStore
         var now = _time.GetUtcNow();
         lock (_lock)
             return _file.Tuning.Where(t => string.Equals(t.Algorithm, algorithm, StringComparison.OrdinalIgnoreCase) && now - t.At < IntensityTuner.Expiry).ToList();
+    }
+
+    /// <summary>Whether this algorithm's load was found not to change with intensity (see <see cref="BenchmarkFile.IntensityIgnored"/>).</summary>
+    public bool IntensityIgnored(string algorithm)
+    {
+        lock (_lock)
+            return _file.IntensityIgnored.Contains(algorithm, StringComparer.OrdinalIgnoreCase);
+    }
+
+    public void MarkIntensityIgnored(string algorithm)
+    {
+        lock (_lock)
+        {
+            if (_file.IntensityIgnored.Contains(algorithm, StringComparer.OrdinalIgnoreCase))
+                return;
+            _file.IntensityIgnored.Add(algorithm);
+            _store.Save(_file);
+        }
     }
 
     /// <summary>Keeps a trial, replacing an earlier one of the same algorithm and intensity.</summary>

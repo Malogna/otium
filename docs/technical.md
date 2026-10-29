@@ -118,7 +118,8 @@ policy.
   (on an RTX 3080, Quantus at its pick of 23 hashed about 268 MH/s; at 21, about 480 MH/s for about 1.7× the power). While
   mining for the user (not in fee slices), the app measures the running setting over 10 minutes (from 2 minutes after a
   launch, past the miner's fee round), then, after 30 steady minutes and at most every 2 hours, tries another: the
-  miner's printed pick (`|INTENSITY: N|`) −2, −4 and +2, or 12/16/20/24 for Pearl, which prints none. It keeps the
+  miner's printed pick (`|INTENSITY: N|`) −2, −4 and +2 (nothing for Pearl, which prints none and ignores the setting:
+  an RTX 3080 drew 348 W at intensities 16, 18 and its own, 30 October 2026). It keeps the
   one with the most net USD a day after measured electricity (fastest on free power, or without measured watts). A
   setting that crashes, stalls or gets its shares rejected is marked failed and mining goes back at once. Trials live
   with the benchmarks (`gpu-benchmarks.json`, `Tuning`), expire after 30 days and reset with "Test GPU again".
@@ -126,6 +127,12 @@ policy.
   stays at 78 °C or more, for 2 minutes (judged 2 minutes after a launch), the intensity steps down by 2, to 10 at
   most. After 15 minutes at 50% fan and 70 °C or less, it steps back up, up to the tuned setting. It reads NVML (AMD:
   Linux sensors); without fan or temperature readings it does nothing, and nothing is measured for tuning meanwhile.
+  A step must lower the card's measured power by 5%; if it doesn't, the algorithm ignores intensity on these cards
+  (recorded in `gpu-benchmarks.json`, `IntensityIgnored`): the miner goes back to its own setting, and from then on
+  quiet mode lowers the power limit instead, 10 points at a time from 70% to 50%, and back up when cool, with no
+  restarts. That needs the power part (the elevated cap task now applies the percentage Otium writes to
+  `gpu-power-cap.txt`, clamped to 50–100%, reset to 70% at each start, so no new Windows prompt); without it, such an
+  algorithm isn't eased off at all.
 - **One wallet only.** Everything is paid to the single payout address the user gives. Quantus, which Kryptex pays
   only to a separate Quantus wallet, is no longer mined (the code for Kryptex's address login stays, unused, and
   `Kryptex:AddressMining` is off by default).

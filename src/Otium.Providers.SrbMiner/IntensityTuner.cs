@@ -34,22 +34,14 @@ public static class IntensityTuner
     /// <summary>Results this old are measured again (prices and drivers change).</summary>
     public static readonly TimeSpan Expiry = TimeSpan.FromDays(30);
 
-    /// <summary>For algorithms the miner tunes by itself (no printed intensity): fixed steps to compare against it.</summary>
-    private static readonly Dictionary<string, int[]> FixedSteps = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["pearlhash"] = [12, 16, 20, 24],
-    };
-
     /// <summary>
     /// The settings worth comparing: the miner's own pick (null), then a little below and above the intensity it printed
-    /// (<paramref name="autoIntensity"/>), or fixed steps for an algorithm it tunes by itself. None but its own pick for
-    /// the rest.
+    /// (<paramref name="autoIntensity"/>). Nothing else when it printed none: an algorithm it tunes by itself (Pearl)
+    /// ignores the setting (an RTX 3080 drew the same 348 W at intensities 16, 18 and its own, October 2026).
     /// </summary>
     public static IReadOnlyList<int?> Candidates(string algorithm, int? autoIntensity)
     {
-        IEnumerable<int> steps = autoIntensity is { } n
-            ? [n - 2, n - 4, n + 2]
-            : FixedSteps.TryGetValue(algorithm, out var fixedSteps) ? fixedSteps : [];
+        IEnumerable<int> steps = autoIntensity is { } n ? [n - 2, n - 4, n + 2] : [];
         return steps.Where(s => s is >= 1 and <= 31 && s != autoIntensity).Distinct().Select(s => (int?)s).Prepend(null).ToList();
     }
 

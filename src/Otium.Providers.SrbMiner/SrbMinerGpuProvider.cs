@@ -97,6 +97,9 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
     private readonly Func<string, int, CancellationToken, Task<string?>> _poolBlocked;
     private readonly List<(double Hashrate, double? Watts)> _samples = [];
     private readonly Func<bool> _optimize;
+
+    /// <summary>Sets the power limit's percentage while capped (the app's power part); false when that isn't on.</summary>
+    private readonly Func<int, bool> _powerCap;
     private readonly Func<GpuInfo, GpuStats?> _stats;
 
     /// <summary>Hash rate and measured watts while mining normally, for the intensity tuner (IntensityTuner).</summary>
@@ -137,6 +140,12 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
     /// <summary>Quiet mode's highest intensity while the cards run hot or loud; null when not easing off.</summary>
     private int? _quietCap;
     private string? _quietNote;
+
+    /// <summary>The power limit's percentage quiet mode asked for (<see cref="GpuEfficiency.CapPercent"/> when it hasn't eased off).</summary>
+    private int _powerPercent = GpuEfficiency.CapPercent;
+
+    /// <summary>After an intensity step: the measured watts before it, to check the step lowered them.</summary>
+    private double? _stepWatts;
     private DateTimeOffset? _hotSince;
     private DateTimeOffset? _coolSince;
 
@@ -147,6 +156,7 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
     /// <param name="optimize">"Optimize my graphics card": tune the miner's intensity and ease it off while a card's fan or
     /// temperature runs high; off, the miner runs at its own settings.</param>
     /// <param name="stats">A card's temperature, fan and power right now (NVML), or null if unknown.</param>
+    /// <param name="powerCap">Sets the power limit's percentage while mining (the app's power part); false when it's off.</param>
     public SrbMinerGpuProvider(
         HttpClient http,
         IMoneroPoolApi pool,
@@ -170,9 +180,11 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         Func<bool>? isUnitedStates = null,
         Func<string, IReadOnlyDictionary<string, int>?>? listDevices = null,
         Func<bool>? optimize = null,
-        Func<GpuInfo, GpuStats?>? stats = null)
+        Func<GpuInfo, GpuStats?>? stats = null,
+        Func<int, bool>? powerCap = null)
     {
         _optimize = optimize ?? (() => false);
+        _powerCap = powerCap ?? (_ => false);
         _stats = stats ?? (_ => null);
         _listDevices = listDevices ?? ListDevices;
         _listDevicesGiven = listDevices is not null;
@@ -392,7 +404,7 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         }
 
         var detail = _switchNote is null ? _current.PoolName : $"{_current.PoolName} ({_switchNote})";
-        if (_quietCap is not null && _quietNote is not null)
+        if ((_quietCap is not null || _powerPercent < GpuEfficiency.CapPercent) && _quietNote is not null)
             detail += $" · quiet: {_quietNote}";
         else if (_trial)
             detail += $" · trying intensity {_intensity?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "auto"}";
@@ -428,6 +440,12 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
     public const int QuietFloor = 10;
 
     public const int QuietStep = 2;
+
+    /// <summary>An intensity step must lower the card's measured power by at least this share, or the algorithm ignores it.</summary>
+    public const double StepMustSave = 0.05;
+
+    /// <summary>For an algorithm that ignores intensity, quiet mode lowers the power limit by this many points per step.</summary>
+    public const int PowerStep = 10;
 
     /// <summary>The intensity used when the miner didn't say what it picked by itself.</summary>
     private const int UnknownPick = 20;
@@ -514,7 +532,7 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         }
 
         // Now and then, after a steady stretch, try another setting (not while quiet mode is easing off).
-        if (_optimize() && !_trial && _quietCap is null && now - _launchedAt >= IntensityTuner.SteadyBeforeTrial && now - _lastTrialAt >= IntensityTuner.BetweenTrials)
+        if (_optimize() && !_trial && _quietCap is null && !_store.IntensityIgnored(algorithm.PoolName) && now - _launchedAt >= IntensityTuner.SteadyBeforeTrial && now - _lastTrialAt >= IntensityTuner.BetweenTrials)
         {
             var next = IntensityTuner.NextTrial(IntensityTuner.Candidates(algorithm.PoolName, MinerPick(algorithm)), _store.Tuning(algorithm.PoolName), out var any);
             if (any && next != _intensity)
@@ -529,13 +547,17 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
 
     /// <summary>
     /// Quiet mode: when a mining card's fan or temperature stays high, lower the intensity a step (to <see
-    /// cref="QuietFloor"/> at most); when they've been low for a while, step back up, never past the tuned setting.
+    /// cref="QuietFloor"/> at most); when they've been low for a while, step back up, never past the tuned setting. A
+    /// step that doesn't lower the card's power means the algorithm ignores intensity (Pearl): it goes back to full, and
+    /// from then on quiet mode lowers the power limit instead (to <see cref="GpuEfficiency.MinCapPercent"/>), when the
+    /// power part is on; without it, such an algorithm isn't eased off at all rather than restarted for nothing.
     /// </summary>
     private async Task<ProviderStatus?> QuietAsync(GpuAlgorithm algorithm, DateTimeOffset now, CancellationToken ct)
     {
         if (!_optimize())
         {
-            // Turned off: back to the miner's own settings (from a tuned, tried or eased-off one).
+            _powerPercent = GpuEfficiency.CapPercent; // the app restores the power limit itself when this is off
+            _stepWatts = null;
             if (_quietCap is null && _intensity is null)
                 return null;
             _quietCap = null;
@@ -548,26 +570,57 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         var readings = _cards.Select(_stats).OfType<GpuStats>().Where(s => s.FanPercent is not null || s.TemperatureC is not null).ToList();
         if (readings.Count == 0 || now - _launchedAt < IntensityTuner.Warmup)
             return null;
+
+        // Did the last intensity step lower the card's power? If not, this algorithm ignores intensity on these cards.
+        if (_stepWatts is { } before)
+        {
+            _stepWatts = null;
+            var power = _meter.Read(100);
+            if (power.IsMeasured && power.ExtraWatts > before * (1 - StepMustSave))
+            {
+                _store.MarkIntensityIgnored(algorithm.PoolName);
+                _quietCap = null;
+                await LaunchAsync(algorithm, ct);
+                return new ProviderStatus(ProviderState.Starting, 0,
+                    $"Quiet mode: {algorithm.PoolName}'s miner setting doesn't change the card's load, so it eases off with the power limit instead…", algorithm.PoolName);
+            }
+        }
+
         var hot = readings.FirstOrDefault(s => s.FanPercent >= HotFanPercent || s.TemperatureC >= HotTemperatureC);
         var cool = readings.All(s => (s.FanPercent ?? 0) <= CoolFanPercent && (s.TemperatureC ?? 0) <= CoolTemperatureC);
+        var ignoresIntensity = _store.IntensityIgnored(algorithm.PoolName);
 
         if (hot is not null)
         {
             _coolSince = null;
             _hotSince ??= now;
-            var running = _intensity ?? MinerPick(algorithm) ?? UnknownPick;
-            if (now - _hotSince < HotFor || running - QuietStep < QuietFloor)
+            if (now - _hotSince < HotFor)
                 return null;
-            _quietCap = running - QuietStep;
-            _quietNote = hot.FanPercent >= HotFanPercent
+            _hotSince = null;
+            var note = hot.FanPercent >= HotFanPercent
                 ? FormattableString.Invariant($"eased off (fan {hot.FanPercent:0}%)")
                 : FormattableString.Invariant($"eased off ({hot.TemperatureC:0} °C)");
-            await LaunchAsync(algorithm, ct);
-            return new ProviderStatus(ProviderState.Starting, 0, $"Quiet mode: easing off to keep the graphics card quiet ({_quietNote})…", algorithm.PoolName);
+            var running = _intensity ?? MinerPick(algorithm) ?? UnknownPick;
+            if (!ignoresIntensity && running - QuietStep >= QuietFloor)
+            {
+                var power = _meter.Read(100);
+                _stepWatts = power.IsMeasured ? power.ExtraWatts : null;
+                _quietCap = running - QuietStep;
+                _quietNote = note;
+                await LaunchAsync(algorithm, ct);
+                return new ProviderStatus(ProviderState.Starting, 0, $"Quiet mode: easing off to keep the graphics card quiet ({_quietNote})…", algorithm.PoolName);
+            }
+            // The power limit instead: no restart needed.
+            if (_powerPercent - PowerStep >= GpuEfficiency.MinCapPercent && _powerCap(_powerPercent - PowerStep))
+            {
+                _powerPercent -= PowerStep;
+                _quietNote = FormattableString.Invariant($"{note}, power at {_powerPercent}%");
+            }
+            return null;
         }
 
         _hotSince = null;
-        if (!cool || _quietCap is not { } cap)
+        if (!cool || (_quietCap is null && _powerPercent >= GpuEfficiency.CapPercent))
         {
             _coolSince = null;
             return null;
@@ -575,7 +628,21 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         _coolSince ??= now;
         if (now - _coolSince < CoolFor)
             return null;
-        // Back up a step, or all the way once that reaches the tuned setting.
+        _coolSince = null;
+
+        // Back up a step: the power limit first (no restart), then the intensity, never past the tuned setting.
+        if (_powerPercent < GpuEfficiency.CapPercent)
+        {
+            var up = Math.Min(GpuEfficiency.CapPercent, _powerPercent + PowerStep);
+            if (_powerCap(up))
+                _powerPercent = up;
+            else
+                _powerPercent = GpuEfficiency.CapPercent; // the power part went off meanwhile
+            if (_powerPercent >= GpuEfficiency.CapPercent && _quietCap is null)
+                _quietNote = null;
+            return null;
+        }
+        var cap = _quietCap!.Value;
         _quietCap = null;
         var full = await TunedIntensityAsync(algorithm, ct) ?? MinerPick(algorithm) ?? UnknownPick;
         _quietCap = cap + QuietStep >= full ? null : cap + QuietStep;
