@@ -7,7 +7,8 @@ namespace Otium.App.Services;
 /// Runs from the Velopack uninstall hook (Windows only, must finish within 30 seconds, no UI).
 /// Removes what an uninstaller is expected to remove: the downloaded engines, Mysterium's network service (if
 /// internet sharing installed it; Windows asks for permission), the start-at-sign-in entry, and Otium's data folder
-/// (settings with the payout address and this computer's key, earnings history, logs), as the privacy policy says.
+/// (settings with the payout address and this computer's key, earnings history, logs), as the privacy policy says. The
+/// sharing networks' wallet keys, which can hold earnings not paid out yet, are set aside first (<see cref="WalletKeys"/>).
 /// Invites and fee-free days stay with the account on the server, for an email address added to it.
 /// </summary>
 public static class UninstallCleanup
@@ -54,10 +55,22 @@ public static class UninstallCleanup
             // Left behind: the user can remove it with "sc delete MysteriumVPNSupervisor".
         }
 
+        // Keys that can still hold earnings go to a folder of their own first; a reinstall puts them back. If they can't
+        // be copied, the engines folder (and so the keys) stays rather than lose what's waiting.
+        var keysKept = true;
         try
         {
             MinerLifetime.StopOrphans(engines, Path.Combine(AppPaths.Default.Root, "otium.lock")); // or their files can't be deleted
-            if (Directory.Exists(engines))
+            WalletKeys.Keep(engines, WalletKeys.KeepDir(AppPaths.Default.Root));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            keysKept = false;
+        }
+
+        try
+        {
+            if (keysKept && Directory.Exists(engines))
                 Directory.Delete(engines, recursive: true);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
@@ -65,34 +78,6 @@ public static class UninstallCleanup
             // A running miner may still hold a file; Velopack stops the app before uninstalling, so this is rare.
         }
 
-        DeleteDataFolder(AppPaths.Default.Root);
-    }
-
-    /// <summary>Everything in Otium's data folder that can go; a file still held open (rare) stays behind.</summary>
-    internal static void DeleteDataFolder(string root)
-    {
-        if (!Directory.Exists(root))
-            return;
-        foreach (var file in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
-        {
-            try
-            {
-                File.SetAttributes(file, FileAttributes.Normal);
-                File.Delete(file);
-            }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-            {
-            }
-        }
-        foreach (var dir in Directory.EnumerateDirectories(root, "*", SearchOption.AllDirectories).OrderByDescending(d => d.Length).Append(root))
-        {
-            try
-            {
-                Directory.Delete(dir);
-            }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-            {
-            }
-        }
+        WalletKeys.DeleteDataFolder(AppPaths.Default.Root, keep: keysKept ? null : engines);
     }
 }
