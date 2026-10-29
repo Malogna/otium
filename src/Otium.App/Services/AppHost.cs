@@ -102,7 +102,7 @@ public sealed class AppHost : IAsyncDisposable
             referralCode: ReferralCode,
             isUnitedStates: () => InUnitedStates,
             poolBlocked: PoolReachability.BlockedReasonAsync,
-            quiet: () => Settings.GpuQuiet,
+            optimize: () => Settings.GpuOptimize,
             stats: gpu => Hardware.ReadGpus([gpu]).FirstOrDefault());
         if (IsSimulated)
         {
@@ -444,8 +444,24 @@ public sealed class AppHost : IAsyncDisposable
         SaveSettings();
         UpdateGpuPowerCap();
         return on
-            ? $"On. While it mines, your graphics card runs at {GpuEfficiency.CapPercent}% of its usual power limit, and back at full power the moment it stops."
-            : "Off. Your graphics card mines at its usual power limit.";
+            ? $"While it mines, your graphics card runs at {GpuEfficiency.CapPercent}% of its usual power limit, and back at full power the moment it stops."
+            : "Your graphics card mines at its usual power limit.";
+    }
+
+    /// <summary>
+    /// "Optimize my graphics card" on or off. Turning it on also sets up the lower power limit when Windows hasn't
+    /// allowed it yet (one administrator prompt); declining keeps the rest of it on. Returns what to tell the user.
+    /// </summary>
+    public async Task<string?> SetGpuOptimizeAsync(bool on)
+    {
+        Settings.GpuOptimize = on;
+        SaveSettings();
+        UpdateGpuPowerCap();
+        if (!on)
+            return null;
+        if (GpuEfficiencySupported && !Settings.GpuEfficiencyMode)
+            return await SetGpuEfficiencyAsync(true);
+        return null;
     }
 
     /// <summary>
@@ -457,7 +473,7 @@ public sealed class AppHost : IAsyncDisposable
         if (!GpuEfficiencySupported || GpuEngine is null)
             return;
         var mining = GpuEngine.Snapshot.State is EngineState.Starting or EngineState.Earning;
-        var want = Settings.GpuEfficiencyMode && mining ? 1 : 0;
+        var want = Settings.GpuOptimize && Settings.GpuEfficiencyMode && mining ? 1 : 0;
         if (Interlocked.Exchange(ref _capApplied, want) == want)
             return;
         if (want == 0 && !GpuEfficiency.IsSetUp())

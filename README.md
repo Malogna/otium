@@ -80,12 +80,12 @@ Iran, China and Egypt).
 - **Plain reports.** "While you were away: $0.84 in 7 h 40 min", a monthly summary, and notifications for payouts and
   problems. When the pool pays your wallet, the overview says "You've been paid" with the amount and your total. Each
   can be shared as a picture with your invite code.
-- **Tunes itself, and stays quiet.** While it mines, Otium tries a few of the miner's settings for your card, ten
-  minutes at a time and hours apart, and keeps the one that earns you the most after electricity. A quiet mode (on
-  unless you turn it off) eases off when the card's fan or temperature runs high, and steps back up once it's cool.
-  No administrator rights needed.
-- **Options in Settings:** efficiency mode for NVIDIA cards (70% power while mining), let the graphics card earn while
-  you browse (stops for games and full-screen video), and keep the miner ready so it starts again instantly.
+- **Optimize my graphics card** (one option, on unless you turn it off): Otium lowers the card's power draw while it
+  mines (NVIDIA on Windows, 70% of its power limit; Windows asks for permission once, during setup), tunes the miner's
+  settings for your card, and eases off when the fans or temperature run high. It earns about the same on less
+  electricity, with quiet fans, and the card is back at full power the moment mining stops.
+- **Options in Settings:** let the graphics card earn while you browse (stops for games and full-screen video), and
+  keep the miner ready so it starts again instantly.
 - **Invites.** Bring a friend and you both get 30 days without Otium's fee. Then, for 6 months, 25% of Otium's fee on
   their mining is mined straight to your address (shown as "Earned from friends" on the Invites page). Your days start
   once the friend has mined for a day, up to 90 at a time, and friends on your own internet connection don't count. A

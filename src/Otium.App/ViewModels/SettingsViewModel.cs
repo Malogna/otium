@@ -38,8 +38,7 @@ public partial class SettingsViewModel : ViewModelBase
         OnlyWhenIdle = s.OnlyWhenIdle;
         KeepAwakeWhileEarning = s.KeepAwakeWhileEarning;
         ShareEarningsStats = s.ShareEarningsStats;
-        GpuEfficiencyMode = s.GpuEfficiencyMode;
-        GpuQuiet = s.GpuQuiet;
+        GpuOptimize = s.GpuOptimize;
         EarnWhileBrowsing = s.EarnWhileBrowsing;
         NotificationsEnabled = s.NotificationsEnabled;
         KeepMinerReadyWhenBack = s.KeepMinerReadyWhenBack;
@@ -421,40 +420,50 @@ public partial class SettingsViewModel : ViewModelBase
         _host.SaveSettings();
     }
 
-    /// <summary>Quiet graphics card: the miner eases off while the card's fan or temperature runs high.</summary>
-    [ObservableProperty] public partial bool GpuQuiet { get; set; }
+    /// <summary>What "Optimize my graphics card" does, the same words in setup and Settings.</summary>
+    public static string OptimizeGpuText(bool asksForPower) =>
+        "Otium lowers your graphics card's power draw, tunes the miner for your card and keeps the fans quiet, so it " +
+        "earns about the same while using less electricity and making less noise." +
+        (asksForPower ? " Windows asks for permission once, for the power part." : "");
 
-    partial void OnGpuQuietChanged(bool value)
+    /// <summary>"Optimize my graphics card": tuning, quiet fans and (once Windows allowed it) a lower power limit.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanAllowGpuPower), nameof(GpuOptimizeText))]
+    public partial bool GpuOptimize { get; set; }
+
+    [ObservableProperty] public partial bool GpuOptimizeBusy { get; set; }
+    [ObservableProperty] public partial string? GpuOptimizeMessage { get; set; }
+
+    public string GpuOptimizeText => OptimizeGpuText(CanAllowGpuPower);
+
+    /// <summary>On, with an NVIDIA card whose lower power limit Windows hasn't allowed yet (it was declined, or Otium was updated).</summary>
+    public bool CanAllowGpuPower => GpuOptimize && _host.GpuEfficiencySupported && !_host.Settings.GpuEfficiencyMode;
+
+    partial void OnGpuOptimizeChanged(bool value)
     {
-        if (_loading || value == _host.Settings.GpuQuiet)
+        if (_loading || value == _host.Settings.GpuOptimize)
             return;
-        _host.Settings.GpuQuiet = value;
-        _host.SaveSettings();
+        _ = ApplyGpuOptimizeAsync(value);
     }
 
-    /// <summary>Efficiency mode: the NVIDIA card mines at a lower power limit (one administrator prompt to set up).</summary>
-    [ObservableProperty] public partial bool GpuEfficiencyMode { get; set; }
-    [ObservableProperty] public partial bool GpuEfficiencyBusy { get; set; }
-    [ObservableProperty] public partial string? GpuEfficiencyMessage { get; set; }
-
-    partial void OnGpuEfficiencyModeChanged(bool value)
+    private async Task ApplyGpuOptimizeAsync(bool on)
     {
-        if (_loading || value == _host.Settings.GpuEfficiencyMode)
-            return;
-        _ = ApplyGpuEfficiencyAsync(value);
+        GpuOptimizeBusy = true;
+        GpuOptimizeMessage = await _host.SetGpuOptimizeAsync(on);
+        GpuOptimizeBusy = false;
+        OnPropertyChanged(nameof(CanAllowGpuPower));
+        OnPropertyChanged(nameof(GpuOptimizeText));
     }
 
-    private async Task ApplyGpuEfficiencyAsync(bool on)
+    /// <summary>The power part on its own, for when Windows didn't allow it before.</summary>
+    [RelayCommand]
+    private async Task AllowGpuPower()
     {
-        GpuEfficiencyBusy = true;
-        GpuEfficiencyMessage = await _host.SetGpuEfficiencyAsync(on);
-        GpuEfficiencyBusy = false;
-        if (_host.Settings.GpuEfficiencyMode != on)
-        {
-            _loading = true; // put the switch back without asking again
-            GpuEfficiencyMode = _host.Settings.GpuEfficiencyMode;
-            _loading = false;
-        }
+        GpuOptimizeBusy = true;
+        GpuOptimizeMessage = await _host.SetGpuEfficiencyAsync(true);
+        GpuOptimizeBusy = false;
+        OnPropertyChanged(nameof(CanAllowGpuPower));
+        OnPropertyChanged(nameof(GpuOptimizeText));
     }
 
     /// <summary>Pause the processor miner instead of stopping it when the user comes back (opt-in).</summary>

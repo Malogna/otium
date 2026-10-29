@@ -65,17 +65,19 @@ public sealed class AppSettings
     public bool KeepAwakeWhileEarning { get; set; } = true;
 
     /// <summary>
-    /// NVIDIA cards mine with their power limit lowered (see <see cref="Gpu.GpuEfficiency"/>). Off until the user turns it
-    /// on in Settings, which asks Windows for administrator permission once.
+    /// The power part of <see cref="GpuOptimize"/>: NVIDIA cards mine with their power limit lowered (see <see
+    /// cref="Gpu.GpuEfficiency"/>). True once Windows allowed it (one administrator prompt, during setup or when the
+    /// user turns the option on).
     /// </summary>
     public bool GpuEfficiencyMode { get; set; }
 
     /// <summary>
-    /// Quiet graphics card: while it mines, the miner eases off when a card's fan or temperature runs high, and steps
-    /// back up once it's cool (SrbMinerGpuProvider). On unless the user turns it off; settings files from before it
-    /// existed get it on too.
+    /// "Optimize my graphics card", one option for all of it: the miner's settings are tuned for the card, it eases off
+    /// while the fans or temperature run high (SrbMinerGpuProvider), and, once Windows allowed it, NVIDIA cards mine at
+    /// a lower power limit (<see cref="GpuEfficiencyMode"/>). On unless the user turns it off; settings files from before
+    /// it existed get it on too.
     /// </summary>
-    public bool GpuQuiet { get; set; } = true;
+    public bool GpuOptimize { get; set; } = true;
 
     /// <summary>
     /// "Earn while I browse": the graphics card also mines while the user is at the computer doing ordinary things

@@ -32,6 +32,7 @@ public partial class WelcomeViewModel : ViewModelBase
         _started = started;
         InviteCode = host.Settings.Referral.CodeUsed ?? "";
         UseGpu = host.Settings.GpuEnabled;
+        OptimizeGpu = host.Settings.GpuOptimize;
         UseCpu = host.Settings.CpuEnabled;
         ElectricityPrice = (decimal)host.Settings.ElectricityPricePerKwh;
         PayForElectricity = host.Settings.PayForElectricity;
@@ -219,7 +220,7 @@ public partial class WelcomeViewModel : ViewModelBase
 
     public string AiozChoiceText =>
         "Stores and delivers files for AIOZ's network, using some disk space (20 GB at most) and upload bandwidth. " +
-        "Paid in AIOZ to your wallet; Otium takes nothing. Earnings are uncertain.";
+        "Paid in AIOZ to your wallet (Otium keeps its usual share). Earnings are uncertain.";
 
     [RelayCommand]
     private void OpenAiozTerms() => Launch.Open(AiozSharingViewModel.TermsUrl);
@@ -279,9 +280,13 @@ public partial class WelcomeViewModel : ViewModelBase
         {
             var list = new List<string> { "Your processor mines while you're away." };
             if (HasGpu)
+            {
                 list.Add((_host.GpuProvider?.Gpus.Count ?? 1) > 1
                     ? $"Your graphics cards ({GpuName}) mine the best-paying coin each can mine while you're away."
                     : $"Your {GpuName} mines the best-paying coin while you're away.");
+                list.Add("It's optimized: lower power, tuned settings and quiet fans, earning about the same on less electricity"
+                         + (AsksForGpuPower ? " (Windows asks for permission once)." : "."));
+            }
             list.Add("The processor miner pauses instead of closing when you come back, so it earns again the moment you leave (it keeps about 2.5 GB of memory for up to 10 minutes).");
             return list;
         }
@@ -532,10 +537,27 @@ public partial class WelcomeViewModel : ViewModelBase
     private bool CanStart() => CanBegin && !IsStarting && ShareEarnings is not null && ElectricityAnswered && InviteError is null && Payout.IsValid && (UseCpu || (HasGpu && UseGpu))
                                && PolygonAddressOk;
 
+    /// <summary>"Optimize my graphics card" (on unless unticked in Customize): tuning, quiet fans and a lower power limit.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(QuickList))]
+    public partial bool OptimizeGpu { get; set; }
+
+    public string OptimizeGpuText => SettingsViewModel.OptimizeGpuText(AsksForGpuPower);
+
+    /// <summary>Starting will ask Windows once for the lower power limit (an NVIDIA card on Windows, not allowed yet).</summary>
+    private bool AsksForGpuPower => _host.GpuEfficiencySupported && !_host.Settings.GpuEfficiencyMode;
+
     [RelayCommand(CanExecute = nameof(CanStart))]
     private async Task Start()
     {
-        IsStarting = true;
+        // The power part of "Optimize my graphics card" needs Windows' permission once: asked here, during setup, before
+        // mining starts. Declining keeps the rest of it (tuning, quiet fans) on.
+        IsStarting = true; // also while Windows asks below, so a second click can't start twice
+        _host.Settings.GpuOptimize = OptimizeGpu;
+        _host.SaveSettings();
+        if (HasGpu && UseGpu && OptimizeGpu && AsksForGpuPower)
+            await _host.SetGpuEfficiencyAsync(true);
+
         _started(); // show the home screen right away; it reports progress while the account connects
         await _host.StartFirstTimeAsync(InviteCode, Payout.Target?.ToString(), ShareEarnings == true, KeepMinerReady,
             ShareInternet && ShareProxybase && CanShareInternet, ShareInternet && ShareMysterium && CanShareMysterium,

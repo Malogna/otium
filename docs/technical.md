@@ -51,10 +51,14 @@ this computer actually earns once there is a day of history.
 Everything technical lives under **Advanced**:
 - Details per device, including GPU algorithm and speed, power draw, and profit per day.
 - CPU usage, the idle delay, your electricity price, and switching devices on or off.
-- "Efficiency mode for my graphics card" (Windows, NVIDIA): while the card mines, its power limit drops to 70% of the
-  default (NVML), and it's back at full power the moment mining stops, so games aren't affected. One administrator
-  prompt creates two scheduled tasks (`\Otium\GPU power cap` / `restore`, run with highest privileges, never on a
-  schedule) that Otium starts without further prompts; uninstalling removes them.
+- "Optimize my graphics card" (`Settings.GpuOptimize`, on by default, one option for three things): intensity tuning
+  and quiet fans (below, no administrator rights), and on Windows with an NVIDIA card a lower power limit while it
+  mines: 70% of the default (NVML), back at full power the moment mining stops, so games aren't affected. The power
+  part needs one administrator prompt, asked during setup when the user presses Start (or in Settings, "Lower its
+  power too"); it creates two scheduled tasks (`\Otium\GPU power cap` / `restore`, run with highest privileges, never
+  on a schedule) that Otium starts without further prompts (`Settings.GpuEfficiencyMode` records that it's set up), and
+  uninstalling removes them. Declining keeps tuning and quiet fans on. Off, the miner runs at its own settings and
+  full power.
 - "Let my graphics card earn while I browse" (Windows, opt-in): the card also mines while the user does ordinary
   things at the computer. Windows' own full-screen signal (SHQueryUserNotificationState) stops it the moment a game or
   full-screen app starts, and it never runs on battery. The processor isn't affected.
@@ -118,7 +122,7 @@ policy.
   one with the most net USD a day after measured electricity (fastest on free power, or without measured watts). A
   setting that crashes, stalls or gets its shares rejected is marked failed and mining goes back at once. Trials live
   with the benchmarks (`gpu-benchmarks.json`, `Tuning`), expire after 30 days and reset with "Test GPU again".
-- **Quiet graphics card** (`Settings.GpuQuiet`, on by default). When a mining card's fan stays at 65% or more, or it
+- **Quiet fans** (part of `Settings.GpuOptimize`). When a mining card's fan stays at 65% or more, or it
   stays at 78 °C or more, for 2 minutes (judged 2 minutes after a launch), the intensity steps down by 2, to 10 at
   most. After 15 minutes at 50% fan and 70 °C or less, it steps back up, up to the tuned setting. It reads NVML (AMD:
   Linux sensors); without fan or temperature readings it does nothing, and nothing is measured for tuning meanwhile.
