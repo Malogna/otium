@@ -47,6 +47,15 @@ public sealed class AppHost : IAsyncDisposable
     {
         Paths = AppPaths.Default;
         Paths.EnsureCreated();
+        // Wallet keys set aside by an uninstall (with earnings that may still be waiting): back before the networks start.
+        try
+        {
+            WalletKeys.Restore(WalletKeys.KeepDir(Paths.Root), Paths.EnginesDir);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // Left where they are, with their note; tried again at the next start.
+        }
         // Miners an earlier Otium left running (crash, killed process) would mine on unseen; stop them first.
         MinerLifetime.StopOrphans(Paths.EnginesDir, Path.Combine(Paths.Root, "otium.lock"));
         _settingsStore = new JsonFileStore<AppSettings>(Paths.SettingsFile);

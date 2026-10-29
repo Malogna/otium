@@ -129,7 +129,8 @@ start.
   sharing earned), never your address. otium.lol shows only figures combined across several PCs. Saying no later
   deletes what was sent.
 - Uninstalling removes the miners, Otium's scheduled tasks, its downloaded files and its data folder (settings and
-  earnings history).
+  earnings history). The sharing networks' wallet keys, which can still hold earnings not paid out yet, are set aside
+  in an "Otium wallet keys" folder instead; reinstalling puts them back, so nothing waiting is lost.
 
 ## Help
 

@@ -50,7 +50,10 @@ information isn't sent anywhere except in earnings statistics and problem report
 
 The app keeps its settings (including your payout address and the result of the two-minute test), a copy of your
 account summary (invite code, email) and local earnings statistics (hour by hour for 14 days, month by month for two
-years) in its data folder (Settings → About → Open data folder). Uninstalling removes them.
+years) in its data folder (Settings → About → Open data folder). Uninstalling removes them. The one exception: if you
+shared through Proxybase, Mysterium or AIOZ, their wallet keys (which can still hold earnings not paid out yet) are
+moved to a folder named "Otium wallet keys" next to the data folder, with a note. Reinstalling Otium puts them back so
+those earnings are paid out; delete the folder if you don't plan to use Otium again. They never leave your computer.
 
 ## 3. Who else receives data
 
