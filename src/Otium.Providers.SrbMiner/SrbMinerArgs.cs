@@ -44,13 +44,15 @@ internal static class SrbMinerArgs
     /// <param name="allGpus">Every card in the computer (defaults to <paramref name="gpus"/>): the rest are left out.</param>
     /// <param name="deviceIds">SRBMiner's own card numbers by PCI address (<see cref="ParseDeviceList"/>), needed only
     /// when some but not all cards of one vendor mine.</param>
+    /// <param name="intensity">SRBMiner's intensity (1–31) for every card, or null to let it pick (see IntensityTuner).</param>
     public static IReadOnlyList<string> Build(
         GpuAlgorithm algorithm,
         PoolLogin login,
         IReadOnlyList<GpuInfo> gpus,
         bool lowPriority = true,
         IReadOnlyList<GpuInfo>? allGpus = null,
-        IReadOnlyDictionary<string, int>? deviceIds = null)
+        IReadOnlyDictionary<string, int>? deviceIds = null,
+        int? intensity = null)
     {
         var all = allGpus ?? gpus;
         var args = new List<string>
@@ -81,6 +83,9 @@ internal static class SrbMinerArgs
         // the ones that do by SRBMiner's numbers, matched by PCI address since SRBMiner's order isn't NVML's.
         if (!WholeVendors(gpus, all) && Ids(gpus, deviceIds) is { } ids)
             args.AddRange(["--gpu-id", string.Join(",", ids)]);
+        // One value: SRBMiner applies it to every card it mines with.
+        if (intensity is { } value)
+            args.AddRange(["--gpu-intensity", Math.Clamp(value, 1, 31).ToString(System.Globalization.CultureInfo.InvariantCulture)]);
         return args;
     }
 

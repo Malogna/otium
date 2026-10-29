@@ -110,6 +110,18 @@ policy.
   has an untested coin on offer always runs to test it (`ProfitOffer.NeedsTesting`).
 - **Graphics memory.** Pearl is offered from 6 GB cards and needs about 1 GB free to start (SRBMiner takes about
   0.45 GB for it); other coins need their DAG's size free (`GpuAlgorithm.WorkingMemoryGb`).
+- **Intensity tuning** (`IntensityTuner`, no administrator rights). SRBMiner's own intensity isn't reliably its best
+  (on an RTX 3080, Quantus at its pick of 23 hashed about 268 MH/s; at 21, about 480 MH/s for about 1.7× the power). While
+  mining for the user (not in fee slices), the app measures the running setting over 10 minutes (from 2 minutes after a
+  launch, past the miner's fee round), then, after 30 steady minutes and at most every 2 hours, tries another: the
+  miner's printed pick (`|INTENSITY: N|`) −2, −4 and +2, or 12/16/20/24 for Pearl, which prints none. It keeps the
+  one with the most net USD a day after measured electricity (fastest on free power, or without measured watts). A
+  setting that crashes, stalls or gets its shares rejected is marked failed and mining goes back at once. Trials live
+  with the benchmarks (`gpu-benchmarks.json`, `Tuning`), expire after 30 days and reset with "Test GPU again".
+- **Quiet graphics card** (`Settings.GpuQuiet`, on by default). When a mining card's fan stays at 65% or more, or it
+  stays at 78 °C or more, for 2 minutes (judged 2 minutes after a launch), the intensity steps down by 2, to 10 at
+  most. After 15 minutes at 50% fan and 70 °C or less, it steps back up, up to the tuned setting. It reads NVML (AMD:
+  Linux sensors); without fan or temperature readings it does nothing, and nothing is measured for tuning meanwhile.
 - **One wallet only.** Everything is paid to the single payout address the user gives. Quantus, which Kryptex pays
   only to a separate Quantus wallet, is no longer mined (the code for Kryptex's address login stays, unused, and
   `Kryptex:AddressMining` is off by default).

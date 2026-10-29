@@ -12,6 +12,9 @@ public sealed class BenchmarkFile
     public string MinerVersion { get; set; } = "";
 
     public List<BenchmarkResult> Results { get; set; } = [];
+
+    /// <summary>Intensities tried per algorithm (IntensityTuner); missing in files from before tuning.</summary>
+    public List<IntensityTrial> Tuning { get; set; } = [];
 }
 
 /// <summary>Persists per-algorithm benchmark results so profit switching works immediately on the next start.</summary>
@@ -59,6 +62,25 @@ public sealed class BenchmarkStore
                 result = result with { FailedTimes = previous is { Succeeded: false } ? previous.FailedTimes + 1 : 1 };
             _file.Results.RemoveAll(r => string.Equals(r.Algorithm, result.Algorithm, StringComparison.OrdinalIgnoreCase));
             _file.Results.Add(result);
+            _store.Save(_file);
+        }
+    }
+
+    /// <summary>This algorithm's intensity trials still in date (<see cref="IntensityTuner.Expiry"/>).</summary>
+    public IReadOnlyList<IntensityTrial> Tuning(string algorithm)
+    {
+        var now = _time.GetUtcNow();
+        lock (_lock)
+            return _file.Tuning.Where(t => string.Equals(t.Algorithm, algorithm, StringComparison.OrdinalIgnoreCase) && now - t.At < IntensityTuner.Expiry).ToList();
+    }
+
+    /// <summary>Keeps a trial, replacing an earlier one of the same algorithm and intensity.</summary>
+    public void RecordTrial(IntensityTrial trial)
+    {
+        lock (_lock)
+        {
+            _file.Tuning.RemoveAll(t => string.Equals(t.Algorithm, trial.Algorithm, StringComparison.OrdinalIgnoreCase) && t.Intensity == trial.Intensity);
+            _file.Tuning.Add(trial);
             _store.Save(_file);
         }
     }
