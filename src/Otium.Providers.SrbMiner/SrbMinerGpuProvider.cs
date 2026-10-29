@@ -114,6 +114,7 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
     private string? _switchNote;
     private string? _notice;
     private string? _lastProblem;
+    private string? _lastProblemKind;
 
     /// <summary>An algorithm that failed and isn't tried again until <paramref name="Until"/>.</summary>
     private sealed record SetAside(string Reason, DateTimeOffset Until, int Failures);
@@ -203,6 +204,7 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         _store.Clear();
         _setAside.Clear();
         _lastProblem = null;
+        _lastProblemKind = null;
     }
 
     public async Task StartAsync(ProviderRunOptions options, CancellationToken ct)
@@ -212,11 +214,11 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         var resume = !_benchmarking;
         var eligible = await EligibleAsync(ct);
         if (eligible.Count == 0 && options.Target.Role != PayoutRole.User)
-            throw new ProviderProblemException("Graphics card is resting during Otium's short fee slice: none of the coins it can mine there pay on this card. It carries on afterwards.");
+            throw new ProviderProblemException("Graphics card is resting during Otium's short fee slice: none of the coins it can mine there pay on this card. It carries on afterwards.", ProblemKinds.NothingPays);
         if (eligible.Count == 0 && _policy() is { IsNotYetFetched: true })
-            throw new ProviderProblemException("Graphics card is waiting for today's coin prices from Otium's server; it starts as soon as they arrive.");
+            throw new ProviderProblemException("Graphics card is waiting for today's coin prices from Otium's server; it starts as soon as they arrive.", ProblemKinds.NoPrices);
         if (eligible.Count == 0)
-            throw new ProviderProblemException(NothingPaysReason());
+            throw new ProviderProblemException(NothingPaysReason(), NothingPaysKind());
 
         var pending = eligible.Where(a => !_store.Has(a.PoolName)).ToList();
         if (pending.Count > 0)
@@ -316,7 +318,7 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
             if (_currentPool is { } pool && await _poolBlocked(pool.Host, pool.Port, ct) is { } blocked)
             {
                 _notice = $"Graphics card isn't mining: {blocked}.";
-                return new ProviderStatus(ProviderState.Starting, 0, _notice, _current.PoolName, Problem: _notice);
+                return new ProviderStatus(ProviderState.Starting, 0, _notice, _current.PoolName, Problem: _notice, ProblemKind: ProblemKinds.PoolBlocked);
             }
 
             var reason = SrbMinerStats.DescribeProblem(_process.RecentLog)
@@ -386,8 +388,8 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         var eligible = await EligibleAsync(ct);
         if (eligible.Count == 0)
             return new ProfitOffer(0, null, "No coin pays right now"); // lets the engine pause instead of failing to start
-        if (eligible.Any(a => !_store.Has(a.PoolName)))
-            return null; // still needs benchmarking: run to find out
+        if (eligible.Any(a => !_store.Has(a.PoolName) && SetAsideReason(a.PoolName) is null))
+            return new ProfitOffer(0, null, "Testing coins", NeedsTesting: true); // still needs benchmarking: run to find out
 
         var best = (await ScoreAsync(ct)).FirstOrDefault();
         return best is null ? null : new ProfitOffer(best.GrossUsdPerDay, best.ExtraWatts, best.Algorithm);
@@ -407,7 +409,10 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
 
     /// <summary>
     /// What each usable algorithm pays now, in USD per H/s per day: from the server's policy, or straight from
-    /// MoneroOcean when there is none. "Usable" means primary, or free-power-only while electricity costs nothing.
+    /// MoneroOcean when there is none. "Usable" means primary; free-power-only ones too while electricity costs
+    /// nothing, or as the last resort of cards no primary coin works on (none fits them, the coin no longer accepts
+    /// them, or it failed). Those are tested and then mined only if they earn more than their electricity on this card
+    /// (the engine pauses otherwise), so a card that can't mine Pearl or Quantus still mines the best coin it can.
     /// </summary>
     internal async Task<IReadOnlyList<(GpuAlgorithm Algorithm, AlgorithmQuote Quote)>> QuotesAsync(CancellationToken ct)
     {
@@ -415,31 +420,37 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         // A coin counts when at least one card can mine it and the miner can be told to use just those cards.
         var supported = GpuAlgorithms.All.Where(a => a.Supports(_gpus));
 
+        var list = new List<(GpuAlgorithm Algorithm, AlgorithmQuote Quote, string Tier)>();
         if (_policy() is { } policy)
         {
-            var list = new List<(GpuAlgorithm, AlgorithmQuote)>();
             foreach (var a in supported)
             {
                 // A card the coin no longer accepts (OnlyGpus, e.g. after Pearl's fork) skips it.
                 // Quantus goes to a Quantus wallet, so it's left out of slices that have none (Otium's and the referrer's).
-                if (policy.For(a.PoolName) is { UsdPerHashPerSecondDay: > 0 } p && Usable(p.Tier, freePower) && policy.Route(p.Route) is { } route
-                    && Selectable(CardsFor(a, p))
+                if (policy.For(a.PoolName) is { UsdPerHashPerSecondDay: > 0 } p && p.Tier is GpuTiers.Primary or GpuTiers.FreePowerOnly
+                    && policy.Route(p.Route) is { } route && Selectable(CardsFor(a, p))
                     && !(route.Kind == GpuRoutes.KryptexAddress && _options is { Target.QuantusTarget: null }))
-                    list.Add((a, new AlgorithmQuote(a.PoolName, p.UsdPerHashPerSecondDay, a.DevFeePercent, p.PoolFeePercent)));
+                    list.Add((a, new AlgorithmQuote(a.PoolName, p.UsdPerHashPerSecondDay, a.DevFeePercent, p.PoolFeePercent), p.Tier));
             }
-            return list;
+        }
+        else
+        {
+            var profits = await _pool.GetAlgoProfitsAsync(ct);
+            list.AddRange(supported
+                .Where(a => Selectable(CardsFor(a, null)))
+                .Where(a => a.DefaultRoute == GpuRoutes.MoneroOcean && a.DefaultTier is GpuTiers.Primary or GpuTiers.FreePowerOnly && profits.For(a.PoolName) > 0)
+                .Select(a => (a, new AlgorithmQuote(a.PoolName, profits.For(a.PoolName) * profits.XmrPriceUsd, a.DevFeePercent), a.DefaultTier)));
         }
 
-        var profits = await _pool.GetAlgoProfitsAsync(ct);
-        return supported
-            .Where(a => Selectable(CardsFor(a, null)))
-            .Where(a => a.DefaultRoute == GpuRoutes.MoneroOcean && Usable(a.DefaultTier, freePower) && profits.For(a.PoolName) > 0)
-            .Select(a => (a, new AlgorithmQuote(a.PoolName, profits.For(a.PoolName) * profits.XmrPriceUsd, a.DevFeePercent)))
-            .ToList();
+        var lastResort = freePower || !list.Any(q => q.Tier == GpuTiers.Primary && Workable(q.Algorithm));
+        return list.Where(q => q.Tier == GpuTiers.Primary || lastResort).Select(q => (q.Algorithm, q.Quote)).ToList();
     }
 
-    private static bool Usable(string tier, bool freePower) =>
-        tier == GpuTiers.Primary || (tier == GpuTiers.FreePowerOnly && freePower);
+    /// <summary>Could still mine on these cards: not tested yet or tested fine, and not set aside after failing.</summary>
+    private bool Workable(GpuAlgorithm algorithm) =>
+        SetAsideReason(algorithm.PoolName) is null
+        && (!_store.Has(algorithm.PoolName)
+            || _store.Results.Any(r => string.Equals(r.Algorithm, algorithm.PoolName, StringComparison.OrdinalIgnoreCase) && r.Succeeded));
 
     /// <summary>The cards that can mine this algorithm: the right vendor and memory, and accepted by the coin.</summary>
     internal IReadOnlyList<GpuInfo> CardsFor(GpuAlgorithm algorithm, GpuAlgorithmPolicy? policy) =>
@@ -491,7 +502,7 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
     /// <summary>The cards to mine this algorithm with now: those that fit it and have enough free memory.</summary>
     private IReadOnlyList<GpuInfo> RunnableCards(GpuAlgorithm algorithm) =>
         CardsFor(algorithm, _policy()?.For(algorithm.PoolName))
-            .Where(g => !(_freeMemoryGb(g) is { } free && free + 0.25 < algorithm.MinMemoryGb))
+            .Where(g => !(_freeMemoryGb(g) is { } free && free + 0.25 < algorithm.FreeMemoryNeededGb))
             .ToList();
 
     public async Task<PayoutBalance?> GetPayoutBalanceAsync(string walletAddress, CancellationToken ct)
@@ -635,9 +646,9 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
             return null;
         foreach (var gpu in CardsFor(algorithm, _policy()?.For(algorithm.PoolName)))
         {
-            if (_freeMemoryGb(gpu) is { } free && free + 0.25 < algorithm.MinMemoryGb)
+            if (_freeMemoryGb(gpu) is { } free && free + 0.25 < algorithm.FreeMemoryNeededGb)
                 return $"other apps are using most of {(_gpus.Count > 1 ? $"the {gpu.Name}'s" : "the graphics card's")} memory ({free:0.0} GB of {gpu.MemoryGb:0} GB free, "
-                       + $"{algorithm.PoolName} needs about {algorithm.MinMemoryGb:0} GB). Closing games or 3D apps frees it";
+                       + $"{algorithm.PoolName} needs about {algorithm.FreeMemoryNeededGb:0.#} GB). Closing games or 3D apps frees it";
         }
         return null;
     }
@@ -651,13 +662,14 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
             : LowMemoryCooldown;
         _setAside[algorithm.PoolName] = new SetAside(reason, now + cooldown, failures);
         _lastProblem = reason;
+        _lastProblemKind = stalled ? ProblemKinds.Failed : ProblemKinds.Memory;
     }
 
     private ProviderStatus NotMiningStatus()
     {
-        var problem = NotMining().Message;
+        var notMining = NotMining();
         _notice = null;
-        return new ProviderStatus(ProviderState.Error, 0, problem, _current?.PoolName, Problem: problem);
+        return new ProviderStatus(ProviderState.Error, 0, notMining.Message, _current?.PoolName, Problem: notMining.Message, ProblemKind: notMining.Kind);
     }
 
     /// <summary>
@@ -666,13 +678,21 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
     /// </summary>
     internal string NothingPaysReason()
     {
-        var policy = _policy();
-        var mineable = GpuAlgorithms.All.Where(a => a.Supports(_gpus)).Select(a => policy?.For(a.PoolName)).OfType<GpuAlgorithmPolicy>().ToList();
-        if (mineable.Any(p => p.Tier == GpuTiers.Disabled && p.Note?.StartsWith("Profitability data", StringComparison.Ordinal) == true))
+        if (PriceSourceDown())
             return "Graphics card is waiting for coin prices: Otium's price source is down right now. It starts as soon as they're back.";
         return _pricePerKwh() <= 0
             ? "Graphics card isn't mining: none of the coins it can mine pays right now. Otium checks again regularly."
             : "Graphics card isn't mining: no coin it can mine pays more than its electricity right now.";
+    }
+
+    private string NothingPaysKind() => PriceSourceDown() ? ProblemKinds.NoPrices : ProblemKinds.NothingPays;
+
+    /// <summary>The server has no prices for the coins this card mines: its price source is down.</summary>
+    private bool PriceSourceDown()
+    {
+        var policy = _policy();
+        var mineable = GpuAlgorithms.All.Where(a => a.Supports(_gpus)).Select(a => policy?.For(a.PoolName)).OfType<GpuAlgorithmPolicy>().ToList();
+        return mineable.Any(p => p.Tier == GpuTiers.Disabled && p.Note?.StartsWith("Profitability data", StringComparison.Ordinal) == true);
     }
 
     /// <summary>Plain-words reason that no algorithm can run now, with when Otium tries again.</summary>
@@ -681,11 +701,11 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         var now = _time.GetUtcNow();
         var waiting = _setAside.Values.Where(s => s.Until > now).ToList();
         if (waiting.Count == 0 || _lastProblem is null)
-            return new ProviderProblemException("Graphics card isn't mining: none of the coins it can mine worked in testing. Use \"Test GPU again\" in Settings to retry.");
+            return new ProviderProblemException("Graphics card isn't mining: none of the coins it can mine worked in testing. Use \"Test GPU again\" in Settings to retry.", ProblemKinds.Failed);
 
         var retryIn = waiting.Min(s => s.Until) - now;
         var when = retryIn.TotalMinutes < 90 ? $"{Math.Ceiling(retryIn.TotalMinutes):0} minutes" : $"{Math.Round(retryIn.TotalHours):0} hours";
-        return new ProviderProblemException($"Graphics card isn't mining: {_lastProblem}. Otium tries again in {when}.");
+        return new ProviderProblemException($"Graphics card isn't mining: {_lastProblem}. Otium tries again in {when}.", _lastProblemKind ?? ProblemKinds.Failed);
     }
 
     private async Task LaunchAsync(GpuAlgorithm algorithm, CancellationToken ct)

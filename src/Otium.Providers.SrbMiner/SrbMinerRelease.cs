@@ -48,6 +48,10 @@ public static class SrbMinerRelease
 /// <param name="DefaultTier">Tier used when the server's policy can't be fetched (see <see cref="GpuTiers"/>).</param>
 /// <param name="DefaultRoute">Pool kind used without a policy; Kryptex and unMineable coins need the policy's route and
 /// price, so they wait for it.</param>
+/// <param name="WorkingMemoryGb">
+/// Graphics memory the miner itself takes for this algorithm, when that's far below <paramref name="MinMemoryGb"/> (a
+/// card size, not an allocation); what must be free to start it. Without it, <paramref name="MinMemoryGb"/>.
+/// </param>
 public sealed record GpuAlgorithm(
     string PoolName,
     string MinerName,
@@ -55,8 +59,12 @@ public sealed record GpuAlgorithm(
     double MinMemoryGb,
     IReadOnlySet<GpuVendor> Vendors,
     string DefaultTier = GpuTiers.FreePowerOnly,
-    string DefaultRoute = GpuRoutes.MoneroOcean)
+    string DefaultRoute = GpuRoutes.MoneroOcean,
+    double? WorkingMemoryGb = null)
 {
+    /// <summary>Free graphics memory a card needs to start this algorithm (other apps hold the rest).</summary>
+    public double FreeMemoryNeededGb => WorkingMemoryGb ?? MinMemoryGb;
+
     /// <summary>At least one of these cards can mine it (the others are left out of that coin's miner).</summary>
     public bool Supports(IReadOnlyList<GpuInfo> gpus) => gpus.Any(Fits);
 
@@ -65,12 +73,13 @@ public sealed record GpuAlgorithm(
 }
 
 /// <summary>
-/// GPU algorithms SRBMiner can mine. The server's GPU policy decides which are mined and where; as of October 2026
-/// the MoneroOcean algorithms lose money at normal electricity prices, so they only run on free power. Pearl and Xelis
-/// are mined on unMineable, paid to the user's own address in their chosen coin (FishHash was dropped in October 2026:
-/// Pearl pays more on every card, and an RTX 3080 never started hashing it within its test). Quantus (Kryptex Pool) is
-/// only mined by balance accounts on a custodial server, to Otium's Kryptex account; own-wallet apps no longer mine it
-/// (AppHost.QuantusTarget). Dev fees are SRBMiner's
+/// GPU algorithms SRBMiner can mine. The server's GPU policy decides which are mined and where. Pearl and Quantus are
+/// primary on unMineable, paid to the user's own address in their chosen coin: Quantus is what cards that can't mine
+/// Pearl mine. The rest (Xelis on unMineable, the MoneroOcean algorithms for US users) lose money at
+/// normal electricity prices as of October 2026, so they run on free power, or as the last resort of a card no primary
+/// coin works on, judged on its own measured earnings against the user's electricity. Quantus to the user's own
+/// Quantus wallet (Kryptex's address login) is no longer offered (AppHost.QuantusTarget). FishHash stays out: on an RTX
+/// 3080 it connects to unMineable but never starts hashing (October 2026, twice). Dev fees are SRBMiner's
 /// (README, October 2026), except Quantus: Kryptex's and NurseryPool's guides say 2.5%, not the README's 2%.
 /// </summary>
 public static class GpuAlgorithms
@@ -79,7 +88,11 @@ public static class GpuAlgorithms
 
     public static readonly IReadOnlyList<GpuAlgorithm> All =
     [
-        new("pearlhash", "pearlhash", 2.0, 8, NvidiaAmd, GpuTiers.Primary, GpuRoutes.Unmineable),
+        // Pearl is offered on 6 GB cards and up (hashrate.no lists the 6 GB RTX 2060 on it; a card that can't hash it
+        // fails over to the next coin), but SRBMiner 3.7.6 takes only about 0.45 GB of graphics memory for it (an RTX
+        // 3080, October 2026). Asking for the card's full size free kept every 8 GB card from ever mining it, since
+        // Windows and open apps always hold some.
+        new("pearlhash", "pearlhash", 2.0, 6, NvidiaAmd, GpuTiers.Primary, GpuRoutes.Unmineable, WorkingMemoryGb: 1),
         new("quantus", "quantus", 2.5, 2, NvidiaAmd, GpuTiers.Primary, GpuRoutes.Kryptex),
         new("xelishash", "xelishashv3", 1.5, 2, NvidiaAmd, GpuTiers.FreePowerOnly, GpuRoutes.Unmineable),
         new("kawpow", "kawpow", 0.85, 6, NvidiaAmd),

@@ -541,6 +541,9 @@ internal static class AdminDashboard
               "error": "hit a problem", "installing": "downloading its engine", "starting": "starting",
               "switched-off": "switched off in Settings", "paused-by-user": "paused with the main switch",
               "needs-setup": "waiting for setup (address, region)", "none": "no usable card",
+              "error-memory": "hit a problem: other apps hold its memory", "error-failed": "hit a problem: its coins failed or weren't paid",
+              "error-pool-blocked": "hit a problem: something blocks the pool", "error-no-prices": "hit a problem: no coin prices",
+              "error-nothing-pays": "hit a problem: no coin pays",
             };
             const states = a.engineStates || [];
             $("uc-states").replaceChildren(...(states.length

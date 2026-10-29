@@ -39,21 +39,29 @@ public sealed class EarningsEstimator(IMoneroPoolApi pool)
         var cpuUsd = MoneroProfit.XmrPerDay(cpuHps, network) * network.PriceUsd * keep;
         devices.Add(new DeviceEstimate(DeviceKind.Cpu, cpuName, "Monero", cpuHps, cpuUsd, cpuPower.ExtraWatts(cpuUsagePercent)));
 
-        // GPUs: Pearl when the server's policy has it (it pays the most on RTX cards in late 2026), otherwise KawPow
-        // as a widely paid baseline. The real miner benchmarks and switches to whatever pays more.
+        // GPUs: the better of Pearl and Quantus when the server's policy has them (Pearl pays the most on RTX cards with
+        // 6 GB or more in late 2026, Quantus on the rest), otherwise KawPow as a widely paid baseline. The real miner
+        // benchmarks and switches to whatever pays more.
         if (gpus.Count > 0)
         {
             var pearl = gpuPolicy?.For("pearlhash") is { Tier: GpuTiers.Primary, UsdPerHashPerSecondDay: > 0 } p ? p : null;
+            var quantus = gpuPolicy?.For("quantus") is { Tier: GpuTiers.Primary, UsdPerHashPerSecondDay: > 0 } q ? q : null;
             var profits = await pool.GetAlgoProfitsAsync(ct);
             var kawpowPerHash = profits.For("kawpow"); // XMR per day per H/s
             foreach (var gpu in gpus.Where(g => g.Vendor is GpuVendor.Nvidia or GpuVendor.Amd))
             {
                 var (hps, watts) = HardwareEstimates.Gpu(gpu);
-                if (pearl is not null && HardwareEstimates.PearlHashrate(gpu) is { } pearlHps)
+                // The miner's fee (2% Pearl, 2.5% Quantus), the pool's fee, then Otium's.
+                var options = new List<DeviceEstimate>();
+                if (pearl is not null && (gpu.MemoryGb <= 0 || gpu.MemoryGb >= 5.75) && HardwareEstimates.PearlHashrate(gpu) is { } pearlHps)
+                    options.Add(new DeviceEstimate(DeviceKind.Gpu, gpu.Name, "Pearl", pearlHps,
+                        pearlHps * pearl.UsdPerHashPerSecondDay * 0.98 * (1 - pearl.PoolFeePercent / 100) * keep, watts));
+                if (quantus is not null && HardwareEstimates.QuantusHashrate(gpu) is { } quantusHps)
+                    options.Add(new DeviceEstimate(DeviceKind.Gpu, gpu.Name, "Quantus", quantusHps,
+                        quantusHps * quantus.UsdPerHashPerSecondDay * 0.975 * (1 - quantus.PoolFeePercent / 100) * keep, watts));
+                if (options.Count > 0)
                 {
-                    // 2% miner fee, the pool's fee, then Otium's.
-                    var pearlUsd = pearlHps * pearl.UsdPerHashPerSecondDay * 0.98 * (1 - pearl.PoolFeePercent / 100) * keep;
-                    devices.Add(new DeviceEstimate(DeviceKind.Gpu, gpu.Name, "Pearl", pearlHps, pearlUsd, watts));
+                    devices.Add(options.MaxBy(o => o.GrossUsdPerDay)!);
                     continue;
                 }
                 var usd = hps * kawpowPerHash * profits.XmrPriceUsd * keep;

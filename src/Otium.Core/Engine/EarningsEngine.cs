@@ -62,6 +62,7 @@ public sealed class EarningsEngine : IAsyncDisposable
     private DateTimeOffset? _suspendedSince;
     private string? _lastError;
     private string? _lastProblem;
+    private string? _lastProblemKind;
     private EngineBlockedException? _blocked;
     private Task? _loop;
 
@@ -167,6 +168,7 @@ public sealed class EarningsEngine : IAsyncDisposable
             {
                 _lastError = e.Message;
                 _lastProblem = null;
+                _lastProblemKind = null;
                 _retryAt = _time.GetUtcNow() + ErrorRetry;
                 await StopRunningAsync(CancellationToken.None);
                 Publish(EngineState.Error, $"Something went wrong: {e.Message}");
@@ -214,9 +216,10 @@ public sealed class EarningsEngine : IAsyncDisposable
             // Already in plain words (e.g. "Graphics card isn't mining: …"): show it as is and retry shortly.
             _lastError = e.Message;
             _lastProblem = e.Message;
+            _lastProblemKind = e.Kind;
             _retryAt = _time.GetUtcNow() + ErrorRetry;
             await StopRunningAsync(CancellationToken.None);
-            Publish(EngineState.Error, e.Message, problem: e.Message);
+            Publish(EngineState.Error, e.Message, problem: e.Message, problemKind: e.Kind);
         }
         finally
         {
@@ -251,7 +254,7 @@ public sealed class EarningsEngine : IAsyncDisposable
 
         if (_retryAt is { } retry && now < retry)
         {
-            Publish(EngineState.Error, _lastError ?? "Retrying shortly…", problem: _lastProblem);
+            Publish(EngineState.Error, _lastError ?? "Retrying shortly…", problem: _lastProblem, problemKind: _lastProblemKind);
             return;
         }
 
@@ -332,7 +335,7 @@ public sealed class EarningsEngine : IAsyncDisposable
         if (status.State == ProviderState.Error)
         {
             if (status.Problem is { } problem)
-                throw new ProviderProblemException(problem);
+                throw new ProviderProblemException(problem, status.ProblemKind);
             throw new InvalidOperationException(status.Message ?? "The mining engine stopped unexpectedly.");
         }
 
@@ -403,6 +406,7 @@ public sealed class EarningsEngine : IAsyncDisposable
             role: _running.Target.Role,
             detail: status.Detail,
             problem: status.Problem,
+            problemKind: status.ProblemKind,
             calibrating: status.IsCalibrating);
     }
 
@@ -452,6 +456,8 @@ public sealed class EarningsEngine : IAsyncDisposable
         double grossPerDay;
         double extraWatts;
         var offer = await _provider.GetExpectedOfferAsync(ct);
+        if (offer is { NeedsTesting: true })
+            return true; // the provider has something untested: run to find out
         if (offer is not null)
         {
             grossPerDay = offer.GrossUsdPerDay;
@@ -514,6 +520,7 @@ public sealed class EarningsEngine : IAsyncDisposable
         TimeSpan? idleTime = null,
         string? detail = null,
         string? problem = null,
+        string? problemKind = null,
         bool calibrating = false)
     {
         var config = _config();
@@ -537,6 +544,7 @@ public sealed class EarningsEngine : IAsyncDisposable
             IdleTime = idleTime,
             Detail = detail,
             Problem = problem,
+            ProblemKind = problemKind,
             IsCalibrating = calibrating,
             RunningNow = IsRunningNow,
             IdleDetectionAvailable = !config.OnlyWhenIdle || _idle.GetIdleTime() is not null,

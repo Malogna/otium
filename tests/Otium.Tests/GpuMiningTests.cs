@@ -260,9 +260,9 @@ public sealed class SrbMinerProviderTests : IDisposable
     }
 
     private SrbMinerGpuProvider CreateProvider(Func<GpuPolicy?>? policy, double pricePerKwh, string? benchmarks = null, Func<GpuInfo, double?>? freeMemoryGb = null,
-        IUnmineableApi? unmineable = null, Func<string, int, CancellationToken, Task<string?>>? poolBlocked = null) =>
+        IUnmineableApi? unmineable = null, Func<string, int, CancellationToken, Task<string?>>? poolBlocked = null, IReadOnlyList<GpuInfo>? gpus = null) =>
         new(new HttpClient(), _pool, Path.Combine(_dir, "engines"), Path.Combine(_dir, benchmarks ?? $"bench-{Guid.NewGuid():N}.json"),
-            [Rtx3080], _meter, () => pricePerKwh, _factory, _time,
+            gpus ?? [Rtx3080], _meter, () => pricePerKwh, _factory, _time,
             asset: _asset, policy: policy, freeMemoryGb: freeMemoryGb, unmineable: unmineable,
             poolBlocked: poolBlocked);
 
@@ -499,12 +499,14 @@ public sealed class SrbMinerProviderTests : IDisposable
     }
 
     [Fact]
-    public async Task Without_a_policy_only_moneroocean_runs_and_only_on_free_power()
+    public async Task Without_a_policy_only_moneroocean_runs_and_is_judged_against_electricity()
     {
+        // US users' cards (MoneroOcean, no primary coin): with paid power they still test the MoneroOcean coins, and
+        // the engine then mines the best one only if it earns more than its electricity.
         var paid = CreateProvider(policy: null, pricePerKwh: 0.15);
-        var offer = await paid.GetExpectedOfferAsync(CancellationToken.None);
-        Assert.Equal(0, offer!.GrossUsdPerDay);
-        await Assert.ThrowsAsync<ProviderProblemException>(() => paid.StartAsync(Options, CancellationToken.None)); // shown as is
+        Assert.True((await paid.GetExpectedOfferAsync(CancellationToken.None))!.NeedsTesting);
+        await paid.StartAsync(Options, CancellationToken.None);
+        Assert.Equal("kawpow", _factory.Launches[^1].Algorithm);
 
         var free = CreateProvider(policy: null, pricePerKwh: 0);
         await free.StartAsync(Options, CancellationToken.None);
@@ -737,6 +739,98 @@ public sealed class SrbMinerProviderTests : IDisposable
         Assert.True((await provider.GetStatusAsync(CancellationToken.None)).IsCalibrating);
     }
 
+    [Fact]
+    public async Task Pearl_starts_on_an_8_gb_card_although_windows_holds_some_of_its_memory()
+    {
+        // SRBMiner takes about 0.45 GB for Pearl; asking for the card's full 8 GB free kept every 8 GB card from mining.
+        var rtx3070 = new GpuInfo(GpuVendor.Nvidia, 0, "NVIDIA GeForce RTX 3070", 8);
+        double freeGb = 6.8; // the desktop and a browser hold the rest
+        var provider = CreateProvider(() => UnmineablePearlPolicy(), pricePerKwh: 0.15, freeMemoryGb: _ => freeGb, gpus: [rtx3070]);
+        var options = new ProviderRunOptions(new MiningTarget(TestAddresses.Usdt(9), PayoutRole.User), "ot1234abcdg", 100);
+
+        await provider.StartAsync(options, CancellationToken.None);
+        Assert.Equal("pearlhash", _factory.Launches.Single().Algorithm);
+        Assert.Null(provider.SetAsideReason("pearlhash"));
+
+        // A game holding nearly all of it still makes Pearl wait for memory.
+        await provider.StopAsync(CancellationToken.None);
+        freeGb = 0.5;
+        var refused = await Assert.ThrowsAsync<ProviderProblemException>(() => provider.StartAsync(options, CancellationToken.None));
+        Assert.Contains($"pearlhash needs about 1 GB", refused.Message);
+
+        // Offered from 6 GB cards (a 6 GB RTX 2060 mines it), not on 4 GB ones.
+        Assert.True(GpuAlgorithms.Find("pearlhash")!.Fits(new GpuInfo(GpuVendor.Nvidia, 0, "NVIDIA GeForce RTX 2060", 6)));
+        Assert.False(GpuAlgorithms.Find("pearlhash")!.Fits(new GpuInfo(GpuVendor.Nvidia, 0, "NVIDIA GeForce GTX 1650", 4)));
+    }
+
+    /// <summary>Pearl and Quantus primary on unMineable, Xelis there for free power or a card's last resort.</summary>
+    private static GpuPolicy UnmineableCoinsPolicy(bool quantus = true) => new(
+        DateTimeOffset.UtcNow,
+        new[]
+        {
+            new GpuAlgorithmPolicy("pearlhash", GpuTiers.Primary, "unmineable-pearlhash", 3.4e-14, 0.75),
+            new GpuAlgorithmPolicy("quantus", GpuTiers.Primary, "unmineable-quantus", 4.3e-9, 0.75),
+            new GpuAlgorithmPolicy("xelishash", GpuTiers.FreePowerOnly, "unmineable-xelishash", 1e-6, 0.75),
+        }.Where(a => quantus || a.Algorithm != "quantus").ToList(),
+        [
+            new GpuPoolRoute("unmineable-pearlhash", GpuRoutes.Unmineable, "pearlpow.unmineable.com", 443, null, Tls: true),
+            new GpuPoolRoute("unmineable-quantus", GpuRoutes.Unmineable, "quantus.unmineable.com", 443, null, Tls: true),
+            new GpuPoolRoute("unmineable-xelishash", GpuRoutes.Unmineable, "xelishash.unmineable.com", 443, null, Tls: true),
+        ]);
+
+    [Fact]
+    public async Task A_card_that_can_mine_pearl_or_quantus_never_tests_coins_that_lose_money()
+    {
+        var provider = CreateProvider(() => UnmineableCoinsPolicy(), pricePerKwh: 0.15);
+        var coins = (await provider.QuotesAsync(CancellationToken.None)).Select(q => q.Algorithm.PoolName).ToList();
+        Assert.Equal(["pearlhash", "quantus"], coins);
+
+        // On free power every coin takes part.
+        var free = CreateProvider(() => UnmineableCoinsPolicy(), pricePerKwh: 0);
+        Assert.Contains("xelishash", (await free.QuotesAsync(CancellationToken.None)).Select(q => q.Algorithm.PoolName));
+    }
+
+    [Fact]
+    public async Task A_card_no_primary_coin_works_on_tests_the_rest_and_mines_one_only_if_it_beats_its_power()
+    {
+        // A 4 GB card: too small for Pearl, and no Quantus on offer (as for every card after Pearl's fork, without it).
+        var gtx1650 = new GpuInfo(GpuVendor.Nvidia, 0, "NVIDIA GeForce GTX 1650", 4);
+        var provider = CreateProvider(() => UnmineableCoinsPolicy(quantus: false), pricePerKwh: 0.15, gpus: [gtx1650]);
+        _factory.Speeds["xelishashv3"] = 20e3;
+        Assert.Equal(["xelishash"], (await provider.QuotesAsync(CancellationToken.None)).Select(q => q.Algorithm.PoolName));
+        Assert.True((await provider.GetExpectedOfferAsync(CancellationToken.None))!.NeedsTesting); // runs to measure it
+        var options = new ProviderRunOptions(new MiningTarget(TestAddresses.Usdt(10), PayoutRole.User), "ot1234abcdg", 100);
+        await provider.StartAsync(options, CancellationToken.None);
+        Assert.Equal("xelishashv3", _factory.Launches.Single().Algorithm); // SRBMiner's name for it
+
+        // Once measured, the engine gets its real offer and pauses if it earns less than the card's power.
+        await RunForProvider(provider, SrbMinerGpuProvider.BenchmarkDuration * 2);
+        var offer = await provider.GetExpectedOfferAsync(CancellationToken.None);
+        Assert.False(offer!.NeedsTesting);
+        Assert.Equal("xelishash", offer.Description);
+    }
+
+    [Fact]
+    public async Task A_failed_primary_coin_opens_the_last_resort_coins()
+    {
+        // Only Pearl is primary here; once it has failed on this card, Xelis may be tried.
+        var store = new BenchmarkStore(Path.Combine(_dir, "failed.json"), [Rtx3080], _time);
+        store.Record(new BenchmarkResult("pearlhash", 0, null, _time.GetUtcNow(), Failure: "no hashing"));
+        var provider = CreateProvider(() => UnmineableCoinsPolicy(quantus: false), pricePerKwh: 0.15, benchmarks: "failed.json");
+        Assert.Equal(["pearlhash", "xelishash"], (await provider.QuotesAsync(CancellationToken.None)).Select(q => q.Algorithm.PoolName));
+    }
+
+    [Fact]
+    public void Quantus_logs_in_to_unmineable_with_the_users_own_payout_target()
+    {
+        var provider = CreateProvider(() => UnmineableCoinsPolicy(), pricePerKwh: 0.15);
+        var target = TestAddresses.Usdt(11);
+        var login = provider.LoginFor(GpuAlgorithms.Find("quantus")!, new ProviderRunOptions(new MiningTarget(target, PayoutRole.User), "ot1234abcdg", 100));
+        Assert.Equal("quantus.unmineable.com", login.Pool.Host);
+        Assert.True(login.Pool.Tls);
+        Assert.StartsWith($"{target}.ot1234abcdg", login.Wallet);
+    }
+
     [Theory]
     [InlineData(GpuRoutes.Unmineable, "pearlpow.unmineable.com", true)]
     [InlineData(GpuRoutes.Unmineable, "UNMINEABLE.COM", true)]
@@ -824,7 +918,7 @@ public sealed class SrbMinerProviderTests : IDisposable
     [Fact]
     public async Task Benchmarks_every_paying_algorithm_then_mines_the_most_profitable()
     {
-        Assert.Null(await _provider.GetExpectedOfferAsync(CancellationToken.None)); // nothing measured yet
+        Assert.True((await _provider.GetExpectedOfferAsync(CancellationToken.None))!.NeedsTesting); // nothing measured yet
 
         await _provider.StartAsync(Options, CancellationToken.None);
         Assert.Equal("kawpow", _factory.Launches[0].Algorithm);

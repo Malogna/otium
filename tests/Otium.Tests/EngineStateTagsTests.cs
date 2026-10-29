@@ -32,4 +32,18 @@ public class EngineStateTagsTests
         Assert.Equal("paused-by-user", EngineStateTags.For(earning, enabled: true, earningOn: false, needsSetup: false));
         Assert.Equal("needs-setup", EngineStateTags.For(earning, enabled: true, earningOn: true, needsSetup: true));
     }
+
+    [Theory]
+    [InlineData(EngineState.Error, "memory", "error-memory")]
+    [InlineData(EngineState.Error, "failed", "error-failed")]
+    [InlineData(EngineState.Error, "no-prices", "error-no-prices")]
+    [InlineData(EngineState.Error, "nothing-pays", "error-nothing-pays")]
+    [InlineData(EngineState.Starting, "pool-blocked", "error-pool-blocked")] // it keeps trying, but isn't mining
+    [InlineData(EngineState.Error, "something-new", "error")] // a kind the server doesn't know stays plain "error"
+    [InlineData(EngineState.Earning, "memory", "earning")] // mining again: the old problem no longer counts
+    public void Errors_say_why_when_the_provider_names_the_problem(EngineState state, string kind, string tag)
+    {
+        Assert.Equal(tag, EngineStateTags.For(new EngineSnapshot { State = state, ProblemKind = kind }, enabled: true, earningOn: true, needsSetup: false));
+        Assert.Contains(tag, EngineStateTags.Known); // so the server keeps it
+    }
 }

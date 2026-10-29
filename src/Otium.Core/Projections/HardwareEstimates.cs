@@ -40,14 +40,32 @@ public static class HardwareEstimates
         ("2080", 50), ("2070", 40), ("2060", 35), ("9070", 50),
     ];
 
+    /// <summary>
+    /// Quantus MH/s by GPU model: WhatToMine's card pages (18 October 2026, as on otium.lol) and hashrate.no for the
+    /// GTX and older AMD cards (29 October 2026). It needs little graphics memory, so it's what cards without Pearl mine.
+    /// </summary>
+    private static readonly (string Key, double Mhs)[] QuantusSpeeds =
+    [
+        ("5080", 760), ("5070 ti", 615), ("5070", 430), ("5060 ti", 300), ("5060", 230),
+        ("4090", 880), ("4080", 690), ("4070 ti", 540), ("4070", 410), ("4060 ti", 300), ("4060", 210),
+        ("3090", 460), ("3080 ti", 450), ("3080", 380), ("3070 ti", 260), ("3070", 255), ("3060 ti", 190), ("3060", 155),
+        ("3050", 95), ("2080 ti", 340), ("2080", 230), ("2070", 180), ("2060 super", 170), ("2060", 140),
+        ("1660 super", 113), ("1660", 100), ("6700", 130), ("6600", 60), ("580", 49),
+    ];
+
     /// <summary>Pearl hashrate in H/s, or null when the card can't usefully mine it.</summary>
-    public static double? PearlHashrate(GpuInfo gpu)
+    public static double? PearlHashrate(GpuInfo gpu) => Lookup(PearlSpeeds, gpu, 1e12);
+
+    /// <summary>Quantus hashrate in H/s, or null for a card without a known speed.</summary>
+    public static double? QuantusHashrate(GpuInfo gpu) => Lookup(QuantusSpeeds, gpu, 1e6);
+
+    private static double? Lookup((string Key, double Speed)[] table, GpuInfo gpu, double unit)
     {
         var name = gpu.Name.ToLowerInvariant();
-        foreach (var (key, ths) in PearlSpeeds)
+        foreach (var (key, speed) in table)
         {
             if (name.Contains(key, StringComparison.Ordinal))
-                return ths * 1e12;
+                return speed * unit;
         }
         return null;
     }

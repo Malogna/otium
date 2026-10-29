@@ -54,7 +54,8 @@ public sealed record ProviderStatus(
     string? Message = null,
     string? Detail = null,
     bool IsCalibrating = false,
-    string? Problem = null)
+    string? Problem = null,
+    string? ProblemKind = null)
 {
     public static ProviderStatus Stopped(bool installed) =>
         new(installed ? ProviderState.Ready : ProviderState.NotInstalled, 0);
@@ -65,7 +66,11 @@ public sealed record ProviderStatus(
 /// when the best known option wouldn't cover electricity.
 /// </summary>
 /// <param name="ExtraWatts">Measured extra power for this option, if known; otherwise the engine uses its power meter.</param>
-public sealed record ProfitOffer(double GrossUsdPerDay, double? ExtraWatts, string Description);
+/// <param name="NeedsTesting">
+/// Something not measured yet may pay: run to find out, whatever was measured before (a coin newly on offer after a
+/// restart would otherwise be judged on nothing and never tested).
+/// </param>
+public sealed record ProfitOffer(double GrossUsdPerDay, double? ExtraWatts, string Description, bool NeedsTesting = false);
 
 public sealed record InstallProgress(string Stage, double Fraction);
 
@@ -92,7 +97,32 @@ public sealed record PayoutBalance(
 /// Thrown when a provider can't run for a reason it has already put in plain words (shown without "Something went
 /// wrong"). The engine retries after a short wait.
 /// </summary>
-public sealed class ProviderProblemException(string message) : Exception(message);
+public sealed class ProviderProblemException(string message, string? kind = null) : Exception(message)
+{
+    /// <summary>What kind of problem it is (<see cref="ProblemKinds"/>), for the anonymous counts on the admin dashboard.</summary>
+    public string? Kind { get; } = kind;
+}
+
+/// <summary>Why a device isn't mining, as one word sent with the check-in (see Engine.EngineStateTags).</summary>
+public static class ProblemKinds
+{
+    /// <summary>Other apps hold the graphics memory the coin needs.</summary>
+    public const string Memory = "memory";
+
+    /// <summary>The miner stalled, crashed or wasn't paid for its work, or every coin failed its test.</summary>
+    public const string Failed = "failed";
+
+    /// <summary>Something on the computer (antivirus web protection, a firewall) blocks the pool.</summary>
+    public const string PoolBlocked = "pool-blocked";
+
+    /// <summary>Coin prices haven't arrived from Otium's server, or its price source is down.</summary>
+    public const string NoPrices = "no-prices";
+
+    /// <summary>No coin the device can mine pays (more than its electricity) right now.</summary>
+    public const string NothingPays = "nothing-pays";
+
+    public static readonly IReadOnlyList<string> All = [Memory, Failed, PoolBlocked, NoPrices, NothingPays];
+}
 
 /// <summary>Thrown when antivirus software removes or blocks an engine binary.</summary>
 public sealed class EngineBlockedException(string message, string enginePath) : Exception(message)

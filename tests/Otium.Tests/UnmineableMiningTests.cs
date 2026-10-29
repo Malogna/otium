@@ -177,7 +177,8 @@ public class UnmineableMiningTests
     [Fact]
     public void The_new_unmineable_algorithms_use_srbminers_names()
     {
-        // Xelis loses money at normal power prices (October 2026), so it only runs on free power. FishHash was dropped.
+        // Xelis loses money at normal power prices (October 2026): free power, or a card's last resort. FishHash stays
+        // out: it never starts hashing on an RTX 3080.
         Assert.Equal(GpuTiers.FreePowerOnly, GpuAlgorithms.Find("xelishash")!.DefaultTier);
         Assert.Equal(GpuTiers.Primary, GpuAlgorithms.Find("pearlhash")!.DefaultTier);
         Assert.Equal("xelishashv3", GpuAlgorithms.Find("xelishash")!.MinerName);

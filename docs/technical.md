@@ -96,12 +96,20 @@ policy.
   from the address (a TRON address gets USDT on TRC-20). `ztjq-jr7s` is Otium's unMineable referral code: users pay
   unMineable 0.75% instead of 1%, and unMineable pays Otium 0.25–0.50% of their rewards.
 - CPU: XMRig on `rx.unmineable.com:443` with TLS (unMineable's only RandomX port that works). GPU: SRBMiner on the
-  routes in the server's GPU policy: unMineable for **Pearl** (the best-paying coin for NVIDIA cards in October 2026),
-  plus Xelis (`xelishashv3`), which only runs on free power since it loses money at normal prices; all
-  with `--tls true`, priced from WhatToMine minus unMineable's 0.75% (FishHash was dropped in October 2026: Pearl
-  pays more on every card, and it never started hashing on an RTX 3080). US users' graphics cards stay on
-  MoneroOcean, whose GPU algorithms are "free power only". Without the server's policy, unMineable users' GPUs wait
-  (unMineable's prices come from the server) and US Monero users fall back to MoneroOcean's own rates.
+  routes in the server's GPU policy: unMineable for **Pearl** (the best-paying coin for cards with 6 GB or more in
+  October 2026) and **Quantus** (`quantus.unmineable.com`, the coin for cards without Pearl: it beats $0.15/kWh on most
+  cards and needs little graphics memory), plus Xelis (`xelishashv3`), which loses money at normal prices; all with
+  `--tls true`, priced from WhatToMine minus unMineable's 0.75% (FishHash stays out: on an RTX 3080 it connects but
+  never starts hashing, October 2026). US users' graphics cards stay on MoneroOcean.
+  Without the server's policy, unMineable users' GPUs wait (unMineable's prices come from the server) and US Monero
+  users fall back to MoneroOcean's own rates.
+- **Free-power-only coins as the last resort.** Coins the policy marks "free power only" run when electricity is free,
+  and also on cards no primary coin works on (none fits them, the coin's `OnlyGpus` leaves them out, as after Pearl's
+  fork, or it failed its test or was set aside). They're tested like any coin and mined only when they earn more than
+  their measured electricity on that card; otherwise the engine pauses for electricity with the numbers. A card that
+  has an untested coin on offer always runs to test it (`ProfitOffer.NeedsTesting`).
+- **Graphics memory.** Pearl is offered from 6 GB cards and needs about 1 GB free to start (SRBMiner takes about
+  0.45 GB for it); other coins need their DAG's size free (`GpuAlgorithm.WorkingMemoryGb`).
 - **One wallet only.** Everything is paid to the single payout address the user gives. Quantus, which Kryptex pays
   only to a separate Quantus wallet, is no longer mined (the code for Kryptex's address login stays, unused, and
   `Kryptex:AddressMining` is off by default).
@@ -209,12 +217,16 @@ earnings has legal consequences (see [Before launch](#before-launch)).
   - **Pearl and Quantus** (primary) are mined on **Kryptex Pool** into the operator's Kryptex account as
     `account.workerid`, with auto-exchange to BTC/USDT. They are priced from WhatToMine's network data and Kryptex's
     live pool fee (3% in October 2026). Own-wallet users don't get them, since that pool pays Otium's account.
-  - **kawpow, autolykos2, etchash, cn/gpu** (MoneroOcean, paid in XMR) lose money at normal electricity prices as of
-    October 2026, so they are "free power only": not tested or mined unless the electricity price is 0.
+  - **kawpow, autolykos2, etchash, cn/gpu** (MoneroOcean, paid in XMR, for US users) lose money at normal electricity
+    prices as of October 2026, so they are "free power only": mined on free power, or as the last resort described
+    above.
   - **Kill switch:** `GpuPolicy:Disabled` turns an algorithm off for every app at the next refresh (useful when Pearl's
     announced upgrade ends consumer-GPU mining). A failed, lagging or more than 2-hour-old feed disables a coin
     automatically. `GpuPolicy:Tiers` overrides tiers.
   - Without a policy (server unreachable) the app falls back to MoneroOcean's own rates, still free-power-only.
+  - **Why a card fails** is sent with the check-in: a GPU in error reports `error-memory`, `error-failed`,
+    `error-pool-blocked`, `error-no-prices` or `error-nothing-pays` (`ProblemKinds`) instead of plain `error`, so the
+    admin dashboard's computer states say why cards aren't mining.
 - Each account mines under its own worker id to one of the operator's pool addresses.
 
 **Crediting** (`src/Otium.Server/Earnings`)
