@@ -155,6 +155,7 @@ internal static partial class SitePages
                       <span class="label">Internet sharing</span>
                       <h2 id="sharing-title" class="mt-18">Get paid for internet bandwidth you aren't using.</h2>
                       <p class="muted mt-20">Optional, and off until you tick it. Proxybase's customers, mostly AI agents and businesses that collect public web pages, use some of the internet bandwidth you aren't using. It's paid to your wallet in your coin, like mining.</p>
+                      <p class="fine mt-14">The same tick adds two more networks, with no fee from Otium: Mysterium carries traffic for its business customers and pays its MYST token straight to your own address, and AIOZ uses some spare disk space to store and deliver files, paying its AIOZ token. Untick any you don't want.</p>
                     </div>
                     <div class="panel reveal">
                       <p class="keep" data-count>{(s.IsReal ? "" : "≈ ")}{UsdWhole(s.PerDay * 30)}<small>{explain}</small></p>
@@ -519,11 +520,13 @@ internal static partial class SitePages
                       <div class="actions">
                         <a class="button" href="{download}"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M11 3h2v10.2l3.6-3.6 1.4 1.4-6 6-6-6 1.4-1.4 3.6 3.6z"/><path fill="currentColor" d="M5 19h14v2H5z"/></svg><span data-download-label>Download Otium</span></a>
                         <a class="button ghost" href="#night-shift">How it works</a>
+                        <a class="button ghost discord" href="{Core.AppIdentity.DiscordUrl}" title="Join our Discord" aria-label="Join our Discord"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M20.317 4.37a19.79 19.79 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.865-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.74 19.74 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.1 13.1 0 0 1-1.872-.892.077.077 0 0 1-.008-.128c.126-.094.252-.192.372-.291a.074.074 0 0 1 .078-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.009c.12.099.246.198.373.292a.077.077 0 0 1-.006.127 12.3 12.3 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.84 19.84 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg>Discord</a>
                       </div>
                       <ul class="facts">
                         <li>Stops when you're back</li>
                         <li>Never holds your money</li>
                         <li>Windows, macOS, Linux</li>
+                        <li><a href="https://github.com/Malogna/otium">Open source</a></li>
                       </ul>
                     </div>
                     <div class="panel estimator" id="earnings" aria-label="Earnings estimate">
@@ -599,6 +602,7 @@ internal static partial class SitePages
                       <span class="label">Watches the power price</span>
                       <h2 id="power-title" class="mt-18">It watches the price of power by the hour.</h2>
                       <p class="muted mt-20">When electricity would cost more than mining earns, Otium waits. In Norway, Sweden, Denmark and Finland it follows the live hourly price for your area, so it mines through the cheap night hours and sits out the evening peak.</p>
+                      <p class="fine mt-14">Electricity included in your rent, or paid by someone else? Say so when you set it up, and Otium earns whenever you're away.</p>
                     </div>
                     <div class="panel prices reveal">
                       <div class="threshold"><span>Example day, southern Norway</span><span>break-even ${breakEven.ToString("0.00", CultureInfo.InvariantCulture)}/kWh</span></div>
@@ -652,6 +656,7 @@ internal static partial class SitePages
                           <li><strong>The conversion goes through Relay</strong> (and SideShift for Litecoin, ChangeNOW for Monero). One that fails comes back to the wallet on your computer.</li>
                         </ol>
                         <p class="fine mt-14">Otium's {fee} of sharing earnings comes off; the rest reaches your address. Payouts only ever go to the address you registered, never anywhere the app or anyone else asks.</p>
+                        <p class="fine mt-14">Mysterium and AIOZ skip the conversion: Mysterium pays MYST on Polygon straight to your address from 5 MYST, and Otium sends AIOZ to your 0x address from 5 AIOZ. Otium takes nothing from either.</p>
                       </div>
                     </div>
                   </div>
@@ -702,7 +707,8 @@ internal static partial class SitePages
     [
         ("Is my money safe?", "Otium never touches it. The pool pays your wallet directly, and you can check your balance on the pool's own page at any time.", null),
         ("Why does Otium take 2%?", "It's how Otium pays its way, without ads or selling anyone's data. It pays for the servers behind the website, your account and invites, the update feed, and the price check that picks the best-paying coin for your graphics card every 10 minutes. It pays for setting up payouts to your own wallet: each miner set up for your coin and address, a check that the pool will actually pay you, and turning internet sharing's earnings into your coin. And it pays for development and support: keeping up as coins and pools change, signed updates, and help on Discord and by email. The fee is 2% of mining time, so you can see it happen, and it stops during fee-free days.", "why-fee"),
-        ("When do I get paid?", "Mining: unMineable pays your address once a day after your balance passes its minimum (1.5 USDT for USDT on TRON, usually within a day or two of mining with a gaming graphics card). Internet sharing: from $1, once the network fees are a small part of the payout. Both go straight to your own wallet. <a href=\"#payouts\">How payouts work</a>", null),
+        ("When do I get paid?", "Mining: unMineable pays your address once a day after your balance passes its minimum (1.5 USDT for USDT on TRON, usually within a day or two of mining with a gaming graphics card). Internet sharing through Proxybase: from $1, once the network fees are a small part of the payout. Mysterium and AIOZ pay their own tokens from 5 MYST or 5 AIOZ. All of it goes straight to your own wallet. <a href=\"#payouts\">How payouts work</a>", null),
+        ("Is Otium open source?", $"""Yes. The app and the server behind otium.lol are free software under the AGPL-3.0, and <a href="https://github.com/Malogna/otium">the code is on GitHub</a>, so anyone can check what Otium does on your computer. Every update is signed with a key that never leaves the developer's PC. Questions? <a href="{Core.AppIdentity.DiscordUrl}">Join our Discord</a>.""", null),
         ("Why does my antivirus warn about it?", """Antivirus tools flag every mining program, because criminals hide miners on other people's computers. Otium downloads the official open-source XMRig and SRBMiner releases, checks their fingerprints, and keeps them in one folder you can allow. It only mines when you've set it up and turned it on. <a href="/antivirus">How to allow it in your antivirus</a>""", null),
         ("Will it slow my computer down?", "By default it only runs while you're away, and stops within a second when you're back. If you let it run while you work, it uses the lowest priority and only as much of the processor as you allow. Games and work always come first.", null),
         ("I live in the United States", "unMineable doesn't serve US residents, so Otium pays you in Monero through MoneroOcean instead.", null),

@@ -195,6 +195,9 @@ p { margin: 0; text-wrap: pretty; }
   box-shadow: 0 0 0 1px var(--line) inset;
 }
 .button.ghost:hover { box-shadow: 0 0 0 1px var(--mist) inset; }
+/* Discord's own blurple, lightened to read on the night background. */
+.button.discord svg { color: #8c95ff; }
+.button.discord:hover { box-shadow: 0 0 0 1px #8c95ff inset; }
 
 /* ---------- Hero ---------- */
 
@@ -221,6 +224,8 @@ p { margin: 0; text-wrap: pretty; }
 .hero .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 34px; }
 .facts { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-top: 30px; padding: 0; list-style: none; font-family: var(--mono); font-size: 0.82rem; color: var(--mist); }
 .facts li { display: inline-flex; align-items: center; gap: 8px; }
+.facts a { color: inherit; text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; transition: color .2s, text-decoration-color .2s; }
+.facts a:hover { color: var(--ink); text-decoration-color: var(--mist); }
 .facts li::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--emerald); box-shadow: 0 0 10px var(--emerald); }
 
 /* The 24-hour dial */
