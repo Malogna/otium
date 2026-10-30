@@ -90,10 +90,15 @@
                         <StackPanel Spacing="2" IsVisible="{Binding HasGpu}">
                             <ToggleSwitch IsChecked="{Binding GpuOptimize}" IsEnabled="{Binding !GpuOptimizeBusy}"
                                           OnContent="Optimize my graphics card" OffContent="Optimize my graphics card" />
-                            <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Text="{Binding GpuOptimizeText}" />
-                            <Button Classes="link" HorizontalAlignment="Left" Content="Lower its power too (Windows asks once)"
-                                    Command="{Binding AllowGpuPowerCommand}" IsVisible="{Binding CanAllowGpuPower}" IsEnabled="{Binding !GpuOptimizeBusy}" />
-                            <TextBlock Classes="good" FontSize="12.5" TextWrapping="Wrap" Text="{Binding GpuOptimizeMessage}"
+                            <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Text="{x:Static vm:SettingsViewModel.OptimizeGpuText}" />
+                            <StackPanel Spacing="8" Margin="0,6,0,0" IsVisible="{Binding IsAskingGpuPermission}">
+                                <TextBlock FontSize="13" TextWrapping="Wrap" Text="{x:Static vm:SettingsViewModel.GpuPermissionText}" />
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Button Classes="accent" Content="Allow" Command="{Binding AllowGpuOptimizeCommand}" />
+                                    <Button Content="Cancel" Command="{Binding CancelGpuOptimizeCommand}" />
+                                </StackPanel>
+                            </StackPanel>
+                            <TextBlock Classes="error" FontSize="12.5" TextWrapping="Wrap" Text="{Binding GpuOptimizeMessage}"
                                        IsVisible="{Binding GpuOptimizeMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                         </StackPanel>
                         <TextBlock Classes="muted" Text="{Binding GpuSummary}" TextWrapping="Wrap" />
