@@ -119,7 +119,7 @@ public sealed class AppHost : IAsyncDisposable
             powerCap: SetGpuPowerCap,
             stats: gpu => Hardware.ReadGpus([gpu]).FirstOrDefault(),
             prepare: PauseTuningToolsAsync,
-            silentTuning: () => Settings.SilentTuning,
+            silentTuning: () => Settings.SilentTuning && GpuOptimizeOn,
             fanLimit: () => Math.Clamp(Settings.QuietFanLimit, 30, 90));
         if (IsSimulated)
         {
@@ -555,6 +555,9 @@ public sealed class AppHost : IAsyncDisposable
         ? ToolsGuard.Closed.Select(c => c.Name).Distinct().ToList()
         : [];
 
+    /// <summary>Closing tuning programs is one of the things "Optimize my graphics card" does, so it works only while that is on.</summary>
+    public bool PauseTuningToolsOn => Settings.PauseTuningTools && Settings.GpuOptimize;
+
     /// <summary>The names of the tuning programs running now (empty when there are none or the feature is off).</summary>
     public IReadOnlyList<string> TuningToolsRunning => TuningToolsSupported ? ToolsGuard.Running().Select(r => r.Name).Distinct().ToList() : [];
 
@@ -569,7 +572,7 @@ public sealed class AppHost : IAsyncDisposable
     /// </summary>
     public async Task PauseTuningToolsAsync(CancellationToken ct)
     {
-        if (!TuningToolsSupported || !Settings.PauseTuningTools)
+        if (!TuningToolsSupported || !PauseTuningToolsOn)
             return;
         if (ToolsGuard.Running().Count == 0)
             return;
@@ -609,7 +612,7 @@ public sealed class AppHost : IAsyncDisposable
         if (!TuningToolsSupported || GpuEngine is null)
             return;
         var mining = GpuEngine.Snapshot.State is EngineState.Starting or EngineState.Earning;
-        if (mining && Settings.PauseTuningTools)
+        if (mining && PauseTuningToolsOn)
         {
             // A program started while the card was already mining (the miner isn't relaunched for that): close it too, but not on every update.
             var now = DateTimeOffset.UtcNow;

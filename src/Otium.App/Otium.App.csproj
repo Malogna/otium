@@ -6,7 +6,15 @@
     <RootNamespace>Otium.App</RootNamespace>
     <ApplicationIcon>Assets\otium.ico</ApplicationIcon>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <!-- Otium mostly sits in the tray: keep its memory small. No background garbage-collection thread and its extra heap, no
+         profiling instrumentation in the JIT, and a collector that prefers a smaller heap over a little less work. -->
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
+    <TieredPGO>false</TieredPGO>
   </PropertyGroup>
+
+  <ItemGroup>
+    <RuntimeHostConfigurationOption Include="System.GC.ConserveMemory" Value="5" />
+  </ItemGroup>
 
   <ItemGroup>
     <AvaloniaResource Include="Assets\**" />

@@ -25,7 +25,22 @@ public sealed class SlideFadeTransition : IPageTransition
 
         var tasks = new List<Task>();
         if (from is not null)
-            tasks.Add(Fade(1, 0, new CubicEaseIn(), TimeSpan.FromTicks(Duration.Ticks * 2 / 3)).RunAsync(from, cancellationToken));
+        {
+            // The old page leaves the way the new one comes from, a little: it fades while drifting off toward the side it came from.
+            from.RenderTransform = new TranslateTransform();
+            var drift = forward ? -Distance * 0.4 : Distance * 0.4;
+            tasks.Add(new Animation
+            {
+                Duration = TimeSpan.FromTicks(Duration.Ticks * 2 / 3),
+                Easing = new CubicEaseIn(),
+                FillMode = FillMode.Forward,
+                Children =
+                {
+                    new KeyFrame { Cue = new Cue(0d), Setters = { new Setter(Visual.OpacityProperty, 1d), new Setter(TranslateTransform.XProperty, 0d) } },
+                    new KeyFrame { Cue = new Cue(1d), Setters = { new Setter(Visual.OpacityProperty, 0d), new Setter(TranslateTransform.XProperty, drift) } },
+                },
+            }.RunAsync(from, cancellationToken));
+        }
         if (to is not null)
         {
             to.IsVisible = true;
@@ -47,7 +62,10 @@ public sealed class SlideFadeTransition : IPageTransition
         await Task.WhenAll(tasks);
 
         if (from is not null && !cancellationToken.IsCancellationRequested)
+        {
             from.IsVisible = false;
+            from.RenderTransform = null;
+        }
         if (to is not null)
             to.RenderTransform = null;
     }

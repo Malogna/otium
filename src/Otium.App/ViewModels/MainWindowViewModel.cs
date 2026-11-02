@@ -40,8 +40,13 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private ShellViewModel Advanced => _advanced ??= new ShellViewModel(_host, () => Go(Home, back: true), StartOver);
 
+    /// <summary>True until the first move between screens: only the first screen's cards rise into place.</summary>
+    [ObservableProperty]
+    public partial bool IsIntro { get; set; } = true;
+
     private void Go(ViewModelBase page, bool back)
     {
+        IsIntro = false;
         IsGoingBack = back; // before the page changes, which is what starts the transition
         CurrentPage = page;
     }

@@ -9,6 +9,8 @@ public partial class HomeView : UserControl
 
     private const double VerticalMargins = 14 + 18;
 
+    /// <summary>The screen is only too tall for the window when something unusual is open; then it still scrolls rather than cuts off.</summary>
+
     private bool? _wide;
 
     public HomeView()
@@ -19,9 +21,9 @@ public partial class HomeView : UserControl
     }
 
     /// <summary>
-    /// Wide: the left column (notices, balance, what is running now, invite) beside the right (results, earnings, tips), both
-    /// as tall as the window, so the last card of each takes the height that is left and nothing is empty. Narrow: one
-    /// column, 640 wide, that scrolls.
+    /// Wide: the left column (balance, what is running now, invite) beside the right (earnings, one suggestion), both as tall as
+    /// the window, so the card in the middle of each takes the height that is left and nothing is empty. Narrow: one column,
+    /// 640 wide, that scrolls.
     /// </summary>
     private void Arrange(double width)
     {
@@ -36,18 +38,19 @@ public partial class HomeView : UserControl
         columns.MaxWidth = wide ? 1200 : 640;
         columns.ColumnDefinitions = new ColumnDefinitions(wide ? "2*,3*" : "*");
         columns.RowDefinitions = new RowDefinitions(wide ? "*" : "Auto,Auto");
-        left.RowDefinitions = new RowDefinitions(wide ? "Auto,Auto,*" : "Auto,Auto,Auto");
-        right.RowDefinitions = new RowDefinitions(wide ? "Auto,*,Auto" : "Auto,Auto,Auto");
+        left.RowDefinitions = new RowDefinitions(wide ? "Auto,*,Auto" : "Auto,Auto,Auto");
+        right.RowDefinitions = new RowDefinitions(wide ? "*,Auto" : "Auto,Auto");
+        this.FindControl<ScrollViewer>("Scroller")!.VerticalScrollBarVisibility = wide ? Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled : Avalonia.Controls.Primitives.ScrollBarVisibility.Auto;
         Grid.SetColumn(right, wide ? 1 : 0);
         Grid.SetRow(right, wide ? 0 : 1);
         FillHeight();
     }
 
-    /// <summary>Makes the columns at least as tall as the window shows, so the stretching cards fill it (taller content scrolls).</summary>
+    /// <summary>Wide: the columns are exactly as tall as the window shows, so the stretching cards fill it and nothing scrolls.</summary>
     private void FillHeight()
     {
         var scroller = this.FindControl<ScrollViewer>("Scroller")!;
         var columns = this.FindControl<Grid>("Columns")!;
-        columns.MinHeight = _wide == true ? Math.Max(0, scroller.Bounds.Height - VerticalMargins) : 0;
+        columns.Height = _wide == true ? Math.Max(0, scroller.Bounds.Height - VerticalMargins) : double.NaN;
     }
 }
