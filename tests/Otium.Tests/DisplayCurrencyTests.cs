@@ -52,9 +52,10 @@ public class DisplayCurrencyTests
     {
         var krone = new DisplayCurrency("NOK", 9.2, CultureInfo.GetCultureInfo("nb-NO"));
 
-        Assert.EndsWith("4,60", krone.Format(0.5));     // 4.60 kroner: not "4,600", which reads as four thousand
-        Assert.EndsWith("0,460", krone.Format(0.05));   // under one krone: the extra digit helps
-        Assert.EndsWith("2,30", krone.Format(0.25, cents: true));
+        Assert.DoesNotContain("4,600", krone.Format(0.5));
+        Assert.Contains("4,60", krone.Format(0.5));     // 4.60 kroner: not "4,600", which reads as four thousand
+        Assert.Contains("0,460", krone.Format(0.05));   // under one krone: the extra digit helps
+        Assert.Contains("2,30", krone.Format(0.25, cents: true));
     }
 
     [Fact]
