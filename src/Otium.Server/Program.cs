@@ -84,6 +84,8 @@ builder.Services.AddHttpClient<IReleaseList, GitHubReleaseList>();
 builder.Services.AddSingleton(new UpdateSigningKeys(Otium.Core.AppIdentity.UpdateSigningKeys));
 builder.Services.AddSingleton<UpdateFeed>();
 builder.Services.AddSingleton<GpuPolicyService>();
+builder.Services.AddHttpClient<Otium.Server.Rates.IFxFeed, Otium.Server.Rates.FxFeedClient>();
+builder.Services.AddSingleton<Otium.Server.Rates.FxRatesService>();
 builder.Services.AddSingleton<KryptexCreditor>();
 builder.Services.AddSingleton<CpuPoolRouter>();
 if (builder.Configuration.GetValue<bool>("DevMode:FakePayouts"))
@@ -431,6 +433,15 @@ api.MapGet("/invite-link", (HttpContext context, InviteLinks links) =>
 
 // Which GPU algorithms to mine and where; the same for every app, rebuilt from live feeds every few minutes.
 api.MapGet("/gpu-policy", async (GpuPolicyService policy, CancellationToken ct) => Results.Ok(await policy.GetAsync(ct)));
+
+// Daily exchange rates, so the app can show earnings in the currency of the computer's region. Public data, no device needed.
+api.MapGet("/rates", async (Otium.Server.Rates.FxRatesService rates, HttpResponse response, CancellationToken ct) =>
+{
+    if (await rates.GetAsync(ct) is not { } current)
+        return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+    response.Headers.CacheControl = "public, max-age=3600";
+    return Results.Ok(current);
+});
 
 app.MapGet("/r/{code}", (string code, HttpRequest request, OtiumStore store, InviteLinks links, IOptions<ReferralOptions> options, IOptions<SiteOptions> site) =>
 {

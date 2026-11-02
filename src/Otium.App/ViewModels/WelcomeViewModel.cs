@@ -374,7 +374,7 @@ public partial class WelcomeViewModel : ViewModelBase
         {
             if (!_host.Settings.PayForElectricity)
                 return "Electricity isn't counted, so Otium earns whenever your computer is free.";
-            var line = $"Electricity at {Format.Money((decimal)_host.Settings.ElectricityPricePerKwh)}/kWh";
+            var line = $"Electricity at {Format.MoneyUsd((decimal)_host.Settings.ElectricityPricePerKwh)}/kWh";
             if (_host.Settings.ElectricityPriceIsEstimate)
                 line += $" (typical for {CountryName})";
             if (_host.ElectricityPrices.HasLivePrices && _host.ElectricityPrices.Zone is { } zone)

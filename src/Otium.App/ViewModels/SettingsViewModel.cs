@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Otium.App.Services;
 using Otium.Core.Accounts;
+using Otium.Core.Currency;
 using Otium.Core.Fees;
 using Otium.Core.Gpu;
 using Otium.Core.Platform;
@@ -51,6 +52,8 @@ public partial class SettingsViewModel : ViewModelBase
         var country = SpotPriceZone.Find(s.ElectricityZone)?.Country ?? RegionCountry();
         Zones = SpotPriceZone.ForCountry(country);
         SelectedZone = SpotPriceZone.Find(s.ElectricityZone);
+        RebuildCurrencies();
+        host.CurrencyChanged += () => Dispatcher.UIThread.Post(RebuildCurrencies);
         Payout = new PayoutTargetEditor(s.PayoutAddress, AppHost.InUnitedStates, host.SetUsPerson);
         Payout.Changed += () => SavePayoutCommand.NotifyCanExecuteChanged();
         StartWithSystem = AutoStart.IsEnabled();
@@ -167,6 +170,47 @@ public partial class SettingsViewModel : ViewModelBase
     {
         get => !UseBalance;
         set => UseBalance = !value;
+    }
+
+    /// <summary>The currencies amounts can be shown in ("automatic" first, then the ones there are exchange rates for).</summary>
+    public ObservableCollection<CurrencyOption> CurrencyOptions { get; } = [];
+
+    [ObservableProperty] public partial CurrencyOption? SelectedCurrency { get; set; }
+
+    [ObservableProperty] public partial string CurrencyNote { get; set; } = "";
+
+    private void RebuildCurrencies()
+    {
+        var wasLoading = _loading;
+        _loading = true;
+        var chosen = _host.Settings.Currency;
+        CurrencyOptions.Clear();
+        foreach (var option in CurrencyChoice.Options(_host.Currency.Rates))
+            CurrencyOptions.Add(option);
+        SelectedCurrency = CurrencyOptions.FirstOrDefault(o => string.Equals(o.Code, chosen, StringComparison.OrdinalIgnoreCase)) ?? CurrencyOptions.FirstOrDefault();
+        _loading = wasLoading;
+        UpdateCurrencyNote();
+    }
+
+    private void UpdateCurrencyNote()
+    {
+        var shown = _host.Currency.Current;
+        CurrencyNote = shown.IsUsd
+            ? _host.Currency.Rates.Rates.Count == 0
+                ? "Exchange rates aren't available yet, so amounts show in dollars. They load from Otium when you're online."
+                : "Amounts show in dollars."
+            : $"Earnings are worked out in dollars and shown in {shown.Code} at {_host.Currency.Rates.AsOf.ToLocalTime():d MMM yyyy}'s rate (1 dollar = {shown.PerUsd:0.####} {shown.Code}). " +
+              "Cash-outs are paid in dollars' worth of crypto, so they show both.";
+    }
+
+    partial void OnSelectedCurrencyChanged(CurrencyOption? value)
+    {
+        if (_loading || value is null)
+            return;
+        _host.Settings.Currency = value.Code;
+        _host.SaveSettings();
+        _host.Currency.Apply();
+        UpdateCurrencyNote();
     }
 
     /// <summary>Price zones with live hourly prices in the user's country (empty where none are available yet).</summary>

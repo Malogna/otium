@@ -65,6 +65,7 @@ public partial class DashboardViewModel : ViewModelBase
             aioz.SnapshotChanged += _ => Dispatcher.UIThread.Post(Recalculate);
         host.Updates.Changed += () => Dispatcher.UIThread.Post(RefreshUpdate);
         host.AntivirusChanged += () => Dispatcher.UIThread.Post(Recalculate);
+        host.CurrencyChanged += () => Dispatcher.UIThread.Post(Recalculate);
         RefreshUpdate();
 
         // Processor and graphics card stats, every few seconds (cheap: a few driver calls).

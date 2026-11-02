@@ -430,35 +430,82 @@
                             <TextBlock Classes="h2" Text="Your earnings" />
                             <Path Grid.Column="1" Classes="icon" Data="{StaticResource IconChart}" />
                         </Grid>
-                        <Grid ColumnDefinitions="*,10,*,10,*">
-                            <Border Classes="tile">
-                                <StackPanel>
-                                    <TextBlock Classes="label" Text="Today so far" />
-                                    <TextBlock Classes="value" Text="{Binding TodayText}" />
-                                </StackPanel>
-                            </Border>
-                            <Border Grid.Column="2" Classes="tile">
-                                <StackPanel>
-                                    <TextBlock Classes="label" Text="This week" />
-                                    <TextBlock Classes="value" Text="{Binding WeekText}" />
-                                </StackPanel>
-                            </Border>
-                            <Border Grid.Column="4" Classes="tile">
-                                <StackPanel>
-                                    <TextBlock Classes="label" Text="This month" />
-                                    <TextBlock Classes="value" Text="{Binding MonthText}" />
-                                </StackPanel>
-                            </Border>
-                        </Grid>
-                        <controls:EarningsChart Height="72" Values="{Binding ChartValues}"
-                                                BarBrush="{DynamicResource ChartBar}" FaintBrush="{DynamicResource ChartBarFaint}" />
-                        <Grid ColumnDefinitions="*,Auto">
-                            <TextBlock Classes="muted" FontSize="12" Text="{Binding ChartCaption}" />
-                            <TextBlock Grid.Column="1" Classes="muted" FontSize="12" Text="last 24 h" />
-                        </Grid>
-                        <TextBlock FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap" Text="{Binding ProjectionText}"
-                                   IsVisible="{Binding ProjectionText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                        <!-- What the current pace would bring -->
+                        <StackPanel Spacing="8" IsVisible="{Binding HasProjection}">
+                            <TextBlock Classes="label" Text="PROJECTED AT YOUR CURRENT PACE" FontWeight="SemiBold" LetterSpacing="0.6" />
+                            <UniformGrid Columns="4">
+                                <Border Classes="tile projected" Margin="0,0,5,0">
+                                    <StackPanel>
+                                        <TextBlock Classes="label" Text="Per day" />
+                                        <TextBlock Classes="value" Text="{Binding ProjDayText}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Classes="tile projected" Margin="5,0">
+                                    <StackPanel>
+                                        <TextBlock Classes="label" Text="Per week" />
+                                        <TextBlock Classes="value" Text="{Binding ProjWeekText}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Classes="tile projected" Margin="5,0">
+                                    <StackPanel>
+                                        <TextBlock Classes="label" Text="Per month" />
+                                        <TextBlock Classes="value" Text="{Binding ProjMonthText}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Classes="tile projected" Margin="5,0,0,0">
+                                    <StackPanel>
+                                        <TextBlock Classes="label" Text="Per year" />
+                                        <TextBlock Classes="value" Text="{Binding ProjYearText}" />
+                                    </StackPanel>
+                                </Border>
+                            </UniformGrid>
+                        </StackPanel>
                         <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap" Text="{Binding ProjectionBasis}" />
+
+                        <!-- What really came in -->
+                        <StackPanel Spacing="8">
+                            <TextBlock Classes="label" Text="EARNED SO FAR" FontWeight="SemiBold" LetterSpacing="0.6" />
+                            <UniformGrid Columns="4">
+                                <Border Classes="tile" Margin="0,0,5,0">
+                                    <StackPanel>
+                                        <TextBlock Classes="label" Text="Today" />
+                                        <TextBlock Classes="value" Text="{Binding TodayText}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Classes="tile" Margin="5,0">
+                                    <StackPanel>
+                                        <TextBlock Classes="label" Text="This week" />
+                                        <TextBlock Classes="value" Text="{Binding WeekText}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Classes="tile" Margin="5,0">
+                                    <StackPanel>
+                                        <TextBlock Classes="label" Text="This month" />
+                                        <TextBlock Classes="value" Text="{Binding MonthText}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Classes="tile" Margin="5,0,0,0">
+                                    <StackPanel>
+                                        <TextBlock Classes="label" Text="This year" />
+                                        <TextBlock Classes="value" Text="{Binding YearText}" />
+                                    </StackPanel>
+                                </Border>
+                            </UniformGrid>
+                        </StackPanel>
+
+                        <!-- The chart, in the range picked here -->
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Classes="muted" FontSize="12.5" VerticalAlignment="Center" TextWrapping="Wrap" Text="{Binding ChartCaption}" />
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="2">
+                                <Button Classes="seg" Classes.active="{Binding IsDayChart}" Content="Day" Command="{Binding SelectChartPeriodCommand}" CommandParameter="Day" />
+                                <Button Classes="seg" Classes.active="{Binding IsWeekChart}" Content="Week" Command="{Binding SelectChartPeriodCommand}" CommandParameter="Week" />
+                                <Button Classes="seg" Classes.active="{Binding IsMonthChart}" Content="Month" Command="{Binding SelectChartPeriodCommand}" CommandParameter="Month" />
+                                <Button Classes="seg" Classes.active="{Binding IsYearChart}" Content="Year" Command="{Binding SelectChartPeriodCommand}" CommandParameter="Year" />
+                            </StackPanel>
+                        </Grid>
+                        <controls:EarningsChart Height="96" Values="{Binding ChartValues}" Labels="{Binding ChartLabels}" Tips="{Binding ChartTips}"
+                                                BarBrush="{DynamicResource ChartBar}" FaintBrush="{DynamicResource ChartBarFaint}"
+                                                LabelBrush="{DynamicResource MutedText}" AutomationProperties.Name="Earnings chart" />
                         <Grid ColumnDefinitions="*,Auto" DataContext="{Binding Results}" x:DataType="vm:ResultsViewModel"
                               IsVisible="{Binding CanMeasureAgain}">
                             <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap" VerticalAlignment="Center" Text="{Binding MeasuredLine}" />

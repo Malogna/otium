@@ -19,6 +19,9 @@ public sealed class AppPaths(string root)
 
     public string HistoryFile => Path.Combine(Root, "history.json");
 
+    /// <summary>The last exchange rates from the server, so amounts still convert offline.</summary>
+    public string RatesFile => Path.Combine(Root, "rates.json");
+
     public string BandwidthLedgerFile => Path.Combine(Root, "bandwidth.json");
 
     /// <summary>Sharing through Mysterium keeps its own record, next to Proxybase's.</summary>

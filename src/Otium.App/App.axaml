@@ -160,6 +160,11 @@
             <Setter Property="Padding" Value="14,12" />
         </Style>
 
+        <!-- What the current pace would bring, set apart from what was really earned. -->
+        <Style Selector="Border.tile.projected">
+            <Setter Property="Background" Value="{DynamicResource GoodSoft}" />
+        </Style>
+
         <Style Selector="Border.iconBadge">
             <Setter Property="Width" Value="40" />
             <Setter Property="Height" Value="40" />
@@ -358,6 +363,33 @@
         </Style>
         <Style Selector="Button.link:pointerover /template/ ContentPresenter#PART_ContentPresenter, ToggleButton.link /template/ ContentPresenter#PART_ContentPresenter, ToggleButton.link:checked /template/ ContentPresenter#PART_ContentPresenter, ToggleButton.link:pointerover /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="Transparent" />
+        </Style>
+
+        <!-- ===== Segmented choice (Day / Week / Month / Year): the picked one fills with the accent ===== -->
+        <Style Selector="Button.seg">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{DynamicResource MutedText}" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="11,5" />
+            <Setter Property="MinHeight" Value="0" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="CornerRadius" Value="999" />
+        </Style>
+        <Style Selector="Button.seg /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Transitions">
+                <Transitions>
+                    <BrushTransition Property="Background" Duration="0:0:0.2" />
+                    <BrushTransition Property="Foreground" Duration="0:0:0.2" />
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="Button.seg:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource SubtleBackground}" />
+            <Setter Property="Foreground" Value="{DynamicResource MutedText}" />
+        </Style>
+        <Style Selector="Button.seg.active /template/ ContentPresenter#PART_ContentPresenter, Button.seg.active:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource OnAccentText}" />
         </Style>
 
         <!-- ===== Progress bars animate to their new value ===== -->

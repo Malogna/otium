@@ -54,6 +54,15 @@ public partial class HomeViewModel : ViewModelBase
     private readonly Action _openAdvanced;
     private readonly CountUp _balance;
     private readonly CountUp _month;
+    // The projected and earned amounts count up to their new value, so a change is seen, not just read.
+    private readonly CountUp _projDay;
+    private readonly CountUp _projWeek;
+    private readonly CountUp _projMonth;
+    private readonly CountUp _projYear;
+    private readonly CountUp _earnToday;
+    private readonly CountUp _earnWeek;
+    private readonly CountUp _earnMonth;
+    private readonly CountUp _earnYear;
     // Each device's last pace while it earned ($/day after the fee, and its electricity), remembered for while it's
     // paused, waiting or testing coins, so one idle device doesn't drop out of the projection.
     private readonly Dictionary<DeviceKind, (double User, double Electricity)> _lastRates = [];
@@ -68,6 +77,14 @@ public partial class HomeViewModel : ViewModelBase
         SignIn = new EmailSignInViewModel(host);
         _balance = new CountUp(v => Balance = Format.Money((decimal)v));
         _month = new CountUp(v => ProjectedMonth = $"≈ {Format.Money((decimal)v)}");
+        _projDay = new CountUp(v => ProjDayText = Format.Usd(v));
+        _projWeek = new CountUp(v => ProjWeekText = Format.Usd(v));
+        _projMonth = new CountUp(v => ProjMonthText = Format.Usd(v));
+        _projYear = new CountUp(v => ProjYearText = Format.Usd(v));
+        _earnToday = new CountUp(v => TodayText = Format.Usd(v));
+        _earnWeek = new CountUp(v => WeekText = Format.Usd(v));
+        _earnMonth = new CountUp(v => MonthText = Format.Usd(v));
+        _earnYear = new CountUp(v => YearText = Format.Usd(v));
 
         Activity.Add(new ActivityRow { Icon = Icon("IconCpu"), Title = "Processor" });
         if (host.GpuEngine is not null)
@@ -112,6 +129,12 @@ public partial class HomeViewModel : ViewModelBase
         host.AccountChanged += () => Dispatcher.UIThread.Post(Refresh);
         host.Updates.Changed += () => Dispatcher.UIThread.Post(Refresh);
         host.HistoryChanged += () => Dispatcher.UIThread.Post(Refresh);
+        host.CurrencyChanged += () => Dispatcher.UIThread.Post(() =>
+        {
+            foreach (var count in new[] { _balance, _month, _projDay, _projWeek, _projMonth, _projYear, _earnToday, _earnWeek, _earnMonth, _earnYear })
+                count.Refresh();
+            Refresh();
+        });
         host.AntivirusChanged += () => Dispatcher.UIThread.Post(Refresh);
 
         Refresh();
@@ -192,12 +215,41 @@ public partial class HomeViewModel : ViewModelBase
 
     // ---------- projections & chart ----------
 
-    [ObservableProperty] public partial string TodayText { get; set; } = "$0.00";
+    // What was really earned so far (after fees), and what is projected at the current pace.
+    [ObservableProperty] public partial string TodayText { get; set; } = "—";
     [ObservableProperty] public partial string WeekText { get; set; } = "—";
     [ObservableProperty] public partial string MonthText { get; set; } = "—";
+    [ObservableProperty] public partial string YearText { get; set; } = "—";
+    [ObservableProperty] public partial bool HasProjection { get; set; }
+    [ObservableProperty] public partial string ProjDayText { get; set; } = "—";
+    [ObservableProperty] public partial string ProjWeekText { get; set; } = "—";
+    [ObservableProperty] public partial string ProjMonthText { get; set; } = "—";
+    [ObservableProperty] public partial string ProjYearText { get; set; } = "—";
     [ObservableProperty] public partial string ProjectionBasis { get; set; } = "";
     [ObservableProperty] public partial IReadOnlyList<double> ChartValues { get; set; } = new double[24];
+    [ObservableProperty] public partial IReadOnlyList<string> ChartLabels { get; set; } = [];
+    [ObservableProperty] public partial IReadOnlyList<string> ChartTips { get; set; } = [];
     [ObservableProperty] public partial string ChartCaption { get; set; } = "";
+
+    /// <summary>Which range the chart shows: the last 24 hours, 7 days, 30 days or 12 months.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsDayChart), nameof(IsWeekChart), nameof(IsMonthChart), nameof(IsYearChart))]
+    public partial EarningsPeriod ChartPeriod { get; set; } = EarningsPeriod.Day;
+
+    public bool IsDayChart => ChartPeriod == EarningsPeriod.Day;
+    public bool IsWeekChart => ChartPeriod == EarningsPeriod.Week;
+    public bool IsMonthChart => ChartPeriod == EarningsPeriod.Month;
+    public bool IsYearChart => ChartPeriod == EarningsPeriod.Year;
+
+    [RelayCommand]
+    private void SelectChartPeriod(string period)
+    {
+        if (Enum.TryParse<EarningsPeriod>(period, out var chosen))
+        {
+            ChartPeriod = chosen;
+            RefreshChart();
+        }
+    }
 
     // ---------- cash-out goal ----------
 
@@ -208,7 +260,6 @@ public partial class HomeViewModel : ViewModelBase
     /// <summary>Why the pool's confirmed amount trails what Otium has counted, when it does.</summary>
     [ObservableProperty] public partial string GoalNote { get; set; } = "";
     /// <summary>"At this pace: about $30 a week, $128 a month." Kept apart from the real totals above it.</summary>
-    [ObservableProperty] public partial string ProjectionText { get; set; } = "";
     [ObservableProperty] public partial bool IsCashingOut { get; set; }
 
     /// <summary>Own-address payouts: something the user must fix at the pool (auto-pay off, failed payment…), or "".</summary>
@@ -288,15 +339,18 @@ public partial class HomeViewModel : ViewModelBase
         var projection = WithSharing(mining, SharingPerDay(), account.AvailableUsd + account.PendingUsd, minimum);
         _month.AnimateTo(projection.PerMonth);
         ProjectedMonthCaption = projection.PerMonth > 0 ? "projected per month" : "";
-        var today = DateTimeOffset.Now.Date;
-        // The tiles are what was really earned; the projection is a separate line, so the two can't be mixed up.
-        var now = DateTimeOffset.Now;
-        TodayText = Format.Usd(_host.History.EarnedSince(new DateTimeOffset(today, now.Offset)));
-        WeekText = Format.Usd(_host.History.EarnedSince(new DateTimeOffset(StartOfWeek(today), now.Offset)));
-        MonthText = Format.Usd(_host.History.Month(MonthBucket.KeyFor(now))?.EarnedUsd ?? 0);
-        ProjectionText = projection.PerMonth > 0
-            ? $"At this pace: about {Format.Usd(projection.PerWeek)} a week, {Format.Usd(projection.PerMonth)} a month."
-            : "";
+        // The projected tiles are what the current pace would bring; the earned tiles are what really came in.
+        // They are separate rows with separate headings, so the two can't be mixed up.
+        HasProjection = projection.PerDay > 0;
+        _projDay.AnimateTo(projection.PerDay);
+        _projWeek.AnimateTo(projection.PerWeek);
+        _projMonth.AnimateTo(projection.PerMonth);
+        _projYear.AnimateTo(projection.PerYear);
+        var earned = EarningsPeriods.ToDate(_host.History, DateTimeOffset.Now, System.Globalization.CultureInfo.CurrentCulture.DateTimeFormat.FirstDayOfWeek);
+        _earnToday.AnimateTo(earned.Today);
+        _earnWeek.AnimateTo(earned.Week);
+        _earnMonth.AnimateTo(earned.Month);
+        _earnYear.AnimateTo(earned.Year);
         var away = settings.OnlyWhenIdle ? " away" : "";
         var sharingEstimated = InternetSharing.IsOn && InternetSharing.IsProxybase && _host.Bandwidth.Snapshot.UserUsdPerDay <= 0;
         var miningLoses = rate > 0 && mining.PerDay <= 0;
@@ -312,11 +366,7 @@ public partial class HomeViewModel : ViewModelBase
         if (sharingEstimated && projection.PerDay > 0)
             ProjectionBasis += " Internet sharing is estimated from Proxybase's rate until your own earnings come in.";
 
-        var hours = _host.History.LastHours(DateTimeOffset.Now, 24);
-        if (!hours.SequenceEqual(ChartValues))
-            ChartValues = hours;
-        var last24 = hours.Sum();
-        ChartCaption = last24 > 0 ? $"{Format.Usd(last24)} in the last 24 hours" : "Your earnings will show up here hour by hour.";
+        RefreshChart();
 
         // Cash-out goal
         CanCashOut = IsBalanceMode && account.AvailableUsd >= minimum && account.AvailableUsd > 0;
@@ -449,11 +499,18 @@ public partial class HomeViewModel : ViewModelBase
         PoolWarning = string.Join(" ", warnings);
     }
 
-    /// <summary>The first day of this week in the user's culture (Monday in most of Europe, Sunday in the US).</summary>
-    private static DateTime StartOfWeek(DateTime today)
+    private void RefreshChart()
     {
-        var first = System.Globalization.CultureInfo.CurrentCulture.DateTimeFormat.FirstDayOfWeek;
-        return today.AddDays(-(((int)today.DayOfWeek - (int)first + 7) % 7));
+        var culture = System.Globalization.CultureInfo.CurrentCulture;
+        var view = EarningsPeriods.Build(_host.History, ChartPeriod, DateTimeOffset.Now, culture);
+        // Bars only grow in again when they changed (a new hour of earnings, or another range).
+        if (!view.Bars.SequenceEqual(ChartValues))
+            ChartValues = view.Bars;
+        ChartLabels = view.Labels;
+        ChartTips = view.Bars.Select((v, i) => $"{view.Names[i]}: {Format.Usd(v)}").ToList();
+        ChartCaption = view.TotalUsd > 0
+            ? $"{Format.Usd(view.TotalUsd)} {view.Range}"
+            : $"Your earnings will show up here {view.Grain}.";
     }
 
     [RelayCommand]
@@ -652,10 +709,7 @@ public partial class HomeViewModel : ViewModelBase
     {
         if (sharingPerDay <= 0)
             return mining;
-        var perDay = mining.PerDay + sharingPerDay;
-        var missing = (double)(minimum - towards);
-        TimeSpan? eta = missing <= 0 ? TimeSpan.Zero : TimeSpan.FromDays(Math.Min(missing / perDay, 3650));
-        return mining with { PerDay = perDay, PerWeek = perDay * 7, PerMonth = perDay * 30, TimeToCashout = eta };
+        return mining.AtPerDay(mining.PerDay + sharingPerDay, towards, minimum);
     }
 
     private string WaitingText(EngineSnapshot s)
@@ -730,7 +784,7 @@ public partial class HomeViewModel : ViewModelBase
         var parts = paused.Select(d => d.Snapshot.ElectricityUsdPerDay > 0
             ? $"your {d.Name} would earn about {Format.Usd(d.Snapshot.UserUsdPerDay)} a day but use about {Format.Usd(d.Snapshot.ElectricityUsdPerDay)} of electricity"
             : $"your {d.Name} would cost more in electricity than it earns");
-        var price = Format.Money((decimal)settings.ElectricityPricePerKwh);
+        var price = Format.MoneyUsd((decimal)settings.ElectricityPricePerKwh);
         ElectricityPauseText =
             $"At {price}/kWh, {string.Join(", and ", parts)}, so Otium paused it to save you money. It checks again every 30 minutes, " +
             "and sooner when the hourly price drops. If your electricity is included in your rent, paid by someone else or free, " +

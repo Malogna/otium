@@ -9,8 +9,28 @@ public sealed record Projection(
     double PerDay,
     double PerWeek,
     double PerMonth,
+    double PerYear,
     TimeSpan? TimeToCashout)
 {
+    public const int DaysPerMonth = 30;
+
+    public const int DaysPerYear = 365;
+
+    /// <summary>The same projection at <paramref name="perDay"/> a day, with the dependent amounts and the time to cash out redone.</summary>
+    public Projection AtPerDay(double perDay, decimal towardsCashout, decimal cashoutMinimum)
+    {
+        var missing = (double)(cashoutMinimum - towardsCashout);
+        TimeSpan? toCashout = missing <= 0 ? TimeSpan.Zero : perDay > 0 ? TimeSpan.FromDays(Math.Min(missing / perDay, 3650)) : null;
+        return this with
+        {
+            PerDay = perDay,
+            PerWeek = perDay * 7,
+            PerMonth = perDay * DaysPerMonth,
+            PerYear = perDay * DaysPerYear,
+            TimeToCashout = toCashout,
+        };
+    }
+
     /// <summary>
     /// <paramref name="earningRatePerDay"/> and <paramref name="electricityPerDay"/> are what 24 hours of continuous
     /// earning would bring and cost; projections scale them by the hours per day Otium actually runs.
@@ -36,6 +56,6 @@ public sealed record Projection(
             toCashout = TimeSpan.FromDays(Math.Min(missing / perDay, 3650));
 
         return new Projection(earningRatePerDay, electricityPerDay, hours, measuredHoursPerDay is not null,
-            perDay, perDay * 7, perDay * 30, toCashout);
+            perDay, perDay * 7, perDay * DaysPerMonth, perDay * DaysPerYear, toCashout);
     }
 }

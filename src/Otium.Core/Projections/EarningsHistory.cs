@@ -12,6 +12,24 @@ public sealed class HourBucket
     public double EarningSeconds { get; set; }
 }
 
+/// <summary>One calendar day (local time): what was earned and how long Otium was earning.</summary>
+public sealed class DayBucket
+{
+    /// <summary>"2026-10-15".</summary>
+    public string Day { get; set; } = "";
+
+    public double EarnedUsd { get; set; }
+
+    public double ElectricityUsd { get; set; }
+
+    public double EarningSeconds { get; set; }
+
+    public static string KeyFor(DateTime localDate) =>
+        localDate.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+
+    public static string KeyFor(DateTimeOffset localTime) => KeyFor(localTime.DateTime);
+}
+
 /// <summary>One calendar month (local time): what was earned and how long Otium was earning.</summary>
 public sealed class MonthBucket
 {
@@ -39,11 +57,37 @@ public sealed class EarningsHistory
 
     public const int MonthsKept = 24;
 
+    /// <summary>Daily totals are kept for just over a year, for the week, month and year charts.</summary>
+    public const int DaysKept = 400;
+
     public List<HourBucket> Hours { get; set; } = [];
+
+    /// <summary>Empty in history files from before 0.1.5: <see cref="BackfillDays"/> fills in the hours still kept.</summary>
+    public List<DayBucket> Days { get; set; } = [];
 
     public List<MonthBucket> Months { get; set; } = [];
 
     public MonthBucket? Month(string key) => Months.FirstOrDefault(m => m.Month == key);
+
+    /// <summary>
+    /// Builds the daily totals from the hours still kept, once, for history recorded before daily totals existed (an
+    /// older file has hours and no days). Does nothing when days already exist.
+    /// </summary>
+    public void BackfillDays()
+    {
+        if (Days.Count > 0 || Hours.Count == 0)
+            return;
+        foreach (var day in Hours.GroupBy(h => DayBucket.KeyFor(h.Hour)).OrderBy(g => g.Key, StringComparer.Ordinal))
+        {
+            Days.Add(new DayBucket
+            {
+                Day = day.Key,
+                EarnedUsd = day.Sum(h => h.EarnedUsd),
+                ElectricityUsd = day.Sum(h => h.ElectricityUsd),
+                EarningSeconds = day.Sum(h => h.EarningSeconds),
+            });
+        }
+    }
 
     /// <summary>Last cumulative totals seen, so each sample adds only what changed.</summary>
     public double LastCumulativeEarnedUsd { get; set; } = -1;
@@ -58,6 +102,7 @@ public sealed class EarningsHistory
     /// </summary>
     public void Record(DateTimeOffset now, double cumulativeEarnedUsd, double cumulativeElectricityUsd, TimeSpan earningFor)
     {
+        BackfillDays();
         FirstSampleAt ??= now;
         var earned = LastCumulativeEarnedUsd < 0 ? 0 : Math.Max(0, cumulativeEarnedUsd - LastCumulativeEarnedUsd);
         var electricity = LastCumulativeElectricityUsd < 0 ? 0 : Math.Max(0, cumulativeElectricityUsd - LastCumulativeElectricityUsd);
@@ -87,7 +132,21 @@ public sealed class EarningsHistory
         month.ElectricityUsd += electricity;
         month.EarningSeconds += Math.Max(0, earningFor.TotalSeconds);
 
+        var dayKey = DayBucket.KeyFor(now);
+        var dayBucket = Days.FirstOrDefault(d => d.Day == dayKey);
+        if (dayBucket is null)
+        {
+            dayBucket = new DayBucket { Day = dayKey };
+            Days.Add(dayBucket);
+            Days.Sort((a, b) => string.CompareOrdinal(a.Day, b.Day));
+        }
+        dayBucket.EarnedUsd += earned;
+        dayBucket.ElectricityUsd += electricity;
+        dayBucket.EarningSeconds += Math.Max(0, earningFor.TotalSeconds);
+
         Hours.RemoveAll(h => h.Hour < now - Retention);
+        if (Days.Count > DaysKept)
+            Days.RemoveRange(0, Days.Count - DaysKept);
         if (Months.Count > MonthsKept)
             Months.RemoveRange(0, Months.Count - MonthsKept);
     }
