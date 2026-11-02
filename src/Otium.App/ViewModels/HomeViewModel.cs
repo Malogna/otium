@@ -161,6 +161,9 @@ public partial class HomeViewModel : ViewModelBase
         if (host.GpuEngine is not null)
             Activity.Add(new ActivityRow { Icon = Icon("IconGpu"), Title = Otium.Core.Gpu.GpuInfo.NamesOf(host.GpuProvider?.Gpus ?? []) ?? "Graphics card" });
 
+        // The last row's readings are open to begin with: they fill the "Right now" card, which stretches down the left column.
+        Activity[^1].IsExpanded = true;
+
         Results = new ResultsViewModel(host);
         host.MeasurementChanged += () => Dispatcher.UIThread.Post(Refresh);
 

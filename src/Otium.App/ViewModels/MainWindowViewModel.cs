@@ -13,6 +13,10 @@ public partial class MainWindowViewModel : ViewModelBase
     public MainWindowViewModel(AppHost host)
     {
         _host = host;
+        // The window's glow follows whether anything is earning.
+        foreach (var engine in host.Engines)
+            engine.SnapshotChanged += _ => Avalonia.Threading.Dispatcher.UIThread.Post(UpdateGlow);
+        UpdateGlow();
         CurrentPage = host.Settings.OnboardingComplete
             ? Home
             : new WelcomeViewModel(host, () => Go(Home, back: false));
@@ -20,6 +24,13 @@ public partial class MainWindowViewModel : ViewModelBase
 
     [ObservableProperty]
     public partial ViewModelBase CurrentPage { get; set; }
+
+    /// <summary>0 while nothing earns, 1 while something does: how bright the emerald glow behind the window is.</summary>
+    [ObservableProperty]
+    public partial double EarningGlow { get; set; }
+
+    private void UpdateGlow() =>
+        EarningGlow = _host.Engines.Any(e => e.Snapshot.State == Otium.Core.Engine.EngineState.Earning) ? 1 : 0;
 
     /// <summary>True while going back (Advanced → Overview), so the page slides in from the left.</summary>
     [ObservableProperty]
