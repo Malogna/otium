@@ -4,20 +4,26 @@
         xmlns:controls="using:Otium.App.Controls"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        mc:Ignorable="d" d:DesignWidth="980" d:DesignHeight="720"
+        mc:Ignorable="d" d:DesignWidth="1100" d:DesignHeight="780"
         x:Class="Otium.App.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Icon="/Assets/otium.ico"
-        Width="980" Height="760" MinWidth="560" MinHeight="520" MaxWidth="1240" MaxHeight="820" CanMaximize="False"
+        Width="1100" Height="780" CanResize="False" CanMaximize="False"
         WindowStartupLocation="CenterScreen"
         Background="{DynamicResource PageBackground}"
+        TextElement.Foreground="{DynamicResource Ink}"
         Title="Otium">
 
+    <Grid>
+        <!-- The night sky behind every screen; its emerald glow brightens while Otium earns. -->
+        <controls:NightBackdrop Intensity="{Binding EarningGlow}" />
+
     <!-- Going deeper (Overview → Advanced) slides in from the right, going back from the left; a short slide and a fade. -->
-    <TransitioningContentControl Content="{Binding CurrentPage}" IsTransitionReversed="{Binding IsGoingBack}">
+        <TransitioningContentControl Content="{Binding CurrentPage}" IsTransitionReversed="{Binding IsGoingBack}">
         <TransitioningContentControl.PageTransition>
             <controls:SlideFadeTransition Duration="0:0:0.34" Distance="64" />
         </TransitioningContentControl.PageTransition>
-    </TransitioningContentControl>
+        </TransitioningContentControl>
+    </Grid>
 
 </Window>

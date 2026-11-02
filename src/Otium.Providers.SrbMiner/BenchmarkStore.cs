@@ -21,6 +21,12 @@ public sealed class BenchmarkFile
     /// power: Pearl on an RTX 3080), so neither tuning nor quiet mode steps it.
     /// </summary>
     public List<string> IntensityIgnored { get; set; } = [];
+
+    /// <summary>
+    /// The power limit (percent of the card's default) each algorithm settled at while the fans stayed under the user's limit
+    /// (the silent-fans tuner), so the next start begins there instead of climbing again. Missing in older files.
+    /// </summary>
+    public Dictionary<string, int> PowerCaps { get; set; } = [];
 }
 
 /// <summary>Persists per-algorithm benchmark results so profit switching works immediately on the next start.</summary>
@@ -85,6 +91,24 @@ public sealed class BenchmarkStore
     {
         lock (_lock)
             return _file.IntensityIgnored.Contains(algorithm, StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>The power limit this algorithm settled at, or null when none is known yet.</summary>
+    public int? PowerCap(string algorithm)
+    {
+        lock (_lock)
+            return _file.PowerCaps.TryGetValue(algorithm, out var percent) ? percent : null;
+    }
+
+    public void SetPowerCap(string algorithm, int percent)
+    {
+        lock (_lock)
+        {
+            if (_file.PowerCaps.TryGetValue(algorithm, out var current) && current == percent)
+                return;
+            _file.PowerCaps[algorithm] = percent;
+            _store.Save(_file);
+        }
     }
 
     public void MarkIntensityIgnored(string algorithm)

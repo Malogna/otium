@@ -94,6 +94,23 @@ public sealed class AppSettings
     /// </summary>
     public string Currency { get; set; } = "auto";
 
+    /// <summary>
+    /// Close graphics card tuning programs (MSI Afterburner, ASUS GPU Tweak and the like) while Otium earns with the
+    /// graphics card, and start them again when it stops, so they don't fight the miner's tests and power limit and the
+    /// user still has their overclock for games. On by default.
+    /// </summary>
+    public bool PauseTuningTools { get; set; } = true;
+
+    /// <summary>
+    /// "Silent performance": while the graphics card earns, Otium raises its power limit step by step as long as the fans
+    /// stay at or under <see cref="QuietFanLimit"/>, and lowers it when they don't, so the card gives all the speed it can at
+    /// a fan noise the user accepts. Needs "Optimize my graphics card" (the power part). On by default.
+    /// </summary>
+    public bool SilentTuning { get; set; } = true;
+
+    /// <summary>The loudest fan speed (percent) the user accepts while the card earns: 40 silent, 50 quiet, 60 balanced, 75 performance.</summary>
+    public int QuietFanLimit { get; set; } = 50;
+
     /// <summary>The pool's "paid" total last seen, per pool and coin, so a new payout is noticed once.</summary>
     public Dictionary<string, double> NotifiedPaid { get; set; } = [];
 

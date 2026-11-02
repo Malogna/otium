@@ -2,9 +2,13 @@ namespace Otium.Core.Switching;
 
 /// <summary>A measured option: how fast this hardware runs an algorithm and how much extra power it draws doing so.</summary>
 /// <param name="FailedTimes">For a failed test: how many tests in a row have failed, which sets when it's tried again.</param>
+/// <param name="Throttled">Measured while the card was too hot to run at its real speed (it kept cooling down again and again): the number is low, so the test is repeated after a while.</param>
 public sealed record BenchmarkResult(string Algorithm, double HashrateHps, double? ExtraWatts, DateTimeOffset MeasuredAt, string? Failure = null,
-    int FailedTimes = 0)
+    int FailedTimes = 0, bool Throttled = false)
 {
+    /// <summary>A result measured on a card that was too hot stands only this long before it is measured again.</summary>
+    public static readonly TimeSpan ThrottledStandsFor = TimeSpan.FromHours(2);
+
     public bool Succeeded => Failure is null && HashrateHps > 0;
 
     /// <summary>
@@ -12,7 +16,8 @@ public sealed record BenchmarkResult(string Algorithm, double HashrateHps, doubl
     /// so a failure is tried again after 6 hours, then 12, 24… up to a week. A success stands.
     /// </summary>
     public bool IsCurrent(DateTimeOffset now) =>
-        Succeeded || now - MeasuredAt < TimeSpan.FromHours(6 * Math.Pow(2, Math.Clamp(FailedTimes - 1, 0, 5)));
+        Succeeded ? !Throttled || now - MeasuredAt < ThrottledStandsFor
+                  : now - MeasuredAt < TimeSpan.FromHours(6 * Math.Pow(2, Math.Clamp(FailedTimes - 1, 0, 5)));
 }
 
 /// <param name="RevenuePerHashPerSecondDay">Earned per day per 1 H/s, in the unit priced by the coin price passed to Score.</param>

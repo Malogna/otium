@@ -50,7 +50,7 @@ var historyStart = DateTimeOffset.Now.AddHours(-36);
 for (var hour = 0; hour <= 36; hour++)
     host.History.Record(historyStart.AddHours(hour), hour * 0.09, hour * 0.02, TimeSpan.FromHours(1));
 
-foreach (var variant in new[] { ThemeVariant.Light, ThemeVariant.Dark })
+foreach (var variant in new[] { ThemeVariant.Dark }) // the app has one look, the night
 {
     Application.Current!.RequestedThemeVariant = variant;
     var theme = variant == ThemeVariant.Light ? "light" : "dark";
@@ -91,6 +91,34 @@ foreach (var variant in new[] { ThemeVariant.Light, ThemeVariant.Dark })
     homeVm.InternetSharing.ShowSuggestion = true;
     homeVm.InternetSharing.ShowConsent = true;
     Shoot(new HomeView { DataContext = homeVm }, $"home-{theme}", 900, 2800);
+
+    // The overview as it opens, at the window's fixed size: nothing to scroll, no empty space.
+    var fit = new HomeViewModel(host, () => { });
+    fit.HasProjection = true;
+    fit.ProjDayText = Format.Usd(2.06);
+    fit.ProjWeekText = Format.Usd(14.42);
+    fit.ProjMonthText = Format.Usd(61.8);
+    fit.ProjYearText = Format.Usd(751.9);
+    Shoot(new HomeView { DataContext = fit }, $"home-fits-{theme}", 1100, 780);
+
+    // "Right now" with the graphics card testing coins and its readings opened, and the processor's readings opened.
+    var live = new HomeViewModel(host, () => { });
+    if (live.Activity.Count > 1)
+    {
+        var card = live.Activity[1];
+        card.PhaseLabel = "Testing";
+        card.PhaseDetail = "coin 2 of 4: Pearl";
+        card.PhaseExplain = Otium.Core.Engine.EnginePhases.Explain(Otium.Core.Engine.EnginePhases.Testing) ?? "";
+        StatRow.Update(card.Stats, [
+            new Otium.Core.Gpu.StatLine("Speed", "32.57 TH/s"),
+            .. new Otium.Core.Gpu.GpuStats("NVIDIA GeForce RTX 3080", 84, 100, 62, 245, 1305, 2.1, 10, 245, 9501, 2115, Otium.Core.Gpu.GpuThrottle.SoftwareThermal | Otium.Core.Gpu.GpuThrottle.PowerCap).ToLines(),
+            new Otium.Core.Gpu.StatLine("Closed while earning", "MSI Afterburner"),
+        ]);
+        card.HasStats = true;
+        card.IsExpanded = true;
+        live.Activity[0].IsExpanded = true;
+    }
+    Shoot(new HomeView { DataContext = live }, $"right-now-open-{theme}", 1100, 1000);
 
     // The earnings card as a German user sees it (euros, "1.234,56 €"), and on the week chart.
     Format.Display = new Otium.Core.Currency.DisplayCurrency("EUR", 0.92, System.Globalization.CultureInfo.GetCultureInfo("de-DE"));
@@ -173,13 +201,22 @@ void Pump()
     }
 }
 
+// A colour of the app's theme (the night), for the window the screens are drawn in.
+Avalonia.Media.IBrush? ThemeBrush(string key) =>
+    Application.Current!.TryFindResource(key, Application.Current.ActualThemeVariant, out var value) ? value as Avalonia.Media.IBrush : null;
+
 void Shoot(Control view, string name, int width, int height)
 {
     // Delayed entrance animations ("delay1", "delay2") never start off-screen, which would leave those cards
     // invisible in the picture; the real app shows them. Without the delay they render like the rest.
     foreach (var control in view.GetLogicalDescendants().OfType<StyledElement>().Prepend(view))
         control.Classes.RemoveAll(["delay1", "delay2", "delay3"]);
-    var window = new Window { Width = width, Height = height, Content = view };
+    // The window as the app shows it: the night sky behind the screen.
+    var root = new Grid();
+    root.Children.Add(new Otium.App.Controls.NightBackdrop { Intensity = 1 });
+    root.Children.Add(view);
+    var window = new Window { Width = width, Height = height, Content = root, Background = ThemeBrush("PageBackground") };
+    Avalonia.Controls.Documents.TextElement.SetForeground(window, ThemeBrush("Ink"));
     window.Show();
     Pump();
     var frame = window.CaptureRenderedFrame();

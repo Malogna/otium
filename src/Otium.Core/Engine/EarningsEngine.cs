@@ -407,7 +407,9 @@ public sealed class EarningsEngine : IAsyncDisposable
             detail: status.Detail,
             problem: status.Problem,
             problemKind: status.ProblemKind,
-            calibrating: status.IsCalibrating);
+            calibrating: status.IsCalibrating,
+            phase: status.Phase,
+            phaseDetail: status.PhaseDetail);
     }
 
     /// <summary>
@@ -521,7 +523,9 @@ public sealed class EarningsEngine : IAsyncDisposable
         string? detail = null,
         string? problem = null,
         string? problemKind = null,
-        bool calibrating = false)
+        bool calibrating = false,
+        string? phase = null,
+        string? phaseDetail = null)
     {
         var config = _config();
         var now = _time.GetUtcNow();
@@ -546,6 +550,8 @@ public sealed class EarningsEngine : IAsyncDisposable
             Problem = problem,
             ProblemKind = problemKind,
             IsCalibrating = calibrating,
+            Phase = phase,
+            PhaseDetail = phaseDetail,
             RunningNow = IsRunningNow,
             IdleDetectionAvailable = !config.OnlyWhenIdle || _idle.GetIdleTime() is not null,
             TotalUserUsd = _ledger.EstimatedUserUsd,

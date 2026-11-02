@@ -606,6 +606,7 @@ internal static class AdminDashboard
             "error-pool-blocked": ["bad", "problem: something blocks the pool"],
             "error-no-prices": ["bad", "problem: no coin prices"],
             "error-nothing-pays": ["bad", "problem: no coin pays"],
+            "error-too-hot": ["warn", "paused: the card got too hot"],
           };
           const GROUPS = ["good", "wait", "info", "warn", "bad", "off"];
 

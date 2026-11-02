@@ -44,6 +44,11 @@ public sealed record ProviderRunOptions(
 /// True while the provider is measuring itself (e.g. benchmarking algorithms). The engine doesn't judge
 /// profitability or remember the hashrate during calibration, because the numbers aren't representative yet.
 /// </param>
+/// <param name="Phase">
+/// What Otium is doing besides plain earning, one of <see cref="Engine.EnginePhases"/> (testing coins, trying a setting,
+/// easing off, cooling down), so the app can say so; null while it just earns.
+/// </param>
+/// <param name="PhaseDetail">One short line about the phase ("coin 2 of 4: Pearl", "intensity 21", "fan at 88%").</param>
 /// <param name="Problem">
 /// A problem in plain words that the app shows as is, e.g. "Graphics card isn't mining: …". With
 /// <see cref="ProviderState.Error"/> the engine stops and retries later; while starting, it explains the wait.
@@ -55,7 +60,9 @@ public sealed record ProviderStatus(
     string? Detail = null,
     bool IsCalibrating = false,
     string? Problem = null,
-    string? ProblemKind = null)
+    string? ProblemKind = null,
+    string? Phase = null,
+    string? PhaseDetail = null)
 {
     public static ProviderStatus Stopped(bool installed) =>
         new(installed ? ProviderState.Ready : ProviderState.NotInstalled, 0);
@@ -121,7 +128,10 @@ public static class ProblemKinds
     /// <summary>No coin the device can mine pays (more than its electricity) right now.</summary>
     public const string NothingPays = "nothing-pays";
 
-    public static readonly IReadOnlyList<string> All = [Memory, Failed, PoolBlocked, NoPrices, NothingPays];
+    /// <summary>The card was too hot, so mining (or a test) paused until it cools down.</summary>
+    public const string TooHot = "too-hot";
+
+    public static readonly IReadOnlyList<string> All = [Memory, Failed, PoolBlocked, NoPrices, NothingPays, TooHot];
 }
 
 /// <summary>Thrown when antivirus software removes or blocks an engine binary.</summary>

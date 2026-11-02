@@ -10,8 +10,47 @@ public sealed record CpuStats(double? LoadPercent, double? TemperatureC)
         LoadPercent is { } load ? FormattableString.Invariant($"{load:0}% load") : null,
         TemperatureC is { } temp ? FormattableString.Invariant($"{temp:0} °C") : null);
 
+    /// <summary>The readings as lines for the processor's row (the temperature only where it can be read: Linux).</summary>
+    public IReadOnlyList<StatLine> ToLines()
+    {
+        var lines = new List<StatLine>();
+        if (LoadPercent is { } load)
+            lines.Add(new StatLine("Load (all programs)", FormattableString.Invariant($"{load:0}%")));
+        if (TemperatureC is { } temp)
+            lines.Add(new StatLine("Temperature", FormattableString.Invariant($"{temp:0} °C"),
+                temp >= 90 ? StatLevel.Bad : temp >= 80 ? StatLevel.Warn : StatLevel.Normal));
+        return lines;
+    }
+
     internal static string? Join(params string?[] parts) =>
         parts.Where(p => p is not null).ToList() is { Count: > 0 } kept ? string.Join(" · ", kept) : null;
+}
+
+/// <summary>Why the driver holds a card's clock below what it could run (NVML's clock event reasons bit mask).</summary>
+[Flags]
+public enum GpuThrottle : ulong
+{
+    None = 0,
+    Idle = 0x1,
+    ApplicationClocks = 0x2,
+    PowerCap = 0x4,
+    HardwareSlowdown = 0x8,
+    SyncBoost = 0x10,
+    SoftwareThermal = 0x20,
+    HardwareThermal = 0x40,
+    HardwarePowerBrake = 0x80,
+    DisplayClocks = 0x100,
+}
+
+/// <summary>One line of a device's readings for its row: a label, a value, and whether it needs a look.</summary>
+public sealed record StatLine(string Label, string Value, StatLevel Level = StatLevel.Normal);
+
+public enum StatLevel
+{
+    Normal,
+    Good,
+    Warn,
+    Bad,
 }
 
 /// <summary>One graphics card right now, as far as its driver reports it.</summary>
@@ -23,8 +62,63 @@ public sealed record GpuStats(
     double? Watts,
     double? ClockMhz,
     double? MemoryUsedGb,
-    double? MemoryTotalGb)
+    double? MemoryTotalGb,
+    double? PowerLimitWatts = null,
+    double? MemoryClockMhz = null,
+    double? MaxClockMhz = null,
+    GpuThrottle Throttle = GpuThrottle.None)
 {
+    /// <summary>The card is being slowed because it is too hot.</summary>
+    public bool IsThermalThrottled => (Throttle & (GpuThrottle.SoftwareThermal | GpuThrottle.HardwareThermal)) != 0;
+
+    /// <summary>The card is held at its power limit (normal under load; it means the limit, not the heat, sets the speed).</summary>
+    public bool IsPowerLimited => (Throttle & (GpuThrottle.PowerCap | GpuThrottle.HardwarePowerBrake)) != 0;
+
+    /// <summary>The throttle reasons in words, nothing for "none" or an idle card.</summary>
+    public string? ThrottleText
+    {
+        get
+        {
+            var parts = new List<string>();
+            if ((Throttle & GpuThrottle.HardwareThermal) != 0) parts.Add("too hot (hardware)");
+            if ((Throttle & GpuThrottle.SoftwareThermal) != 0) parts.Add("too hot");
+            if ((Throttle & GpuThrottle.HardwarePowerBrake) != 0) parts.Add("power brake");
+            if ((Throttle & GpuThrottle.HardwareSlowdown) != 0) parts.Add("hardware slowdown");
+            if ((Throttle & GpuThrottle.PowerCap) != 0) parts.Add("at its power limit");
+            return parts.Count == 0 ? null : string.Join(", ", parts);
+        }
+    }
+
+    /// <summary>The readings as lines for the device's row, worst first where something needs a look.</summary>
+    public IReadOnlyList<StatLine> ToLines()
+    {
+        var lines = new List<StatLine>();
+        if (TemperatureC is { } temp)
+            lines.Add(new StatLine("Temperature", FormattableString.Invariant($"{temp:0} °C"),
+                temp >= 88 ? StatLevel.Bad : temp >= 80 ? StatLevel.Warn : StatLevel.Normal));
+        if (FanPercent is { } fan)
+            lines.Add(new StatLine("Fan", FormattableString.Invariant($"{fan:0}%"),
+                fan < 5 && TemperatureC >= 70 ? StatLevel.Bad : StatLevel.Normal));
+        if (LoadPercent is { } load)
+            lines.Add(new StatLine("Load", FormattableString.Invariant($"{load:0}%")));
+        if (Watts is { } watts)
+            lines.Add(new StatLine("Power", PowerLimitWatts is { } limit
+                ? FormattableString.Invariant($"{watts:0} W of {limit:0} W limit")
+                : FormattableString.Invariant($"{watts:0} W")));
+        if (ClockMhz is { } clock)
+            lines.Add(new StatLine("Core clock", MaxClockMhz is { } max
+                ? string.Create(CultureInfo.InvariantCulture, $"{clock:N0} of {max:N0} MHz")
+                : string.Create(CultureInfo.InvariantCulture, $"{clock:N0} MHz"),
+                IsThermalThrottled ? StatLevel.Warn : StatLevel.Normal));
+        if (MemoryClockMhz is { } memClock)
+            lines.Add(new StatLine("Memory clock", string.Create(CultureInfo.InvariantCulture, $"{memClock:N0} MHz")));
+        if (MemoryUsedGb is { } used && MemoryTotalGb is { } total)
+            lines.Add(new StatLine("Memory", FormattableString.Invariant($"{used:0.0} of {total:0} GB")));
+        if (ThrottleText is { } throttle)
+            lines.Add(new StatLine("Speed limited", throttle, IsThermalThrottled ? StatLevel.Bad : StatLevel.Normal));
+        return lines;
+    }
+
     public string? Describe() => CpuStats.Join(
         TemperatureC is { } temp ? FormattableString.Invariant($"{temp:0} °C") : null,
         LoadPercent is { } load ? FormattableString.Invariant($"{load:0}% load") : null,

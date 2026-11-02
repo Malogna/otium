@@ -1,3 +1,4 @@
+using Otium.Core.Engine;
 using Otium.Core.Gpu;
 using Otium.Core.Pools;
 using Otium.Core.Power;
@@ -102,6 +103,39 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
     private readonly Func<int, bool> _powerCap;
     private readonly Func<GpuInfo, GpuStats?> _stats;
 
+    /// <summary>Runs before every miner launch: the app closes graphics card tuning programs that would disturb the miner.</summary>
+    private readonly Func<CancellationToken, Task> _prepare;
+
+    /// <summary>Mining (or a test) stopped because the card was too hot and doesn't start again until it has cooled (<see cref="ThermalGuard"/>).</summary>
+    private bool _cooling;
+    private DateTimeOffset? _tooHotSince;
+
+    /// <summary>
+    /// Raises the power limit above the usual while the fans stay quiet, and lowers it when they don't: the most speed the
+    /// card can give at the fan speed the user accepts (see <see cref="SilentTunerStep"/>).
+    /// </summary>
+    private readonly Func<bool> _silentTuning;
+
+    /// <summary>The loudest fan speed (percent) the user accepts; null uses quiet mode's own thresholds.</summary>
+    private readonly Func<int>? _fanLimit;
+
+    /// <summary>Power levels where the fans got loud, with when climbing to them may be tried again.</summary>
+    private readonly Dictionary<int, DateTimeOffset> _climbBlocked = [];
+    private DateTimeOffset _powerChangedAt = DateTimeOffset.MinValue;
+    private bool _remembered;
+
+    /// <summary>A test's readings of the cards: how many, how many were thermally throttled, and the highest temperature.</summary>
+    private int _testReadings;
+    private int _testThrottled;
+    private double? _testPeakC;
+
+    /// <summary>How many times each coin's test was thrown away because the card was too hot (it is accepted after <see cref="MaxHotTestRetries"/>).</summary>
+    private readonly Dictionary<string, int> _hotTestRetries = new(StringComparer.OrdinalIgnoreCase);
+    public const int MaxHotTestRetries = 2;
+
+    /// <summary>A reading this long above <see cref="ThermalGuard.StopAtC"/> stops mining (a spike for a second doesn't).</summary>
+    private static readonly TimeSpan HotFor10 = TimeSpan.FromSeconds(10);
+
     /// <summary>Hash rate and measured watts while mining normally, for the intensity tuner (IntensityTuner).</summary>
     private readonly List<(DateTimeOffset At, double Hashrate, double? Watts)> _tuneSamples = [];
 
@@ -157,6 +191,7 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
     /// temperature runs high; off, the miner runs at its own settings.</param>
     /// <param name="stats">A card's temperature, fan and power right now (NVML), or null if unknown.</param>
     /// <param name="powerCap">Sets the power limit's percentage while mining (the app's power part); false when it's off.</param>
+    /// <param name="prepare">Runs before every launch of the miner (closing tuning programs); fast when there is nothing to do.</param>
     public SrbMinerGpuProvider(
         HttpClient http,
         IMoneroPoolApi pool,
@@ -181,8 +216,14 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         Func<string, IReadOnlyDictionary<string, int>?>? listDevices = null,
         Func<bool>? optimize = null,
         Func<GpuInfo, GpuStats?>? stats = null,
-        Func<int, bool>? powerCap = null)
+        Func<int, bool>? powerCap = null,
+        Func<CancellationToken, Task>? prepare = null,
+        Func<bool>? silentTuning = null,
+        Func<int>? fanLimit = null)
     {
+        _silentTuning = silentTuning ?? (() => false);
+        _fanLimit = fanLimit;
+        _prepare = prepare ?? (_ => Task.CompletedTask);
         _optimize = optimize ?? (() => false);
         _powerCap = powerCap ?? (_ => false);
         _stats = stats ?? (_ => null);
@@ -258,6 +299,16 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         var eligible = await EligibleAsync(ct);
         if (eligible.Count == 0 && options.Target.Role != PayoutRole.User)
             throw new ProviderProblemException("Graphics card is resting during Otium's short fee slice: none of the coins it can mine there pay on this card. It carries on afterwards.", ProblemKinds.NothingPays);
+        if (_cooling)
+        {
+            IReadOnlyList<GpuInfo> cards = _cards.Count > 0 ? _cards : _gpus;
+            var stats = cards.Select(_stats).OfType<GpuStats>().ToList();
+            if (!ThermalGuard.CooledDown(stats))
+                throw new ProviderProblemException(
+                    FormattableString.Invariant($"Graphics card paused to cool down ({stats.Max(s => s.TemperatureC):0} °C). Mining carries on at {ThermalGuard.ResumeAtC:0} °C."),
+                    ProblemKinds.TooHot);
+            _cooling = false;
+        }
         if (eligible.Count == 0 && _policy() is { IsNotYetFetched: true })
             throw new ProviderProblemException("Graphics card is waiting for today's coin prices from Otium's server; it starts as soon as they arrive.", ProblemKinds.NoPrices);
         if (eligible.Count == 0)
@@ -301,6 +352,9 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
             return await AdvanceBenchmarkAsync(ct);
         }
 
+        if (await StopIfTooHotAsync(now) is { } tooHot)
+            return tooHot;
+
         // During SRBMiner's first dev-fee round the hashes are the developer's, not the user's.
         if (_devFeeSeenAt is null && SrbMinerStats.StartedFirstDevFeeRound(_process.RecentLog))
             _devFeeSeenAt = now;
@@ -320,14 +374,26 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
             {
                 var power = _meter.Read(100);
                 _samples.Add((hashrate, power.IsMeasured ? power.ExtraWatts : null));
+                NoteTestReading();
             }
 
             if (elapsed >= BenchmarkDuration)
             {
+                // A test run while the card was too hot to run at its real speed says little: throw it away and run it again
+                // once the card has cooled (a card that can't cool has its result kept, marked, and measured again later).
+                var hotTest = ThermalGuard.TestWasThrottled(_testReadings, _testThrottled, _testPeakC);
+                if (hotTest && _hotTestRetries.GetValueOrDefault(_current.PoolName) < MaxHotTestRetries)
+                {
+                    _hotTestRetries[_current.PoolName] = _hotTestRetries.GetValueOrDefault(_current.PoolName) + 1;
+                    await KillAsync();
+                    _cooling = true;
+                    var reason = FormattableString.Invariant($"Testing {CoinName(_current)} paused: the graphics card was too hot ({_testPeakC:0} °C) to show its real speed. It tests again once it has cooled to {ThermalGuard.ResumeAtC:0} °C.");
+                    return new ProviderStatus(ProviderState.Error, 0, reason, Problem: reason, ProblemKind: ProblemKinds.TooHot);
+                }
                 // A card that hashed early (e.g. only during the dev-fee round) and then stopped hasn't proven anything.
                 var stillHashing = _samples.Count > 0 && now - _lastHashingAt <= StillHashingWithin;
                 _store.Record(_samples.Count >= MinimumSamples && stillHashing
-                    ? new BenchmarkResult(_current.PoolName, Median(_samples.Select(s => s.Hashrate)), AverageWatts(), now)
+                    ? new BenchmarkResult(_current.PoolName, Median(_samples.Select(s => s.Hashrate)), AverageWatts(), now, Throttled: hotTest)
                     : new BenchmarkResult(_current.PoolName, 0, null, now,
                         Failure: SrbMinerStats.DescribeProblem(_process.RecentLog)
                                  ?? (_samples.Count > 0 ? "stopped hashing during the test" : "no stable hashrate")));
@@ -335,7 +401,8 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
             }
 
             var testing = $"Testing {_current.PoolName} on your graphics card ({_benchmarkIndex + 1} of {_benchmarkTotal})";
-            return new ProviderStatus(hashrate > 0 ? ProviderState.Running : ProviderState.Starting, hashrate, testing + "…", testing, IsCalibrating: true, Problem: _notice);
+            return new ProviderStatus(hashrate > 0 ? ProviderState.Running : ProviderState.Starting, hashrate, testing + "…", testing, IsCalibrating: true, Problem: _notice,
+                Phase: EnginePhases.Testing, PhaseDetail: TestingDetail(_current));
         }
 
         if (_process.Shares is { } shares && shares.Rejected >= RejectedSharesToFail && shares.Rejected >= shares.Total * RejectedShareFraction)
@@ -411,13 +478,61 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         var waiting = inDevFeeRound
             ? $"Starting {_current.PoolName} (the miner's own short fee round runs first)…"
             : $"Starting {_current.PoolName} (preparing the GPU can take a minute)…";
+        var easingOff = (_quietCap is not null || _powerPercent < GpuEfficiency.CapPercent) && _quietNote is not null;
         return new ProviderStatus(
             hashrate > 0 ? ProviderState.Running : ProviderState.Starting,
             hashrate,
             hashrate > 0 ? null : _notice ?? waiting,
             detail,
-            Problem: hashrate > 0 ? null : _notice);
+            Problem: hashrate > 0 ? null : _notice,
+            Phase: easingOff ? EnginePhases.EasingOff : _trial || SettlingPower(now) ? EnginePhases.Tuning : null,
+            PhaseDetail: easingOff ? _quietNote : _trial ? $"trying {IntensityText(_intensity)}"
+                : SettlingPower(now) ? $"power limit {_powerPercent}%: checking the fans stay quiet" : null);
     }
+
+    /// <summary>The power limit was just changed by the silent-fans tuner, so the card is still settling and its numbers aren't final.</summary>
+    private bool SettlingPower(DateTimeOffset now) => _silentTuning() && now - _powerChangedAt < ClimbAfter / 2;
+
+    /// <summary>Counts one reading of the cards toward judging whether the test ran too hot.</summary>
+    private void NoteTestReading()
+    {
+        var readings = _cards.Select(_stats).OfType<GpuStats>().ToList();
+        if (readings.Count == 0)
+            return;
+        _testReadings++;
+        if (readings.Any(r => r.IsThermalThrottled))
+            _testThrottled++;
+        var peak = readings.Max(r => r.TemperatureC);
+        if (peak is not null && (_testPeakC is null || peak > _testPeakC))
+            _testPeakC = peak;
+    }
+
+    /// <summary>
+    /// Stops the miner when a card has been too hot for a few seconds (<see cref="ThermalGuard"/>), whatever the user's
+    /// settings: it protects the card. The engine retries every minute and <see cref="StartAsync"/> waits for it to cool.
+    /// </summary>
+    private async Task<ProviderStatus?> StopIfTooHotAsync(DateTimeOffset now)
+    {
+        var readings = _cards.Select(_stats).OfType<GpuStats>().ToList();
+        if (ThermalGuard.StopReason(readings) is not { } reason)
+        {
+            _tooHotSince = null;
+            return null;
+        }
+        _tooHotSince ??= now;
+        if (now - _tooHotSince < HotFor10)
+            return null;
+        _tooHotSince = null;
+        _cooling = true;
+        await KillAsync();
+        var message = $"Graphics card paused to protect it: {reason}. Mining carries on at {ThermalGuard.ResumeAtC:0} °C.";
+        return new ProviderStatus(ProviderState.Error, 0, message, Problem: message, ProblemKind: ProblemKinds.TooHot);
+    }
+
+    /// <summary>"coin 2 of 4: Pearl", for the Testing badge.</summary>
+    private string TestingDetail(GpuAlgorithm algorithm) => $"coin {_benchmarkIndex + 1} of {_benchmarkTotal}: {CoinName(algorithm)}";
+
+    private static string CoinName(GpuAlgorithm algorithm) => Otium.Core.Projections.Coins.ForAlgorithm(algorithm.PoolName).Name;
 
     // ---------- Intensity tuning and quiet mode (no administrator rights needed) ----------
 
@@ -446,6 +561,21 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
 
     /// <summary>For an algorithm that ignores intensity, quiet mode lowers the power limit by this many points per step.</summary>
     public const int PowerStep = 10;
+
+    /// <summary>The silent-fans tuner raises the power limit by this many points at a time…</summary>
+    public const int ClimbStep = 5;
+
+    /// <summary>…after the fans have stayed quiet for this long (a card takes minutes to settle at a new limit)…</summary>
+    public static readonly TimeSpan ClimbAfter = TimeSpan.FromMinutes(6);
+
+    /// <summary>…never past this (the card's own default)…</summary>
+    public const int ClimbMax = 100;
+
+    /// <summary>…and doesn't try a level again for this long after the fans got loud there.</summary>
+    public static readonly TimeSpan ClimbBlockFor = TimeSpan.FromHours(2);
+
+    /// <summary>Quiet means this far under the user's fan limit.</summary>
+    public const int QuietMargin = 10;
 
     /// <summary>The intensity used when the miner didn't say what it picked by itself.</summary>
     private const int UnknownPick = 20;
@@ -586,8 +716,63 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
             }
         }
 
-        var hot = readings.FirstOrDefault(s => s.FanPercent >= HotFanPercent || s.TemperatureC >= HotTemperatureC);
-        var cool = readings.All(s => (s.FanPercent ?? 0) <= CoolFanPercent && (s.TemperatureC ?? 0) <= CoolTemperatureC);
+        var hotFan = _fanLimit?.Invoke() ?? HotFanPercent;
+        var coolFan = _fanLimit is null ? CoolFanPercent : hotFan - QuietMargin;
+        var hot = readings.FirstOrDefault(s => s.FanPercent >= hotFan || s.TemperatureC >= HotTemperatureC);
+        var cool = readings.All(s => (s.FanPercent ?? 0) <= coolFan && (s.TemperatureC ?? 0) <= CoolTemperatureC);
+
+        // Silent tuning: start where the last run settled (once), and give a level back before slowing the miner down.
+        if (_silentTuning())
+        {
+            if (!_remembered)
+            {
+                _remembered = true;
+                if (_store.PowerCap(algorithm.PoolName) is { } settled && settled != _powerPercent && settled is >= GpuEfficiency.MinCapPercent and <= ClimbMax && _powerCap(settled))
+                {
+                    _powerPercent = settled;
+                    _powerChangedAt = now;
+                }
+            }
+            if (hot is not null && _quietCap is null && _powerPercent > GpuEfficiency.CapPercent)
+            {
+                _coolSince = null;
+                _hotSince ??= now;
+                if (now - _hotSince < HotFor)
+                    return null;
+                _hotSince = null;
+                // Loud at this level: back down two steps, and not up to it again for a while.
+                _climbBlocked[_powerPercent] = now + ClimbBlockFor;
+                var down = Math.Max(GpuEfficiency.CapPercent, _powerPercent - ClimbStep * 2);
+                if (_powerCap(down))
+                {
+                    _powerPercent = down;
+                    _powerChangedAt = now;
+                    _store.SetPowerCap(algorithm.PoolName, down);
+                }
+                return null;
+            }
+            if (cool && hot is null && _quietCap is null && !_benchmarking && !_trial && _powerPercent >= GpuEfficiency.CapPercent && _powerPercent < ClimbMax)
+            {
+                _hotSince = null;
+                _coolSince ??= now;
+                if (now - _coolSince < ClimbAfter)
+                    return null;
+                _coolSince = null;
+                var next = Math.Min(ClimbMax, _powerPercent + ClimbStep);
+                if (_climbBlocked.TryGetValue(next, out var until) && now < until)
+                {
+                    _store.SetPowerCap(algorithm.PoolName, _powerPercent); // this is as far as the fans allow for now
+                    return null;
+                }
+                if (_powerCap(next))
+                {
+                    _powerPercent = next;
+                    _powerChangedAt = now;
+                    _store.SetPowerCap(algorithm.PoolName, next);
+                }
+                return null;
+            }
+        }
         var ignoresIntensity = _store.IntensityIgnored(algorithm.PoolName);
 
         if (hot is not null)
@@ -890,7 +1075,8 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         {
             CountBenchmark(eligible);
             var next = $"Testing {testing.PoolName} on your graphics card ({_benchmarkIndex + 1} of {_benchmarkTotal})";
-            return new ProviderStatus(ProviderState.Starting, 0, next + "…", next, IsCalibrating: true, Problem: _notice);
+            return new ProviderStatus(ProviderState.Starting, 0, next + "…", next, IsCalibrating: true, Problem: _notice,
+                Phase: EnginePhases.Testing, PhaseDetail: TestingDetail(testing));
         }
 
         _benchmarking = false;
@@ -1009,6 +1195,9 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         // schedule: unMineable counts the worker's last hour, which such a restart doesn't empty. After a stop it starts over.
         var liveRelaunch = _process is not null && _current == algorithm;
         await KillAsync();
+        // Tuning programs (Afterburner and the like) step aside first: they would change clocks, fans and the power limit under the miner.
+        await _prepare(ct);
+        _remembered = false; // each coin starts at the power limit it settled at last time
         _meter.CaptureBaseline();
 
         var options = _options ?? throw new InvalidOperationException("StartAsync must be called first.");
@@ -1031,6 +1220,9 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         _devFeeSeenAt = null;
         _lastEvaluation = now;
         _samples.Clear();
+        _testReadings = 0;
+        _testThrottled = 0;
+        _testPeakC = null;
         _tuneSamples.Clear();
         _intensity = intensity;
         _trial = trial;
