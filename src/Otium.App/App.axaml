@@ -65,6 +65,11 @@
             <SolidColorBrush x:Key="HeroText" Color="#FFFFFF" />
             <SolidColorBrush x:Key="HeroMuted" Color="#ECFAF4" />
             <SolidColorBrush x:Key="HeroChip" Color="#26FFFFFF" />
+            <LinearGradientBrush x:Key="HeroSheen" StartPoint="0%,0%" EndPoint="100%,35%">
+                <GradientStop Color="#00FFFFFF" Offset="0" />
+                <GradientStop Color="#26FFFFFF" Offset="0.5" />
+                <GradientStop Color="#00FFFFFF" Offset="1" />
+            </LinearGradientBrush>
 
             <!-- Line icons on a 24×24 grid, drawn with a 2px stroke. -->
             <StreamGeometry x:Key="IconCpu">M7 4h10a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3z M9.5 9.5h5v5h-5z M9 1v3 M15 1v3 M9 20v3 M15 20v3 M20 9h3 M20 15h3 M1 9h3 M1 15h3</StreamGeometry>
@@ -83,6 +88,8 @@
             <StreamGeometry x:Key="IconArrowLeft">M19 12H5 M11 6l-6 6 6 6</StreamGeometry>
             <StreamGeometry x:Key="IconChevronDown">M6 9l6 6 6-6</StreamGeometry>
             <StreamGeometry x:Key="IconChevronUp">M6 15l6-6 6 6</StreamGeometry>
+            <StreamGeometry x:Key="IconChevronRight">M9 6l6 6-6 6</StreamGeometry>
+            <StreamGeometry x:Key="IconChevronLeft">M15 6l-6 6 6 6</StreamGeometry>
             <StreamGeometry x:Key="IconLeaf">M5 19c0-8 5-14 15-15c-1 10-7 15-15 15z M5 19l7-7</StreamGeometry>
             <StreamGeometry x:Key="IconClock">M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18z M12 7v5l3 2</StreamGeometry>
             <StreamGeometry x:Key="IconGlobe">M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18z M3 12h18 M12 3c3 3 3 15 0 18 M12 3c-3 3-3 15 0 18</StreamGeometry>
@@ -117,8 +124,9 @@
             <Setter Property="BoxShadow" Value="{DynamicResource CardShadow}" />
         </Style>
 
-        <!-- Cards ease up into place when they appear. -->
-        <Style Selector="Border.card, Border.hero, Border.rise">
+        <!-- The first screen's cards ease up into place, one after the other. Later screens don't (the window drops its
+             "intro" class at the first move), so going back to a screen never replays them: its page just fades and slides. -->
+        <Style Selector="Window.intro Border.card, Window.intro Border.hero, Window.intro Border.rise">
             <Style.Animations>
                 <Animation Duration="0:0:0.45" Easing="CubicEaseOut" FillMode="Backward">
                     <KeyFrame Cue="0%">
@@ -132,7 +140,7 @@
                 </Animation>
             </Style.Animations>
         </Style>
-        <Style Selector="Border.delay1">
+        <Style Selector="Window.intro Border.delay1">
             <Style.Animations>
                 <Animation Duration="0:0:0.55" Delay="0:0:0.08" Easing="CubicEaseOut" FillMode="Backward">
                     <KeyFrame Cue="0%"><Setter Property="Opacity" Value="0" /><Setter Property="(TranslateTransform.Y)" Value="14" /></KeyFrame>
@@ -140,7 +148,7 @@
                 </Animation>
             </Style.Animations>
         </Style>
-        <Style Selector="Border.delay2">
+        <Style Selector="Window.intro Border.delay2">
             <Style.Animations>
                 <Animation Duration="0:0:0.6" Delay="0:0:0.16" Easing="CubicEaseOut" FillMode="Backward">
                     <KeyFrame Cue="0%"><Setter Property="Opacity" Value="0" /><Setter Property="(TranslateTransform.Y)" Value="14" /></KeyFrame>
@@ -167,6 +175,94 @@
             <Setter Property="Background" Value="{StaticResource HeroChip}" />
             <Setter Property="CornerRadius" Value="999" />
             <Setter Property="Padding" Value="12,5" />
+        </Style>
+
+        <!-- A line on the overview that opens its own page: a tile that brightens under the pointer. -->
+        <Style Selector="Button.row">
+            <Setter Property="Background" Value="{DynamicResource SubtleBackground}" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="14" />
+            <Setter Property="Padding" Value="12,0" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="RenderTransform" Value="none" />
+        </Style>
+        <Style Selector="Button.row:pointerover">
+            <Setter Property="RenderTransform" Value="none" />
+        </Style>
+        <Style Selector="Button.row /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Transitions">
+                <Transitions>
+                    <BrushTransition Property="Background" Duration="0:0:0.18" />
+                    <BrushTransition Property="BorderBrush" Duration="0:0:0.18" />
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="Button.row:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource GoodSoft}" />
+            <Setter Property="BorderBrush" Value="#4034C98F" />
+        </Style>
+        <Style Selector="Button.row:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#1B4D3F" />
+        </Style>
+        <Style Selector="Button.row:disabled /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource SubtleBackground}" />
+            <Setter Property="Foreground" Value="{DynamicResource Ink}" />
+        </Style>
+
+        <!-- A slim notice across the top of the overview: one line, so it never pushes the screen into scrolling. -->
+        <Style Selector="Border.strip">
+            <Setter Property="Background" Value="{DynamicResource CardBackground}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource CardBorder}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="14" />
+            <Setter Property="Padding" Value="12,8" />
+        </Style>
+        <Style Selector="Border.strip.warn">
+            <Setter Property="Background" Value="{DynamicResource WarnSoft}" />
+            <Setter Property="BorderBrush" Value="#55F2B45C" />
+        </Style>
+
+        <!-- Things that open over the overview (cash-out, choosing networks, a result to share): dimmed ground, a sheet on it. -->
+        <Style Selector="Border.scrim">
+            <Setter Property="Background" Value="#B3050B10" />
+        </Style>
+        <Style Selector="Border.sheet">
+            <Setter Property="Background" Value="#F00C1A21" />
+            <Setter Property="BorderBrush" Value="#3334C98F" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="22" />
+            <Setter Property="Padding" Value="22" />
+            <Setter Property="BoxShadow" Value="0 24 60 0 #99000000" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <!-- A sheet settles into place when it opens. -->
+        <Style Selector="Border.sheet">
+            <Style.Animations>
+                <Animation Duration="0:0:0.3" Easing="CubicEaseOut" FillMode="Backward">
+                    <KeyFrame Cue="0%"><Setter Property="Opacity" Value="0" /><Setter Property="(TranslateTransform.Y)" Value="18" /></KeyFrame>
+                    <KeyFrame Cue="100%"><Setter Property="Opacity" Value="1" /><Setter Property="(TranslateTransform.Y)" Value="0" /></KeyFrame>
+                </Animation>
+            </Style.Animations>
+        </Style>
+
+        <!-- A soft sweep of light across the balance card while Otium earns. -->
+        <Style Selector="Border.sheen">
+            <Setter Property="Opacity" Value="0" />
+            <Setter Property="IsHitTestVisible" Value="False" />
+        </Style>
+        <Style Selector="Border.sheen.on">
+            <Style.Animations>
+                <Animation Duration="0:0:8" IterationCount="Infinite" Easing="SineEaseInOut">
+                    <KeyFrame Cue="0%"><Setter Property="Opacity" Value="1" /><Setter Property="(TranslateTransform.X)" Value="-260" /></KeyFrame>
+                    <KeyFrame Cue="32%"><Setter Property="Opacity" Value="1" /><Setter Property="(TranslateTransform.X)" Value="620" /></KeyFrame>
+                    <KeyFrame Cue="100%"><Setter Property="Opacity" Value="1" /><Setter Property="(TranslateTransform.X)" Value="620" /></KeyFrame>
+                </Animation>
+            </Style.Animations>
         </Style>
 
         <Style Selector="Border.tile">

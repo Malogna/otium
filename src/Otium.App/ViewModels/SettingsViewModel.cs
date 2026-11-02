@@ -521,7 +521,9 @@ public partial class SettingsViewModel : ViewModelBase
         var paused = _host.TuningToolsPaused;
         var running = _host.TuningToolsRunning;
         ToolsNeedPermission = PauseTuningTools && _host.TuningToolsNeedPermission;
-        ToolsStatus = !PauseTuningTools
+        ToolsStatus = !GpuOptimize
+            ? "Not active while Optimize my graphics card is off."
+            : !PauseTuningTools
             ? "Left running: they may change clocks, fans and the power limit while the card earns, and slow its tests."
             : paused.Count > 0 ? $"Closed while the card earns: {string.Join(", ", paused)}. They start again when it stops."
             : ToolsNeedPermission ? $"{string.Join(", ", running)} is running as administrator, so Windows has to allow Otium to close it (once)."
@@ -606,6 +608,7 @@ public partial class SettingsViewModel : ViewModelBase
         GpuOptimizeMessage = await _host.SetGpuOptimizeAsync(on);
         GpuOptimizeBusy = false;
         ShowGpuOptimize();
+        RefreshToolsStatus();
     }
 
     /// <summary>The switch shows what's really on (off again when Windows didn't allow it), without asking again.</summary>

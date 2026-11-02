@@ -43,6 +43,12 @@ public partial class App : Application
                     return;
                 e.Cancel = true;
                 _window.Hide();
+                TrimMemorySoon();
+            };
+            _window.PropertyChanged += (_, e) =>
+            {
+                if (e.Property == Window.WindowStateProperty && _window.WindowState == WindowState.Minimized)
+                    TrimMemorySoon();
             };
 
             CreateTrayIcon(desktop);
@@ -89,9 +95,16 @@ public partial class App : Application
                 updateTimer.Start();
             }
 
+            // While the window is out of sight, Otium gives back the memory it isn't using, now and every few minutes.
+            var trimTimer = new DispatcherTimer { Interval = MemoryTrimmer.WhileHidden };
+            trimTimer.Tick += (_, _) => TrimMemoryIfHidden();
+            trimTimer.Start();
+
             var startMinimized = desktop.Args?.Contains("--minimized") == true && _host.Settings.OnboardingComplete;
             if (!startMinimized)
                 _window.Show();
+            else
+                DispatcherTimer.RunOnce(TrimMemoryIfHidden, TimeSpan.FromSeconds(20));
         }
 
         base.OnFrameworkInitializationCompleted();
@@ -128,6 +141,15 @@ public partial class App : Application
         if (_host is not null)
             _host.EarningSwitched += () => Dispatcher.UIThread.Post(UpdateTrayMenu); // e.g. Pause on the overview
         UpdateTrayMenu();
+    }
+
+    /// <summary>The window just went out of sight: a few seconds on, shrink the memory Otium holds.</summary>
+    private void TrimMemorySoon() => DispatcherTimer.RunOnce(TrimMemoryIfHidden, MemoryTrimmer.AfterHidden);
+
+    private void TrimMemoryIfHidden()
+    {
+        if (_host is { } host && !host.IsWindowOpen())
+            _ = Task.Run(MemoryTrimmer.Trim);
     }
 
     private void UpdateTrayMenu()

@@ -58,11 +58,8 @@ public partial class ActivityRow : ObservableObject
 
     public bool HasPhase => PhaseLabel.Length > 0;
 
-    [ObservableProperty] public partial bool IsExpanded { get; set; }
-
-    [CommunityToolkit.Mvvm.Input.RelayCommand]
-    private void ToggleExpanded() => IsExpanded = !IsExpanded;
 }
+
 
 /// <summary>One reading in a device's opened row: a label and its value, coloured when it needs a look. Updated in place.</summary>
 public partial class StatRow : ObservableObject
@@ -161,10 +158,15 @@ public partial class HomeViewModel : ViewModelBase
         if (host.GpuEngine is not null)
             Activity.Add(new ActivityRow { Icon = Icon("IconGpu"), Title = Otium.Core.Gpu.GpuInfo.NamesOf(host.GpuProvider?.Gpus ?? []) ?? "Graphics card" });
 
-        // The last row's readings are open to begin with: they fill the "Right now" card, which stretches down the left column.
-        Activity[^1].IsExpanded = true;
-
         Results = new ResultsViewModel(host);
+        Results.PropertyChanged += (_, _) => UpdateOverview();
+        PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(ShowSharingSuggestion) or nameof(NeedsEmail))
+                UpdateOverview();
+            if (e.PropertyName is nameof(IsCashingOut) or nameof(ShowSharingSetup) or nameof(ShowMoment) or nameof(SelectedActivity))
+                OnPropertyChanged(nameof(ShowSheet));
+        };
         host.MeasurementChanged += () => Dispatcher.UIThread.Post(Refresh);
 
         _internetRow = new ActivityRow { Icon = Icon("IconGlobe"), Title = "Internet connection" };
@@ -212,6 +214,7 @@ public partial class HomeViewModel : ViewModelBase
         host.AntivirusChanged += () => Dispatcher.UIThread.Post(Refresh);
 
         Refresh();
+        UpdateOverview();
         _ = LoadEstimateAsync();
 
         // The processor's and graphics card's readings in their opened rows, every couple of seconds.
@@ -226,13 +229,14 @@ public partial class HomeViewModel : ViewModelBase
     /// <summary>Readings for the processor's and graphics card's rows: live hardware values and what the miner is doing.</summary>
     private void RefreshStats()
     {
-        if (Activity.Count == 0)
+        // Nobody sees the readings while the window is hidden in the tray: don't wake the hardware for them.
+        if (Activity.Count == 0 || !_host.IsWindowOpen())
             return;
         var cpu = _host.Engine.Snapshot;
         var cpuLines = new List<StatLine>();
         if (cpu.HashrateHps > 0)
             cpuLines.Add(new StatLine("Speed", Format.Hashrate(cpu.HashrateHps)));
-        cpuLines.Add(new StatLine("Uses", $"up to {_host.Settings.CpuUsagePercent}% of its {Environment.ProcessorCount} threads"));
+        cpuLines.Add(new StatLine("Uses", $"{_host.Settings.CpuUsagePercent}% of {Environment.ProcessorCount} threads"));
         cpuLines.AddRange(_host.Hardware.ReadCpu().ToLines());
         StatRow.Update(Activity[0].Stats, cpuLines);
         Activity[0].HasStats = Activity[0].Stats.Count > 0;
@@ -251,7 +255,7 @@ public partial class HomeViewModel : ViewModelBase
                 gpuLines.AddRange(card.ToLines().Select(l => cards.Count > 1 ? l with { Label = $"{l.Label} ({Short(card.Name)})" } : l));
             }
             if (_host.TuningToolsPaused is { Count: > 0 } pausedTools)
-                gpuLines.Add(new StatLine("Closed while earning", string.Join(", ", pausedTools)));
+                gpuLines.Add(new StatLine("Tools closed", string.Join(", ", pausedTools)));
             StatRow.Update(Activity[1].Stats, gpuLines);
             Activity[1].HasStats = Activity[1].Stats.Count > 0;
         }
@@ -267,6 +271,42 @@ public partial class HomeViewModel : ViewModelBase
     public EmailSignInViewModel SignIn { get; }
 
     public ObservableCollection<ActivityRow> Activity { get; } = [];
+
+    /// <summary>The device whose own page is open as a sheet (its readings, the networks), or null. The card itself never grows.</summary>
+    [ObservableProperty] public partial ActivityRow? SelectedActivity { get; set; }
+
+    [RelayCommand]
+    private void OpenActivity(ActivityRow? row)
+    {
+        if (row is { CanExpand: true })
+            SelectedActivity = row;
+    }
+
+    [RelayCommand]
+    private void CloseActivity() => SelectedActivity = null;
+
+    /// <summary>Which suggestion the overview shows, one at a time so it never crowds the earnings: 1 the test, 2 sharing, 3 the email, 0 none.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsSuggestMeasure), nameof(IsSuggestSharing), nameof(IsSuggestEmail))]
+    public partial int SuggestionKind { get; set; }
+
+    public bool IsSuggestMeasure => SuggestionKind == 1;
+
+    public bool IsSuggestSharing => SuggestionKind == 2;
+
+    public bool IsSuggestEmail => SuggestionKind == 3;
+
+    /// <summary>A result to share (the test, a payout, while you were away, last month) is open as a sheet.</summary>
+    [ObservableProperty] public partial bool ShowMoment { get; set; }
+
+    /// <summary>Something is open over the overview (cash-out, choosing networks, a result): the ground behind it dims.</summary>
+    public bool ShowSheet => IsCashingOut || ShowSharingSetup || ShowMoment || SelectedActivity is not null;
+
+    private void UpdateOverview()
+    {
+        SuggestionKind = Results.ShowMeasureOffer ? 1 : ShowSharingSuggestion ? 2 : NeedsEmail ? 3 : 0;
+        ShowMoment = Results.ShowMeasureResultNow || Results.ShowPayoutNow || Results.ShowAwayNow || Results.ShowMonthlyNow;
+    }
 
     /// <summary>The test, "while you were away" and the monthly report.</summary>
     public ResultsViewModel Results { get; }
@@ -653,7 +693,7 @@ public partial class HomeViewModel : ViewModelBase
     private void RefreshCashouts()
     {
         var balance = _host.Account?.Balance;
-        var rows = (balance?.RecentCashouts ?? []).Select(CashoutRow.From).ToList();
+        var rows = (balance?.RecentCashouts ?? []).Take(4).Select(CashoutRow.From).ToList(); // the sheet shows the latest few
         if (!rows.SequenceEqual(Cashouts))
         {
             Cashouts.Clear();

@@ -11,10 +11,10 @@
             <Setter Property="Padding" Value="18" />
         </Style>
         <Style Selector="Border.hero">
-            <Setter Property="Padding" Value="22" />
+            <Setter Property="Padding" Value="20" />
         </Style>
         <Style Selector="TextBlock.display">
-            <Setter Property="FontSize" Value="46" />
+            <Setter Property="FontSize" Value="44" />
         </Style>
         <Style Selector="Border.tile">
             <Setter Property="Padding" Value="12,9" />
@@ -22,258 +22,592 @@
         <Style Selector="TextBlock.value">
             <Setter Property="FontSize" Value="19" />
         </Style>
+        <Style Selector="TextBlock.oneLine">
+            <Setter Property="TextWrapping" Value="NoWrap" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        </Style>
+        <Style Selector="Button.back">
+            <Setter Property="Width" Value="34" />
+            <Setter Property="Height" Value="34" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="CornerRadius" Value="999" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
     </UserControl.Styles>
 
-    <Grid RowDefinitions="Auto,*">
-        <!-- Header -->
-        <Grid Margin="26,18,26,0" ColumnDefinitions="Auto,*,Auto">
-            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                <Image Source="/Assets/otium.png" Width="30" Height="30" />
-                <TextBlock Text="Otium" FontSize="20" FontWeight="Bold" VerticalAlignment="Center" />
-            </StackPanel>
-            <WrapPanel Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,2,0,0">
-                <WrapPanel.Styles>
-                    <Style Selector="Button.link TextBlock">
-                        <Setter Property="FontSize" Value="12.5" />
-                        <Setter Property="Foreground" Value="{DynamicResource MutedText}" />
-                    </Style>
-                </WrapPanel.Styles>
-                <Button Classes="link" Command="{Binding OpenDiscordCommand}" ToolTip.Tip="Otium's Discord server">
-                    <TextBlock Text="Discord" TextDecorations="Underline" />
-                </Button>
-                <TextBlock Classes="muted" FontSize="12.5" VerticalAlignment="Center" Text="·" />
-                <Button Classes="link" Command="{Binding EmailUsCommand}" ToolTip.Tip="Email Otium">
-                    <TextBlock Text="{Binding ContactEmail}" TextDecorations="Underline" />
-                </Button>
-                <TextBlock Classes="muted" FontSize="12.5" VerticalAlignment="Center" Text="·" />
-                <Button Classes="link" Command="{Binding OpenHelpCommand}" ToolTip.Tip="Otium's help page">
-                    <TextBlock Text="Help" TextDecorations="Underline" />
-                </Button>
-            </WrapPanel>
-            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10">
-                <Border Classes="pill" Classes.earning="{Binding IsEarning}" Classes.paused="{Binding IsWaiting}" Classes.problem="{Binding IsProblem}">
-                    <StackPanel Orientation="Horizontal" Spacing="7">
-                        <Panel Width="10" Height="10" VerticalAlignment="Center">
-                            <Ellipse Classes="pulse" Classes.on="{Binding IsEarning}" />
-                            <Ellipse Classes="liveDot" Classes.on="{Binding IsEarning}" />
-                        </Panel>
-                        <TextBlock Text="{Binding StateLabel}" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center" />
-                    </StackPanel>
+    <Panel>
+        <Grid RowDefinitions="Auto,Auto,*">
+            <!-- Header -->
+            <Grid Margin="26,18,26,0" ColumnDefinitions="Auto,*,Auto">
+                <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                    <Image Source="/Assets/otium.png" Width="30" Height="30" />
+                    <TextBlock Text="Otium" FontSize="20" FontWeight="Bold" VerticalAlignment="Center" />
+                </StackPanel>
+                <WrapPanel Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,2,0,0">
+                    <WrapPanel.Styles>
+                        <Style Selector="Button.link TextBlock">
+                            <Setter Property="FontSize" Value="12.5" />
+                            <Setter Property="Foreground" Value="{DynamicResource MutedText}" />
+                        </Style>
+                    </WrapPanel.Styles>
+                    <Button Classes="link" Command="{Binding OpenDiscordCommand}" ToolTip.Tip="Otium's Discord server">
+                        <TextBlock Text="Discord" TextDecorations="Underline" />
+                    </Button>
+                    <TextBlock Classes="muted" FontSize="12.5" VerticalAlignment="Center" Text="·" />
+                    <Button Classes="link" Command="{Binding EmailUsCommand}" ToolTip.Tip="Email Otium">
+                        <TextBlock Text="{Binding ContactEmail}" TextDecorations="Underline" />
+                    </Button>
+                    <TextBlock Classes="muted" FontSize="12.5" VerticalAlignment="Center" Text="·" />
+                    <Button Classes="link" Command="{Binding OpenHelpCommand}" ToolTip.Tip="Otium's help page">
+                        <TextBlock Text="Help" TextDecorations="Underline" />
+                    </Button>
+                </WrapPanel>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10">
+                    <Border Classes="pill" Classes.earning="{Binding IsEarning}" Classes.paused="{Binding IsWaiting}" Classes.problem="{Binding IsProblem}">
+                        <StackPanel Orientation="Horizontal" Spacing="7">
+                            <Panel Width="10" Height="10" VerticalAlignment="Center">
+                                <Ellipse Classes="pulse" Classes.on="{Binding IsEarning}" />
+                                <Ellipse Classes="liveDot" Classes.on="{Binding IsEarning}" />
+                            </Panel>
+                            <TextBlock Text="{Binding StateLabel}" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Border>
+                    <Button AutomationProperties.Name="Advanced" Command="{Binding OpenAdvancedCommand}" ToolTip.Tip="Advanced">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <Path Classes="icon" Data="{StaticResource IconSliders}" Width="16" Height="16" Stroke="{DynamicResource MutedText}" />
+                            <TextBlock Text="Advanced" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </Grid>
+
+            <!-- Notices: one slim line each, so none of them pushes the screen into scrolling. The details are in the tooltip, and
+                 anything that needs more room opens as a sheet over the screen. -->
+            <StackPanel Grid.Row="1" Spacing="0">
+                <Border Classes="strip" Margin="22,10,22,0" IsVisible="{Binding UpdateReady}">
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                        <TextBlock Classes="oneLine" VerticalAlignment="Center" Text="{Binding UpdateText}" />
+                        <Button Grid.Column="1" Classes="accent" Content="Restart to update" Command="{Binding RestartToUpdateCommand}" />
+                    </Grid>
                 </Border>
-                <Button AutomationProperties.Name="Advanced" Command="{Binding OpenAdvancedCommand}" ToolTip.Tip="Advanced">
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                        <Path Classes="icon" Data="{StaticResource IconSliders}" Width="16" Height="16" Stroke="{DynamicResource MutedText}" />
-                        <TextBlock Text="Advanced" />
-                    </StackPanel>
-                </Button>
+
+                <!-- Antivirus removed the engines: the fix, right where the user sees "Needs your OK" -->
+                <Border Classes="strip warn" Margin="22,10,22,0" IsVisible="{Binding NeedsAntivirusFix}">
+                    <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="12">
+                        <Path Classes="icon" Data="{StaticResource IconShield}" Stroke="{DynamicResource WarnBrush}" />
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center" ToolTip.Tip="Antivirus tools treat every crypto miner as a threat, including the official ones Otium downloads and verifies. Allowing Otium's engines folder fixes it; Windows will ask for your permission first, and nothing else is changed. If Windows Firewall asks about SRBMiner afterwards, choose Cancel: it only needs outgoing connections.">
+                            <TextBlock Classes="oneLine" FontWeight="SemiBold" Text="Your antivirus blocked the earning engines" />
+                            <TextBlock Classes="muted oneLine" FontSize="12" Text="Allowing Otium's engines folder fixes it. Windows asks you once."
+                                       IsVisible="{Binding AllowResult, Converter={x:Static StringConverters.IsNullOrEmpty}}" />
+                            <TextBlock Classes="muted oneLine" FontSize="12" Text="{Binding AllowResult}"
+                                       IsVisible="{Binding AllowResult, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                        </StackPanel>
+                        <Button Grid.Column="2" Classes="accent" Content="Allow automatically" Command="{Binding AllowAutomaticallyCommand}"
+                                IsVisible="{Binding CanAllowAutomatically}" IsEnabled="{Binding !IsAllowing}" />
+                        <Button Grid.Column="3" Content="Show me how" Command="{Binding OpenAdvancedCommand}" />
+                    </Grid>
+                </Border>
+
+                <!-- Paused for electricity: both sides of the sum, and the fix for users who don't pay for power -->
+                <Border Classes="strip warn" Margin="22,10,22,0" IsVisible="{Binding ShowElectricityPause}">
+                    <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="12">
+                        <Path Classes="icon" Data="{StaticResource IconBolt}" Stroke="{DynamicResource WarnBrush}" />
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center" ToolTip.Tip="{Binding ElectricityPauseText}">
+                            <TextBlock Classes="oneLine" FontWeight="SemiBold" Text="Paused: electricity would cost more than it earns" />
+                            <TextBlock Classes="muted oneLine" FontSize="12" Text="{Binding ElectricityPauseText}" />
+                        </StackPanel>
+                        <Button Grid.Column="2" Classes="accent" Content="I don't pay for electricity" Command="{Binding StopCountingElectricityCommand}" />
+                        <Button Grid.Column="3" Content="Settings" Command="{Binding OpenAdvancedCommand}" />
+                    </Grid>
+                </Border>
+
+                <!-- The two-minute test, while it runs -->
+                <Border Classes="strip" Margin="22,10,22,0" DataContext="{Binding Results}" x:DataType="vm:ResultsViewModel" IsVisible="{Binding IsMeasuring}">
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+                        <StackPanel Spacing="5" VerticalAlignment="Center">
+                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                                <TextBlock FontWeight="SemiBold" Text="Measuring this PC" />
+                                <TextBlock Grid.Column="1" Classes="muted oneLine" FontSize="12.5" Text="{Binding MeasureStatus}" />
+                            </Grid>
+                            <ProgressBar Classes="goal" Value="{Binding MeasureProgress}" Maximum="100" />
+                        </StackPanel>
+                        <Button Grid.Column="1" VerticalAlignment="Center" Content="Stop test" Command="{Binding StopMeasureCommand}" />
+                    </Grid>
+                </Border>
             </StackPanel>
+
+            <ScrollViewer x:Name="Scroller" Grid.Row="2" VerticalScrollBarVisibility="Disabled">
+                <!-- Two columns that fill the window (see HomeView.axaml.cs): what is happening on the left, the earnings on the right.
+                     Everything on this screen has a fixed place: nothing expands, so nothing scrolls. What needs more room
+                     (a device's readings, cash-out, choosing networks, a result to share) opens in its own page or as a sheet.
+                     Narrower than about 1000 px: one column, and the page scrolls. -->
+                <Grid x:Name="Columns" MaxWidth="1200" Margin="22,14,22,18" ColumnDefinitions="2*,3*" RowDefinitions="*" ColumnSpacing="16" RowSpacing="14">
+                    <Grid x:Name="LeftColumn" RowDefinitions="Auto,*,Auto" RowSpacing="14">
+
+                        <!-- ===== Hero: balance, projection, main actions, cash-out goal ===== -->
+                        <Border Grid.Row="0" Classes="hero" ClipToBounds="True">
+                            <Panel>
+                                <Border Classes="sheen" Classes.on="{Binding IsEarning}" Width="170" HorizontalAlignment="Left" Background="{StaticResource HeroSheen}">
+                                    <Border.RenderTransform><TranslateTransform /></Border.RenderTransform>
+                                </Border>
+                                <StackPanel Spacing="12">
+                                    <StackPanel Spacing="0">
+                                        <StackPanel Orientation="Horizontal" Spacing="9">
+                                            <!-- A soft ring spreads from the dot while Otium is earning -->
+                                            <Grid Width="9" Height="9" VerticalAlignment="Center" IsVisible="{Binding IsEarning}">
+                                                <Ellipse Classes="heroPulse" />
+                                                <Ellipse Classes="heroDot" />
+                                            </Grid>
+                                            <TextBlock Classes="heroMuted oneLine" Text="{Binding BalanceCaption}" />
+                                        </StackPanel>
+                                        <!-- The balance and the projected month: side by side while they fit, one under the other when not -->
+                                        <WrapPanel Orientation="Horizontal">
+                                            <TextBlock Classes="display" VerticalAlignment="Center" Margin="0,0,14,0" Text="{Binding Balance}" />
+                                            <Border Classes="heroChip" VerticalAlignment="Center"
+                                                    IsVisible="{Binding ProjectedMonthCaption, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                                                <StackPanel>
+                                                    <TextBlock Text="{Binding ProjectedMonth}" FontSize="17" FontWeight="Bold" HorizontalAlignment="Center" />
+                                                    <TextBlock Classes="heroMuted" FontSize="11.5" Text="{Binding ProjectedMonthCaption}" HorizontalAlignment="Center" />
+                                                </StackPanel>
+                                            </Border>
+                                        </WrapPanel>
+                                        <TextBlock Classes="heroMuted oneLine" FontSize="13" Text="{Binding PendingText}"
+                                                   IsVisible="{Binding PendingText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                                    </StackPanel>
+
+                                    <!-- Cash-out goal (balance) or progress to the pool's payout threshold (own address) -->
+                                    <StackPanel Spacing="6">
+                                        <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding GoalEta, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                                            <TextBlock Grid.Column="1" Classes="heroMuted oneLine" FontSize="12" FontWeight="SemiBold" Text="{Binding GoalEta}" />
+                                        </Grid>
+                                        <ProgressBar Classes="goal onHero" Value="{Binding GoalPercent}" Maximum="100" />
+                                        <TextBlock Classes="heroMuted" FontSize="12" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" Text="{Binding GoalText}"
+                                                   ToolTip.Tip="{Binding GoalText}" />
+                                        <TextBlock Classes="heroMuted oneLine" FontSize="12" Opacity="0.85" Text="{Binding GoalNote}" ToolTip.Tip="{Binding GoalNote}"
+                                                   IsVisible="{Binding GoalNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                                        <Border Classes="heroChip" IsVisible="{Binding PoolWarning, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                                            <StackPanel Spacing="6">
+                                                <TextBlock FontSize="12.5" FontWeight="SemiBold" TextWrapping="Wrap" Text="{Binding PoolWarning}" />
+                                                <Button Classes="link" HorizontalAlignment="Left" AutomationProperties.Name="Open my address page at the pool"
+                                                        Command="{Binding OpenPoolPageCommand}">
+                                                    <TextBlock Text="Open my address page" FontSize="12.5" TextDecorations="Underline" />
+                                                </Button>
+                                            </StackPanel>
+                                        </Border>
+                                    </StackPanel>
+
+                                    <Grid ColumnDefinitions="*,12,*">
+                                        <Button Classes="big ghostOnHero" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" AutomationProperties.Name="{Binding ToggleText}" Command="{Binding ToggleCommand}">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <Path Classes="icon onHero" Data="{StaticResource IconPause}" Width="15" Height="15" IsVisible="{Binding IsRunning}" />
+                                                <Path Classes="icon onHero" Data="{StaticResource IconPlay}" Width="15" Height="15" Fill="White" IsVisible="{Binding !IsRunning}" />
+                                                <TextBlock Text="{Binding ToggleText}" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Grid.Column="2" Classes="big onHero" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                                                AutomationProperties.Name="Cash out" Command="{Binding StartCashOutCommand}" IsEnabled="{Binding CanCashOut}" IsVisible="{Binding IsBalanceMode}">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <Path Classes="icon" Data="{StaticResource IconWallet}" Width="16" Height="16" Stroke="#0E7660" />
+                                                <TextBlock Text="Cash out" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </Button>
+                                    </Grid>
+                                    <TextBlock Classes="heroMuted oneLine" FontSize="12" HorizontalAlignment="Center" Text="{Binding AccountLine}"
+                                               IsVisible="{Binding AccountLine, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                                </StackPanel>
+                            </Panel>
+                        </Border>
+
+                        <!-- ===== Right now: the devices in a list; opening one shows its own page as a sheet ===== -->
+                        <Border Grid.Row="1" Classes="card delay1" ClipToBounds="True">
+                            <Grid RowDefinitions="Auto,*" RowSpacing="12">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Classes="h2" Text="Right now" />
+                                    <TextBlock Classes="muted oneLine" FontSize="13"
+                                               Text="{Binding ActivityHeadline}" />
+                                </StackPanel>
+                                <ItemsControl Grid.Row="1" ItemsSource="{Binding Activity}" Margin="0,-4">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate><UniformGrid Columns="1" /></ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:ActivityRow">
+                                            <Button Classes="row" MinHeight="58" MaxHeight="104" Margin="0,4" VerticalAlignment="Stretch" IsEnabled="{Binding CanExpand}"
+                                                    Command="{Binding $parent[UserControl].((vm:HomeViewModel)DataContext).OpenActivityCommand}"
+                                                    CommandParameter="{Binding}">
+                                                <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="12">
+                                                    <Panel VerticalAlignment="Center">
+                                                        <Border Classes="iconBadge" Background="{DynamicResource CardBackground}">
+                                                            <Path Classes="icon" Data="{Binding Icon}" />
+                                                        </Border>
+                                                        <Panel Width="10" Height="10" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-2,-2,0">
+                                                            <Ellipse Classes="pulse" Classes.on="{Binding IsActive}" />
+                                                            <Ellipse Classes="liveDot" Classes.on="{Binding IsActive}" />
+                                                        </Panel>
+                                                    </Panel>
+                                                    <Grid Grid.Column="1" RowDefinitions="Auto,Auto" VerticalAlignment="Center" ToolTip.Tip="{Binding What}">
+                                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                                            <TextBlock Classes="oneLine" FontWeight="SemiBold" Text="{Binding Title}" />
+                                                            <!-- Says when Otium is testing, tuning or easing off, so a lower number isn't a mystery -->
+                                                            <Border Grid.Column="1" Classes="phase" Classes.warn="{Binding PhaseIsWarning}" IsVisible="{Binding HasPhase}">
+                                                                <TextBlock Text="{Binding PhaseLabel}" FontSize="11" FontWeight="SemiBold" />
+                                                            </Border>
+                                                        </Grid>
+                                                        <TextBlock Grid.Row="1" Classes="muted oneLine" FontSize="12.5" Text="{Binding What}" />
+                                                    </Grid>
+                                                    <StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right" Spacing="1">
+                                                        <TextBlock HorizontalAlignment="Right" FontWeight="SemiBold" Text="{Binding PerDay}" />
+                                                        <TextBlock HorizontalAlignment="Right" Classes="muted oneLine" FontSize="12" Text="{Binding Speed}" />
+                                                    </StackPanel>
+                                                    <Path Grid.Column="3" Classes="icon" Data="{StaticResource IconChevronRight}" Width="14" Height="14"
+                                                          Stroke="{DynamicResource MutedText}" IsVisible="{Binding CanExpand}" />
+                                                </Grid>
+                                            </Button>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </Grid>
+                        </Border>
+
+                        <!-- ===== Invite ===== -->
+                        <Border Grid.Row="2" Classes="card delay2" IsVisible="{Binding HasInviteCode}">
+                            <Grid ColumnDefinitions="Auto,*,Auto" VerticalAlignment="Center">
+                                <Border Classes="iconBadge"><Path Classes="icon" Data="{StaticResource IconGift}" /></Border>
+                                <StackPanel Grid.Column="1" Margin="14,0" VerticalAlignment="Center" Spacing="2">
+                                    <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" Text="{Binding InviteTitle}" />
+                                    <TextBlock Classes="muted" FontSize="12.5">
+                                        <Run Text="Your code " /><Run Text="{Binding InviteCode, Mode=OneWay}" FontFamily="Consolas, Menlo, monospace" FontWeight="Bold" />
+                                        <Run Text=" · they get 30 days fee-free" />
+                                    </TextBlock>
+                                    <TextBlock Classes="good oneLine" FontSize="12" Text="{Binding CopiedText}"
+                                               IsVisible="{Binding CopiedText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                                </StackPanel>
+                                <Button Grid.Column="2" Classes="accent" VerticalAlignment="Center" Content="Copy invite" Command="{Binding CopyInviteCommand}" />
+                            </Grid>
+                        </Border>
+                    </Grid>
+
+                    <Grid x:Name="RightColumn" Grid.Column="1" RowDefinitions="*,Auto" RowSpacing="14">
+                        <!-- ===== Projections + chart ===== -->
+                        <Border Grid.Row="0" Classes="card delay2">
+                            <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto,Auto" RowSpacing="10">
+                                <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                                    <TextBlock Classes="h2" Text="Your earnings" />
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10">
+                                        <Button Classes="link" IsVisible="{Binding HasCashouts}" Command="{Binding StartCashOutCommand}" AutomationProperties.Name="Your cash-outs">
+                                            <TextBlock Text="Your cash-outs" FontSize="12.5" TextDecorations="Underline" />
+                                        </Button>
+                                        <Path Classes="icon" Data="{StaticResource IconChart}" />
+                                    </StackPanel>
+                                </Grid>
+                                <!-- What the current pace would bring -->
+                                <StackPanel Grid.Row="1" Spacing="8" IsVisible="{Binding HasProjection}">
+                                    <TextBlock Classes="kicker" Text="PROJECTED AT YOUR CURRENT PACE" />
+                                    <UniformGrid Columns="4">
+                                        <Border Classes="tile projected" Margin="0,0,5,0">
+                                            <StackPanel>
+                                                <TextBlock Classes="label" Text="Per day" />
+                                                <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left">
+                                                    <TextBlock Classes="value" Text="{Binding ProjDayText}" />
+                                                </Viewbox>
+                                            </StackPanel>
+                                        </Border>
+                                        <Border Classes="tile projected" Margin="5,0">
+                                            <StackPanel>
+                                                <TextBlock Classes="label" Text="Per week" />
+                                                <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left">
+                                                    <TextBlock Classes="value" Text="{Binding ProjWeekText}" />
+                                                </Viewbox>
+                                            </StackPanel>
+                                        </Border>
+                                        <Border Classes="tile projected" Margin="5,0">
+                                            <StackPanel>
+                                                <TextBlock Classes="label" Text="Per month" />
+                                                <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left">
+                                                    <TextBlock Classes="value" Text="{Binding ProjMonthText}" />
+                                                </Viewbox>
+                                            </StackPanel>
+                                        </Border>
+                                        <Border Classes="tile projected" Margin="5,0,0,0">
+                                            <StackPanel>
+                                                <TextBlock Classes="label" Text="Per year" />
+                                                <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left">
+                                                    <TextBlock Classes="value" Text="{Binding ProjYearText}" />
+                                                </Viewbox>
+                                            </StackPanel>
+                                        </Border>
+                                    </UniformGrid>
+                                </StackPanel>
+                                <TextBlock Grid.Row="2" Classes="muted" FontSize="12" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis"
+                                           Text="{Binding ProjectionBasis}" ToolTip.Tip="{Binding ProjectionBasis}" />
+
+                                <!-- What really came in -->
+                                <StackPanel Grid.Row="3" Spacing="8">
+                                    <TextBlock Classes="kicker" Text="EARNED SO FAR" />
+                                    <UniformGrid Columns="4">
+                                        <Border Classes="tile" Margin="0,0,5,0">
+                                            <StackPanel>
+                                                <TextBlock Classes="label" Text="Today" />
+                                                <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left">
+                                                    <TextBlock Classes="value" Text="{Binding TodayText}" />
+                                                </Viewbox>
+                                            </StackPanel>
+                                        </Border>
+                                        <Border Classes="tile" Margin="5,0">
+                                            <StackPanel>
+                                                <TextBlock Classes="label" Text="This week" />
+                                                <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left">
+                                                    <TextBlock Classes="value" Text="{Binding WeekText}" />
+                                                </Viewbox>
+                                            </StackPanel>
+                                        </Border>
+                                        <Border Classes="tile" Margin="5,0">
+                                            <StackPanel>
+                                                <TextBlock Classes="label" Text="This month" />
+                                                <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left">
+                                                    <TextBlock Classes="value" Text="{Binding MonthText}" />
+                                                </Viewbox>
+                                            </StackPanel>
+                                        </Border>
+                                        <Border Classes="tile" Margin="5,0,0,0">
+                                            <StackPanel>
+                                                <TextBlock Classes="label" Text="This year" />
+                                                <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left">
+                                                    <TextBlock Classes="value" Text="{Binding YearText}" />
+                                                </Viewbox>
+                                            </StackPanel>
+                                        </Border>
+                                    </UniformGrid>
+                                </StackPanel>
+
+                                <!-- The chart, in the range picked here -->
+                                <Grid Grid.Row="4" ColumnDefinitions="*,Auto">
+                                    <TextBlock Classes="muted oneLine" FontSize="12.5" VerticalAlignment="Center" Text="{Binding ChartCaption}" />
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="2">
+                                        <Button Classes="seg" Classes.active="{Binding IsDayChart}" Content="Day" Command="{Binding SelectChartPeriodCommand}" CommandParameter="Day" />
+                                        <Button Classes="seg" Classes.active="{Binding IsWeekChart}" Content="Week" Command="{Binding SelectChartPeriodCommand}" CommandParameter="Week" />
+                                        <Button Classes="seg" Classes.active="{Binding IsMonthChart}" Content="Month" Command="{Binding SelectChartPeriodCommand}" CommandParameter="Month" />
+                                        <Button Classes="seg" Classes.active="{Binding IsYearChart}" Content="Year" Command="{Binding SelectChartPeriodCommand}" CommandParameter="Year" />
+                                    </StackPanel>
+                                </Grid>
+                                <controls:EarningsChart Grid.Row="5" MinHeight="60" Values="{Binding ChartValues}" Labels="{Binding ChartLabels}" Tips="{Binding ChartTips}"
+                                                        BarBrush="{DynamicResource ChartBar}" FaintBrush="{DynamicResource ChartBarFaint}"
+                                                        LabelBrush="{DynamicResource MutedText}" AutomationProperties.Name="Earnings chart" />
+                                <Grid Grid.Row="6" ColumnDefinitions="*,Auto" DataContext="{Binding Results}" x:DataType="vm:ResultsViewModel"
+                                      IsVisible="{Binding CanMeasureAgain}">
+                                    <TextBlock Classes="muted oneLine" FontSize="12" VerticalAlignment="Center" Text="{Binding MeasuredLine}" />
+                                    <Button Grid.Column="1" Classes="link" Command="{Binding StartMeasureCommand}" AutomationProperties.Name="Measure this PC">
+                                        <TextBlock Text="Measure this PC" FontSize="12" TextDecorations="Underline" />
+                                    </Button>
+                                </Grid>
+                                <TextBlock Grid.Row="7" Classes="error oneLine" FontSize="12" DataContext="{Binding Results}" x:DataType="vm:ResultsViewModel"
+                                           Text="{Binding StartError}" IsVisible="{Binding StartError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                            </Grid>
+                        </Border>
+
+                        <!-- ===== One suggestion at a time, after the numbers: the PC test, then internet sharing, then the email ===== -->
+                        <Panel Grid.Row="1">
+                            <Border Classes="card" IsVisible="{Binding IsSuggestMeasure}">
+                                <Grid ColumnDefinitions="Auto,*" DataContext="{Binding Results}" x:DataType="vm:ResultsViewModel">
+                                    <Border Classes="iconBadge" VerticalAlignment="Top"><Path Classes="icon" Data="{StaticResource IconChart}" /></Border>
+                                    <StackPanel Grid.Column="1" Margin="14,0,0,0" Spacing="10">
+                                        <StackPanel Spacing="2">
+                                            <TextBlock Classes="h2" Text="See what this PC really earns" />
+                                            <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap"
+                                                       Text="A two-minute test runs the miners now and measures your own processor and graphics card instead of guessing from a table. It earns for real, to your address, and your fans may speed up for those two minutes." />
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <Button Classes="accent" Content="Run the 2-minute test" Command="{Binding StartMeasureCommand}" />
+                                            <Button Content="Not now" Command="{Binding SkipMeasureCommand}" />
+                                        </StackPanel>
+                                        <TextBlock Classes="error" FontSize="12.5" TextWrapping="Wrap" Text="{Binding StartError}"
+                                                   IsVisible="{Binding StartError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+
+                            <!-- Earn more: internet sharing, every network in one place (the choice opens as a sheet) -->
+                            <Border Classes="card" IsVisible="{Binding IsSuggestSharing}">
+                                <Grid ColumnDefinitions="Auto,*,Auto">
+                                    <Border Classes="iconBadge" VerticalAlignment="Top"><Path Classes="icon" Data="{StaticResource IconGlobe}" /></Border>
+                                    <StackPanel Grid.Column="1" Margin="14,0" VerticalAlignment="Center" Spacing="2">
+                                        <TextBlock Classes="h2" Text="{Binding SharingSuggestionTitle}" />
+                                        <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Text="{Binding SharingSuggestionText}" />
+                                    </StackPanel>
+                                    <Button Grid.Column="2" Classes="accent" VerticalAlignment="Center" Content="Choose networks"
+                                            Command="{Binding OpenSharingSetupCommand}" />
+                                </Grid>
+                            </Border>
+
+                            <!-- Protect the balance with an email (also how a second PC signs in) -->
+                            <Border Classes="card" IsVisible="{Binding IsSuggestEmail}">
+                                <Grid ColumnDefinitions="Auto,*">
+                                    <Border Classes="iconBadge" VerticalAlignment="Top"><Path Classes="icon" Data="{StaticResource IconShield}" /></Border>
+                                    <StackPanel Grid.Column="1" Margin="14,0,0,0" Spacing="10">
+                                        <StackPanel Spacing="2">
+                                            <TextBlock Classes="h2" Text="Protect your balance" />
+                                            <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap"
+                                                       Text="Add your email so your money is safe if you reinstall or switch computers. You'll need it to cash out, and it lets your other PCs earn into the same balance." />
+                                        </StackPanel>
+                                        <views:EmailSignInView DataContext="{Binding SignIn}" />
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                        </Panel>
+                    </Grid>
+                </Grid>
+            </ScrollViewer>
         </Grid>
 
-        <ScrollViewer x:Name="Scroller" Grid.Row="1" VerticalScrollBarVisibility="Auto">
-            <!-- Two columns that fill the window (see HomeView.axaml.cs): what is happening on the left, the earnings on the right.
-                 Narrower than about 1000 px: one column, and the page scrolls. -->
-            <Grid x:Name="Columns" MaxWidth="1200" Margin="22,14,22,18" ColumnDefinitions="2*,3*" RowDefinitions="*" ColumnSpacing="16" RowSpacing="14">
-                <Grid x:Name="LeftColumn" RowDefinitions="Auto,Auto,*" RowSpacing="14">
-                    <StackPanel Spacing="14">
-                    <!-- Update ready -->
-                    <Border Classes="card" IsVisible="{Binding UpdateReady}" Padding="14">
-                        <Grid ColumnDefinitions="*,Auto">
-                            <TextBlock VerticalAlignment="Center" Text="{Binding UpdateText}" />
-                            <Button Grid.Column="1" Classes="accent" Content="Restart to update" Command="{Binding RestartToUpdateCommand}" />
-                        </Grid>
-                    </Border>
+        <!-- ===== Sheets: what needs more room opens over the screen, which dims behind it ===== -->
+        <Border Classes="scrim" IsVisible="{Binding ShowSheet}" />
 
-                    <!-- Antivirus removed the engines: the fix, right where the user sees "Needs your OK" -->
-                    <Border Classes="card" IsVisible="{Binding NeedsAntivirusFix}">
-                        <Grid ColumnDefinitions="Auto,*">
-                            <Border Classes="iconBadge" VerticalAlignment="Top" Background="{DynamicResource WarnSoft}">
-                                <Path Classes="icon" Data="{StaticResource IconShield}" Stroke="{DynamicResource WarnBrush}" />
-                            </Border>
-                            <StackPanel Grid.Column="1" Margin="14,0,0,0" Spacing="10">
-                                <StackPanel Spacing="2">
-                                    <TextBlock Classes="h2" Text="Your antivirus blocked the earning engines" />
-                                    <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap"
-                                               Text="Antivirus tools treat every crypto miner as a threat, including the official ones Otium downloads and verifies. Allowing Otium's engines folder fixes it; Windows will ask for your permission first, and nothing else is changed. If Windows Firewall asks about SRBMiner afterwards, choose Cancel: it only needs outgoing connections." />
-                                </StackPanel>
-                                <TextBlock FontSize="13" TextWrapping="Wrap" Text="{Binding AntivirusDetail}"
-                                           IsVisible="{Binding AntivirusDetail, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                                <TextBlock FontSize="13" TextWrapping="Wrap" Text="{Binding AllowResult}"
-                                           IsVisible="{Binding AllowResult, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <Button Classes="accent" Content="Allow automatically" Command="{Binding AllowAutomaticallyCommand}"
-                                            IsVisible="{Binding CanAllowAutomatically}" IsEnabled="{Binding !IsAllowing}" />
-                                    <Button Content="Show me how" Command="{Binding OpenAdvancedCommand}" />
-                                </StackPanel>
-                            </StackPanel>
-                        </Grid>
-                    </Border>
-
-                    <!-- Paused for electricity: both sides of the sum, and the fix for users who don't pay for power -->
-                    <Border Classes="card" IsVisible="{Binding ShowElectricityPause}">
-                        <Grid ColumnDefinitions="Auto,*">
-                            <Border Classes="iconBadge" VerticalAlignment="Top" Background="{DynamicResource WarnSoft}">
-                                <Path Classes="icon" Data="{StaticResource IconBolt}" Stroke="{DynamicResource WarnBrush}" />
-                            </Border>
-                            <StackPanel Grid.Column="1" Margin="14,0,0,0" Spacing="10">
-                                <StackPanel Spacing="2">
-                                    <TextBlock Classes="h2" Text="Paused: electricity would cost more than it earns" TextWrapping="Wrap" />
-                                    <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Text="{Binding ElectricityPauseText}" />
-                                </StackPanel>
-                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <Button Classes="accent" Content="I don't pay for electricity" Command="{Binding StopCountingElectricityCommand}" />
-                                    <Button Content="Electricity settings" Command="{Binding OpenAdvancedCommand}" />
-                                </StackPanel>
-                            </StackPanel>
-                        </Grid>
-                    </Border>
-
-                    <!-- ===== Hero: balance, projection, main actions, cash-out goal ===== -->
-                    <Border Classes="hero">
-                        <StackPanel Spacing="12">
-                            <Grid ColumnDefinitions="*,Auto">
-                                <StackPanel Spacing="0">
-                                    <StackPanel Orientation="Horizontal" Spacing="9">
-                                        <!-- A soft ring spreads from the dot while Otium is earning -->
-                                        <Grid Width="9" Height="9" VerticalAlignment="Center" IsVisible="{Binding IsEarning}">
-                                            <Ellipse Classes="heroPulse" />
-                                            <Ellipse Classes="heroDot" />
-                                        </Grid>
-                                        <TextBlock Classes="heroMuted" Text="{Binding BalanceCaption}" />
+        <!-- Cash-out, with the history of earlier cash-outs beside it -->
+        <Border Classes="sheet" MaxWidth="860" IsVisible="{Binding IsCashingOut}">
+            <Grid ColumnDefinitions="440,Auto" ColumnSpacing="24">
+                <StackPanel Spacing="12" DataContext="{Binding CashOut}" x:DataType="vm:CashOutViewModel">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Classes="h2" Text="{Binding Amount, StringFormat='Cash out {0}'}" />
+                        <Button Grid.Column="1" Content="Close" Command="{Binding CloseCommand}" />
+                    </Grid>
+                    <StackPanel Spacing="4">
+                        <TextBlock Classes="label" Text="Get paid in" />
+                        <ListBox ItemsSource="{Binding Choices}" SelectedItem="{Binding Selected}" Background="Transparent"
+                                 AutomationProperties.Name="Coin to get paid in">
+                            <ListBox.ItemsPanel>
+                                <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                            </ListBox.ItemsPanel>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate x:DataType="vm:CashoutChoice">
+                                    <StackPanel Spacing="1" MinWidth="130" Opacity="{Binding Available, Converter={x:Static vm:CashOutConverters.DimWhenFalse}}">
+                                        <TextBlock FontWeight="SemiBold" Text="{Binding Title}" />
+                                        <TextBlock Classes="muted" FontSize="12" Text="{Binding Subtitle}" />
                                     </StackPanel>
-                                    <TextBlock Classes="display" Text="{Binding Balance}" />
-                                    <TextBlock Classes="heroMuted" FontSize="13" Text="{Binding PendingText}"
-                                               IsVisible="{Binding PendingText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                                </StackPanel>
-                                <Border Grid.Column="1" Classes="heroChip" VerticalAlignment="Top"
-                                        IsVisible="{Binding ProjectedMonthCaption, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
-                                    <StackPanel HorizontalAlignment="Right">
-                                        <TextBlock Text="{Binding ProjectedMonth}" FontSize="18" FontWeight="Bold" HorizontalAlignment="Right" />
-                                        <TextBlock Classes="heroMuted" FontSize="12" Text="{Binding ProjectedMonthCaption}" HorizontalAlignment="Right" />
-                                    </StackPanel>
-                                </Border>
-                            </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </StackPanel>
+                    <StackPanel Spacing="4">
+                        <TextBlock Classes="label" Text="{Binding DestinationLabel}" />
+                        <TextBox Text="{Binding Destination}" PlaceholderText="{Binding DestinationPlaceholder}" FontFamily="Consolas, Menlo, monospace" />
+                        <TextBlock Classes="error" FontSize="12" TextWrapping="Wrap" Text="{Binding AddressHint}"
+                                   IsVisible="{Binding AddressHint, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                        <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap" Text="{Binding MinimumText}" />
+                        <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap" Text="{Binding FeeText}" IsVisible="{Binding HasFeeText}" />
+                        <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
+                                   Text="Double-check the network: coins sent to an address on a different network can't be recovered." />
+                    </StackPanel>
+                    <TextBlock Classes="error" TextWrapping="Wrap" Text="{Binding UnavailableText}" IsVisible="{Binding UnavailableText, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                    <TextBlock Classes="error" Text="{Binding Error}" IsVisible="{Binding Error, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                    <TextBlock Classes="good" TextWrapping="Wrap" Text="{Binding Result}" IsVisible="{Binding Result, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                    <Button Classes="accent big" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                            Content="Send my money" Command="{Binding ConfirmCommand}" />
+                </StackPanel>
 
-                            <!-- Cash-out goal (balance) or progress to the pool's payout threshold (own address) -->
-                            <StackPanel Spacing="6">
-                                <ProgressBar Classes="goal onHero" Value="{Binding GoalPercent}" Maximum="100" />
-                                <Grid ColumnDefinitions="*,Auto">
-                                    <TextBlock Classes="heroMuted" FontSize="12.5" TextWrapping="Wrap" Text="{Binding GoalText}" />
-                                    <TextBlock Grid.Column="1" Classes="heroMuted" FontSize="12.5" Margin="12,0,0,0" Text="{Binding GoalEta}" />
-                                </Grid>
-                                <TextBlock Classes="heroMuted" FontSize="12" TextWrapping="Wrap" Opacity="0.85" Text="{Binding GoalNote}"
-                                           IsVisible="{Binding GoalNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                                <Border Classes="heroChip" IsVisible="{Binding PoolWarning, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
-                                    <StackPanel Spacing="6">
-                                        <TextBlock FontSize="12.5" FontWeight="SemiBold" TextWrapping="Wrap" Text="{Binding PoolWarning}" />
-                                        <Button Classes="link" HorizontalAlignment="Left" AutomationProperties.Name="Open my address page at the pool"
-                                                Command="{Binding OpenPoolPageCommand}">
-                                            <TextBlock Text="Open my address page" FontSize="12.5" TextDecorations="Underline" />
-                                        </Button>
-                                    </StackPanel>
-                                </Border>
-                            </StackPanel>
-
-                            <Grid ColumnDefinitions="*,12,*">
-                                <Button Classes="big ghostOnHero" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" AutomationProperties.Name="{Binding ToggleText}" Command="{Binding ToggleCommand}">
-                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                        <Path Classes="icon onHero" Data="{StaticResource IconPause}" Width="15" Height="15" IsVisible="{Binding IsRunning}" />
-                                        <Path Classes="icon onHero" Data="{StaticResource IconPlay}" Width="15" Height="15" Fill="White" IsVisible="{Binding !IsRunning}" />
-                                        <TextBlock Text="{Binding ToggleText}" VerticalAlignment="Center" />
-                                    </StackPanel>
-                                </Button>
-                                <Button Grid.Column="2" Classes="big onHero" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
-                                        AutomationProperties.Name="Cash out" Command="{Binding StartCashOutCommand}" IsEnabled="{Binding CanCashOut}" IsVisible="{Binding IsBalanceMode}">
-                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                        <Path Classes="icon" Data="{StaticResource IconWallet}" Width="16" Height="16" Stroke="#0E7660" />
-                                        <TextBlock Text="Cash out" VerticalAlignment="Center" />
-                                    </StackPanel>
-                                </Button>
-                            </Grid>
-                            <TextBlock Classes="heroMuted" FontSize="12" HorizontalAlignment="Center" Text="{Binding AccountLine}"
-                                       IsVisible="{Binding AccountLine, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                        </StackPanel>
-                    </Border>
-
-                    <!-- Cash-out panel -->
-                    <Border Classes="card" IsVisible="{Binding IsCashingOut}">
-                        <StackPanel Spacing="12" DataContext="{Binding CashOut}" x:DataType="vm:CashOutViewModel">
-                            <Grid ColumnDefinitions="*,Auto">
-                                <TextBlock Classes="h2" Text="{Binding Amount, StringFormat='Cash out {0}'}" />
-                                <Button Grid.Column="1" Content="Close" Command="{Binding CloseCommand}" />
-                            </Grid>
-                            <StackPanel Spacing="4">
-                                <TextBlock Classes="label" Text="Get paid in" />
-                                <ListBox ItemsSource="{Binding Choices}" SelectedItem="{Binding Selected}" Background="Transparent"
-                                         AutomationProperties.Name="Coin to get paid in">
-                                    <ListBox.ItemsPanel>
-                                        <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
-                                    </ListBox.ItemsPanel>
-                                    <ListBox.ItemTemplate>
-                                        <DataTemplate x:DataType="vm:CashoutChoice">
-                                            <StackPanel Spacing="1" MinWidth="150" Opacity="{Binding Available, Converter={x:Static vm:CashOutConverters.DimWhenFalse}}">
-                                                <TextBlock FontWeight="SemiBold" Text="{Binding Title}" />
-                                                <TextBlock Classes="muted" FontSize="12" Text="{Binding Subtitle}" />
+                <!-- Cash-out history -->
+                <StackPanel Grid.Column="1" Width="330" Spacing="10" IsVisible="{Binding HasCashouts}">
+                    <StackPanel Spacing="2">
+                        <TextBlock Classes="h2" Text="Your cash-outs" />
+                        <TextBlock Classes="muted" FontSize="13" Text="{Binding CashoutsSummary}"
+                                   IsVisible="{Binding CashoutsSummary, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                    </StackPanel>
+                    <ItemsControl ItemsSource="{Binding Cashouts}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:CashoutRow">
+                                <Border Classes="tile">
+                                    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <TextBlock FontWeight="SemiBold" FontSize="15" Text="{Binding Amount}" VerticalAlignment="Center" />
+                                            <TextBlock Classes="muted" FontSize="12" Text="{Binding When}" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                        <Border Grid.Column="1" Classes="pill" Classes.earning="{Binding IsPaid}" Classes.paused="{Binding IsPending}"
+                                                Classes.problem="{Binding IsFailed}" Padding="9,3">
+                                            <TextBlock Text="{Binding Status}" FontSize="12" FontWeight="SemiBold" />
+                                        </Border>
+                                        <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Classes="muted oneLine" FontSize="12" Margin="0,4,0,0" Text="{Binding Where}" ToolTip.Tip="{Binding Where}" />
+                                        <Grid Grid.Row="2" Grid.ColumnSpan="2" ColumnDefinitions="*,Auto" Margin="0,2,0,0">
+                                            <TextBlock Classes="oneLine" FontSize="12" Text="{Binding Detail}" ToolTip.Tip="{Binding Detail}" VerticalAlignment="Center" />
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
+                                                <Button Classes="link" FontSize="12" Content="View"
+                                                        IsVisible="{Binding HasExplorer}"
+                                                        Command="{Binding $parent[UserControl].((vm:HomeViewModel)DataContext).OpenTransactionCommand}"
+                                                        CommandParameter="{Binding ExplorerUrl}" />
+                                                <Button Classes="link" FontSize="12" Content="Copy"
+                                                        IsVisible="{Binding HasTransaction}"
+                                                        Command="{Binding $parent[UserControl].((vm:HomeViewModel)DataContext).CopyTransactionCommand}"
+                                                        CommandParameter="{Binding TransactionId}" />
                                             </StackPanel>
-                                        </DataTemplate>
-                                    </ListBox.ItemTemplate>
-                                </ListBox>
-                            </StackPanel>
-                            <StackPanel Spacing="4">
-                                <TextBlock Classes="label" Text="{Binding DestinationLabel}" />
-                                <TextBox Text="{Binding Destination}" PlaceholderText="{Binding DestinationPlaceholder}" FontFamily="Consolas, Menlo, monospace" />
-                                <TextBlock Classes="error" FontSize="12" TextWrapping="Wrap" Text="{Binding AddressHint}"
-                                           IsVisible="{Binding AddressHint, Converter={x:Static ObjectConverters.IsNotNull}}" />
-                                <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap" Text="{Binding MinimumText}" />
-                                <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap" Text="{Binding FeeText}" IsVisible="{Binding HasFeeText}" />
-                                <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
-                                           Text="Double-check the network: coins sent to an address on a different network can't be recovered." />
-                            </StackPanel>
-                            <TextBlock Classes="error" TextWrapping="Wrap" Text="{Binding UnavailableText}" IsVisible="{Binding UnavailableText, Converter={x:Static ObjectConverters.IsNotNull}}" />
-                            <TextBlock Classes="error" Text="{Binding Error}" IsVisible="{Binding Error, Converter={x:Static ObjectConverters.IsNotNull}}" />
-                            <TextBlock Classes="good" TextWrapping="Wrap" Text="{Binding Result}" IsVisible="{Binding Result, Converter={x:Static ObjectConverters.IsNotNull}}" />
-                            <Button Classes="accent big" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
-                                    Content="Send my money" Command="{Binding ConfirmCommand}" />
-                        </StackPanel>
-                    </Border>
+                                        </Grid>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Grid>
+        </Border>
 
-                    <!-- Cash-out history -->
-                    <Border Classes="card" IsVisible="{Binding HasCashouts}">
-                        <StackPanel Spacing="12">
-                            <StackPanel Spacing="2">
-                                <TextBlock Classes="h2" Text="Your cash-outs" />
-                                <TextBlock Classes="muted" FontSize="13" Text="{Binding CashoutsSummary}"
-                                           IsVisible="{Binding CashoutsSummary, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                            </StackPanel>
-                            <ItemsControl ItemsSource="{Binding Cashouts}">
+        <!-- One device's own page: what it is doing and its live readings, with room for all of them -->
+        <ContentControl Content="{Binding SelectedActivity}">
+            <ContentControl.DataTemplates>
+                <DataTemplate DataType="vm:ActivityRow" x:DataType="vm:ActivityRow">
+                    <Border Classes="sheet" MinWidth="560" MaxWidth="660">
+                        <StackPanel Spacing="14">
+                            <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="14">
+                                <Border Classes="iconBadge" VerticalAlignment="Center"><Path Classes="icon" Data="{Binding Icon}" /></Border>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <TextBlock Classes="h2" Text="{Binding Title}" />
+                                        <Border Classes="phase" Classes.warn="{Binding PhaseIsWarning}" IsVisible="{Binding HasPhase}" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding PhaseLabel}" FontSize="11" FontWeight="SemiBold" />
+                                        </Border>
+                                    </StackPanel>
+                                    <TextBlock Classes="muted" FontSize="12.5" Text="{Binding What}" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="1">
+                                    <TextBlock HorizontalAlignment="Right" FontWeight="SemiBold" Text="{Binding PerDay}" />
+                                    <TextBlock HorizontalAlignment="Right" Classes="muted" FontSize="12" Text="{Binding Speed}" />
+                                </StackPanel>
+                                <Button Grid.Column="3" VerticalAlignment="Center" Content="Close"
+                                        Command="{Binding $parent[UserControl].((vm:HomeViewModel)DataContext).CloseActivityCommand}" />
+                            </Grid>
+                            <!-- What the phase means for the numbers on the row -->
+                            <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap" Text="{Binding PhaseExplain}" IsVisible="{Binding HasPhase}" />
+                            <ItemsControl ItemsSource="{Binding Stats}" IsVisible="{Binding HasStats}" Margin="-3,-3">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate><UniformGrid Columns="3" /></ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:StatRow">
+                                        <Border Classes="tile" Margin="3" Padding="12,9">
+                                            <StackPanel Spacing="1">
+                                                <TextBlock Classes="muted" FontSize="12" Text="{Binding Label}" />
+                                                <TextBlock FontSize="14" FontWeight="SemiBold" TextWrapping="Wrap" Text="{Binding Value}"
+                                                           Classes.warnText="{Binding IsWarn}" Classes.badText="{Binding IsBad}" />
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <!-- The networks the internet connection shares through, one line each -->
+                            <ItemsControl ItemsSource="{Binding Providers}" IsVisible="{Binding HasProviders}">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate>
                                 </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
-                                    <DataTemplate x:DataType="vm:CashoutRow">
-                                        <Border Classes="tile">
-                                            <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto">
-                                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                                    <TextBlock FontWeight="SemiBold" FontSize="15" Text="{Binding Amount}" VerticalAlignment="Center" />
-                                                    <TextBlock Classes="muted" FontSize="12" Text="{Binding When}" VerticalAlignment="Center" />
+                                    <DataTemplate x:DataType="vm:ProviderLine">
+                                        <Border Classes="tile" Padding="14,11">
+                                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                                                <Ellipse Width="8" Height="8" VerticalAlignment="Top" Margin="0,6,0,0" Classes="liveDot" Classes.on="{Binding IsActive}" />
+                                                <StackPanel Grid.Column="1" Spacing="1">
+                                                    <TextBlock FontSize="13.5" FontWeight="SemiBold" Text="{Binding Name}" />
+                                                    <TextBlock Classes="muted" FontSize="12.5" Text="{Binding What}" />
                                                 </StackPanel>
-                                                <Border Grid.Column="1" Classes="pill" Classes.earning="{Binding IsPaid}" Classes.paused="{Binding IsPending}"
-                                                        Classes.problem="{Binding IsFailed}" Padding="9,3">
-                                                    <TextBlock Text="{Binding Status}" FontSize="12" FontWeight="SemiBold" />
-                                                </Border>
-                                                <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Classes="muted" FontSize="12" Margin="0,4,0,0" Text="{Binding Where}" />
-                                                <Grid Grid.Row="2" Grid.ColumnSpan="2" ColumnDefinitions="*,Auto" Margin="0,2,0,0">
-                                                    <TextBlock FontSize="12" TextWrapping="Wrap" Text="{Binding Detail}" VerticalAlignment="Center" />
-                                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
-                                                        <Button Classes="link" FontSize="12" Content="View"
-                                                                IsVisible="{Binding HasExplorer}"
-                                                                Command="{Binding $parent[UserControl].((vm:HomeViewModel)DataContext).OpenTransactionCommand}"
-                                                                CommandParameter="{Binding ExplorerUrl}" />
-                                                        <Button Classes="link" FontSize="12" Content="Copy transaction"
-                                                                IsVisible="{Binding HasTransaction}"
-                                                                Command="{Binding $parent[UserControl].((vm:HomeViewModel)DataContext).CopyTransactionCommand}"
-                                                                CommandParameter="{Binding TransactionId}" />
-                                                    </StackPanel>
-                                                </Grid>
+                                                <TextBlock Grid.Column="2" Classes="muted" FontSize="12.5" VerticalAlignment="Top" Text="{Binding Amount}" />
                                             </Grid>
                                         </Border>
                                     </DataTemplate>
@@ -281,409 +615,113 @@
                             </ItemsControl>
                         </StackPanel>
                     </Border>
+                </DataTemplate>
+            </ContentControl.DataTemplates>
+        </ContentControl>
 
+        <!-- Choosing the internet-sharing networks -->
+        <Border Classes="sheet" MaxWidth="600" IsVisible="{Binding ShowSharingSetup}">
+            <ScrollViewer MaxHeight="640" VerticalScrollBarVisibility="Auto">
+                <views:SharingSetupView DataContext="{Binding SharingSetup}" />
+            </ScrollViewer>
+        </Border>
+
+        <!-- A result to share: the test, a payout, "while you were away", last month. One at a time. -->
+        <Panel DataContext="{Binding Results}" x:DataType="vm:ResultsViewModel">
+            <Border Classes="sheet" MaxWidth="520" IsVisible="{Binding ShowMeasureResultNow}">
+                <StackPanel Spacing="12">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Classes="h2" Text="Measured on this PC" />
+                        <Button Grid.Column="1" Classes="link" Content="Close" Command="{Binding CloseMeasureCommand}" />
+                    </Grid>
+                    <TextBlock Classes="error" TextWrapping="Wrap" Text="{Binding MeasureError}"
+                               IsVisible="{Binding MeasureError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                    <StackPanel Spacing="2" IsVisible="{Binding MeasureError, Converter={x:Static StringConverters.IsNullOrEmpty}}">
+                        <TextBlock FontSize="34" FontWeight="Bold" Text="{Binding MeasureAmount}" />
+                        <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Text="{Binding MeasureDetail}" />
+                        <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Text="{Binding MeasureNote}"
+                                   IsVisible="{Binding MeasureNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                     </StackPanel>
-                    <!-- ===== Right now ===== -->
-                    <Border Grid.Row="1" Classes="card delay1">
-                        <StackPanel Spacing="14">
-                            <StackPanel Spacing="2">
-                                <TextBlock Classes="h2" Text="Right now" />
-                                <TextBlock Classes="muted" FontSize="13" Text="{Binding ActivityHeadline}" />
-                            </StackPanel>
-                            <ItemsControl ItemsSource="{Binding Activity}">
-                                <ItemsControl.ItemsPanel>
-                                    <ItemsPanelTemplate><StackPanel Spacing="10" /></ItemsPanelTemplate>
-                                </ItemsControl.ItemsPanel>
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate x:DataType="vm:ActivityRow">
-                                        <Border Classes="tile">
-                                          <StackPanel Spacing="10">
-                                            <Grid ColumnDefinitions="Auto,*,Auto,Auto">
-                                                <Panel>
-                                                    <Border Classes="iconBadge" Background="{DynamicResource CardBackground}">
-                                                        <Path Classes="icon" Data="{Binding Icon}" />
-                                                    </Border>
-                                                    <Panel Width="10" Height="10" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-2,-2,0">
-                                                        <Ellipse Classes="pulse" Classes.on="{Binding IsActive}" />
-                                                        <Ellipse Classes="liveDot" Classes.on="{Binding IsActive}" />
-                                                    </Panel>
-                                                </Panel>
-                                                <StackPanel Grid.Column="1" Margin="14,0" VerticalAlignment="Center" Spacing="1">
-                                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                                        <TextBlock FontWeight="SemiBold" Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
-                                                        <!-- Says when Otium is testing, tuning or easing off, so a lower number isn't a mystery -->
-                                                        <Border Classes="phase" Classes.warn="{Binding PhaseIsWarning}" IsVisible="{Binding HasPhase}" VerticalAlignment="Center">
-                                                            <TextBlock Text="{Binding PhaseLabel}" FontSize="11" FontWeight="SemiBold" />
-                                                        </Border>
-                                                    </StackPanel>
-                                                    <TextBlock Classes="muted" FontSize="12.5" Text="{Binding What}" TextTrimming="CharacterEllipsis" />
-                                                    <TextBlock Classes="muted" FontSize="12" Text="{Binding PhaseDetail}" TextTrimming="CharacterEllipsis"
-                                                               IsVisible="{Binding HasPhase}" />
-                                                </StackPanel>
-                                                <StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right" Spacing="1">
-                                                    <TextBlock HorizontalAlignment="Right" FontWeight="SemiBold" Text="{Binding PerDay}" />
-                                                    <TextBlock HorizontalAlignment="Right" Classes="muted" FontSize="12" Text="{Binding Speed}" />
-                                                </StackPanel>
-                                                <ToggleButton Grid.Column="3" Classes="link" Margin="10,0,0,0" VerticalAlignment="Center"
-                                                              IsVisible="{Binding CanExpand}" IsChecked="{Binding IsExpanded}"
-                                                              AutomationProperties.Name="Show details" ToolTip.Tip="Show details">
-                                                    <Panel>
-                                                        <Path Classes="icon" Data="{StaticResource IconChevronDown}" Width="16" Height="16" IsVisible="{Binding !IsExpanded}" />
-                                                        <Path Classes="icon" Data="{StaticResource IconChevronUp}" Width="16" Height="16" IsVisible="{Binding IsExpanded}" />
-                                                    </Panel>
-                                                </ToggleButton>
-                                            </Grid>
-                                            <!-- What the phase means, and live readings (temperature, fan, clocks…) -->
-                                            <StackPanel IsVisible="{Binding IsExpanded}" Margin="54,0,0,0" Spacing="8">
-                                                <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap" Text="{Binding PhaseExplain}" IsVisible="{Binding HasPhase}" />
-                                                <ItemsControl ItemsSource="{Binding Stats}" IsVisible="{Binding HasStats}">
-                                                    <ItemsControl.ItemsPanel>
-                                                        <ItemsPanelTemplate><StackPanel Spacing="4" /></ItemsPanelTemplate>
-                                                    </ItemsControl.ItemsPanel>
-                                                    <ItemsControl.ItemTemplate>
-                                                        <DataTemplate x:DataType="vm:StatRow">
-                                                            <Grid ColumnDefinitions="*,Auto">
-                                                                <TextBlock Classes="muted" FontSize="12.5" Text="{Binding Label}" TextTrimming="CharacterEllipsis" />
-                                                                <TextBlock Grid.Column="1" FontSize="12.5" FontWeight="SemiBold" HorizontalAlignment="Right" Margin="12,0,0,0"
-                                                                           Text="{Binding Value}" Classes.warnText="{Binding IsWarn}" Classes.badText="{Binding IsBad}" />
-                                                            </Grid>
-                                                        </DataTemplate>
-                                                    </ItemsControl.ItemTemplate>
-                                                </ItemsControl>
-                                            </StackPanel>
-                                            <!-- The networks the internet connection shares through, one line each -->
-                                            <ItemsControl ItemsSource="{Binding Providers}" IsVisible="{Binding IsExpanded}" Margin="54,0,0,0">
-                                                <ItemsControl.ItemsPanel>
-                                                    <ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate>
-                                                </ItemsControl.ItemsPanel>
-                                                <ItemsControl.ItemTemplate>
-                                                    <DataTemplate x:DataType="vm:ProviderLine">
-                                                        <Grid ColumnDefinitions="Auto,*,Auto">
-                                                            <Ellipse Width="8" Height="8" VerticalAlignment="Top" Margin="0,6,10,0" Classes="liveDot" Classes.on="{Binding IsActive}" />
-                                                            <StackPanel Grid.Column="1" Spacing="1">
-                                                                <TextBlock FontSize="13" FontWeight="SemiBold" Text="{Binding Name}" />
-                                                                <TextBlock Classes="muted" FontSize="12" Text="{Binding What}" TextWrapping="Wrap" />
-                                                            </StackPanel>
-                                                            <TextBlock Grid.Column="2" Classes="muted" FontSize="12" VerticalAlignment="Top" Margin="10,1,0,0" Text="{Binding Amount}" />
-                                                        </Grid>
-                                                    </DataTemplate>
-                                                </ItemsControl.ItemTemplate>
-                                            </ItemsControl>
-                                          </StackPanel>
-                                        </Border>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </StackPanel>
-                    </Border>
-
-
-                    <!-- ===== Invite ===== -->
-                    <Border Grid.Row="2" Classes="card delay2" IsVisible="{Binding HasInviteCode}">
-                        <Grid ColumnDefinitions="Auto,*,Auto" VerticalAlignment="Center">
-                            <Border Classes="iconBadge"><Path Classes="icon" Data="{StaticResource IconGift}" /></Border>
-                            <StackPanel Grid.Column="1" Margin="14,0" VerticalAlignment="Center" Spacing="2">
-                                <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" Text="{Binding InviteTitle}" />
-                                <TextBlock Classes="muted" FontSize="12.5">
-                                    <Run Text="Your code " /><Run Text="{Binding InviteCode, Mode=OneWay}" FontFamily="Consolas, Menlo, monospace" FontWeight="Bold" />
-                                    <Run Text=" · they get 30 days fee-free" />
-                                </TextBlock>
-                                <TextBlock Classes="good" FontSize="12" Text="{Binding CopiedText}"
-                                           IsVisible="{Binding CopiedText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                            </StackPanel>
-                            <Button Grid.Column="2" Classes="accent" VerticalAlignment="Center" Content="Copy invite" Command="{Binding CopyInviteCommand}" />
-                        </Grid>
-                    </Border>
-                </Grid>
-
-                <Grid x:Name="RightColumn" Grid.Column="1" RowDefinitions="Auto,*,Auto" RowSpacing="14">
-                    <StackPanel Spacing="14">
-                    <!-- ===== Results: the running test, its result, "while you were away", last month (shareable), one at a time ===== -->
-                    <StackPanel Spacing="14" DataContext="{Binding Results}" x:DataType="vm:ResultsViewModel">
-
-                        <Border Classes="card" IsVisible="{Binding IsMeasuring}">
-                            <StackPanel Spacing="10">
-                                <Grid ColumnDefinitions="*,Auto">
-                                    <StackPanel Spacing="2">
-                                        <TextBlock Classes="h2" Text="Measuring this PC" />
-                                        <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Text="{Binding MeasureStatus}" />
-                                    </StackPanel>
-                                    <Button Grid.Column="1" VerticalAlignment="Top" Content="Stop test" Command="{Binding StopMeasureCommand}" />
-                                </Grid>
-                                <ProgressBar Classes="goal" Value="{Binding MeasureProgress}" Maximum="100" />
-                            </StackPanel>
-                        </Border>
-
-                        <Border Classes="card" IsVisible="{Binding ShowMeasureResultNow}">
-                            <StackPanel Spacing="12">
-                                <Grid ColumnDefinitions="*,Auto">
-                                    <TextBlock Classes="h2" Text="Measured on this PC" />
-                                    <Button Grid.Column="1" Classes="link" Content="Close" Command="{Binding CloseMeasureCommand}" />
-                                </Grid>
-                                <TextBlock Classes="error" TextWrapping="Wrap" Text="{Binding MeasureError}"
-                                           IsVisible="{Binding MeasureError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                                <StackPanel Spacing="2" IsVisible="{Binding MeasureError, Converter={x:Static StringConverters.IsNullOrEmpty}}">
-                                    <TextBlock FontSize="34" FontWeight="Bold" Text="{Binding MeasureAmount}" />
-                                    <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Text="{Binding MeasureDetail}" />
-                                    <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Text="{Binding MeasureNote}"
-                                               IsVisible="{Binding MeasureNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                                </StackPanel>
-                                <ItemsControl ItemsSource="{Binding MeasuredDevices}">
-                                    <ItemsControl.ItemsPanel>
-                                        <ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate>
-                                    </ItemsControl.ItemsPanel>
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate x:DataType="vm:MeasuredRow">
-                                            <Border Classes="tile">
-                                                <Grid ColumnDefinitions="*,Auto">
-                                                    <StackPanel Spacing="1">
-                                                        <TextBlock FontWeight="SemiBold" Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
-                                                        <TextBlock Classes="muted" FontSize="12.5" Text="{Binding What}" TextTrimming="CharacterEllipsis" />
-                                                    </StackPanel>
-                                                    <TextBlock Grid.Column="1" VerticalAlignment="Center" FontWeight="SemiBold" Text="{Binding PerDay}" />
-                                                </Grid>
-                                            </Border>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                                <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding MeasureError, Converter={x:Static StringConverters.IsNullOrEmpty}}">
-                                    <Button Classes="accent" Content="Copy to share" Command="{Binding CopyMeasureCommand}" />
-                                    <Button Content="Save picture" Command="{Binding SaveMeasurePictureCommand}" />
-                                    <TextBlock Classes="good" FontSize="12" VerticalAlignment="Center" TextWrapping="Wrap" Text="{Binding ShareStatus}"
-                                               IsVisible="{Binding ShareStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                                </StackPanel>
-                            </StackPanel>
-                        </Border>
-
-                        <!-- The pool paid the user: share it, with what an invite gives -->
-                        <Border Classes="card" IsVisible="{Binding ShowPayoutNow}">
-                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
-                                <StackPanel Spacing="2">
-                                    <TextBlock Classes="h2" Text="You've been paid" />
-                                    <TextBlock FontSize="28" FontWeight="Bold" Text="{Binding PayoutAmount}" />
-                                    <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap" Text="{Binding PayoutText}" />
-                                    <TextBlock Classes="good" FontSize="12" TextWrapping="Wrap" Text="{Binding ShareStatus}"
-                                               IsVisible="{Binding ShareStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                                </StackPanel>
-                                <StackPanel Grid.Column="1" Spacing="6" MinWidth="124">
-                                    <Button Classes="link" HorizontalAlignment="Right" Content="Close" Command="{Binding ClosePayoutCommand}" />
-                                    <Button Classes="accent" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Copy to share" Command="{Binding CopyPayoutCommand}" />
-                                    <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Save picture" Command="{Binding SavePayoutPictureCommand}" />
-                                </StackPanel>
-                            </Grid>
-                        </Border>
-
-                        <!-- While you were away -->
-                        <Border Classes="card" IsVisible="{Binding ShowAwayNow}">
-                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
-                                <StackPanel Spacing="2">
-                                    <TextBlock Classes="h2" Text="While you were away" />
-                                    <TextBlock FontSize="28" FontWeight="Bold" Text="{Binding AwayAmount}" />
-                                    <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap" Text="{Binding AwayText}" />
-                                    <TextBlock Classes="good" FontSize="12" TextWrapping="Wrap" Text="{Binding ShareStatus}"
-                                               IsVisible="{Binding ShareStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                                </StackPanel>
-                                <StackPanel Grid.Column="1" Spacing="6" MinWidth="124">
-                                    <Button Classes="link" HorizontalAlignment="Right" Content="Close" Command="{Binding CloseAwayCommand}" />
-                                    <Button Classes="accent" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Copy to share" Command="{Binding CopyAwayCommand}" />
-                                    <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Save picture" Command="{Binding SaveAwayPictureCommand}" />
-                                </StackPanel>
-                            </Grid>
-                        </Border>
-
-                        <!-- Last month, for the first days of a new month -->
-                        <Border Classes="card" IsVisible="{Binding ShowMonthlyNow}">
-                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
-                                <StackPanel Spacing="2">
-                                    <TextBlock Classes="h2" Text="{Binding MonthlyTitle}" />
-                                    <TextBlock FontSize="28" FontWeight="Bold" Text="{Binding MonthlyAmount}" />
-                                    <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap" Text="{Binding MonthlyText}" />
-                                    <TextBlock Classes="good" FontSize="12" TextWrapping="Wrap" Text="{Binding ShareStatus}"
-                                               IsVisible="{Binding ShareStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                                </StackPanel>
-                                <StackPanel Grid.Column="1" Spacing="6" MinWidth="124">
-                                    <Button Classes="link" HorizontalAlignment="Right" Content="Close" Command="{Binding CloseMonthlyCommand}" />
-                                    <Button Classes="accent" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Copy to share" Command="{Binding CopyMonthlyCommand}" />
-                                    <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Save picture" Command="{Binding SaveMonthlyPictureCommand}" />
-                                </StackPanel>
-                            </Grid>
-                        </Border>
-
+                    <ItemsControl ItemsSource="{Binding MeasuredDevices}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:MeasuredRow">
+                                <Border Classes="tile">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <StackPanel Spacing="1">
+                                            <TextBlock FontWeight="SemiBold" Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Classes="muted" FontSize="12.5" Text="{Binding What}" TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="1" VerticalAlignment="Center" FontWeight="SemiBold" Text="{Binding PerDay}" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding MeasureError, Converter={x:Static StringConverters.IsNullOrEmpty}}">
+                        <Button Classes="accent" Content="Copy to share" Command="{Binding CopyMeasureCommand}" />
+                        <Button Content="Save picture" Command="{Binding SaveMeasurePictureCommand}" />
+                        <TextBlock Classes="good" FontSize="12" VerticalAlignment="Center" TextWrapping="Wrap" Text="{Binding ShareStatus}"
+                                   IsVisible="{Binding ShareStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                     </StackPanel>
+                </StackPanel>
+            </Border>
 
+            <!-- The pool paid the user: share it, with what an invite gives -->
+            <Border Classes="sheet" MaxWidth="520" IsVisible="{Binding ShowPayoutNow}">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="20">
+                    <StackPanel Spacing="4">
+                        <TextBlock Classes="h2" Text="You've been paid" />
+                        <TextBlock FontSize="32" FontWeight="Bold" Text="{Binding PayoutAmount}" />
+                        <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Text="{Binding PayoutText}" />
+                        <TextBlock Classes="good" FontSize="12" TextWrapping="Wrap" Text="{Binding ShareStatus}"
+                                   IsVisible="{Binding ShareStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                     </StackPanel>
-                    <!-- ===== Projections + chart ===== -->
-                    <Border Grid.Row="1" Classes="card delay2">
-                        <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto,Auto" RowSpacing="12">
-                            <Grid Grid.Row="0" ColumnDefinitions="*,Auto">
-                                <TextBlock Classes="h2" Text="Your earnings" />
-                                <Path Grid.Column="1" Classes="icon" Data="{StaticResource IconChart}" />
-                            </Grid>
-                            <!-- What the current pace would bring -->
-                            <StackPanel Grid.Row="1" Spacing="8" IsVisible="{Binding HasProjection}">
-                                <TextBlock Classes="kicker" Text="PROJECTED AT YOUR CURRENT PACE" />
-                                <UniformGrid Columns="4">
-                                    <Border Classes="tile projected" Margin="0,0,5,0">
-                                        <StackPanel>
-                                            <TextBlock Classes="label" Text="Per day" />
-                                            <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left">
-                                                <TextBlock Classes="value" Text="{Binding ProjDayText}" />
-                                            </Viewbox>
-                                        </StackPanel>
-                                    </Border>
-                                    <Border Classes="tile projected" Margin="5,0">
-                                        <StackPanel>
-                                            <TextBlock Classes="label" Text="Per week" />
-                                            <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left">
-                                                <TextBlock Classes="value" Text="{Binding ProjWeekText}" />
-                                            </Viewbox>
-                                        </StackPanel>
-                                    </Border>
-                                    <Border Classes="tile projected" Margin="5,0">
-                                        <StackPanel>
-                                            <TextBlock Classes="label" Text="Per month" />
-                                            <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left">
-                                                <TextBlock Classes="value" Text="{Binding ProjMonthText}" />
-                                            </Viewbox>
-                                        </StackPanel>
-                                    </Border>
-                                    <Border Classes="tile projected" Margin="5,0,0,0">
-                                        <StackPanel>
-                                            <TextBlock Classes="label" Text="Per year" />
-                                            <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left">
-                                                <TextBlock Classes="value" Text="{Binding ProjYearText}" />
-                                            </Viewbox>
-                                        </StackPanel>
-                                    </Border>
-                                </UniformGrid>
-                            </StackPanel>
-                            <TextBlock Grid.Row="2" Classes="muted" FontSize="12" TextWrapping="Wrap" Text="{Binding ProjectionBasis}" />
-
-                            <!-- What really came in -->
-                            <StackPanel Grid.Row="3" Spacing="8">
-                                <TextBlock Classes="kicker" Text="EARNED SO FAR" />
-                                <UniformGrid Columns="4">
-                                    <Border Classes="tile" Margin="0,0,5,0">
-                                        <StackPanel>
-                                            <TextBlock Classes="label" Text="Today" />
-                                            <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left">
-                                                <TextBlock Classes="value" Text="{Binding TodayText}" />
-                                            </Viewbox>
-                                        </StackPanel>
-                                    </Border>
-                                    <Border Classes="tile" Margin="5,0">
-                                        <StackPanel>
-                                            <TextBlock Classes="label" Text="This week" />
-                                            <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left">
-                                                <TextBlock Classes="value" Text="{Binding WeekText}" />
-                                            </Viewbox>
-                                        </StackPanel>
-                                    </Border>
-                                    <Border Classes="tile" Margin="5,0">
-                                        <StackPanel>
-                                            <TextBlock Classes="label" Text="This month" />
-                                            <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left">
-                                                <TextBlock Classes="value" Text="{Binding MonthText}" />
-                                            </Viewbox>
-                                        </StackPanel>
-                                    </Border>
-                                    <Border Classes="tile" Margin="5,0,0,0">
-                                        <StackPanel>
-                                            <TextBlock Classes="label" Text="This year" />
-                                            <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left">
-                                                <TextBlock Classes="value" Text="{Binding YearText}" />
-                                            </Viewbox>
-                                        </StackPanel>
-                                    </Border>
-                                </UniformGrid>
-                            </StackPanel>
-
-                            <!-- The chart, in the range picked here -->
-                            <Grid Grid.Row="4" ColumnDefinitions="*,Auto">
-                                <TextBlock Classes="muted" FontSize="12.5" VerticalAlignment="Center" TextWrapping="Wrap" Text="{Binding ChartCaption}" />
-                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="2">
-                                    <Button Classes="seg" Classes.active="{Binding IsDayChart}" Content="Day" Command="{Binding SelectChartPeriodCommand}" CommandParameter="Day" />
-                                    <Button Classes="seg" Classes.active="{Binding IsWeekChart}" Content="Week" Command="{Binding SelectChartPeriodCommand}" CommandParameter="Week" />
-                                    <Button Classes="seg" Classes.active="{Binding IsMonthChart}" Content="Month" Command="{Binding SelectChartPeriodCommand}" CommandParameter="Month" />
-                                    <Button Classes="seg" Classes.active="{Binding IsYearChart}" Content="Year" Command="{Binding SelectChartPeriodCommand}" CommandParameter="Year" />
-                                </StackPanel>
-                            </Grid>
-                            <controls:EarningsChart Grid.Row="5" MinHeight="84" Values="{Binding ChartValues}" Labels="{Binding ChartLabels}" Tips="{Binding ChartTips}"
-                                                    BarBrush="{DynamicResource ChartBar}" FaintBrush="{DynamicResource ChartBarFaint}"
-                                                    LabelBrush="{DynamicResource MutedText}" AutomationProperties.Name="Earnings chart" />
-                            <Grid Grid.Row="6" ColumnDefinitions="*,Auto" DataContext="{Binding Results}" x:DataType="vm:ResultsViewModel"
-                                  IsVisible="{Binding CanMeasureAgain}">
-                                <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap" VerticalAlignment="Center" Text="{Binding MeasuredLine}" />
-                                <Button Grid.Column="1" Classes="link" Command="{Binding StartMeasureCommand}" AutomationProperties.Name="Measure this PC">
-                                    <TextBlock Text="Measure this PC" FontSize="12" TextDecorations="Underline" />
-                                </Button>
-                            </Grid>
-                            <TextBlock Grid.Row="7" Classes="error" FontSize="12" TextWrapping="Wrap" DataContext="{Binding Results}" x:DataType="vm:ResultsViewModel"
-                                       Text="{Binding StartError}" IsVisible="{Binding StartError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                        </Grid>
-                    </Border>
-
-                    <StackPanel Grid.Row="2" Spacing="14">
-                    <!-- ===== Suggestions: the PC test and internet sharing, after the numbers ===== -->
-                    <StackPanel Spacing="16" DataContext="{Binding Results}" x:DataType="vm:ResultsViewModel"
-                                IsVisible="{Binding ShowMeasureOffer}">
-                        <!-- The two-minute test, offered once, then its progress, then the result -->
-                        <Border Classes="card" IsVisible="{Binding ShowMeasureOffer}">
-                            <Grid ColumnDefinitions="Auto,*">
-                                <Border Classes="iconBadge" VerticalAlignment="Top"><Path Classes="icon" Data="{StaticResource IconChart}" /></Border>
-                                <StackPanel Grid.Column="1" Margin="14,0,0,0" Spacing="10">
-                                    <StackPanel Spacing="2">
-                                        <TextBlock Classes="h2" Text="See what this PC really earns" />
-                                        <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap"
-                                                   Text="A two-minute test runs the miners now, while you watch, and measures your own processor and graphics card instead of guessing from a table. It earns for real, to your address. Your fans may speed up for those two minutes." />
-                                    </StackPanel>
-                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                        <Button Classes="accent" Content="Run the 2-minute test" Command="{Binding StartMeasureCommand}" />
-                                        <Button Content="Not now" Command="{Binding SkipMeasureCommand}" />
-                                    </StackPanel>
-                                    <TextBlock Classes="error" FontSize="12.5" TextWrapping="Wrap" Text="{Binding StartError}"
-                                               IsVisible="{Binding StartError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                                </StackPanel>
-                            </Grid>
-                        </Border>
-
-                    </StackPanel>
-
-                    <!-- ===== Earn more: internet sharing, every network in one place ===== -->
-                    <Border Classes="card delay1" IsVisible="{Binding ShowSharingSuggestion}">
-                        <StackPanel Spacing="14">
-                            <Grid ColumnDefinitions="Auto,*,Auto">
-                                <Border Classes="iconBadge" VerticalAlignment="Top"><Path Classes="icon" Data="{StaticResource IconGlobe}" /></Border>
-                                <StackPanel Grid.Column="1" Margin="14,0" VerticalAlignment="Center" Spacing="2">
-                                    <TextBlock Classes="h2" Text="{Binding SharingSuggestionTitle}" />
-                                    <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Text="{Binding SharingSuggestionText}" />
-                                </StackPanel>
-                                <Button Grid.Column="2" Classes="accent" VerticalAlignment="Center" Content="Choose networks"
-                                        Command="{Binding OpenSharingSetupCommand}" IsVisible="{Binding !ShowSharingSetup}" />
-                            </Grid>
-                            <Panel IsVisible="{Binding ShowSharingSetup}"><views:SharingSetupView DataContext="{Binding SharingSetup}" /></Panel>
-                        </StackPanel>
-                    </Border>
-
-                    <!-- Protect the balance with an email (also how a second PC signs in) -->
-                    <Border Classes="card" IsVisible="{Binding NeedsEmail}">
-                        <Grid ColumnDefinitions="Auto,*">
-                            <Border Classes="iconBadge" VerticalAlignment="Top"><Path Classes="icon" Data="{StaticResource IconShield}" /></Border>
-                            <StackPanel Grid.Column="1" Margin="14,0,0,0" Spacing="10">
-                                <StackPanel Spacing="2">
-                                    <TextBlock Classes="h2" Text="Protect your balance" />
-                                    <TextBlock Classes="muted" FontSize="13"
-                                               Text="Add your email so your money is safe if you reinstall or switch computers. You'll need it to cash out, and it lets your other PCs earn into the same balance." />
-                                </StackPanel>
-                                <views:EmailSignInView DataContext="{Binding SignIn}" />
-                            </StackPanel>
-                        </Grid>
-                    </Border>
-
-
+                    <StackPanel Grid.Column="1" Spacing="6" MinWidth="136">
+                        <Button Classes="link" HorizontalAlignment="Right" Content="Close" Command="{Binding ClosePayoutCommand}" />
+                        <Button Classes="accent" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Copy to share" Command="{Binding CopyPayoutCommand}" />
+                        <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Save picture" Command="{Binding SavePayoutPictureCommand}" />
                     </StackPanel>
                 </Grid>
-            </Grid>
-        </ScrollViewer>
-    </Grid>
+            </Border>
+
+            <!-- While you were away -->
+            <Border Classes="sheet" MaxWidth="520" IsVisible="{Binding ShowAwayNow}">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="20">
+                    <StackPanel Spacing="4">
+                        <TextBlock Classes="h2" Text="While you were away" />
+                        <TextBlock FontSize="32" FontWeight="Bold" Text="{Binding AwayAmount}" />
+                        <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Text="{Binding AwayText}" />
+                        <TextBlock Classes="good" FontSize="12" TextWrapping="Wrap" Text="{Binding ShareStatus}"
+                                   IsVisible="{Binding ShareStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Spacing="6" MinWidth="136">
+                        <Button Classes="link" HorizontalAlignment="Right" Content="Close" Command="{Binding CloseAwayCommand}" />
+                        <Button Classes="accent" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Copy to share" Command="{Binding CopyAwayCommand}" />
+                        <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Save picture" Command="{Binding SaveAwayPictureCommand}" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- Last month, for the first days of a new month -->
+            <Border Classes="sheet" MaxWidth="520" IsVisible="{Binding ShowMonthlyNow}">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="20">
+                    <StackPanel Spacing="4">
+                        <TextBlock Classes="h2" Text="{Binding MonthlyTitle}" />
+                        <TextBlock FontSize="32" FontWeight="Bold" Text="{Binding MonthlyAmount}" />
+                        <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Text="{Binding MonthlyText}" />
+                        <TextBlock Classes="good" FontSize="12" TextWrapping="Wrap" Text="{Binding ShareStatus}"
+                                   IsVisible="{Binding ShareStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Spacing="6" MinWidth="136">
+                        <Button Classes="link" HorizontalAlignment="Right" Content="Close" Command="{Binding CloseMonthlyCommand}" />
+                        <Button Classes="accent" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Copy to share" Command="{Binding CopyMonthlyCommand}" />
+                        <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Save picture" Command="{Binding SaveMonthlyPictureCommand}" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </Panel>
+    </Panel>
 </UserControl>

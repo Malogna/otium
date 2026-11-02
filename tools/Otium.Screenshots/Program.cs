@@ -94,6 +94,7 @@ foreach (var variant in new[] { ThemeVariant.Dark }) // the app has one look, th
 
     // The overview as it opens, at the window's fixed size: nothing to scroll, no empty space.
     var fit = new HomeViewModel(host, () => { });
+    CloseResults(fit);
     fit.HasProjection = true;
     fit.ProjDayText = Format.Usd(2.06);
     fit.ProjWeekText = Format.Usd(14.42);
@@ -103,6 +104,7 @@ foreach (var variant in new[] { ThemeVariant.Dark }) // the app has one look, th
 
     // "Right now" with the graphics card testing coins and its readings opened, and the processor's readings opened.
     var live = new HomeViewModel(host, () => { });
+    CloseResults(live);
     if (live.Activity.Count > 1)
     {
         var card = live.Activity[1];
@@ -115,10 +117,33 @@ foreach (var variant in new[] { ThemeVariant.Dark }) // the app has one look, th
             new Otium.Core.Gpu.StatLine("Closed while earning", "MSI Afterburner"),
         ]);
         card.HasStats = true;
-        card.IsExpanded = true;
-        live.Activity[0].IsExpanded = true;
+        live.SelectedActivity = card;
     }
     Shoot(new HomeView { DataContext = live }, $"right-now-open-{theme}", 1100, 1000);
+
+    // Moving between the overview and Advanced and back: both screens are kept, so going back shows the overview again as it was.
+    {
+        var overview = new HomeViewModel(host, () => { });
+        CloseResults(overview);
+        var advanced = new ShellViewModel(host, () => { }, () => { });
+        var stack = new Otium.App.Controls.PageStack { Content = overview };
+        var stackRoot = new Grid();
+        stackRoot.Children.Add(new Otium.App.Controls.NightBackdrop { Intensity = 1 });
+        stackRoot.Children.Add(stack);
+        var stackWindow = new Window { Width = 1100, Height = 780, Content = stackRoot, Background = ThemeBrush("PageBackground") };
+        Avalonia.Controls.Documents.TextElement.SetForeground(stackWindow, ThemeBrush("Ink"));
+        stackWindow.Show();
+        Pump();
+        stack.Content = advanced;
+        Pump();
+        stackWindow.CaptureRenderedFrame()?.Save(Path.Combine(output, $"pages-advanced-{theme}.png"), Avalonia.Media.Imaging.PngBitmapEncoderOptions.Default);
+        stack.IsReversed = true;
+        stack.Content = overview;
+        Pump();
+        stackWindow.CaptureRenderedFrame()?.Save(Path.Combine(output, $"pages-back-{theme}.png"), Avalonia.Media.Imaging.PngBitmapEncoderOptions.Default);
+        Console.WriteLine($"pages kept: {stack.Children.Count}");
+        stackWindow.Close();
+    }
 
     // The earnings card as a German user sees it (euros, "1.234,56 €"), and on the week chart.
     Format.Display = new Otium.Core.Currency.DisplayCurrency("EUR", 0.92, System.Globalization.CultureInfo.GetCultureInfo("de-DE"));
@@ -191,6 +216,14 @@ return;
 
 // Runs queued work and renders frames for about two seconds of real time (animations follow the real clock), so
 // entrance animations have finished before the capture.
+// The sample pool has paid out, which opens its sheet over the screen; most pictures show the screen itself.
+void CloseResults(HomeViewModel vm)
+{
+    vm.Results.ClosePayoutCommand.Execute(null);
+    vm.Results.CloseAwayCommand.Execute(null);
+    vm.Results.CloseMonthlyCommand.Execute(null);
+}
+
 void Pump()
 {
     for (var i = 0; i < 100; i++)
@@ -282,3 +315,4 @@ sealed class SamplePool : IDisposable
 
     public void Dispose() => _listener.Close();
 }
+
