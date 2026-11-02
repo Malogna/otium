@@ -5,12 +5,14 @@ using Avalonia.Animation.Easings;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
+using Otium.Core.Projections;
 
 namespace Otium.App.Controls;
 
 /// <summary>
-/// A compact bar chart of earnings (by hour, day or month). Bars grow in one after another when the data changes, the
-/// last bar is the current period, labels sit under the bars, and pointing at a bar shows what it was.
+/// A compact bar chart of earnings (by hour, day or month). When the data changes the bars morph from what was drawn
+/// to the new bars (one after another, left to right), even when there are a different number of them, the last bar is
+/// the current period, labels sit under the bars, and pointing at a bar shows what it was.
 /// </summary>
 public sealed class EarningsChart : Control
 {
@@ -34,16 +36,18 @@ public sealed class EarningsChart : Control
     public static readonly StyledProperty<IBrush?> LabelBrushProperty =
         AvaloniaProperty.Register<EarningsChart, IBrush?>(nameof(LabelBrush), Brushes.Gray);
 
-    /// <summary>0.15 → 1 grow-in factor, animated whenever <see cref="Values"/> changes.</summary>
+    /// <summary>0 → 1 progress of the morph from the old bars to the new, animated whenever <see cref="Values"/> changes.</summary>
     public static readonly StyledProperty<double> GrowthProperty =
         AvaloniaProperty.Register<EarningsChart, double>(nameof(Growth), 1);
 
-    private const double Gap = 4;
+    private const double Gap = BarChartMath.Gap;
     private const double LabelHeight = 18;
-    private const double MinLabelSpacing = 36;
 
-    // Bars start growing one after another; the last begins this far (of the whole growth) after the first.
-    private const double Stagger = 0.45;
+
+    // What each bar's height was (0..1 of the tallest) when the data last changed, matched to the new bars, and what
+    // is on screen now, so a change that comes mid-morph carries on from where the bars are.
+    private double[] _from = [];
+    private double[] _shown = [];
 
     private int _hover = -1;
     private bool _attached;
@@ -101,56 +105,44 @@ public sealed class EarningsChart : Control
         set => SetValue(GrowthProperty, value);
     }
 
-    /// <summary>Which bar sits at <paramref name="x"/> (a distance from the chart's left edge); -1 between or outside bars.</summary>
-    internal static int BarAt(double x, double width, int count)
-    {
-        if (count <= 0 || width <= 0 || x < 0 || x > width)
-            return -1;
-        var barWidth = Math.Max(2, (width - Gap * (count - 1)) / count);
-        var slot = barWidth + Gap;
-        var index = (int)Math.Floor(x / slot);
-        return index >= 0 && index < count && x - index * slot <= barWidth + Gap / 2 ? index : -1;
-    }
-
-    /// <summary>How many bars apart two labels must be so they don't touch.</summary>
-    internal static int LabelStep(double width, int count)
-    {
-        if (count <= 1)
-            return 1;
-        var slot = (width + Gap) / count;
-        return Math.Max(1, (int)Math.Ceiling(MinLabelSpacing / Math.Max(1, slot)));
-    }
-
-    /// <summary>Where bar <paramref name="index"/> of <paramref name="count"/> is in its grow-in at <paramref name="growth"/> (0..1).</summary>
-    internal static double GrowthOf(double growth, int index, int count)
-    {
-        var overall = Math.Clamp((growth - 0.15) / 0.85, 0, 1);
-        var delay = count <= 1 ? 0 : Stagger * index / (count - 1);
-        return Math.Clamp((overall - delay) / (1 - Stagger), 0, 1);
-    }
-
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
-        if (change.Property == ValuesProperty && _attached)
+        if (change.Property == ValuesProperty)
         {
-            // Restart the grow-in: jump to a low value without a transition, then animate back up.
-            var transitions = Transitions;
-            Transitions = null;
-            Growth = 0.15;
-            Transitions = transitions;
-            Growth = 1;
+            // Morph from what is drawn now: start at 0 without a transition, then animate to 1.
+            _from = BarChartMath.Resample(_shown, Values?.Count ?? 0);
+            if (_attached)
+                Replay();
+            UpdateTip();
         }
-        else if (change.Property == TipsProperty || change.Property == ValuesProperty)
+        else if (change.Property == TipsProperty)
         {
             UpdateTip();
         }
+    }
+
+    /// <summary>Runs the morph from the start: jump to 0 without a transition, then animate to 1.</summary>
+    private void Replay()
+    {
+        var transitions = Transitions;
+        Transitions = null;
+        Growth = 0;
+        Transitions = transitions;
+        Growth = 1;
     }
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
         _attached = true;
+        // The first time the chart appears, the bars rise from nothing.
+        if (Values is { Count: > 0 } values)
+        {
+            _from = new double[values.Count];
+            _shown = new double[values.Count];
+            Replay();
+        }
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
@@ -162,7 +154,7 @@ public sealed class EarningsChart : Control
     protected override void OnPointerMoved(PointerEventArgs e)
     {
         base.OnPointerMoved(e);
-        var index = BarAt(e.GetPosition(this).X, Bounds.Width, Values?.Count ?? 0);
+        var index = BarChartMath.BarAt(e.GetPosition(this).X, Bounds.Width, Values?.Count ?? 0);
         if (index == _hover)
             return;
         _hover = index;
@@ -199,12 +191,17 @@ public sealed class EarningsChart : Control
         var barWidth = Math.Max(2, (bounds.Width - Gap * (values.Count - 1)) / values.Count);
         var radius = Math.Min(4, barWidth / 2);
 
+        if (_shown.Length != values.Count)
+            _shown = new double[values.Count];
+        if (_from.Length != values.Count)
+            _from = BarChartMath.Resample(_from, values.Count);
         for (var i = 0; i < values.Count; i++)
         {
             var x = i * (barWidth + Gap);
-            var fraction = values[i] / max;
+            var fraction = _from[i] + (values[i] / max - _from[i]) * BarChartMath.GrowthOf(Growth, i, values.Count);
+            _shown[i] = fraction;
             // Empty periods still show a short stub so the timeline reads as continuous.
-            var height = Math.Max(3, fraction * (plotHeight - 2) * GrowthOf(Growth, i, values.Count));
+            var height = Math.Max(3, fraction * (plotHeight - 2));
             var rect = new Rect(x, plotHeight - height, barWidth, height);
             // Periods with earnings use the accent (the current one fully opaque); empty ones stay faint.
             var brush = values[i] > 0 ? BarBrush : FaintBrush;
@@ -215,7 +212,8 @@ public sealed class EarningsChart : Control
 
         if (labels is null)
             return;
-        var step = LabelStep(bounds.Width, values.Count);
+        var step = BarChartMath.LabelStep(bounds.Width, values.Count);
+        using var labelFade = context.PushOpacity(0.35 + 0.65 * Math.Clamp(Growth, 0, 1)); // labels settle in as the bars land
         for (var i = values.Count - 1; i >= 0; i -= step)
         {
             var text = new FormattedText(labels[i], CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, Typeface.Default, 11, LabelBrush);

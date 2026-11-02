@@ -189,11 +189,11 @@
         </Border>
 
         <!-- Totals and payout -->
-        <Grid ColumnDefinitions="*,16,*">
+        <Grid x:Name="Totals" ColumnDefinitions="*,16,*">
             <Border Classes="card">
                 <StackPanel Spacing="10">
                     <TextBlock Classes="h2" Text="So far" />
-                    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="6">
+                    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="6" ColumnSpacing="12">
                         <TextBlock Classes="muted" Text="Mining (estimate)" />
                         <TextBlock Grid.Column="1" Text="{Binding TotalEarned}" FontWeight="SemiBold" />
                         <TextBlock Grid.Row="1" Classes="muted" Text="Internet sharing" IsVisible="{Binding ShowSharingTotal}" />
@@ -208,8 +208,8 @@
             </Border>
             <Border Grid.Column="2" Classes="card" IsVisible="{Binding IsOwnWallet}">
                 <StackPanel Spacing="10">
-                    <TextBlock Classes="h2" Text="Your wallet balance at the pool" />
-                    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="6">
+                    <TextBlock Classes="h2" Text="Your wallet balance at the pool" TextWrapping="Wrap" />
+                    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="6" ColumnSpacing="12">
                         <TextBlock Classes="muted" Text="Confirmed, not paid yet" />
                         <TextBlock Grid.Column="1" Text="{Binding PoolPending}" FontWeight="SemiBold" />
                         <TextBlock Grid.Row="1" Classes="muted" Text="Already paid to you" />

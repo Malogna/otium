@@ -33,7 +33,9 @@
         </Grid>
 
         <ScrollViewer Grid.Row="1">
-            <StackPanel MaxWidth="640" Margin="22,18,22,32" Spacing="16">
+            <!-- One column up to a window about 1000 px wide; wider, two columns (see HomeView.axaml.cs). -->
+            <Grid x:Name="Columns" MaxWidth="640" Margin="22,18,22,32" ColumnDefinitions="*" RowDefinitions="Auto,Auto,Auto" RowSpacing="16" ColumnSpacing="20">
+            <StackPanel x:Name="LeftColumn" Spacing="16">
 
                 <!-- Update ready -->
                 <Border Classes="card" IsVisible="{Binding UpdateReady}" Padding="14">
@@ -92,7 +94,14 @@
                     <StackPanel Spacing="18">
                         <Grid ColumnDefinitions="*,Auto">
                             <StackPanel Spacing="0">
-                                <TextBlock Classes="heroMuted" Text="{Binding BalanceCaption}" />
+                                <StackPanel Orientation="Horizontal" Spacing="9">
+                                    <!-- A soft ring spreads from the dot while Otium is earning -->
+                                    <Grid Width="9" Height="9" VerticalAlignment="Center" IsVisible="{Binding IsEarning}">
+                                        <Ellipse Classes="heroPulse" />
+                                        <Ellipse Classes="heroDot" />
+                                    </Grid>
+                                    <TextBlock Classes="heroMuted" Text="{Binding BalanceCaption}" />
+                                </StackPanel>
                                 <TextBlock Classes="display" Text="{Binding Balance}" />
                                 <TextBlock Classes="heroMuted" FontSize="13" Text="{Binding PendingText}"
                                            IsVisible="{Binding PendingText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
@@ -423,6 +432,9 @@
                     </StackPanel>
                 </Border>
 
+            </StackPanel>
+
+            <StackPanel x:Name="RightColumn" Grid.Row="1" Spacing="16">
                 <!-- ===== Projections + chart ===== -->
                 <Border Classes="card delay2">
                     <StackPanel Spacing="14">
@@ -437,25 +449,33 @@
                                 <Border Classes="tile projected" Margin="0,0,5,0">
                                     <StackPanel>
                                         <TextBlock Classes="label" Text="Per day" />
-                                        <TextBlock Classes="value" Text="{Binding ProjDayText}" />
+                                        <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left">
+                                            <TextBlock Classes="value" Text="{Binding ProjDayText}" />
+                                        </Viewbox>
                                     </StackPanel>
                                 </Border>
                                 <Border Classes="tile projected" Margin="5,0">
                                     <StackPanel>
                                         <TextBlock Classes="label" Text="Per week" />
-                                        <TextBlock Classes="value" Text="{Binding ProjWeekText}" />
+                                        <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left">
+                                            <TextBlock Classes="value" Text="{Binding ProjWeekText}" />
+                                        </Viewbox>
                                     </StackPanel>
                                 </Border>
                                 <Border Classes="tile projected" Margin="5,0">
                                     <StackPanel>
                                         <TextBlock Classes="label" Text="Per month" />
-                                        <TextBlock Classes="value" Text="{Binding ProjMonthText}" />
+                                        <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left">
+                                            <TextBlock Classes="value" Text="{Binding ProjMonthText}" />
+                                        </Viewbox>
                                     </StackPanel>
                                 </Border>
                                 <Border Classes="tile projected" Margin="5,0,0,0">
                                     <StackPanel>
                                         <TextBlock Classes="label" Text="Per year" />
-                                        <TextBlock Classes="value" Text="{Binding ProjYearText}" />
+                                        <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left">
+                                            <TextBlock Classes="value" Text="{Binding ProjYearText}" />
+                                        </Viewbox>
                                     </StackPanel>
                                 </Border>
                             </UniformGrid>
@@ -469,25 +489,33 @@
                                 <Border Classes="tile" Margin="0,0,5,0">
                                     <StackPanel>
                                         <TextBlock Classes="label" Text="Today" />
-                                        <TextBlock Classes="value" Text="{Binding TodayText}" />
+                                        <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left">
+                                            <TextBlock Classes="value" Text="{Binding TodayText}" />
+                                        </Viewbox>
                                     </StackPanel>
                                 </Border>
                                 <Border Classes="tile" Margin="5,0">
                                     <StackPanel>
                                         <TextBlock Classes="label" Text="This week" />
-                                        <TextBlock Classes="value" Text="{Binding WeekText}" />
+                                        <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left">
+                                            <TextBlock Classes="value" Text="{Binding WeekText}" />
+                                        </Viewbox>
                                     </StackPanel>
                                 </Border>
                                 <Border Classes="tile" Margin="5,0">
                                     <StackPanel>
                                         <TextBlock Classes="label" Text="This month" />
-                                        <TextBlock Classes="value" Text="{Binding MonthText}" />
+                                        <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left">
+                                            <TextBlock Classes="value" Text="{Binding MonthText}" />
+                                        </Viewbox>
                                     </StackPanel>
                                 </Border>
                                 <Border Classes="tile" Margin="5,0,0,0">
                                     <StackPanel>
                                         <TextBlock Classes="label" Text="This year" />
-                                        <TextBlock Classes="value" Text="{Binding YearText}" />
+                                        <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left">
+                                            <TextBlock Classes="value" Text="{Binding YearText}" />
+                                        </Viewbox>
                                     </StackPanel>
                                 </Border>
                             </UniformGrid>
@@ -591,8 +619,10 @@
                     </Grid>
                 </Border>
 
+            </StackPanel>
+
                 <!-- ===== Community and contact ===== -->
-                <WrapPanel HorizontalAlignment="Center" Margin="0,4,0,0">
+                <WrapPanel x:Name="Footer" Grid.Row="2" HorizontalAlignment="Center" Margin="0,4,0,0">
                     <WrapPanel.Styles>
                         <Style Selector="Button.link TextBlock">
                             <Setter Property="FontSize" Value="12.5" />
@@ -611,7 +641,7 @@
                         <TextBlock Text="Help" TextDecorations="Underline" />
                     </Button>
                 </WrapPanel>
-            </StackPanel>
+            </Grid>
         </ScrollViewer>
     </Grid>
 </UserControl>

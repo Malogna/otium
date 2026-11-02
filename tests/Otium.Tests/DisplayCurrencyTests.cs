@@ -48,6 +48,17 @@ public class DisplayCurrencyTests
     }
 
     [Fact]
+    public void The_extra_digit_follows_the_amount_in_the_currency_shown_not_in_dollars()
+    {
+        var krone = new DisplayCurrency("NOK", 9.2, CultureInfo.GetCultureInfo("nb-NO"));
+
+        Assert.DoesNotContain("4,600", krone.Format(0.5));
+        Assert.Contains("4,60", krone.Format(0.5));     // 4.60 kroner: not "4,600", which reads as four thousand
+        Assert.Contains("0,460", krone.Format(0.05));   // under one krone: the extra digit helps
+        Assert.Contains("2,30", krone.Format(0.25, cents: true));
+    }
+
+    [Fact]
     public void Currencies_without_a_minor_unit_show_no_decimals_once_they_are_worth_a_few_units()
     {
         var yen = new DisplayCurrency("JPY", 150, CultureInfo.InvariantCulture);

@@ -26,7 +26,7 @@
         </Style>
     </UserControl.Styles>
 
-    <StackPanel Spacing="16" MaxWidth="760" HorizontalAlignment="Left">
+    <StackPanel Spacing="16">
         <Border Classes="card">
             <StackPanel Spacing="14">
                 <TextBlock Classes="h1" Text="Invite friends, mine fee-free" />

@@ -1,20 +1,22 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:Otium.App.ViewModels"
+        xmlns:controls="using:Otium.App.Controls"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d" d:DesignWidth="980" d:DesignHeight="720"
         x:Class="Otium.App.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Icon="/Assets/otium.ico"
-        Width="980" Height="760" MinWidth="560" MinHeight="520"
+        Width="980" Height="760" MinWidth="560" MinHeight="520" MaxWidth="1240" MaxHeight="820" CanMaximize="False"
         WindowStartupLocation="CenterScreen"
         Background="{DynamicResource PageBackground}"
         Title="Otium">
 
-    <TransitioningContentControl Content="{Binding CurrentPage}">
+    <!-- Going deeper (Overview → Advanced) slides in from the right, going back from the left; a short slide and a fade. -->
+    <TransitioningContentControl Content="{Binding CurrentPage}" IsTransitionReversed="{Binding IsGoingBack}">
         <TransitioningContentControl.PageTransition>
-            <CrossFade Duration="0:0:0.22" />
+            <controls:SlideFadeTransition Duration="0:0:0.34" Distance="64" />
         </TransitioningContentControl.PageTransition>
     </TransitioningContentControl>
 

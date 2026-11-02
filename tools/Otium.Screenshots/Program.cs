@@ -106,6 +106,9 @@ foreach (var variant in new[] { ThemeVariant.Light, ThemeVariant.Dark })
     Shoot(new HomeView { DataContext = euroVm }, $"home-euro-week-{theme}", 900, 1500);
     Format.Display = Otium.Core.Currency.DisplayCurrency.Usd;
 
+    // A wide window: the overview in two columns.
+    Shoot(new HomeView { DataContext = new HomeViewModel(host, () => { }) }, $"home-wide-{theme}", 1600, 1000);
+
     // The pool just paid: "You've been paid", which comes before the other result cards.
     results.IsMeasuring = false;
     results.ShowMeasureResult = false;
@@ -117,6 +120,25 @@ foreach (var variant in new[] { ThemeVariant.Light, ThemeVariant.Dark })
     homeVm.ShowElectricityPause = false;
     homeVm.InternetSharing.ShowSuggestion = false;
     Shoot(new HomeView { DataContext = homeVm }, $"home-payout-{theme}", 900, 1400);
+
+    // The overview and Advanced at the smallest, a middle, the one-column/two-column switch and the largest window size.
+    foreach (var (w, h) in new[] { (560, 760), (760, 820), (999, 860), (1000, 860), (1240, 900) })
+    {
+        var sized = new HomeViewModel(host, () => { });
+        sized.HasProjection = true;
+        sized.ProjDayText = Format.Usd(2.06);
+        sized.ProjWeekText = Format.Usd(14.42);
+        sized.ProjMonthText = Format.Usd(61.8);
+        sized.ProjYearText = Format.Usd(751.9);
+        sized.InternetSharing.ShowSuggestion = true;
+        Shoot(new HomeView { DataContext = sized }, $"size-home-{w}x{h}-{theme}", w, h);
+        Shoot(new ShellView { DataContext = new ShellViewModel(host, () => { }) }, $"size-advanced-{w}x{h}-{theme}", w, h);
+        if (w is 560 or 1240)
+        {
+            Shoot(new SettingsView { DataContext = new SettingsViewModel(host) }, $"size-settings-{w}x{h}-{theme}", w, h);
+            Shoot(new InviteView { DataContext = new InviteViewModel(host) }, $"size-invite-{w}x{h}-{theme}", w, h);
+        }
+    }
 
     // Settings.
     var settings = new SettingsViewModel(host);

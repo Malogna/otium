@@ -15,20 +15,30 @@ public partial class MainWindowViewModel : ViewModelBase
         _host = host;
         CurrentPage = host.Settings.OnboardingComplete
             ? Home
-            : new WelcomeViewModel(host, () => CurrentPage = Home);
+            : new WelcomeViewModel(host, () => Go(Home, back: false));
     }
 
     [ObservableProperty]
     public partial ViewModelBase CurrentPage { get; set; }
 
-    private HomeViewModel Home => _home ??= new HomeViewModel(_host, () => CurrentPage = Advanced);
+    /// <summary>True while going back (Advanced → Overview), so the page slides in from the left.</summary>
+    [ObservableProperty]
+    public partial bool IsGoingBack { get; set; }
 
-    private ShellViewModel Advanced => _advanced ??= new ShellViewModel(_host, () => CurrentPage = Home, StartOver);
+    private HomeViewModel Home => _home ??= new HomeViewModel(_host, () => Go(Advanced, back: false));
+
+    private ShellViewModel Advanced => _advanced ??= new ShellViewModel(_host, () => Go(Home, back: true), StartOver);
+
+    private void Go(ViewModelBase page, bool back)
+    {
+        IsGoingBack = back; // before the page changes, which is what starts the transition
+        CurrentPage = page;
+    }
 
     /// <summary>After the account was deleted: back to the first-run welcome, with a fresh Advanced page next time.</summary>
     private void StartOver()
     {
         _advanced = null;
-        CurrentPage = new WelcomeViewModel(_host, () => CurrentPage = Home);
+        Go(new WelcomeViewModel(_host, () => Go(Home, back: false)), back: true);
     }
 }
