@@ -619,8 +619,10 @@ internal static class AdminDashboard
             const failing = device => (a.engineStates || []).filter(e => e.device === device && (STATES[e.state] || [])[0] === "bad");
             for (const [device, name] of [["gpu", "graphics card"], ["cpu", "processor"]]) {
               const list = failing(device), total = list.reduce((x, e) => x + Number(e.computers), 0);
-              if (total) out.push(["bad", `${pl(total, name)} not mining because of a problem`,
-                list.map(e => `${(STATES[e.state] || [])[1] || e.state}: ${n(e.computers)}`).join("; ")]);
+              if (!total) continue;
+              const why = (a.engineProblems || []).filter(e => e.device === device).map(e => `"${e.reason}" (${n(e.computers)})`);
+              out.push(["bad", `${pl(total, name)} not mining because of a problem`,
+                list.map(e => `${(STATES[e.state] || [])[1] || e.state}: ${n(e.computers)}`).join("; ") + (why.length ? `. They say: ${why.join("; ")}` : "")]);
             }
             const o = s.otium;
             if (s.otiumError) out.push(["bad", "Otium's unMineable account can't be read", s.otiumError]);
