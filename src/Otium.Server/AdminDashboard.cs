@@ -37,7 +37,13 @@ internal static class AdminDashboard
         <body>
           <main>
             <header>
-              <h1>Otium operator</h1>
+              <div class="brand">
+                <h1>Otium operator</h1>
+                <span class="pill" id="status-pill" hidden></span>
+              </div>
+              <nav class="jump" id="jump" hidden aria-label="Sections">
+                <a href="#attention">Attention</a><a href="#overview">Overview</a><a href="#computers">Computers</a><a href="#trends">Trends</a><a href="#money">Money</a><a href="#accounts">Accounts</a><a href="#reports">Reports</a>
+              </nav>
               <div class="actions" id="session" hidden>
                 <span class="muted" id="updated"></span>
                 <label class="muted toggle"><input type="checkbox" id="auto" checked> every minute</label>
@@ -60,78 +66,96 @@ internal static class AdminDashboard
               <p class="error" id="error" role="alert"></p>
 
               <div id="noncustodial" hidden>
-                <section>
+                <section class="attention" id="attention" aria-labelledby="attention-title">
                   <div class="section-head">
-                    <h2>Users and computers</h2>
+                    <h2 id="attention-title">Needs attention</h2>
+                    <span class="muted" id="attention-sub"></span>
+                  </div>
+                  <ul class="alerts" id="alerts"></ul>
+                </section>
+
+                <section id="overview" aria-labelledby="overview-title">
+                  <div class="section-head">
+                    <h2 id="overview-title">Overview</h2>
                     <span class="muted">a user is an account; a computer is one install of the app</span>
                   </div>
-                  <div class="tiles">
+                  <div class="tiles kpis">
                     <div class="tile"><span class="label">Users</span><strong id="uc-users"></strong><span class="muted" id="uc-users-detail"></span></div>
-                    <div class="tile"><span class="label">Active users, 24 hours</span><strong id="uc-active"></strong><span class="muted" id="uc-active-detail"></span></div>
-                    <div class="tile"><span class="label">Computers online now</span><strong id="act-now"></strong><span class="muted" id="act-now-detail"></span></div>
-                    <div class="tile"><span class="label">Computers mining now</span><strong id="uc-mining"></strong><span class="muted" id="uc-mining-detail"></span></div>
+                    <div class="tile"><span class="label">Active, 24 hours</span><strong id="uc-active"></strong><span class="muted" id="uc-active-detail"></span></div>
+                    <div class="tile"><span class="label">Mining, 24 hours</span><strong id="uc-mining"></strong><span class="muted" id="uc-mining-detail"></span></div>
                     <div class="tile"><span class="label">Still using Otium</span><strong id="uc-retention"></strong><span class="muted" id="uc-retention-detail"></span></div>
-                    <div class="tile"><span class="label">Computers per user</span><strong id="uc-per-user"></strong><span class="muted" id="uc-per-user-detail"></span></div>
+                    <div class="tile"><span class="label">Users earned, 30 days</span><strong id="pp-rewarded"></strong><span class="muted">at their pools, before payout</span></div>
+                    <div class="tile"><span class="label">Paid to users</span><strong id="pp-paid"></strong><span class="muted" id="pp-paid-detail"></span></div>
                   </div>
-                  <h3>Last 30 days (UTC), with today's number</h3>
+                  <h3>From install to mining</h3>
+                  <div class="funnel" id="uc-funnel"></div>
+                </section>
+
+                <section id="computers" aria-labelledby="computers-title">
+                  <div class="section-head">
+                    <h2 id="computers-title">What computers are doing</h2>
+                    <span class="muted">at their last check-in, seen in the last 24 hours (0.1.3 and later)</span>
+                  </div>
+                  <div class="states" id="uc-states"></div>
+                  <h3>App versions, computers seen in the last 7 days</h3>
+                  <div class="versions" id="uc-versions"></div>
+                </section>
+
+                <section id="trends" aria-labelledby="trends-title">
+                  <div class="section-head">
+                    <h2 id="trends-title">Last 30 days</h2>
+                    <span class="muted">UTC, with today's number</span>
+                  </div>
                   <div class="charts" id="uc-charts"></div>
                   <p class="muted" id="uc-counting"></p>
-                  <h3>App versions on computers seen in the last 7 days</h3>
-                  <ul class="addresses" id="uc-versions"></ul>
-                  <p class="muted">What they're doing (seen in the last 24 hours, at their last check-in; from 0.1.3):</p>
-                  <ul class="addresses" id="uc-states"></ul>
                 </section>
 
-                <section>
-                  <h2>What users earned</h2>
-                  <div class="tiles">
-                    <div class="tile"><span class="label">Paid to users by pools</span><strong id="pp-paid"></strong><span class="muted" id="pp-paid-detail"></span></div>
-                    <div class="tile"><span class="label">Users earned, 30 days</span><strong id="pp-rewarded"></strong><span class="muted">at their pools, before payout</span></div>
+                <section id="money" aria-labelledby="money-title">
+                  <div class="section-head">
+                    <h2 id="money-title">Otium's own earnings</h2>
+                    <span class="muted">non-custodial: pools pay users directly; Otium earns its fee slices and unMineable's referral share</span>
                   </div>
-                </section>
-
-                <section>
-                  <h2>Otium on unMineable</h2>
-                  <p class="muted">Non-custodial: pools pay users directly. Otium earns its fee slices and unMineable's referral share, both paid to <span class="mono" id="nc-target"></span>.</p>
                   <div class="tiles">
                     <div class="tile"><span class="label">At unMineable</span><strong id="nc-balance"></strong><span class="muted" id="nc-balance-detail"></span></div>
-                    <div class="tile"><span class="label">Rewarded</span><strong id="nc-rewarded"></strong><span class="muted" id="nc-rewarded-detail"></span></div>
+                    <div class="tile"><span class="label">Rewarded, 24 hours</span><strong id="nc-rewarded"></strong><span class="muted" id="nc-rewarded-detail"></span></div>
                     <div class="tile"><span class="label">Paid to Otium</span><strong id="nc-paid"></strong><span class="muted" id="nc-paid-detail"></span></div>
                     <div class="tile"><span class="label">Referral code</span><strong id="nc-code"></strong><span class="muted" id="nc-code-detail"></span></div>
                   </div>
+                  <p class="muted">Paid to <span class="mono" id="nc-target"></span> · <a id="nc-link" target="_blank" rel="noopener noreferrer">open on unMineable</a></p>
                   <p class="error" id="nc-error"></p>
-                  <p><a id="nc-link" target="_blank" rel="noopener noreferrer">Open on unMineable</a></p>
-                </section>
-                <section>
-                  <h2>Share analytics, last 7 days</h2>
-                  <p class="muted" id="an-summary"></p>
-                  <div class="table-wrap">
-                    <table id="an-table" hidden>
-                      <thead><tr><th>Part</th><th>Computers</th><th>Hours</th><th>Earned by users</th><th>Electricity</th><th>Per hour</th></tr></thead>
-                      <tbody id="an-rows"></tbody>
-                    </table>
-                  </div>
                 </section>
 
-                <section>
-                  <h2>Invites and payout coins</h2>
-                  <div class="tiles">
-                    <div class="tile"><span class="label">Joined by invite</span><strong id="nc-referred"></strong><span class="muted" id="nc-verified"></span></div>
-                  </div>
-                  <h3>Payout coins</h3>
-                  <ul class="addresses" id="nc-coins"></ul>
-                </section>
+                <div class="cols">
+                  <section>
+                    <h2>Share analytics, last 7 days</h2>
+                    <p class="muted" id="an-summary"></p>
+                    <div class="table-wrap">
+                      <table id="an-table" hidden>
+                        <thead><tr><th>Part</th><th>Computers</th><th>Hours</th><th>Earned by users</th><th>Electricity</th><th>Per hour</th></tr></thead>
+                        <tbody id="an-rows"></tbody>
+                      </table>
+                    </div>
+                  </section>
 
-                <section>
-                  <h2>Pearl</h2>
-                  <p id="pearl"></p>
-                  <p class="muted">Pearl's FP8 fork (PIP-3) limits Pearl to Hopper and Blackwell cards once active; the GPU policy then stops offering it to other cards.</p>
-                </section>
+                  <section>
+                    <h2>Invites and payout coins</h2>
+                    <p><strong id="nc-referred"></strong> <span class="muted" id="nc-verified"></span></p>
+                    <div class="chips" id="nc-coins"></div>
+                  </section>
+                </div>
 
-                <section id="myst" hidden>
-                  <h2>Mysterium sponsoring</h2>
-                  <p id="myst-detail"></p>
-                </section>
+                <div class="cols">
+                  <section>
+                    <h2>Pearl</h2>
+                    <p id="pearl"></p>
+                    <p class="muted">Pearl's FP8 fork (PIP-3) limits Pearl to Hopper and Blackwell cards once active; the GPU policy then stops offering it to other cards.</p>
+                  </section>
+
+                  <section id="myst" hidden>
+                    <h2>Mysterium sponsoring</h2>
+                    <p id="myst-detail"></p>
+                  </section>
+                </div>
               </div>
 
               <div id="custodial">
@@ -198,7 +222,7 @@ internal static class AdminDashboard
               </section>
               </div>
 
-              <section>
+              <section id="accounts">
                 <div class="section-head">
                   <h2 id="ac-title">Accounts</h2>
                   <label class="muted toggle"><input type="checkbox" id="ac-hide-tests"> hide test accounts</label>
@@ -212,7 +236,7 @@ internal static class AdminDashboard
                 </div>
               </section>
 
-              <section>
+              <section id="reports">
                 <div class="section-head">
                   <h2 id="pr-title">Problem reports</h2>
                   <span class="muted">newest first; open one to read what the app sent</span>
@@ -232,67 +256,127 @@ internal static class AdminDashboard
         """;
 
     public const string Css = """
-        :root { --bg:#f3f5f8; --fg:#14171c; --muted:#5b6575; --card:#fff; --border:#e3e6eb; --accent:#16a672; --good:#138a5e; --bad:#b42318; --warn:#9a6200; --soft:#f0f3f6; }
-        @media (prefers-color-scheme: dark) { :root { --bg:#0b0e13; --fg:#e8ebef; --muted:#8d98aa; --card:#141922; --border:#262c35; --accent:#3ddc97; --good:#46d394; --bad:#f47066; --warn:#f2b544; --soft:#1a202a; } }
+        :root { color-scheme:light dark; --bg:#f3f5f8; --fg:#12161c; --muted:#5d697a; --card:#fff; --border:#e1e5eb; --accent:#13a06f; --good:#0f8a5f; --bad:#c0372b; --warn:#9a6200; --info:#2f6fd6; --soft:#f0f3f7; --shadow:0 1px 2px rgba(16,24,40,.05); }
+        @media (prefers-color-scheme: dark) { :root { --bg:#0a0d12; --fg:#e9edf2; --muted:#93a0b4; --card:#121821; --border:#232b36; --accent:#3ddc97; --good:#46d394; --bad:#ff7a70; --warn:#f2b544; --info:#6ea3ff; --soft:#18202b; --shadow:none; } }
         * { box-sizing:border-box; }
         [hidden] { display:none !important; }
-        body { margin:0; font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; background:var(--bg); color:var(--fg); }
-        main { max-width:1120px; margin:0 auto; padding:24px 16px 64px; }
-        header { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
-        h1 { font-size:22px; margin:0; }
-        h2 { font-size:17px; margin:0 0 12px; }
-        section { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:20px; margin-bottom:16px; }
+        html { scroll-behavior:smooth; scroll-padding-top:100px; }
+        body { margin:0; font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; background:var(--bg); color:var(--fg); -webkit-font-smoothing:antialiased; }
+        main { max-width:1180px; margin:0 auto; padding:0 16px 64px; }
+        header { position:sticky; top:0; z-index:5; display:flex; align-items:center; justify-content:space-between; gap:6px 16px; flex-wrap:wrap; margin:0 -16px 16px; padding:10px 16px 6px; background:color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter:blur(10px); border-bottom:1px solid var(--border); }
+        .brand { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+        h1 { font-size:20px; letter-spacing:-.01em; margin:0; }
+        h2 { font-size:16px; letter-spacing:-.005em; margin:0 0 12px; }
+        h3 { font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:22px 0 10px; }
+        section { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:20px; margin-bottom:16px; box-shadow:var(--shadow); }
         .actions, .row, .section-head { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-        .section-head { justify-content:space-between; margin-bottom:8px; }
+        .section-head { justify-content:space-between; margin-bottom:12px; }
         .section-head h2 { margin:0; }
         .muted { color:var(--muted); font-size:13px; }
         .error { color:var(--bad); min-height:1em; margin:8px 0 0; }
         .error:empty { display:none; }
         code { font-family:ui-monospace,Consolas,monospace; background:var(--soft); padding:1px 5px; border-radius:5px; }
+        a { color:var(--info); }
         input, select, button { font:inherit; color:inherit; }
         input, select { background:var(--soft); border:1px solid var(--border); border-radius:8px; padding:8px 10px; }
         input { min-width:260px; flex:1; }
-        button { background:var(--soft); border:1px solid var(--border); border-radius:8px; padding:7px 14px; cursor:pointer; }
+        button { background:var(--soft); border:1px solid var(--border); border-radius:8px; padding:7px 14px; cursor:pointer; transition:border-color .15s, background .15s; }
         button:hover { border-color:var(--muted); }
         button:disabled { opacity:.5; cursor:default; }
+        :focus-visible { outline:2px solid var(--info); outline-offset:2px; }
         button.primary, button.approve { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
         button.reject { color:var(--bad); }
         button.quiet { background:transparent; }
+        .pill { display:inline-flex; align-items:center; gap:7px; font-size:13px; font-weight:600; padding:3px 11px 3px 9px; border-radius:99px; border:1px solid var(--border); background:var(--soft); }
+        .pill::before { content:""; width:8px; height:8px; border-radius:50%; background:var(--muted); }
+        .pill.ok { color:var(--good); border-color:color-mix(in srgb, var(--good) 40%, var(--border)); }
+        .pill.ok::before { background:var(--good); }
+        .pill.warn { color:var(--warn); border-color:color-mix(in srgb, var(--warn) 45%, var(--border)); }
+        .pill.warn::before { background:var(--warn); }
+        .pill.bad { color:var(--bad); border-color:color-mix(in srgb, var(--bad) 45%, var(--border)); }
+        .pill.bad::before { background:var(--bad); }
+        .actions { margin-left:auto; }
+        .jump { display:flex; gap:2px; flex-wrap:wrap; order:3; flex-basis:100%; margin:0 -9px; }
+        .jump a { color:var(--muted); text-decoration:none; font-size:13px; padding:4px 9px; border-radius:7px; }
+        .jump a:hover { background:var(--soft); color:var(--fg); }
         .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px; }
-        .tile { background:var(--soft); border-radius:10px; padding:14px; display:flex; flex-direction:column; gap:2px; }
-        .tile strong { font-size:24px; font-variant-numeric:tabular-nums; }
-        .label { font-size:13px; font-weight:600; }
+        .kpis { grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); }
+        .tile { background:var(--soft); border-radius:12px; padding:14px 16px; display:flex; flex-direction:column; gap:3px; min-width:0; }
+        .tile strong { font-size:28px; line-height:1.15; letter-spacing:-.02em; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+        .label { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); }
         .bar { height:8px; background:var(--soft); border-radius:99px; overflow:hidden; margin:16px 0 6px; }
         .bar div { height:100%; width:0; background:var(--accent); }
         .table-wrap { overflow-x:auto; }
         table { width:100%; border-collapse:collapse; font-size:14px; }
-        th { text-align:left; font-size:12px; color:var(--muted); font-weight:600; padding:6px 8px; border-bottom:1px solid var(--border); }
+        th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); font-weight:600; padding:8px; border-bottom:1px solid var(--border); white-space:nowrap; }
         td { padding:10px 8px; border-bottom:1px solid var(--border); vertical-align:top; }
+        tbody tr:hover td { background:color-mix(in srgb, var(--soft) 70%, transparent); }
+        tbody tr:last-child td { border-bottom:0; }
         td.num { font-variant-numeric:tabular-nums; white-space:nowrap; }
+        td button { padding:4px 10px; font-size:13px; }
+        #ac-table td, #pr-table td { vertical-align:middle; }
         .good { color:var(--good); }
         .bad { color:var(--bad); }
         .mono { font-family:ui-monospace,Consolas,monospace; font-size:12px; word-break:break-all; }
         .flag { display:inline-block; font-size:12px; color:var(--warn); }
         .buttons { display:flex; gap:6px; white-space:nowrap; }
         .addresses { margin:0; padding-left:18px; }
-        h3 { font-size:13px; font-weight:600; color:var(--muted); margin:18px 0 8px; }
         .toggle { display:inline-flex; align-items:center; gap:6px; }
         .toggle input { min-width:0; flex:none; }
-        .chart { display:flex; align-items:flex-end; gap:4px; height:72px; }
-        .chart div { flex:1; min-height:2px; background:var(--accent); border-radius:3px 3px 0 0; opacity:.85; }
+        .cols { display:grid; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); gap:16px; }
+        .cols > section { margin-bottom:16px; min-width:0; }
+        .alerts { list-style:none; margin:0; padding:0; display:grid; gap:8px; }
+        .alerts li { display:grid; grid-template-columns:12px 1fr; gap:2px 12px; align-items:baseline; padding:11px 14px; border-radius:10px; background:var(--soft); border-left:3px solid var(--muted); }
+        .alerts li::before { content:""; width:8px; height:8px; border-radius:50%; background:var(--muted); align-self:center; grid-row:1; }
+        .alerts li.bad { border-left-color:var(--bad); }
+        .alerts li.bad::before { background:var(--bad); }
+        .alerts li.warn { border-left-color:var(--warn); }
+        .alerts li.warn::before { background:var(--warn); }
+        .alerts li.ok { border-left-color:var(--good); }
+        .alerts li.ok::before { background:var(--good); }
+        .alerts li strong { font-weight:600; }
+        .alerts li .muted { grid-column:2; }
+        .funnel { display:grid; gap:7px; }
+        .step { display:grid; grid-template-columns:minmax(120px,190px) 1fr 92px; gap:12px; align-items:center; font-size:14px; }
+        .step .track, .vrow .track { height:12px; background:var(--soft); border-radius:99px; overflow:hidden; }
+        .step .fill, .vrow .fill { height:100%; width:0; background:var(--accent); border-radius:99px; transition:width .4s; }
+        .step .count, .vrow .count { text-align:right; font-variant-numeric:tabular-nums; font-weight:600; }
+        .step .count small { color:var(--muted); font-weight:400; margin-left:4px; }
+        .states { display:grid; gap:18px; }
+        .state-head { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px; font-weight:600; }
+        .stack { display:flex; height:16px; border-radius:99px; overflow:hidden; background:var(--soft); gap:2px; }
+        .stack i { display:block; min-width:6px; }
+        .seg-good { background:var(--good); }
+        .seg-info { background:var(--info); }
+        .seg-wait { background:color-mix(in srgb, var(--info) 45%, var(--soft)); }
+        .seg-warn { background:var(--warn); }
+        .seg-bad { background:var(--bad); }
+        .seg-off { background:color-mix(in srgb, var(--muted) 45%, var(--soft)); }
+        .legend { list-style:none; margin:10px 0 0; padding:0; display:flex; flex-wrap:wrap; gap:6px 18px; font-size:13px; }
+        .legend li { display:inline-flex; align-items:center; gap:7px; }
+        .legend i { width:10px; height:10px; border-radius:3px; display:inline-block; }
+        .legend b { font-variant-numeric:tabular-nums; }
+        .versions { display:grid; gap:7px; }
+        .vrow { display:grid; grid-template-columns:minmax(80px,140px) 1fr 70px; gap:12px; align-items:center; font-size:14px; }
+        .vrow .fill { background:var(--info); }
+        .chart { display:flex; align-items:flex-end; gap:3px; height:72px; }
+        .chart div { flex:1; min-height:3px; background:color-mix(in srgb, var(--accent) 60%, transparent); border-radius:3px 3px 0 0; }
+        .chart div:last-child { background:var(--accent); }
         .chart div.zero { background:var(--border); }
         .chart-axis { display:flex; justify-content:space-between; font-size:12px; color:var(--muted); margin-top:4px; }
-        .charts { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:12px; }
-        .chart-card { margin:0; background:var(--soft); border-radius:10px; padding:12px 14px; min-width:0; }
+        .charts { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:12px; }
+        .chart-card { margin:0; background:var(--soft); border-radius:12px; padding:12px 14px; min-width:0; }
         .chart-card figcaption { display:flex; justify-content:space-between; align-items:baseline; gap:8px; font-size:13px; font-weight:600; margin-bottom:8px; }
-        .chart-card figcaption strong { font-size:18px; font-variant-numeric:tabular-nums; }
-        .chart-card .chart { gap:2px; height:64px; }
+        .chart-card figcaption strong { font-size:20px; font-variant-numeric:tabular-nums; }
+        .chips { display:flex; flex-wrap:wrap; gap:8px; }
+        .chip { display:inline-flex; gap:7px; align-items:baseline; padding:4px 11px; border-radius:99px; background:var(--soft); border:1px solid var(--border); font-size:13px; }
+        .chip b { font-variant-numeric:tabular-nums; }
         tr.details td { background:var(--soft); }
         tr.test td { opacity:.55; }
         .badge { display:inline-block; font-size:11px; font-weight:600; line-height:1.6; padding:0 7px; border-radius:99px; border:1px solid var(--border); background:var(--soft); color:var(--muted); margin:2px 4px 0 0; }
         .badge.live { color:var(--good); border-color:var(--good); }
         pre.report { margin:0; max-height:420px; overflow:auto; white-space:pre-wrap; word-break:break-word; font:12px/1.45 ui-monospace,Consolas,monospace; }
-        @media (max-width:640px) { input { min-width:0; } }
+        @media (max-width:640px) { input { min-width:0; } .step { grid-template-columns:100px 1fr 76px; gap:8px; } .vrow { grid-template-columns:70px 1fr 60px; gap:8px; } .cols { grid-template-columns:minmax(0,1fr); } header { position:static; } .tile strong { font-size:24px; } }
         """;
 
     public const string Script = """
@@ -479,6 +563,104 @@ internal static class AdminDashboard
             }
           }
 
+          const n = v => Number(v || 0).toLocaleString("en-US");
+          /** "1 computer", "3 computers". */
+          const pl = (count, word) => `${n(count)} ${word}${Number(count) === 1 ? "" : "s"}`;
+
+          /** "5 min ago", "3 h ago", "2 d ago"; the full date is the tooltip. */
+          function ago(t) {
+            if (!t) return "never";
+            const s = Math.max(0, (Date.now() - new Date(t).getTime()) / 1000);
+            if (s < 90) return "just now";
+            if (s < 3600) return `${Math.round(s / 60)} min ago`;
+            if (s < 86400) return `${Math.round(s / 3600)} h ago`;
+            return `${Math.round(s / 86400)} d ago`;
+          }
+
+          /** What a computer's processor or graphics card is doing (the check-in's words): its colour group and plain name. */
+          const STATES = {
+            "earning": ["good", "earning"],
+            "starting": ["info", "starting"],
+            "installing": ["info", "downloading its engine"],
+            "waiting-for-idle": ["wait", "waiting for the user to step away"],
+            "paused-electricity": ["warn", "paused: electricity costs more"],
+            "paused-by-user": ["warn", "paused with the main switch"],
+            "switched-off": ["off", "switched off in Settings"],
+            "needs-setup": ["off", "waiting for setup (address, region)"],
+            "none": ["off", "no usable card"],
+            "antivirus": ["bad", "blocked by antivirus"],
+            "error": ["bad", "hit a problem"],
+            "error-memory": ["bad", "problem: other apps hold its memory"],
+            "error-failed": ["bad", "problem: its coins failed or weren't paid"],
+            "error-pool-blocked": ["bad", "problem: something blocks the pool"],
+            "error-no-prices": ["bad", "problem: no coin prices"],
+            "error-nothing-pays": ["bad", "problem: no coin pays"],
+          };
+          const GROUPS = ["good", "wait", "info", "warn", "bad", "off"];
+
+          /** Everything that needs the operator's eye, worst first; each is [level, headline, detail]. */
+          function attention(s) {
+            const a = s.activity || {}, out = [];
+            const gaps = s.feeSlicesMissing || [];
+            if (gaps.length)
+              out.push(["bad", `${pl(gaps.length, "computer")} mined over a day without Otium's fee slice`,
+                `${gaps.map(g => g.deviceId.slice(0, 8)).join(", ")}: not fee-free, and the pool never showed them mining Otium's fee address. A modified app, or a pool lookup that missed it.`]);
+            const failing = device => (a.engineStates || []).filter(e => e.device === device && (STATES[e.state] || [])[0] === "bad");
+            for (const [device, name] of [["gpu", "graphics card"], ["cpu", "processor"]]) {
+              const list = failing(device), total = list.reduce((x, e) => x + Number(e.computers), 0);
+              if (total) out.push(["bad", `${pl(total, name)} not mining because of a problem`,
+                list.map(e => `${(STATES[e.state] || [])[1] || e.state}: ${n(e.computers)}`).join("; ")]);
+            }
+            const o = s.otium;
+            if (s.otiumError) out.push(["bad", "Otium's unMineable account can't be read", s.otiumError]);
+            if (o && o.problems && o.problems.length) out.push(["bad", "Otium's own payout has a problem", o.problems.join(" ")]);
+            if (o && o.autoPay === false) out.push(["warn", "Auto-pay is off for Otium's address at unMineable", "Turn it on there, or earnings aren't paid out."]);
+            const m = s.mysterium;
+            if (m && m.walletError) out.push(["bad", "Mysterium sponsor wallet can't be read", m.walletError]);
+            else if (m && m.sponsoring && (Number(m.walletBalanceMyst) < 1.5 || Number(m.walletBalancePol) < 0.3))
+              out.push(["warn", "Mysterium sponsor wallet is running low", `${m.walletBalanceMyst} MYST (0.15 per new node) and ${m.walletBalancePol} POL (gas); top it up.`]);
+            if (s.pearlFork && s.pearlFork.active) out.push(["warn", "Pearl's fork is active", "Only Hopper and Blackwell cards can mine Pearl now."]);
+            return out;
+          }
+
+          /** One horizontal bar row: a label, a bar sized against the largest, and the number (with a note). */
+          function barRow(cls, label, value, most, note) {
+            const row = el("div", null, cls);
+            const track = el("div", null, "track"), fill = el("div", null, "fill");
+            fill.style.width = (most > 0 ? Math.max(value > 0 ? 2 : 0, value / most * 100) : 0).toFixed(1) + "%";
+            track.append(fill);
+            const count = el("span", n(value), "count");
+            if (note) count.append(el("small", note));
+            row.append(el("span", label), track, count);
+            return row;
+          }
+
+          /** A device's states as one stacked bar (a segment per state, wider for more computers) with a legend. */
+          function stateBlock(title, entries) {
+            const block = el("div");
+            const total = entries.reduce((x, e) => x + Number(e.computers), 0);
+            const head = el("div", null, "state-head");
+            head.append(el("span", title), el("span", pl(total, "computer"), "muted"));
+            const stack = el("div", null, "stack");
+            stack.setAttribute("role", "img");
+            const legend = el("ul", null, "legend");
+            entries.sort((x, y) => GROUPS.indexOf((STATES[x.state] || ["off"])[0]) - GROUPS.indexOf((STATES[y.state] || ["off"])[0]));
+            for (const e of entries) {
+              const [group, name] = STATES[e.state] || ["off", e.state];
+              const seg = el("i", null, `seg-${group}`);
+              seg.style.flexGrow = String(e.computers);
+              seg.title = `${name}: ${n(e.computers)}`;
+              stack.append(seg);
+              const li = el("li");
+              const swatch = el("i", null, `seg-${group}`);
+              li.append(swatch, el("span", name), el("b", n(e.computers)));
+              legend.append(li);
+            }
+            stack.setAttribute("aria-label", entries.map(e => `${(STATES[e.state] || [])[1] || e.state}: ${e.computers}`).join(", "));
+            block.append(head, stack, legend);
+            return block;
+          }
+
           function renderNonCustodial(s) {
             const o = s.otium;
             const coin = o ? " " + o.coin : "";
@@ -490,7 +672,7 @@ internal static class AdminDashboard
                 + (o.autoPay ? "" : " (auto-pay is OFF: turn it on at unMineable)")
               : "";
             $("nc-rewarded").textContent = o ? amount(o.rewardedPast24h) : "–";
-            $("nc-rewarded-detail").textContent = o ? `past 24 hours; ${amount(o.rewardedPast30d)} in 30 days` : "";
+            $("nc-rewarded-detail").textContent = o ? `${amount(o.rewardedPast30d)} in 30 days` : "";
             $("nc-paid").textContent = o ? amount(o.paid) : "–";
             $("nc-paid-detail").textContent = o && o.problems.length ? o.problems.join(" ") : "to Otium's own address";
             $("nc-code").textContent = o ? o.referralCode : "–";
@@ -499,22 +681,60 @@ internal static class AdminDashboard
             const link = $("nc-link");
             link.hidden = !o;
             if (o) link.href = o.dashboardUrl;
+
+            // The verdict first: what needs attention, and a pill in the header that says so from anywhere on the page.
+            const alerts = attention(s);
+            const bad = alerts.filter(x => x[0] === "bad").length;
+            $("alerts").replaceChildren(...(alerts.length
+              ? alerts.map(([level, headline, detail]) => {
+                const li = el("li", null, level);
+                li.append(el("strong", headline), el("span", detail, "muted"));
+                return li;
+              })
+              : [(() => { const li = el("li", null, "ok"); li.append(el("strong", "Nothing needs attention."), el("span", "No failing computers, fee slice gaps or low wallets.", "muted")); return li; })()]));
+            $("attention-sub").textContent = alerts.length ? `${n(alerts.length)} thing${alerts.length === 1 ? "" : "s"} to look at` : "all clear";
+            const pill = $("status-pill");
+            pill.hidden = false;
+            pill.className = "pill " + (bad ? "bad" : alerts.length ? "warn" : "ok");
+            pill.textContent = bad ? `${n(bad)} need${bad === 1 ? "s" : ""} attention` : alerts.length ? `${n(alerts.length)} to watch` : "All clear";
+
             const a = s.activity || {};
-            const n = v => Number(v || 0).toLocaleString("en-US");
             $("uc-users").textContent = n(a.accounts);
-            $("uc-users-detail").textContent = `+${n(a.accountsNew24h)} in 24 h, +${n(a.accountsNew7d)} in 7 days`;
+            $("uc-users-detail").textContent = `+${n(a.accountsNew24h)} in 24 h, +${n(a.accountsNew7d)} in 7 days · ${n(a.devices)} computers`;
             $("uc-active").textContent = n(a.accountsActivePast24h);
-            $("uc-active-detail").textContent = `with a computer online; ${n(a.accountsActivePast7d)} in 7 days, ${n(a.accountsActivePast30d)} in 30 days`;
-            $("act-now").textContent = n(a.devicesActiveNow);
-            $("act-now-detail").textContent = `app running in the last 15 minutes; ${n(a.devicesSeenPast24h)} in 24 h, ${n(s.devicesSeenPast7Days)} in 7 days, ${n(a.devicesSeenPast30d)} in 30 days, ${n(a.devices)} ever`;
+            $("uc-active-detail").textContent = `${n(a.accountsActivePast7d)} in 7 days, ${n(a.accountsActivePast30d)} in 30; ${pl(a.devicesActiveNow, "computer")} online now`;
             const mn = a.miningNow || {}, m24 = a.miningPast24h || {};
-            $("uc-mining").textContent = n(mn.any);
-            $("uc-mining-detail").textContent = `processor ${n(mn.cpu)}, graphics card ${n(mn.gpu)}; ${n(m24.any)} mined in 24 h`;
+            $("uc-mining").textContent = n(m24.any);
+            $("uc-mining-detail").textContent = `processor ${n(m24.cpu)}, graphics card ${n(m24.gpu)}; ${n(mn.any)} mining right now`;
             const ret = a.retention || {};
             $("uc-retention").textContent = Number(ret.joinedOverAWeekAgo) ? Math.round(ret.seenPast7d / ret.joinedOverAWeekAgo * 100) + "%" : "–";
             $("uc-retention-detail").textContent = `${n(ret.seenPast7d)} of ${n(ret.joinedOverAWeekAgo)} computers that joined over a week ago were online this week`;
-            $("uc-per-user").textContent = Number(a.accounts) ? (Number(a.devices) / Number(a.accounts)).toLocaleString("en-US", { maximumFractionDigits: 2 }) : "–";
-            $("uc-per-user-detail").textContent = `${n(a.devices)} computers on ${n(a.accounts)} accounts`;
+
+            const pp = s.poolPayouts || {};
+            $("pp-paid").textContent = usd(pp.paidUsd);
+            $("pp-paid-detail").textContent = `${pl(pp.paidAccounts, "account")} paid at least once`;
+            $("pp-rewarded").textContent = usd(pp.rewarded30dUsd);
+
+            const steps = [
+              ["Users", a.accounts, ""], ["Seen in 30 days", a.accountsActivePast30d, ""], ["Seen in 7 days", a.accountsActivePast7d, ""],
+              ["Online in 24 hours", a.accountsActivePast24h, ""], ["Mining in 24 hours", m24.any, "computers"],
+            ];
+            const top = Math.max(1, Number(a.accounts) || 0);
+            $("uc-funnel").replaceChildren(...steps.map(([label, value, unit]) =>
+              barRow("step", label, Number(value) || 0, top, `${Math.round((Number(value) || 0) / top * 100)}%`)));
+
+            const states = a.engineStates || [];
+            const blocks = [["Processors", "cpu"], ["Graphics cards", "gpu"]].map(([title, device]) =>
+              [title, states.filter(e => e.device === device).map(e => ({ ...e }))]).filter(([, list]) => list.length);
+            $("uc-states").replaceChildren(...(blocks.length
+              ? blocks.map(([title, list]) => stateBlock(title, list))
+              : [el("p", "No computer running 0.1.3 or later checked in during the last 24 hours.", "muted")]));
+
+            const versions = a.appVersions || [];
+            const mostVersions = Math.max(1, ...versions.map(v => Number(v.devices) || 0));
+            $("uc-versions").replaceChildren(...(versions.length
+              ? versions.map(v => barRow("vrow", v.version, Number(v.devices) || 0, mostVersions))
+              : [el("p", "No computer was online in the last 7 days.", "muted")]));
 
             const daily = a.daily || [];
             const charts = [
@@ -530,35 +750,11 @@ internal static class AdminDashboard
             $("uc-counting").textContent = counted > 0
               ? `Active and mining counts start on ${daily[counted].day}, when the server began counting them; new computers and users go back further.`
               : "";
-            const versions = a.appVersions || [];
-            $("uc-versions").replaceChildren(...(versions.length
-              ? versions.map(v => el("li", `${v.version}: ${n(v.devices)} computer(s)`))
-              : [el("li", "No computer was online in the last 7 days.")]));
-
-            const stateNames = {
-              "earning": "earning", "waiting-for-idle": "waiting for the user to step away",
-              "paused-electricity": "paused: electricity would cost more", "antivirus": "blocked by antivirus",
-              "error": "hit a problem", "installing": "downloading its engine", "starting": "starting",
-              "switched-off": "switched off in Settings", "paused-by-user": "paused with the main switch",
-              "needs-setup": "waiting for setup (address, region)", "none": "no usable card",
-              "error-memory": "hit a problem: other apps hold its memory", "error-failed": "hit a problem: its coins failed or weren't paid",
-              "error-pool-blocked": "hit a problem: something blocks the pool", "error-no-prices": "hit a problem: no coin prices",
-              "error-nothing-pays": "hit a problem: no coin pays",
-            };
-            const states = a.engineStates || [];
-            $("uc-states").replaceChildren(...(states.length
-              ? states.map(e => el("li", `${e.device === "cpu" ? "Processor" : "Graphics card"} ${stateNames[e.state] || e.state}: ${n(e.computers)} computer(s)`))
-              : [el("li", "No computer running 0.1.3 or later checked in during the last 24 hours.")]));
-
-            const pp = s.poolPayouts || {};
-            $("pp-paid").textContent = usd(pp.paidUsd);
-            $("pp-paid-detail").textContent = `${n(pp.paidAccounts)} account(s) paid at least once`;
-            $("pp-rewarded").textContent = usd(pp.rewarded30dUsd);
 
             const an = s.analytics || { devices: 0, byKind: [] };
             const names = { cpu: "Processor", gpu: "Graphics card", sharing: "Internet sharing (Proxybase)", "sharing-mysterium": "Internet sharing (Mysterium)", "sharing-aioz": "Storage sharing (AIOZ)" };
             $("an-summary").textContent = an.devices
-              ? `${n(an.devices)} computer(s) shared their numbers this week.`
+              ? `${pl(an.devices, "computer")} shared their numbers this week.`
               : "No computer has shared its numbers this week (Share analytics is opt-in).";
             $("an-table").hidden = !an.byKind.length;
             $("an-rows").replaceChildren(...an.byKind.map(k => {
@@ -575,14 +771,17 @@ internal static class AdminDashboard
               : `Not active yet` + (pearl.height ? ` (block ${pearl.height}` + (pearl.activationHeight ? ` of ${pearl.activationHeight})` : ")") : "") + (pearl.reason ? `. ${pearl.reason}` : ".");
             const myst = s.mysterium;
             $("myst").hidden = !(myst && (myst.sponsoring || Number(myst.nodesSponsored) > 0));
-            if (myst) $("myst-detail").textContent = `${n(myst.nodesSponsored)} node(s) sponsored, ${myst.mystSpent} MYST spent (${myst.mystSpentPast24h} in 24 h)` +
+            if (myst) $("myst-detail").textContent = `${pl(myst.nodesSponsored, "node")} sponsored, ${myst.mystSpent} MYST spent (${myst.mystSpentPast24h} in 24 h)` +
               (myst.walletError ? `; wallet: ${myst.walletError}` : myst.walletBalanceMyst != null ? `; wallet holds ${myst.walletBalanceMyst} MYST and ${myst.walletBalancePol ?? "?"} POL` : "") +
               (myst.walletAddress ? `. Sponsor wallet (Polygon): ${myst.walletAddress}` : "");
 
-            $("nc-referred").textContent = s.referredAccounts;
-            $("nc-verified").textContent = `${s.verifiedReferrals} verified by their pool`;
-            const coins = $("nc-coins");
-            coins.replaceChildren(...s.accountsByCoin.map(c => el("li", `${c.coin === "none" ? "No payout address yet" : c.coin}: ${c.accounts}`)));
+            $("nc-referred").textContent = `${n(s.referredAccounts)} joined by invite`;
+            $("nc-verified").textContent = `${n(s.verifiedReferrals)} verified by their pool`;
+            $("nc-coins").replaceChildren(...s.accountsByCoin.map(c => {
+              const chip = el("span", null, "chip");
+              chip.append(el("span", c.coin === "none" ? "no address yet" : c.coin), el("b", n(c.accounts)));
+              return chip;
+            }));
           }
 
           /** One small bar chart: a bar per day, today's number in the corner, the first and last day underneath. */
@@ -626,7 +825,9 @@ internal static class AdminDashboard
             $("ac-rows").replaceChildren(...shown.map(a => {
               const tr = el("tr", null, a.isTest ? "test" : "");
               const joined = el("td");
-              joined.append(el("div", when(a.createdAt)), el("div", a.accountId.slice(0, 8), "mono muted"));
+              const joinedAt = el("div", ago(a.createdAt));
+              joinedAt.title = when(a.createdAt);
+              joined.append(joinedAt, el("div", a.accountId.slice(0, 8), "mono muted"));
               const badges = el("div");
               if (a.isTest) badges.append(el("span", "Test", "badge"));
               if (a.invited) badges.append(el("span", a.verified ? "Invited, verified" : "Invited", "badge"));
@@ -635,7 +836,8 @@ internal static class AdminDashboard
               tr.append(joined);
               tr.append(el("td", a.payout || "none yet", a.payout ? "mono" : "muted"));
               tr.append(el("td", String(a.computers), "num"));
-              const seen = el("td", a.lastSeen ? when(a.lastSeen) : "never", a.lastSeen ? "" : "muted");
+              const seen = el("td", ago(a.lastSeen), a.lastSeen ? "" : "muted");
+              if (a.lastSeen) seen.title = when(a.lastSeen);
               if (recent(a.lastSeen)) {
                 const live = el("div");
                 live.append(el("span", recent(a.lastMined) ? "Mining now" : "Online", "badge live"));
@@ -710,6 +912,8 @@ internal static class AdminDashboard
               const custodial = summary.custodial !== false;
               $("custodial").hidden = !custodial;
               $("noncustodial").hidden = custodial;
+              $("jump").hidden = custodial;
+              if (custodial) $("status-pill").hidden = true;
               if (custodial) {
                 renderSummary(summary);
                 renderQueue(status, await api(`/admin/cashouts?status=${encodeURIComponent(status)}`));
