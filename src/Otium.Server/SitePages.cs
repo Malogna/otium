@@ -154,7 +154,7 @@ internal static partial class SitePages
                     <div class="reveal">
                       <span class="label">Internet sharing</span>
                       <h2 id="sharing-title" class="mt-18">Get paid for internet bandwidth you aren't using.</h2>
-                      <p class="muted mt-20">Optional, and off until you tick it. Proxybase's customers, mostly AI agents and businesses that collect public web pages, use some of the internet bandwidth you aren't using. It's paid to your wallet in your coin, like mining. <a href="/sell-bandwidth">How selling bandwidth works</a></p>
+                      <p class="muted mt-20">Optional, and off until you tick it. Proxybase's customers, mostly AI agents and businesses that collect public web pages, use some of the internet bandwidth you aren't using. It's paid to your wallet in your coin, like mining. <a href="/sell-bandwidth">How selling your unused bandwidth works</a></p>
                       <p class="fine mt-14">The same tick adds two more networks: Mysterium carries traffic for its business customers and pays its MYST token straight to your own address, with no fee from Otium, and AIOZ uses some spare disk space to store and deliver files, paying its AIOZ token. Untick any you don't want.</p>
                     </div>
                     <div class="panel reveal">
@@ -366,7 +366,7 @@ internal static partial class SitePages
           <footer>
             <div class="wrap">
               <span>Otium · <i>otium</i> is Latin for leisure</span>
-              <nav aria-label="Site">{{string.Concat(legalLinks.Select(p => $"""<a href="/{p}">{Capitalize(p)}</a>"""))}}<a href="{{HelpUrl}}">Help</a><a href="/sell-computing-power">Sell processing power</a><a href="/sell-bandwidth">Sell bandwidth</a><a href="/pearl">What is Pearl?</a><a href="/antivirus">Antivirus help</a><a href="/compare/nicehash">vs NiceHash</a><a href="/compare/honeygain">vs Honeygain</a><a href="{{Core.AppIdentity.DiscordUrl}}">Discord</a>{{ContactLink}}<a href="https://github.com/Malogna/otium">Source code</a><a href="https://github.com/Malogna/otium/releases">Releases</a></nav>
+              <nav aria-label="Site">{{string.Concat(legalLinks.Select(p => $"""<a href="/{p}">{Capitalize(p)}</a>"""))}}<a href="{{HelpUrl}}">Help</a><a href="/sell-computing-power">Sell processing power</a><a href="/sell-bandwidth">Sell bandwidth</a><a href="/pearl">What is Pearl?</a><a href="/antivirus">Antivirus help</a>{{ComparisonLinks}}<a href="{{Core.AppIdentity.DiscordUrl}}">Discord</a>{{ContactLink}}<a href="https://github.com/Malogna/otium">Source code</a><a href="https://github.com/Malogna/otium/releases">Releases</a></nav>
             </div>
           </footer>
           <script src="{{SiteAssets.Url("site.js")}}" defer></script>
