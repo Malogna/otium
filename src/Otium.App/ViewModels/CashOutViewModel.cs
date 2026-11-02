@@ -20,7 +20,7 @@ public sealed record CashoutChoice(CashoutMethodInfo Info)
 
     public string Title => CashoutMethods.Label(Info.Method);
 
-    public string Subtitle => Info.Available ? $"{Info.Network} · from {Format.Money(Info.MinUsd)}" : $"Paused: {Info.UnavailableReason}";
+    public string Subtitle => Info.Available ? $"{Info.Network} · from {Format.MoneyBoth(Info.MinUsd)}" : $"Paused: {Info.UnavailableReason}";
 
     public bool Available => Info.Available;
 }
@@ -50,7 +50,7 @@ public partial class CashOutViewModel(AppHost host, Action close) : ViewModelBas
     [NotifyCanExecuteChangedFor(nameof(ConfirmCommand))]
     public partial bool IsSending { get; set; }
 
-    public string Amount => $"{Format.Money(host.Settings.Account.AvailableUsd)}";
+    public string Amount => Format.MoneyBoth(host.Settings.Account.AvailableUsd);
 
     public string DestinationLabel => Selected is { } s
         ? $"Your {s.Info.Name} address on the {s.Info.Network} network"
@@ -65,7 +65,7 @@ public partial class CashOutViewModel(AppHost host, Action close) : ViewModelBas
     };
 
     public string MinimumText => Selected is { } s
-        ? $"Minimum {Format.Money(s.Info.MinUsd)}. Sent as {CashoutMethods.Ticker(s.Method)} at today's price." +
+        ? $"Minimum {Format.MoneyBoth(s.Info.MinUsd)}. Sent as {CashoutMethods.Ticker(s.Method)} at today's price." +
           (s.Info.FeeNote is null ? " Otium pays the network fee." : "")
         : "";
 
@@ -133,10 +133,10 @@ public partial class CashOutViewModel(AppHost host, Action close) : ViewModelBas
             var coin = CashoutMethods.Ticker(choice.Method);
             Result = cashout.Status switch
             {
-                CashoutStatuses.Review => $"Got it. Your {Format.Money(cashout.AmountUsd)} cash-out gets a quick check first and is usually sent within a day. We'll email you a receipt when it's sent.",
-                CashoutStatuses.Paid => $"Sent! {Format.Money(cashout.AmountUsd)} in {coin} is on its way. A receipt is in your email.",
-                _ when choice.Info.FeeNote is not null => $"Done. {Format.Money(cashout.AmountUsd)} is being swapped to {coin} and sent to your wallet, usually within 10–30 minutes. We'll email you a receipt when it arrives.",
-                _ => $"Done. {Format.Money(cashout.AmountUsd)} in {coin} is being sent to your wallet automatically, usually within a few minutes. We'll email you a receipt when it's sent.",
+                CashoutStatuses.Review => $"Got it. Your {Format.MoneyUsd(cashout.AmountUsd)} cash-out gets a quick check first and is usually sent within a day. We'll email you a receipt when it's sent.",
+                CashoutStatuses.Paid => $"Sent! {Format.MoneyUsd(cashout.AmountUsd)} in {coin} is on its way. A receipt is in your email.",
+                _ when choice.Info.FeeNote is not null => $"Done. {Format.MoneyUsd(cashout.AmountUsd)} is being swapped to {coin} and sent to your wallet, usually within 10–30 minutes. We'll email you a receipt when it arrives.",
+                _ => $"Done. {Format.MoneyUsd(cashout.AmountUsd)} in {coin} is being sent to your wallet automatically, usually within a few minutes. We'll email you a receipt when it's sent.",
             };
             OnPropertyChanged(nameof(Amount));
         }
@@ -187,7 +187,7 @@ public sealed record CashoutRow(string Amount, string Where, string When, string
             ? $"PayPal · {c.Destination}"
             : $"{CashoutMethods.Label(c.Method)} · {c.Destination}";
         return new CashoutRow(
-            Format.Money(c.AmountUsd),
+            Format.MoneyUsd(c.AmountUsd),
             where,
             Format.Date(c.CreatedAt),
             status,

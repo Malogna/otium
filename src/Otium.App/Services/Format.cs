@@ -1,4 +1,5 @@
 using System.Globalization;
+using Otium.Core.Currency;
 
 namespace Otium.App.Services;
 
@@ -6,18 +7,22 @@ public static class Format
 {
     private static readonly CultureInfo Culture = CultureInfo.InvariantCulture;
 
-    public static string Usd(double value)
-    {
-        var sign = value < 0 ? "-" : "";
-        var abs = Math.Abs(value);
-        // Most CPU earnings are fractions of a dollar, so show an extra digit below $1.
-        return abs < 1 ? $"{sign}${abs.ToString("0.000", Culture)}" : $"{sign}${abs.ToString("#,0.00", Culture)}";
-    }
+    /// <summary>The currency amounts are shown in (the computer's region, or the one picked in Settings); dollars until known.</summary>
+    public static DisplayCurrency Display { get; set; } = DisplayCurrency.Usd;
+
+    /// <summary>An amount of dollars in the currency shown, with an extra digit below one dollar (most earnings are fractions of one).</summary>
+    public static string Usd(double value) => Display.Format(value);
 
     private static readonly string[] HashUnits = ["H/s", "kH/s", "MH/s", "GH/s", "TH/s", "PH/s", "EH/s"];
 
-    /// <summary>Cents-precision dollars for balances and cash-outs, e.g. "$12.34", independent of the system locale.</summary>
-    public static string Money(decimal usd) => $"${usd.ToString("#,0.00", Culture)}";
+    /// <summary>Cents-precision amount for balances, e.g. "$12.34" or "11,34 €", in the currency shown.</summary>
+    public static string Money(decimal usd) => Display.Format((double)usd, cents: true);
+
+    /// <summary>Dollars exactly as they are, for prices and amounts that are really in dollars ("$0.15/kWh").</summary>
+    public static string MoneyUsd(decimal usd) => DisplayCurrency.Usd.Format((double)usd, cents: true);
+
+    /// <summary>"$5.00", or "$5.00 (≈ €4.60)" when another currency is shown: for cash-outs, which are paid out in dollars' worth.</summary>
+    public static string MoneyBoth(decimal usd) => Display.FormatWithUsd(usd);
 
     public static string Hashrate(double hps)
     {

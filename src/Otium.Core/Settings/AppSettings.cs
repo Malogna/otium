@@ -88,6 +88,12 @@ public sealed class AppSettings
     /// <summary>Desktop notifications for earnings, payouts and problems. On by default; one switch in Settings.</summary>
     public bool NotificationsEnabled { get; set; } = true;
 
+    /// <summary>
+    /// The currency amounts are shown in: an ISO code like "EUR", or "auto" (the default) for the currency of the computer's
+    /// region. Earnings are always worked out in dollars; this only changes how they read.
+    /// </summary>
+    public string Currency { get; set; } = "auto";
+
     /// <summary>The pool's "paid" total last seen, per pool and coin, so a new payout is noticed once.</summary>
     public Dictionary<string, double> NotifiedPaid { get; set; } = [];
 

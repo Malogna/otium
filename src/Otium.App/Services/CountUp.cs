@@ -16,6 +16,9 @@ public sealed class CountUp(Action<double> update, TimeSpan? duration = null)
 
     public double Current { get; private set; }
 
+    /// <summary>Writes the current value again, for when only the way it is written changed (a different currency).</summary>
+    public void Refresh() => update(Current);
+
     public void AnimateTo(double target)
     {
         if (Math.Abs(target - _to) < 1e-9 && _timer is not null)

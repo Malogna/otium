@@ -3,6 +3,7 @@
              xmlns:vm="using:Otium.App.ViewModels"
              xmlns:views="using:Otium.App.Views"
              xmlns:power="using:Otium.Core.Power"
+             xmlns:currency="using:Otium.Core.Currency"
              x:Class="Otium.App.Views.SettingsView"
              x:DataType="vm:SettingsViewModel">
 
@@ -21,6 +22,7 @@
             <Button Classes="section" Content="Devices" Tag="DevicesSection" Click="JumpTo" />
             <Button Classes="section" Content="Internet sharing" Tag="SharingSection" Click="JumpTo"
                     IsVisible="{Binding ShowSharingSection}" />
+            <Button Classes="section" Content="Currency" Tag="CurrencySection" Click="JumpTo" />
             <Button Classes="section" Content="Electricity" Tag="ElectricitySection" Click="JumpTo" />
             <Button Classes="section" Content="Payout" Tag="PayoutSection" Click="JumpTo" />
             <Button Classes="section" Content="Your data" Tag="DataSection" Click="JumpTo" />
@@ -321,6 +323,23 @@
                                 </StackPanel>
                             </StackPanel>
                         </Border>
+                    </StackPanel>
+                </Border>
+
+                <Border x:Name="CurrencySection" Classes="card">
+                    <StackPanel Spacing="14">
+                        <TextBlock Classes="h2" Text="Currency" />
+                        <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap"
+                                   Text="Which currency Otium shows your earnings in. It follows your computer's region unless you pick another." />
+                        <ComboBox ItemsSource="{Binding CurrencyOptions}" SelectedItem="{Binding SelectedCurrency}" MinWidth="320"
+                                  AutomationProperties.Name="Currency">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="currency:CurrencyOption">
+                                    <TextBlock Text="{Binding Label}" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Text="{Binding CurrencyNote}" />
                     </StackPanel>
                 </Border>
 

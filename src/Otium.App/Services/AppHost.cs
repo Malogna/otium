@@ -11,6 +11,7 @@ using Otium.Core.Power;
 using Otium.Core.Projections;
 using Otium.Core.Providers;
 using Otium.Core.Accounts;
+using Otium.Core.Currency;
 using Otium.Core.Settings;
 using Otium.Core.Switching;
 using Otium.Core.Wallets;
@@ -79,6 +80,9 @@ public sealed class AppHost : IAsyncDisposable
         var gpuIdle = new BrowsingIdleDetector(idle, () => Settings.EarnWhileBrowsing, ForegroundMonitor.ForThisPlatform(), PowerSource.OnBattery);
         _historyStore = new JsonFileStore<EarningsHistory>(Paths.HistoryFile);
         History = _historyStore.Load();
+        Currency = new CurrencyService(Paths.RatesFile, () => Settings.Currency);
+        Currency.Changed += () => CurrencyChanged?.Invoke();
+        Currency.Apply();
         Estimator = new EarningsEstimator(Pool);
         ElectricityPrices = new ElectricityPriceProvider(_http);
 
@@ -1079,6 +1083,12 @@ public sealed class AppHost : IAsyncDisposable
 
     public event Action? HistoryChanged;
 
+    /// <summary>Where amounts are shown in the computer's currency (or the one picked in Settings).</summary>
+    public CurrencyService Currency { get; }
+
+    /// <summary>Raised when amounts should be written again: another currency was picked, or its rate changed.</summary>
+    public event Action? CurrencyChanged;
+
     /// <summary>How long the user has been away from keyboard and mouse after which a ready update installs itself.</summary>
     public static readonly TimeSpan InstallUpdateAfterAway = TimeSpan.FromMinutes(10);
 
@@ -1328,6 +1338,7 @@ public sealed class AppHost : IAsyncDisposable
             if (Settings.DeleteSharedEarnings && !Settings.ShareEarningsStats)
                 await DeleteSharedEarningsAsync();
             await RefreshGpuPolicyAsync(client, ct);
+            await Currency.RefreshAsync(new RatesClient(CreateServerHttp()), DateTimeOffset.UtcNow, ct);
             await ReportReferralShareAsync(client, ct);
         }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException or UriFormatException or InvalidOperationException or AccountRequestException)
@@ -1569,7 +1580,9 @@ public sealed class AppHost : IAsyncDisposable
         return result.Reference;
     }
 
-    private AccountClient CreateClient()
+    private AccountClient CreateClient() => new(CreateServerHttp());
+
+    private static HttpClient CreateServerHttp()
     {
         var http = new HttpClient
         {
@@ -1579,7 +1592,7 @@ public sealed class AppHost : IAsyncDisposable
         // The server can require a minimum version (older ones trusted their settings file for the fee).
         if (AppVersions.Of(typeof(AppHost).Assembly) is { } version)
             http.DefaultRequestHeaders.TryAddWithoutValidation(AppVersions.Header, version);
-        return new(http);
+        return http;
     }
 
     private void Apply(AccountSummary summary)

@@ -429,6 +429,17 @@ settings and the Windows uninstaller remove it. Microsoft Defender flags the Win
 reputation detection); the app's "Allow in Windows Security" fix covers it. Share analytics report it as
 `sharing-mysterium`, kept apart from Proxybase's `sharing`.
 
+**Earnings by period and in your currency.** `EarningsHistory` keeps hourly buckets for 14 days, daily buckets for 400
+days (`DayBucket`, filled in from the hours still kept when an older `history.json` has none) and monthly buckets for two
+years. `EarningsPeriods` builds the Home chart (24 hours, 7 days, 30 days, 12 months) and the earned-to-date tiles from
+them; `Projection` gives per day, week, month (30 days) and year (365 days) at the measured pace. Amounts are worked
+out in dollars and only written in another currency by `DisplayCurrency` (the user's locale decides grouping, decimal
+mark and symbol position, with an extra digit below one dollar). `GET /api/v1/rates` (`FxRatesService`, no device
+needed) returns units per dollar from open.er-api.com, falling back to Frankfurter, cached six hours and kept a week if
+both are down; the app (`CurrencyService`) asks at most every 12 hours with its account check-in, keeps the answer in
+`rates.json` and falls back to dollars without any. `AppSettings.Currency` is "auto" (the region's currency) or an ISO
+code. Cash-outs and the electricity price stay in dollars (`Format.MoneyBoth`, `Format.MoneyUsd`).
+
 **Where computers get stuck.** The app's regular check-in also carries one word per device from a fixed list
 (`EngineStateTags`: earning, waiting-for-idle, paused-electricity, antivirus, error, installing, starting,
 switched-off, paused-by-user, needs-setup, none). The server keeps only the latest word per computer (`devices.cpu_state`,

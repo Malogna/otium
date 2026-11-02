@@ -92,6 +92,20 @@ foreach (var variant in new[] { ThemeVariant.Light, ThemeVariant.Dark })
     homeVm.InternetSharing.ShowConsent = true;
     Shoot(new HomeView { DataContext = homeVm }, $"home-{theme}", 900, 2800);
 
+    // The earnings card as a German user sees it (euros, "1.234,56 €"), and on the week chart.
+    Format.Display = new Otium.Core.Currency.DisplayCurrency("EUR", 0.92, System.Globalization.CultureInfo.GetCultureInfo("de-DE"));
+    var euroVm = new HomeViewModel(host, () => { });
+    // The simulated miners give no pace, so show the projected row with sample amounts.
+    euroVm.HasProjection = true;
+    euroVm.ProjDayText = Format.Usd(2.06);
+    euroVm.ProjWeekText = Format.Usd(14.42);
+    euroVm.ProjMonthText = Format.Usd(61.8);
+    euroVm.ProjYearText = Format.Usd(751.9);
+    Shoot(new HomeView { DataContext = euroVm }, $"home-euro-{theme}", 900, 1500);
+    euroVm.SelectChartPeriodCommand.Execute("Week");
+    Shoot(new HomeView { DataContext = euroVm }, $"home-euro-week-{theme}", 900, 1500);
+    Format.Display = Otium.Core.Currency.DisplayCurrency.Usd;
+
     // The pool just paid: "You've been paid", which comes before the other result cards.
     results.IsMeasuring = false;
     results.ShowMeasureResult = false;

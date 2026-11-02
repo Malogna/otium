@@ -55,6 +55,10 @@ Iran, China and Egypt).
   Denmark and Finland. Grid fees and taxes may not be included, so treat it as an estimate. While it's paused, the
   overview shows what mining would earn a day and what the power would cost, with a one-click "I don't pay for
   electricity".
+- **Projections in your own currency.** The overview shows what your pace would earn per day, week, month and year
+  next to what you really earned today, this week, this month and this year, with a chart for the last day, week,
+  month or year. Amounts show in the currency of your computer's region at the day's exchange rate (or one you pick in
+  Settings); everything is still worked out in dollars.
 - **Steps aside for you.** Mining runs only while you're away and stops within a second when you're back (if you let
   it mine while you work, it runs at the lowest priority). It keeps the computer awake
   while it earns (the screen still turns off), never keeps a laptop on battery awake, and makes the computer warmer
