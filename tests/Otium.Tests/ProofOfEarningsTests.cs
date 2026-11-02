@@ -914,12 +914,19 @@ public sealed class ProofOfEarningsTests
         var (honest, _, _) = await server.Register(TestAddresses.Usdt(0));
         var (modified, _, _) = await server.Register(TestAddresses.Usdt(1));
         var (feeFree, _, _) = await server.Register(TestAddresses.Usdt(2));
+        var (light, _, _) = await server.Register(TestAddresses.Usdt(3));
         server.Unmineable.Workers[TestAddresses.Usdt(0)] = [new UnmineableWorker("pearlpow", $"ot{honest[..8]}g", true, 1, 1)];
+        server.Unmineable.Workers[TestAddresses.Usdt(3)] = [new UnmineableWorker("pearlpow", $"ot{light[..8]}g", true, 1, 1)];
         server.Unmineable.Workers[TestAddresses.Usdt(1)] = [new UnmineableWorker("pearlpow", $"ot{modified[..8]}g", true, 1, 1)];
         server.Unmineable.Workers[TestAddresses.Usdt(2)] = [new UnmineableWorker("pearlpow", $"ot{feeFree[..8]}g", true, 1, 1)];
         // Only the honest computer's fee slices reach Otium's address; the third account is still fee-free.
         server.Unmineable.Workers[fee] = [new UnmineableWorker("pearlpow", $"ot{honest[..8]}g", true, 1, 1)];
         var store = server.Factory.Services.GetRequiredService<Otium.Server.Data.OtiumStore>();
+        // Every computer has mined 30 hours (a day and a bit: its fee slice has come due), except the light one: 11 hours,
+        // which hasn't reached the last half hour of its first 24 yet, so no slice is missing.
+        foreach (var device in new[] { honest, modified, feeFree })
+            store.RecordMiningTime(device, 30 * 3600, null, server.Time.GetUtcNow());
+        store.RecordMiningTime(light, 11 * 3600, null, server.Time.GetUtcNow());
         var feeFreeAccount = store.FindDevice(feeFree)!.AccountId;
         store.Upsert(store.FindAccount(feeFreeAccount)! with { FeeFreeUntil = server.Time.GetUtcNow().AddDays(10) });
 
@@ -933,8 +940,13 @@ public sealed class ProofOfEarningsTests
         await checker.CheckAllAsync(CancellationToken.None);
         await watcher.CheckAsync(CancellationToken.None);
         var gap = Assert.Single(store.FeeSliceGaps(server.Time.GetUtcNow(), TimeSpan.FromDays(7), TimeSpan.FromDays(2)));
-        Assert.Equal(modified, gap.DeviceId);
+        Assert.Equal(modified, gap.DeviceId); // not the light computer, which hasn't mined long enough to owe one yet
         Assert.Null(gap.FeeSeen);
+
+        // The light computer joins the list once it has mined past the first fee slice.
+        store.RecordMiningTime(light, 27 * 3600, null, server.Time.GetUtcNow().AddHours(1));
+        var gaps = store.FeeSliceGaps(server.Time.GetUtcNow(), TimeSpan.FromDays(7), TimeSpan.FromDays(2));
+        Assert.Equal(new[] { light, modified }.Order(), gaps.Select(g => g.DeviceId).Order());
     }
 
     [Theory]

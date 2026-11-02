@@ -1521,9 +1521,17 @@ public sealed class OtiumStore
         Execute("DELETE FROM worker_sightings WHERE last_seen < $b", ("$b", Format(before)));
 
     /// <summary>
+    /// A computer's fee slice is the last ~29 minutes of each 24 hours of its mining time (<c>FeePolicy.CycleLength</c>:
+    /// the user's share comes first), so one that has mined less than a day hasn't reached it yet. The gap check waits for
+    /// this much per processor or graphics card before it counts a missing slice (a day, and a little over for the slice).
+    /// </summary>
+    public static readonly TimeSpan FeeSliceReachedAfter = TimeSpan.FromHours(26);
+
+    /// <summary>
     /// Computers the pools showed mining on their own address within <paramref name="window"/> (and first at least
     /// <paramref name="settle"/> ago), without one sighting on Otium's fee address in that window, whose account had no
-    /// fee-free time in it: they mine without Otium's fee.
+    /// fee-free time in it, and whose processor or graphics card has mined at least <see cref="FeeSliceReachedAfter"/>
+    /// (earlier, the slice isn't due yet): they mine without Otium's fee.
     /// </summary>
     public IReadOnlyList<(string DeviceId, string AccountId, DateTimeOffset MiningSeen, DateTimeOffset? FeeSeen)> FeeSliceGaps(
         DateTimeOffset now, TimeSpan window, TimeSpan settle)
@@ -1539,9 +1547,11 @@ public sealed class OtiumStore
             WHERE own.place = 'own' AND own.last_seen >= $since AND own.first_seen <= $settled
               AND (fee.last_seen IS NULL OR fee.last_seen < $since)
               AND (a.fee_free_until IS NULL OR a.fee_free_until < $since)
+              AND (d.cpu_mined_seconds >= $due OR d.gpu_mined_seconds >= $due)
               AND a.merged_into IS NULL AND a.deleted_at IS NULL
             ORDER BY own.last_seen DESC
             """;
+        cmd.Parameters.AddWithValue("$due", FeeSliceReachedAfter.TotalSeconds);
         cmd.Parameters.AddWithValue("$since", Format(now - window));
         cmd.Parameters.AddWithValue("$settled", Format(now - settle));
         using var r = cmd.ExecuteReader();
