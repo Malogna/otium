@@ -261,11 +261,29 @@ public sealed class SrbMinerProviderTests : IDisposable
 
     private SrbMinerGpuProvider CreateProvider(Func<GpuPolicy?>? policy, double pricePerKwh, string? benchmarks = null, Func<GpuInfo, double?>? freeMemoryGb = null,
         IUnmineableApi? unmineable = null, Func<string, int, CancellationToken, Task<string?>>? poolBlocked = null, IReadOnlyList<GpuInfo>? gpus = null,
-        Func<bool>? optimize = null, Func<GpuInfo, GpuStats?>? stats = null, Func<int, bool>? powerCap = null) =>
+        Func<bool>? optimize = null, Func<GpuInfo, GpuStats?>? stats = null, Func<int, bool>? powerCap = null,
+        Func<bool>? silentTuning = null, Func<int>? fanLimit = null, Func<CancellationToken, Task>? prepare = null) =>
         new(new HttpClient(), _pool, Path.Combine(_dir, "engines"), Path.Combine(_dir, benchmarks ?? $"bench-{Guid.NewGuid():N}.json"),
             gpus ?? [Rtx3080], _meter, () => pricePerKwh, _factory, _time,
             asset: _asset, policy: policy, freeMemoryGb: freeMemoryGb, unmineable: unmineable,
-            poolBlocked: poolBlocked, optimize: optimize ?? (() => true), stats: stats, powerCap: powerCap);
+            poolBlocked: poolBlocked, optimize: optimize ?? (() => true), stats: stats, powerCap: powerCap,
+            silentTuning: silentTuning, fanLimit: fanLimit, prepare: prepare);
+
+    /// <summary>Pearl on an RTX 3080, paid power, the card's readings and power limits under the test's control.</summary>
+    private async Task<(SrbMinerGpuProvider Provider, ProviderRunOptions Options, List<int> Caps)> SilentPearlAsync(
+        Func<GpuStats> reading, string? benchmarks = null, Func<CancellationToken, Task>? prepare = null)
+    {
+        _meter.Watts = () => 348;
+        var caps = new List<int>();
+        var unmineable = new CreditingUnmineable();
+        unmineable.Workers.Add(new UnmineableWorker("pearlpow", "ot1234abcdg", true, 9.2e13, 9.2e13));
+        var provider = CreateProvider(() => UnmineablePearlPolicy(), pricePerKwh: 0.15, benchmarks: benchmarks ?? "silent.json", unmineable: unmineable,
+            stats: _ => reading(), powerCap: percent => { caps.Add(percent); return true; },
+            silentTuning: () => true, fanLimit: () => 50, prepare: prepare);
+        var options = new ProviderRunOptions(new MiningTarget(TestAddresses.Usdt(15), PayoutRole.User), "ot1234abcdg", 100);
+        await provider.StartAsync(options, CancellationToken.None);
+        return (provider, options, caps);
+    }
 
     [Fact]
     public async Task A_pool_blocked_on_this_computer_is_explained_instead_of_failing_the_coin()
@@ -285,6 +303,131 @@ public sealed class SrbMinerProviderTests : IDisposable
         Assert.Equal("Graphics card isn't mining: something on this computer blocks the mining pool (unmineable.com).", status.Problem);
         Assert.Equal("pearlhash", provider.CurrentAlgorithm); // not failed over: Pearl isn't the problem
         Assert.Null(provider.SetAsideReason("pearlhash"));
+    }
+
+    [Fact]
+    public async Task Silent_tuning_raises_the_power_limit_while_the_fans_stay_quiet_and_backs_off_when_they_dont()
+    {
+        var fan = 35.0;
+        var (provider, options, caps) = await SilentPearlAsync(() => new GpuStats("RTX 3080", 66, 100, fan, 348, 1845, 2, 12));
+        await RunForProvider(provider, SrbMinerGpuProvider.BenchmarkDuration + TimeSpan.FromSeconds(10)); // Pearl tested
+        Assert.Equal("pearlhash", provider.CurrentAlgorithm);
+        Assert.Empty(caps);
+
+        // Quiet fans for six minutes once settled: one step up, and the row says it is tuning.
+        var status = await RunForProvider(provider, IntensityTuner.Warmup + SrbMinerGpuProvider.ClimbAfter + TimeSpan.FromSeconds(30));
+        Assert.Equal([75], caps);
+        Assert.Equal("tuning", status.Phase);
+        Assert.Contains("75%", status.PhaseDetail);
+
+        // And on, a step per six quiet minutes.
+        await RunForProvider(provider, SrbMinerGpuProvider.ClimbAfter * 3 + TimeSpan.FromSeconds(30));
+        Assert.Equal([75, 80, 85, 90], caps);
+
+        // The fans reach the limit at 90%: two steps back, and 90 isn't tried again for a couple of hours.
+        fan = 55;
+        await RunForProvider(provider, SrbMinerGpuProvider.HotFor + TimeSpan.FromSeconds(10));
+        Assert.Equal(80, caps[^1]);
+        fan = 35;
+        await RunForProvider(provider, SrbMinerGpuProvider.ClimbAfter * 3);
+        Assert.Equal([75, 80, 85, 90, 80, 85], caps); // 85 is fine again, 90 stays out
+
+        // Remembered: after a restart it starts at the level it settled at.
+        await provider.StopAsync(CancellationToken.None);
+        await provider.StartAsync(options, CancellationToken.None);
+        await RunForProvider(provider, IntensityTuner.Warmup + TimeSpan.FromSeconds(30));
+        Assert.Equal(85, caps[^1]);
+    }
+
+    [Fact]
+    public async Task Without_silent_tuning_the_power_limit_is_never_raised()
+    {
+        _meter.Watts = () => 348;
+        var caps = new List<int>();
+        var unmineable = new CreditingUnmineable();
+        unmineable.Workers.Add(new UnmineableWorker("pearlpow", "ot1234abcdg", true, 9.2e13, 9.2e13));
+        var provider = CreateProvider(() => UnmineablePearlPolicy(), pricePerKwh: 0.15, unmineable: unmineable,
+            stats: g => new GpuStats(g.Name, 60, 100, 30, 348, 1845, 2, 12), powerCap: percent => { caps.Add(percent); return true; });
+        await provider.StartAsync(new ProviderRunOptions(new MiningTarget(TestAddresses.Usdt(15), PayoutRole.User), "ot1234abcdg", 100), CancellationToken.None);
+        await RunForProvider(provider, SrbMinerGpuProvider.BenchmarkDuration + SrbMinerGpuProvider.ClimbAfter * 3);
+        Assert.Empty(caps);
+    }
+
+    [Fact]
+    public async Task A_card_that_reaches_90_degrees_is_stopped_and_starts_again_only_once_it_has_cooled()
+    {
+        var temperature = 70.0;
+        var (provider, options, _) = await SilentPearlAsync(() => new GpuStats("RTX 3080", temperature, 100, 70, 348, 1845, 2, 12));
+        await RunForProvider(provider, SrbMinerGpuProvider.BenchmarkDuration + TimeSpan.FromSeconds(10));
+        Assert.Equal("pearlhash", provider.CurrentAlgorithm);
+
+        temperature = 91;
+        var status = await RunUntilErrorAsync(provider, TimeSpan.FromSeconds(20)); // not for a spike, but for a few seconds
+        Assert.Equal(ProviderState.Error, status.State);
+        Assert.Equal(ProblemKinds.TooHot, status.ProblemKind);
+        Assert.Contains("91", status.Problem);
+
+        // The engine tries again a minute later: still hot, so it waits, and at 80 °C it mines again.
+        temperature = 84;
+        var wait = await Assert.ThrowsAsync<ProviderProblemException>(() => provider.StartAsync(options, CancellationToken.None));
+        Assert.Equal(ProblemKinds.TooHot, wait.Kind);
+        temperature = 79;
+        await provider.StartAsync(options, CancellationToken.None);
+        Assert.Equal("pearlhash", provider.CurrentAlgorithm);
+    }
+
+    [Fact]
+    public async Task A_fan_that_stands_still_on_a_warm_busy_card_stops_mining_too()
+    {
+        var (provider, _, _) = await SilentPearlAsync(() => new GpuStats("RTX 3080", 85, 100, 0, 348, 1845, 2, 12));
+        var status = await RunUntilErrorAsync(provider, TimeSpan.FromSeconds(30));
+        Assert.Equal(ProblemKinds.TooHot, status.ProblemKind);
+        Assert.Contains("fan isn't spinning", status.Problem);
+    }
+
+    [Fact]
+    public async Task A_test_run_while_the_card_was_throttled_by_heat_is_thrown_away_and_repeated_once_cool()
+    {
+        var temperature = 88.0;
+        var throttle = GpuThrottle.SoftwareThermal;
+        var (provider, options, _) = await SilentPearlAsync(() => new GpuStats("RTX 3080", temperature, 100, 70, 348, 1100, 2, 12, Throttle: throttle));
+        var status = await RunUntilErrorAsync(provider, SrbMinerGpuProvider.BenchmarkDuration + TimeSpan.FromSeconds(10));
+        Assert.Equal(ProblemKinds.TooHot, status.ProblemKind);
+        Assert.Contains("Testing", status.Problem);
+        Assert.Empty(provider.Benchmarks); // nothing recorded: the number would have been a third of the real one
+
+        // Cooled: it tests again, and this time the result stands.
+        temperature = 70;
+        throttle = GpuThrottle.None;
+        await provider.StartAsync(options, CancellationToken.None);
+        await RunForProvider(provider, SrbMinerGpuProvider.BenchmarkDuration + TimeSpan.FromSeconds(10));
+        var result = Assert.Single(provider.Benchmarks);
+        Assert.True(result.Succeeded);
+        Assert.False(result.Throttled);
+    }
+
+    [Fact]
+    public async Task The_prepare_step_runs_before_every_launch_of_the_miner()
+    {
+        var prepared = 0;
+        var (provider, _, _) = await SilentPearlAsync(() => new GpuStats("RTX 3080", 60, 100, 30, 348, 1845, 2, 12), prepare: _ =>
+        {
+            Assert.Equal(prepared, _factory.Launches.Count); // before the miner for this launch exists
+            prepared++;
+            return Task.CompletedTask;
+        });
+        await RunForProvider(provider, SrbMinerGpuProvider.BenchmarkDuration + TimeSpan.FromSeconds(10));
+        Assert.True(prepared >= 1);
+        Assert.Equal(_factory.Launches.Count, prepared);
+    }
+
+    [Fact]
+    public async Task While_testing_the_row_says_so_with_the_coin_and_its_place_in_the_tests()
+    {
+        var (provider, _, _) = await SilentPearlAsync(() => new GpuStats("RTX 3080", 60, 100, 30, 348, 1845, 2, 12));
+        var status = await RunForProvider(provider, TimeSpan.FromSeconds(30));
+        Assert.Equal("testing", status.Phase);
+        Assert.Matches(@"coin \d of \d: ", status.PhaseDetail);
     }
 
     /// <summary>unMineable's view of the address: one account, and whatever workers the test says.</summary>
@@ -1081,6 +1224,21 @@ public sealed class SrbMinerProviderTests : IDisposable
         Assert.Equal(3.36e-14, usable.For("pearlhash")!.UsdPerHashPerSecondDay);
         Assert.Equal("pearlpow.unmineable.com", usable.Route("unmineable-pearlhash")!.Host);
         Assert.Null(kept.UsableAt(fetched + CachedGpuPolicy.MaxAge + TimeSpan.FromMinutes(1))); // too old: wait for the server
+    }
+
+    /// <summary>Like <see cref="RunForProvider"/> but stops at the first error status, as the engine does (it stops the miner and tries again later).</summary>
+    private async Task<ProviderStatus> RunUntilErrorAsync(SrbMinerGpuProvider provider, TimeSpan duration)
+    {
+        ProviderStatus status = ProviderStatus.Stopped(true);
+        var end = _time.GetUtcNow() + duration;
+        while (_time.GetUtcNow() < end)
+        {
+            _time.Advance(TimeSpan.FromSeconds(5));
+            status = await provider.GetStatusAsync(CancellationToken.None);
+            if (status.State == ProviderState.Error)
+                return status;
+        }
+        return status;
     }
 
     private async Task<ProviderStatus> RunForProvider(SrbMinerGpuProvider provider, TimeSpan duration)

@@ -165,6 +165,28 @@
             <Setter Property="Background" Value="{DynamicResource GoodSoft}" />
         </Style>
 
+        <!-- "Testing", "Tuning", "Easing off": what a device is doing besides plain earning. -->
+        <Style Selector="Border.phase">
+            <Setter Property="Background" Value="{DynamicResource GoodSoft}" />
+            <Setter Property="CornerRadius" Value="999" />
+            <Setter Property="Padding" Value="8,2" />
+        </Style>
+        <Style Selector="Border.phase TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource GoodBrush}" />
+        </Style>
+        <Style Selector="Border.phase.warn">
+            <Setter Property="Background" Value="{DynamicResource WarnSoft}" />
+        </Style>
+        <Style Selector="Border.phase.warn TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource WarnBrush}" />
+        </Style>
+        <Style Selector="TextBlock.warnText">
+            <Setter Property="Foreground" Value="{DynamicResource WarnBrush}" />
+        </Style>
+        <Style Selector="TextBlock.badText">
+            <Setter Property="Foreground" Value="{DynamicResource BadBrush}" />
+        </Style>
+
         <Style Selector="Border.iconBadge">
             <Setter Property="Width" Value="40" />
             <Setter Property="Height" Value="40" />

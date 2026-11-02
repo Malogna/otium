@@ -60,6 +60,16 @@ public static class GpuEfficiency
     public const string CapTask = @"\Otium\GPU power cap";
     public const string RestoreTask = @"\Otium\GPU power restore";
 
+    /// <summary>
+    /// The argument the tasks below run Otium with: "--tuning-tools close" or "--tuning-tools open". Tuning programs such as
+    /// MSI Afterburner usually run as administrator, which only an administrator can close, and which Windows asks about
+    /// every time it starts one: so these two tasks (made with the same single prompt as the power tasks) do it.
+    /// </summary>
+    public const string ToolsArgument = "--tuning-tools";
+
+    public const string ToolsCloseTask = @"\Otium\Tuning tools close";
+    public const string ToolsOpenTask = @"\Otium\Tuning tools open";
+
     public static bool IsSupported => OperatingSystem.IsWindows();
 
     /// <summary>What the elevated helper does for each argument; returns a process exit code (0 = done).</summary>
@@ -71,15 +81,27 @@ public static class GpuEfficiency
                 return SetLimit(CapFrom(ReadCap(), p));
             case [PowerArgument, "restore"]:
                 return SetLimit(100);
+            case [ToolsArgument, "close"]:
+                NewToolsGuard().PauseAsync(CancellationToken.None).GetAwaiter().GetResult();
+                return 0;
+            case [ToolsArgument, "open"]:
+                NewToolsGuard().Restore();
+                return 0;
             case [SetupArgument]:
                 var created = Schtasks(["/Create", "/TN", CapTask, "/TR", $"\"{exePath}\" {PowerArgument} cap {CapPercent}", "/SC", "ONCE", "/ST", "00:00", "/RL", "HIGHEST", "/IT", "/F"]) == 0
-                              && Schtasks(["/Create", "/TN", RestoreTask, "/TR", $"\"{exePath}\" {PowerArgument} restore", "/SC", "ONCE", "/ST", "00:00", "/RL", "HIGHEST", "/IT", "/F"]) == 0;
+                              && Schtasks(["/Create", "/TN", RestoreTask, "/TR", $"\"{exePath}\" {PowerArgument} restore", "/SC", "ONCE", "/ST", "00:00", "/RL", "HIGHEST", "/IT", "/F"]) == 0
+                              && Schtasks(["/Create", "/TN", ToolsCloseTask, "/TR", $"\"{exePath}\" {ToolsArgument} close", "/SC", "ONCE", "/ST", "00:00", "/RL", "HIGHEST", "/IT", "/F"]) == 0
+                              && Schtasks(["/Create", "/TN", ToolsOpenTask, "/TR", $"\"{exePath}\" {ToolsArgument} open", "/SC", "ONCE", "/ST", "00:00", "/RL", "HIGHEST", "/IT", "/F"]) == 0;
                 // ("ONCE at 00:00" today is already past, so the tasks never run by themselves: only when Otium starts them.)
                 return created ? 0 : 1;
             case [RemoveArgument]:
                 SetLimit(100);
                 Schtasks(["/Delete", "/TN", CapTask, "/F"]);
                 Schtasks(["/Delete", "/TN", RestoreTask, "/F"]);
+                // Bring back anything Otium closed before the tasks that do it go away.
+                NewToolsGuard().Restore();
+                Schtasks(["/Delete", "/TN", ToolsCloseTask, "/F"]);
+                Schtasks(["/Delete", "/TN", ToolsOpenTask, "/F"]);
                 return 0;
             default:
                 return 2;
@@ -87,7 +109,16 @@ public static class GpuEfficiency
     }
 
     /// <summary>True when Otium was started as one of the helpers above (it does its job and exits, no window).</summary>
-    public static bool IsHelper(string[] args) => args is [PowerArgument, ..] or [SetupArgument] or [RemoveArgument];
+    public static bool IsHelper(string[] args) => args is [PowerArgument, ..] or [ToolsArgument, ..] or [SetupArgument] or [RemoveArgument];
+
+    private static Platform.TuningToolsGuard NewToolsGuard() =>
+        new(new Platform.WindowsToolProcesses(), new Settings.JsonFileStore<Platform.TuningToolsState>(Platform.AppPaths.Default.TuningToolsFile));
+
+    /// <summary>Starts the task that closes (or brings back) the tuning programs. Needs no administrator prompt once set up.</summary>
+    public static bool TriggerTools(bool close) => Schtasks(["/Run", "/TN", close ? ToolsCloseTask : ToolsOpenTask]) == 0;
+
+    /// <summary>Whether the tasks that close and bring back tuning programs exist (they came with a later version than the power tasks).</summary>
+    public static bool ToolsTasksReady() => IsSupported && Schtasks(["/Query", "/TN", ToolsCloseTask]) == 0;
 
     /// <summary>Starts the task that caps (or restores) the limit. Needs no administrator prompt once set up.</summary>
     public static bool Trigger(bool cap) => Schtasks(["/Run", "/TN", cap ? CapTask : RestoreTask]) == 0;

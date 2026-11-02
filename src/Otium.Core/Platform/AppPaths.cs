@@ -19,6 +19,9 @@ public sealed class AppPaths(string root)
 
     public string HistoryFile => Path.Combine(Root, "history.json");
 
+    /// <summary>Tuning programs Otium closed while earning, to bring back (see TuningToolsGuard).</summary>
+    public string TuningToolsFile => Path.Combine(Root, "tuning-tools.json");
+
     /// <summary>The last exchange rates from the server, so amounts still convert offline.</summary>
     public string RatesFile => Path.Combine(Root, "rates.json");
 

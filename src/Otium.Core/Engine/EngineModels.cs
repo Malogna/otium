@@ -77,6 +77,12 @@ public sealed record EngineSnapshot
     /// <summary>The provider is still measuring itself (e.g. testing graphics card algorithms one by one).</summary>
     public bool IsCalibrating { get; init; }
 
+    /// <summary>What Otium is doing besides plain earning (<see cref="EnginePhases"/>), or null.</summary>
+    public string? Phase { get; init; }
+
+    /// <summary>One short line about <see cref="Phase"/>.</summary>
+    public string? PhaseDetail { get; init; }
+
     /// <summary>Earning while the user is at the computer, because they started the "measure my PC" test.</summary>
     public bool RunningNow { get; init; }
 

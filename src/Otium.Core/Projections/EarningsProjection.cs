@@ -12,7 +12,23 @@ public sealed record Projection(
     double PerYear,
     TimeSpan? TimeToCashout)
 {
+    /// <summary>Hours a day assumed for a computer that earns only while its user is away, before it has a pattern.</summary>
+    public const double IdleOnlyHours = 8;
+
+    /// <summary>Hours a day assumed for a computer that earns whenever it is on (it still sleeps or shuts down some of the day).</summary>
+    public const double AlwaysOnHours = 16;
+
     public const int DaysPerMonth = 30;
+
+    /// <summary>
+    /// The hours a day to project at the current pace. History says how many hours the computer earned, but a computer
+    /// that never earned much (paused, or only just set to earn all the time) and is mining right now would project
+    /// almost nothing for days. So when it earns whenever it is on and is earning at this moment, a history below
+    /// <see cref="AlwaysOnHours"/> is set aside for the always-on assumption; a long history above it, and a computer that
+    /// earns only while its user is away, keep their measured hours. Null means "no measurement: use the assumption".
+    /// </summary>
+    public static double? HoursToProject(double? measuredHoursPerDay, bool onlyWhenIdle, bool earningNow) =>
+        !onlyWhenIdle && earningNow && (measuredHoursPerDay ?? 0) < AlwaysOnHours ? null : measuredHoursPerDay;
 
     public const int DaysPerYear = 365;
 
@@ -45,7 +61,7 @@ public sealed record Projection(
     {
         // Without a day of history: idle-only computers are typically away ~8 h a day (nights, workday);
         // "always on" still sleeps or shuts down some of the time.
-        var hours = Math.Clamp(measuredHoursPerDay ?? (onlyWhenIdle ? 8 : 16), 0, 24);
+        var hours = Math.Clamp(measuredHoursPerDay ?? (onlyWhenIdle ? IdleOnlyHours : AlwaysOnHours), 0, 24);
         var perDay = Math.Max(0, earningRatePerDay - electricityPerDay) * hours / 24;
 
         TimeSpan? toCashout = null;

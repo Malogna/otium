@@ -429,6 +429,21 @@ settings and the Windows uninstaller remove it. Microsoft Defender flags the Win
 reputation detection); the app's "Allow in Windows Security" fix covers it. Share analytics report it as
 `sharing-mysterium`, kept apart from Proxybase's `sharing`.
 
+**Tuning programs, silent tuning and overheating.** `TuningToolsGuard` closes the known overclocking programs
+(`TuningToolCatalog`, a fixed list; nothing else is ever touched) before the graphics card's miner launches and starts
+them again when it stops, remembering what it closed in `tuning-tools.json`. Such programs usually run as administrator,
+so with the one Windows prompt that sets up the power tasks (`GpuEfficiency.SetupArgument`) two more elevated tasks are
+made, `\Otium\Tuning tools close` and `open`, which run Otium with `--tuning-tools close|open`. The silent-fans tuner is
+a closed loop in `SrbMinerGpuProvider`: while the fans stay under `Settings.QuietFanLimit` minus 10 for 6 minutes it
+raises the power limit by 5 points (up to 100); at the limit for 2 minutes it lowers it by 10 and doesn't try that level
+again for 2 hours; each coin's settled level is kept in `BenchmarkFile.PowerCaps`. `ThermalGuard` stops mining at 90 °C
+(10 s) or a stalled fan on a warm busy card, as `ProblemKinds.TooHot` (an `error-too-hot` check-in tag), and
+`StartAsync` waits for 80 °C. A test whose readings were thermally throttled (30% of them, or a peak of 87 °C) isn't
+recorded and is repeated after cooling, twice at most, after which it is kept with `BenchmarkResult.Throttled` and
+measured again after 2 hours. `EngineSnapshot.Phase` (`EnginePhases`) is what the Right now badge shows. The overview's
+projection uses `Projection.HoursToProject`: a computer that earns whenever it's on and is earning now isn't held to a
+history below `AlwaysOnHours`.
+
 **Earnings by period and in your currency.** `EarningsHistory` keeps hourly buckets for 14 days, daily buckets for 400
 days (`DayBucket`, filled in from the hours still kept when an older `history.json` has none) and monthly buckets for two
 years. `EarningsPeriods` builds the Home chart (24 hours, 7 days, 30 days, 12 months) and the earned-to-date tiles from

@@ -90,6 +90,32 @@
                             <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap"
                                        Text="The graphics card also mines while you're at the computer doing ordinary things like browsing, documents or videos in a window. It stops the moment a game or any full-screen app starts, and never on battery. You may notice the computer is a little less smooth, and the fans may run." />
                         </StackPanel>
+                        <StackPanel Spacing="6" IsVisible="{Binding HasGpu}">
+                            <ToggleSwitch IsChecked="{Binding SilentTuning}"
+                                          OnContent="Most speed at the fan noise I choose" OffContent="Most speed at the fan noise I choose" />
+                            <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap"
+                                       Text="Otium raises the graphics card's power limit step by step while its fans stay under your limit, and lowers it when they get louder, so the card gives as much speed as it can at a noise you accept. It says Tuning on the card's row while it does this. Needs Optimize my graphics card." />
+                            <ComboBox ItemsSource="{Binding FanLimits}" SelectedItem="{Binding SelectedFanLimit}" MinWidth="320"
+                                      IsEnabled="{Binding SilentTuning}" AutomationProperties.Name="Fan noise">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:FanLimitOption">
+                                        <TextBlock Text="{Binding Label}" />
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                        </StackPanel>
+                        <StackPanel Spacing="2" IsVisible="{Binding ShowTuningTools}">
+                            <ToggleSwitch IsChecked="{Binding PauseTuningTools}"
+                                          OnContent="Pause overclocking programs while the graphics card earns" OffContent="Pause overclocking programs while the graphics card earns" />
+                            <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap"
+                                       Text="Programs like MSI Afterburner, ASUS GPU Tweak or EVGA Precision change clocks, fans and the power limit, which disturbs the miner and its tests (a fan curve that stopped at 90 °C slowed a test to a third). Otium closes them when the card starts earning and starts them again when it stops, so you have your overclock for games." />
+                            <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Text="{Binding ToolsStatus}" />
+                            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,6,0,0" IsVisible="{Binding ToolsNeedPermission}">
+                                <Button Classes="accent" Content="Allow" Command="{Binding AllowToolsCommand}" ToolTip.Tip="Windows asks for your permission once" />
+                            </StackPanel>
+                            <TextBlock Classes="error" FontSize="12.5" TextWrapping="Wrap" Text="{Binding ToolsMessage}"
+                                       IsVisible="{Binding ToolsMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                        </StackPanel>
                         <StackPanel Spacing="2" IsVisible="{Binding HasGpu}">
                             <ToggleSwitch IsChecked="{Binding GpuOptimize}" IsEnabled="{Binding !GpuOptimizeBusy}"
                                           OnContent="Optimize my graphics card" OffContent="Optimize my graphics card" />

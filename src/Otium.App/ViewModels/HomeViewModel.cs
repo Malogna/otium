@@ -7,6 +7,7 @@ using Otium.App.Services;
 using Otium.Core.Accounts;
 using Otium.Core.Bandwidth;
 using Otium.Core.Engine;
+using Otium.Core.Gpu;
 using Otium.Core.Projections;
 using Otium.Core.Providers;
 using Otium.Core.Settings;
@@ -27,12 +28,82 @@ public partial class ActivityRow : ObservableObject
     /// <summary>For the internet connection: each network it shares through, shown when the row is opened.</summary>
     public System.Collections.ObjectModel.ObservableCollection<ProviderLine> Providers { get; } = [];
 
-    [ObservableProperty] public partial bool HasProviders { get; set; }
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanExpand))]
+    public partial bool HasProviders { get; set; }
+
+    /// <summary>For the processor and graphics card: live readings (temperature, fan, clocks…), shown when the row is opened.</summary>
+    public System.Collections.ObjectModel.ObservableCollection<StatRow> Stats { get; } = [];
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanExpand))]
+    public partial bool HasStats { get; set; }
+
+    /// <summary>The row has something to open: its networks or its readings.</summary>
+    public bool CanExpand => HasProviders || HasStats;
+
+    /// <summary>What Otium is doing besides earning ("Testing", "Tuning", "Easing off"); empty while it just earns.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasPhase))]
+    public partial string PhaseLabel { get; set; } = "";
+
+    /// <summary>One short line about the phase ("coin 2 of 4: Pearl").</summary>
+    [ObservableProperty] public partial string PhaseDetail { get; set; } = "";
+
+    /// <summary>What the phase means for the numbers on the row, shown when the row is opened.</summary>
+    [ObservableProperty] public partial string PhaseExplain { get; set; } = "";
+
+    /// <summary>The phase's badge is a warning (cooling down, easing off) rather than just information.</summary>
+    [ObservableProperty] public partial bool PhaseIsWarning { get; set; }
+
+    public bool HasPhase => PhaseLabel.Length > 0;
 
     [ObservableProperty] public partial bool IsExpanded { get; set; }
 
     [CommunityToolkit.Mvvm.Input.RelayCommand]
     private void ToggleExpanded() => IsExpanded = !IsExpanded;
+}
+
+/// <summary>One reading in a device's opened row: a label and its value, coloured when it needs a look. Updated in place.</summary>
+public partial class StatRow : ObservableObject
+{
+    public StatRow(string label, string value, StatLevel level)
+    {
+        Label = label;
+        Value = value;
+        Level = level;
+    }
+
+    public string Label { get; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsWarn), nameof(IsBad))]
+    public partial string Value { get; set; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsWarn), nameof(IsBad))]
+    public partial StatLevel Level { get; set; }
+
+    public bool IsWarn => Level == StatLevel.Warn;
+
+    public bool IsBad => Level == StatLevel.Bad;
+
+    /// <summary>Makes <paramref name="rows"/> show <paramref name="lines"/>: the same rows are updated in place when the labels match (no flicker), else replaced.</summary>
+    public static void Update(System.Collections.ObjectModel.ObservableCollection<StatRow> rows, IReadOnlyList<StatLine> lines)
+    {
+        if (rows.Count == lines.Count && rows.Select(r => r.Label).SequenceEqual(lines.Select(l => l.Label)))
+        {
+            for (var i = 0; i < rows.Count; i++)
+            {
+                rows[i].Value = lines[i].Value;
+                rows[i].Level = lines[i].Level;
+            }
+            return;
+        }
+        rows.Clear();
+        foreach (var line in lines)
+            rows.Add(new StatRow(line.Label, line.Value, line.Level));
+    }
 }
 
 /// <summary>One network under the internet connection row: its name, what it's doing and what it has earned.</summary>
@@ -139,7 +210,54 @@ public partial class HomeViewModel : ViewModelBase
 
         Refresh();
         _ = LoadEstimateAsync();
+
+        // The processor's and graphics card's readings in their opened rows, every couple of seconds.
+        _statsTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+        _statsTimer.Tick += (_, _) => RefreshStats();
+        _statsTimer.Start();
+        RefreshStats();
     }
+
+    private readonly DispatcherTimer _statsTimer;
+
+    /// <summary>Readings for the processor's and graphics card's rows: live hardware values and what the miner is doing.</summary>
+    private void RefreshStats()
+    {
+        if (Activity.Count == 0)
+            return;
+        var cpu = _host.Engine.Snapshot;
+        var cpuLines = new List<StatLine>();
+        if (cpu.HashrateHps > 0)
+            cpuLines.Add(new StatLine("Speed", Format.Hashrate(cpu.HashrateHps)));
+        cpuLines.Add(new StatLine("Uses", $"up to {_host.Settings.CpuUsagePercent}% of its {Environment.ProcessorCount} threads"));
+        cpuLines.AddRange(_host.Hardware.ReadCpu().ToLines());
+        StatRow.Update(Activity[0].Stats, cpuLines);
+        Activity[0].HasStats = Activity[0].Stats.Count > 0;
+
+        if (Activity.Count > 1 && _host.GpuEngine is { } gpuEngine && _host.GpuProvider is { } gpu)
+        {
+            var gpuLines = new List<StatLine>();
+            var snapshot = gpuEngine.Snapshot;
+            if (snapshot.HashrateHps > 0)
+                gpuLines.Add(new StatLine("Speed", Format.Hashrate(snapshot.HashrateHps)));
+            var cards = _host.Hardware.ReadGpus(gpu.Gpus);
+            foreach (var card in cards)
+            {
+                if (cards.Count > 1)
+                    gpuLines.Add(new StatLine(card.Name, ""));
+                gpuLines.AddRange(card.ToLines().Select(l => cards.Count > 1 ? l with { Label = $"{l.Label} ({Short(card.Name)})" } : l));
+            }
+            if (_host.TuningToolsPaused is { Count: > 0 } pausedTools)
+                gpuLines.Add(new StatLine("Closed while earning", string.Join(", ", pausedTools)));
+            StatRow.Update(Activity[1].Stats, gpuLines);
+            Activity[1].HasStats = Activity[1].Stats.Count > 0;
+        }
+    }
+
+    /// <summary>"RTX 3080" from "NVIDIA GeForce RTX 3080", for labels when there are several cards.</summary>
+    private static string Short(string name) =>
+        name.Replace("NVIDIA ", "", StringComparison.OrdinalIgnoreCase).Replace("GeForce ", "", StringComparison.OrdinalIgnoreCase)
+            .Replace("AMD ", "", StringComparison.OrdinalIgnoreCase).Replace("Radeon ", "", StringComparison.OrdinalIgnoreCase).Trim();
 
     public CashOutViewModel CashOut { get; }
 
@@ -334,7 +452,11 @@ public partial class HomeViewModel : ViewModelBase
 
         // Projection
         var minimum = account.MinCryptoUsd;
-        var mining = Projection.Create(rate, electricity, _host.History.AverageEarningHoursPerDay(DateTimeOffset.Now),
+        // Mining all the time right now: project that, not a history of hours when it hardly earned.
+        var historyHours = _host.History.AverageEarningHoursPerDay(DateTimeOffset.Now);
+        var projectedHours = Projection.HoursToProject(historyHours, settings.OnlyWhenIdle, earningNow.Count > 0);
+        var alwaysOnAssumed = historyHours is not null && projectedHours is null;
+        var mining = Projection.Create(rate, electricity, projectedHours,
             settings.OnlyWhenIdle, account.AvailableUsd + account.PendingUsd, minimum);
         var projection = WithSharing(mining, SharingPerDay(), account.AvailableUsd + account.PendingUsd, minimum);
         _month.AnimateTo(projection.PerMonth);
@@ -358,6 +480,8 @@ public partial class HomeViewModel : ViewModelBase
             ? "At your electricity price, mining currently costs more than it earns, so no profit is projected."
             : miningLoses
                 ? "Mining doesn't pay at your electricity price, so this comes from internet sharing alone."
+                : alwaysOnAssumed
+                    ? $"Your PC is earning whenever it's on, so about {projection.HoursPerDay:0} hours a day is assumed, after electricity. It follows your real pattern as it builds up."
                 : projection.HoursAreMeasured
                     ? $"Based on your PC earning about {projection.HoursPerDay:0.#} hours a day, after electricity."
                     : _lastRates.Count > 0 || measured is { Count: > 0 }
@@ -550,6 +674,12 @@ public partial class HomeViewModel : ViewModelBase
             var s = engines[i].Snapshot;
             var enabled = i == 0 ? settings.CpuEnabled : settings.GpuEnabled;
             row.IsActive = s.State == EngineState.Earning;
+            // A pause because the card was too hot is a "cooling down" phase even though it comes as a problem.
+            var phase = s.ProblemKind == ProblemKinds.TooHot ? EnginePhases.CoolingDown : s.Phase;
+            row.PhaseLabel = EnginePhases.Label(phase) ?? "";
+            row.PhaseDetail = phase is null ? "" : s.Phase is null ? "" : s.PhaseDetail ?? "";
+            row.PhaseExplain = EnginePhases.Explain(phase) ?? "";
+            row.PhaseIsWarning = phase is EnginePhases.EasingOff or EnginePhases.CoolingDown;
             row.Speed = s.HashrateHps > 0 ? Format.Hashrate(s.HashrateHps) : "";
             row.PerDay = s.State == EngineState.Earning ? $"{Format.Usd(s.UserUsdPerDay)}/day" : "";
             row.What = s.State switch

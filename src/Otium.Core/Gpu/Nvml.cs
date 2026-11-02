@@ -22,6 +22,9 @@ public sealed class Nvml : IDisposable
     private readonly GetUtilizationDelegate? _getUtilization;
     private readonly GetFanSpeedDelegate? _getFanSpeed;
     private readonly GetClockDelegate? _getClock;
+    private readonly GetClockDelegate? _getMaxClock;
+    private readonly GetPowerDelegate? _getPowerLimit;
+    private readonly GetThrottleDelegate? _getThrottle;
     private readonly GetMemoryDelegate _getMemory;
     private readonly GetPowerDelegate _getPower;
     private readonly GetPowerDelegate? _getDefaultLimit;
@@ -42,6 +45,7 @@ public sealed class Nvml : IDisposable
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetUtilizationDelegate(IntPtr device, out Utilization rates);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetFanSpeedDelegate(IntPtr device, out uint percent);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetClockDelegate(IntPtr device, int clockType, out uint mhz);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetThrottleDelegate(IntPtr device, out ulong reasons);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct Utilization
@@ -73,6 +77,11 @@ public sealed class Nvml : IDisposable
         _getUtilization = TryLoad<GetUtilizationDelegate>("nvmlDeviceGetUtilizationRates");
         _getFanSpeed = TryLoad<GetFanSpeedDelegate>("nvmlDeviceGetFanSpeed");
         _getClock = TryLoad<GetClockDelegate>("nvmlDeviceGetClockInfo");
+        _getMaxClock = TryLoad<GetClockDelegate>("nvmlDeviceGetMaxClockInfo");
+        _getPowerLimit = TryLoad<GetPowerDelegate>("nvmlDeviceGetPowerManagementLimit");
+        // Renamed in newer drivers; either gives the same bit mask (see GpuThrottle).
+        _getThrottle = TryLoad<GetThrottleDelegate>("nvmlDeviceGetCurrentClocksEventReasons")
+                       ?? TryLoad<GetThrottleDelegate>("nvmlDeviceGetCurrentClocksThrottleReasons");
         _getMemory = Load<GetMemoryDelegate>("nvmlDeviceGetMemoryInfo");
         _getPower = Load<GetPowerDelegate>("nvmlDeviceGetPowerUsage");
         // Power limits: in every current driver, but optional so an old one still gives names and power.
@@ -214,7 +223,33 @@ public sealed class Nvml : IDisposable
                 Read(() => (_getPower(device, out var mw), mw)) / 1000,
                 _getClock is null ? null : Read(() => (_getClock(device, 0, out var mhz), mhz)), // NVML_CLOCK_GRAPHICS
                 memory?.Used / 1024.0 / 1024 / 1024,
-                memory?.Total / 1024.0 / 1024 / 1024);
+                memory?.Total / 1024.0 / 1024 / 1024,
+                _getPowerLimit is null ? null : Read(() => (_getPowerLimit(device, out var limit), limit)) / 1000,
+                _getClock is null ? null : Read(() => (_getClock(device, 2, out var mhz), mhz)), // NVML_CLOCK_MEM
+                _getMaxClock is null ? null : Read(() => (_getMaxClock(device, 0, out var mhz), mhz)),
+                _getThrottle is not null && _getThrottle(device, out var reasons) == Success ? (GpuThrottle)reasons : GpuThrottle.None);
+        }
+    }
+
+    /// <summary>The card's current power limit in watts (what Afterburner or Otium's cap set), or null if it can't be read.</summary>
+    public double? ReadPowerLimitWatts(int index)
+    {
+        lock (_lock)
+        {
+            if (_disposed || _getPowerLimit is null || _getHandle((uint)index, out var device) != Success)
+                return null;
+            return _getPowerLimit(device, out var mw) == Success ? mw / 1000.0 : null;
+        }
+    }
+
+    /// <summary>The card's default power limit in watts, or null if it can't be read.</summary>
+    public double? ReadDefaultPowerLimitWatts(int index)
+    {
+        lock (_lock)
+        {
+            if (_disposed || _getDefaultLimit is null || _getHandle((uint)index, out var device) != Success)
+                return null;
+            return _getDefaultLimit(device, out var mw) == Success ? mw / 1000.0 : null;
         }
     }
 

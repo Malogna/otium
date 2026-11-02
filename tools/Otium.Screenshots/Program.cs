@@ -92,6 +92,25 @@ foreach (var variant in new[] { ThemeVariant.Light, ThemeVariant.Dark })
     homeVm.InternetSharing.ShowConsent = true;
     Shoot(new HomeView { DataContext = homeVm }, $"home-{theme}", 900, 2800);
 
+    // "Right now" with the graphics card testing coins and its readings opened, and the processor's readings opened.
+    var live = new HomeViewModel(host, () => { });
+    if (live.Activity.Count > 1)
+    {
+        var card = live.Activity[1];
+        card.PhaseLabel = "Testing";
+        card.PhaseDetail = "coin 2 of 4: Pearl";
+        card.PhaseExplain = Otium.Core.Engine.EnginePhases.Explain(Otium.Core.Engine.EnginePhases.Testing) ?? "";
+        StatRow.Update(card.Stats, [
+            new Otium.Core.Gpu.StatLine("Speed", "32.57 TH/s"),
+            .. new Otium.Core.Gpu.GpuStats("NVIDIA GeForce RTX 3080", 84, 100, 62, 245, 1305, 2.1, 10, 245, 9501, 2115, Otium.Core.Gpu.GpuThrottle.SoftwareThermal | Otium.Core.Gpu.GpuThrottle.PowerCap).ToLines(),
+            new Otium.Core.Gpu.StatLine("Closed while earning", "MSI Afterburner"),
+        ]);
+        card.HasStats = true;
+        card.IsExpanded = true;
+        live.Activity[0].IsExpanded = true;
+    }
+    Shoot(new HomeView { DataContext = live }, $"right-now-open-{theme}", 1100, 1000);
+
     // The earnings card as a German user sees it (euros, "1.234,56 €"), and on the week chart.
     Format.Display = new Otium.Core.Currency.DisplayCurrency("EUR", 0.92, System.Globalization.CultureInfo.GetCultureInfo("de-DE"));
     var euroVm = new HomeViewModel(host, () => { });

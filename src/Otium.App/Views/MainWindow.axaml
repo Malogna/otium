@@ -4,11 +4,11 @@
         xmlns:controls="using:Otium.App.Controls"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        mc:Ignorable="d" d:DesignWidth="980" d:DesignHeight="720"
+        mc:Ignorable="d" d:DesignWidth="1100" d:DesignHeight="780"
         x:Class="Otium.App.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Icon="/Assets/otium.ico"
-        Width="980" Height="760" MinWidth="560" MinHeight="520" MaxWidth="1240" MaxHeight="820" CanMaximize="False"
+        Width="1100" Height="780" CanResize="False" CanMaximize="False"
         WindowStartupLocation="CenterScreen"
         Background="{DynamicResource PageBackground}"
         Title="Otium">

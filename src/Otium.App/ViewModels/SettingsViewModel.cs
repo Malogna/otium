@@ -15,6 +15,12 @@ using Otium.Providers.XMRig;
 
 namespace Otium.App.ViewModels;
 
+/// <summary>One choice of how loud the graphics card's fans may get while it earns.</summary>
+public sealed record FanLimitOption(int Percent, string Name, string Description)
+{
+    public string Label => $"{Name}: {Description.ToLowerInvariant()}";
+}
+
 public partial class SettingsViewModel : ViewModelBase
 {
     private readonly AppHost _host;
@@ -41,6 +47,11 @@ public partial class SettingsViewModel : ViewModelBase
         ShareEarningsStats = s.ShareEarningsStats;
         GpuOptimize = host.GpuOptimizeOn;
         EarnWhileBrowsing = s.EarnWhileBrowsing;
+        PauseTuningTools = s.PauseTuningTools;
+        SilentTuning = s.SilentTuning;
+        SelectedFanLimit = FanLimits.OrderBy(f => Math.Abs(f.Percent - s.QuietFanLimit)).First();
+        RefreshToolsStatus();
+        host.TuningToolsChanged += () => Dispatcher.UIThread.Post(RefreshToolsStatus);
         NotificationsEnabled = s.NotificationsEnabled;
         KeepMinerReadyWhenBack = s.KeepMinerReadyWhenBack;
         InstallUpdatesWhileAway = s.InstallUpdatesWhileAway;
@@ -445,6 +456,85 @@ public partial class SettingsViewModel : ViewModelBase
     public bool BrowsingSupported => OperatingSystem.IsWindows() && _host.GpuEngine is not null;
 
     [ObservableProperty] public partial bool EarnWhileBrowsing { get; set; }
+
+    // ---------- Fan noise: how loud the fans may get while the card earns ----------
+
+    /// <summary>The fan limits to pick from, quietest first.</summary>
+    public IReadOnlyList<FanLimitOption> FanLimits { get; } =
+    [
+        new(40, "Silent", "Fans stay at or under 40%"),
+        new(50, "Quiet", "Fans stay at or under 50%"),
+        new(60, "Balanced", "Fans may reach 60%"),
+        new(75, "Performance", "Fans may reach 75%"),
+    ];
+
+    [ObservableProperty] public partial FanLimitOption? SelectedFanLimit { get; set; }
+
+    [ObservableProperty] public partial bool SilentTuning { get; set; }
+
+    partial void OnSelectedFanLimitChanged(FanLimitOption? value)
+    {
+        if (_loading || value is null)
+            return;
+        _host.Settings.QuietFanLimit = value.Percent;
+        _host.SaveSettings();
+    }
+
+    partial void OnSilentTuningChanged(bool value)
+    {
+        if (_loading)
+            return;
+        _host.Settings.SilentTuning = value;
+        _host.SaveSettings();
+    }
+
+    // ---------- Tuning programs (MSI Afterburner and the like) ----------
+
+    /// <summary>Tuning programs can be closed while the graphics card earns: Windows, with a real card.</summary>
+    public bool ShowTuningTools => _host.TuningToolsSupported;
+
+    [ObservableProperty] public partial bool PauseTuningTools { get; set; }
+
+    /// <summary>What Otium is doing about tuning programs right now, in a sentence.</summary>
+    [ObservableProperty] public partial string ToolsStatus { get; set; } = "";
+
+    /// <summary>A tuning program is running that Windows has to allow Otium to close (it runs as administrator).</summary>
+    [ObservableProperty] public partial bool ToolsNeedPermission { get; set; }
+
+    [ObservableProperty] public partial string ToolsMessage { get; set; } = "";
+
+    partial void OnPauseTuningToolsChanged(bool value)
+    {
+        if (_loading)
+            return;
+        _host.Settings.PauseTuningTools = value;
+        _host.SaveSettings();
+        if (!value)
+            _host.RestoreTuningTools(); // start them again at once
+        RefreshToolsStatus();
+    }
+
+    private void RefreshToolsStatus()
+    {
+        if (!_host.TuningToolsSupported)
+            return;
+        var paused = _host.TuningToolsPaused;
+        var running = _host.TuningToolsRunning;
+        ToolsNeedPermission = PauseTuningTools && _host.TuningToolsNeedPermission;
+        ToolsStatus = !PauseTuningTools
+            ? "Left running: they may change clocks, fans and the power limit while the card earns, and slow its tests."
+            : paused.Count > 0 ? $"Closed while the card earns: {string.Join(", ", paused)}. They start again when it stops."
+            : ToolsNeedPermission ? $"{string.Join(", ", running)} is running as administrator, so Windows has to allow Otium to close it (once)."
+            : running.Count > 0 ? $"{string.Join(", ", running)} is running. It closes when the card starts earning."
+            : "None running right now.";
+    }
+
+    [RelayCommand]
+    private async Task AllowToolsAsync()
+    {
+        ToolsMessage = await _host.AllowTuningToolControlAsync() ?? "";
+        RefreshToolsStatus();
+    }
 
     [ObservableProperty] public partial bool NotificationsEnabled { get; set; }
 

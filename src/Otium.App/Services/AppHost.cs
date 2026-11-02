@@ -117,7 +117,10 @@ public sealed class AppHost : IAsyncDisposable
             poolBlocked: PoolReachability.BlockedReasonAsync,
             optimize: () => GpuOptimizeOn,
             powerCap: SetGpuPowerCap,
-            stats: gpu => Hardware.ReadGpus([gpu]).FirstOrDefault());
+            stats: gpu => Hardware.ReadGpus([gpu]).FirstOrDefault(),
+            prepare: PauseTuningToolsAsync,
+            silentTuning: () => Settings.SilentTuning,
+            fanLimit: () => Math.Clamp(Settings.QuietFanLimit, 30, 90));
         if (IsSimulated)
         {
             var gpuLedger = new JsonFileStore<EarningsLedger>(Paths.GpuLedgerFile);
@@ -464,6 +467,39 @@ public sealed class AppHost : IAsyncDisposable
         return problem;
     }
 
+    private DateTimeOffset _capCheckedAt = DateTimeOffset.MinValue;
+
+    /// <summary>
+    /// While capped, looks at the card's real power limit now and then: another program (a tuning tool starting, a driver
+    /// reset) can put it back to the default under Otium, and the card would then mine at full power while Otium thinks it is
+    /// capped. When it differs from the cap by more than a few watts, the cap is applied again.
+    /// </summary>
+    private void ReapplyPowerCapIfUndone()
+    {
+        var now = DateTimeOffset.UtcNow;
+        if (_nvml is null || now - _capCheckedAt < TimeSpan.FromSeconds(45))
+            return;
+        _capCheckedAt = now;
+        try
+        {
+            var percent = GpuEfficiency.CapFrom(File.Exists(GpuEfficiency.CapFile(Paths.Root)) ? File.ReadAllText(GpuEfficiency.CapFile(Paths.Root)) : null, GpuEfficiency.CapPercent);
+            foreach (var gpu in Gpus.Where(g => g.Vendor == GpuVendor.Nvidia))
+            {
+                if (_nvml.ReadPowerLimitWatts(gpu.Index) is not { } limit || _nvml.ReadDefaultPowerLimitWatts(gpu.Index) is not { } normal)
+                    continue;
+                if (Math.Abs(limit - normal * percent / 100.0) > 6)
+                {
+                    _ = Task.Run(() => GpuEfficiency.Trigger(cap: true));
+                    return;
+                }
+            }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // Can't read the cap file this time: try again at the next check.
+        }
+    }
+
     /// <summary>
     /// Quiet mode's lower power limit for coins whose miner setting doesn't change the load (Pearl): the percentage the
     /// cap applies from now on, applied at once while capped. False when the power part isn't on (not an NVIDIA card on
@@ -484,15 +520,124 @@ public sealed class AppHost : IAsyncDisposable
     /// </summary>
     public void UpdateGpuPowerCap()
     {
+        UpdateTuningTools();
         if (!GpuEfficiencySupported || GpuEngine is null)
             return;
         var mining = GpuEngine.Snapshot.State is EngineState.Starting or EngineState.Earning;
         var want = Settings.GpuOptimize && Settings.GpuEfficiencyMode && mining ? 1 : 0;
         if (Interlocked.Exchange(ref _capApplied, want) == want)
+        {
+            if (want == 1)
+                ReapplyPowerCapIfUndone();
             return;
+        }
         if (want == 0 && !GpuEfficiency.IsSetUp())
             return; // never set up: nothing to restore
         _ = Task.Run(() => GpuEfficiency.Trigger(cap: want == 1));
+    }
+
+    // ---------- Tuning programs (Afterburner and the like) ----------
+
+    private TuningToolsGuard? _tools;
+    private bool _toolsMaybeClosed = true; // the file may hold programs from before a crash: look once at start
+    private DateTimeOffset _toolsCheckedAt = DateTimeOffset.MinValue;
+
+    private TuningToolsGuard ToolsGuard => _tools ??= new(new WindowsToolProcesses(), new JsonFileStore<TuningToolsState>(Paths.TuningToolsFile));
+
+    /// <summary>The graphics card can be shared with tuning programs on this computer (Windows, a real card).</summary>
+    public bool TuningToolsSupported => OperatingSystem.IsWindows() && !IsSimulated && GpuEngine is not null && Gpus.Any(g => g.Vendor is GpuVendor.Nvidia or GpuVendor.Amd);
+
+    /// <summary>A tuning program is running that Otium can't close without Windows' permission (it runs as administrator).</summary>
+    public bool TuningToolsNeedPermission { get; private set; }
+
+    /// <summary>Tuning programs Otium closed for the graphics card to earn, to start again afterwards.</summary>
+    public IReadOnlyList<string> TuningToolsPaused => TuningToolsSupported && _toolsMaybeClosed
+        ? ToolsGuard.Closed.Select(c => c.Name).Distinct().ToList()
+        : [];
+
+    /// <summary>The names of the tuning programs running now (empty when there are none or the feature is off).</summary>
+    public IReadOnlyList<string> TuningToolsRunning => TuningToolsSupported ? ToolsGuard.Running().Select(r => r.Name).Distinct().ToList() : [];
+
+    public event Action? TuningToolsChanged;
+
+    /// <summary>Whether the tasks that close and bring back tuning programs exist (a prompt from Windows is needed once to make them).</summary>
+    public bool TuningToolsAllowed => TuningToolsSupported && GpuEfficiency.ToolsTasksReady();
+
+    /// <summary>
+    /// Closes tuning programs before the graphics card's miner starts, when the user left that on. Without the permission
+    /// tasks Otium tries itself, which works for programs not running as administrator.
+    /// </summary>
+    public async Task PauseTuningToolsAsync(CancellationToken ct)
+    {
+        if (!TuningToolsSupported || !Settings.PauseTuningTools)
+            return;
+        if (ToolsGuard.Running().Count == 0)
+            return;
+        if (GpuEfficiency.ToolsTasksReady())
+        {
+            GpuEfficiency.TriggerTools(close: true);
+            for (var i = 0; i < 30 && ToolsGuard.Running().Count > 0; i++)
+                await Task.Delay(500, ct);
+        }
+        else
+        {
+            await ToolsGuard.PauseAsync(ct);
+        }
+        _toolsMaybeClosed = true;
+        TuningToolsNeedPermission = ToolsGuard.Running().Count > 0 && !GpuEfficiency.ToolsTasksReady();
+        TuningToolsChanged?.Invoke();
+    }
+
+    /// <summary>Starts again the tuning programs Otium closed (the card isn't earning any more, so the user has their overclock back).</summary>
+    public void RestoreTuningTools()
+    {
+        if (!TuningToolsSupported || !_toolsMaybeClosed)
+            return;
+        _toolsMaybeClosed = false;
+        if (ToolsGuard.Closed.Count == 0)
+            return;
+        if (GpuEfficiency.ToolsTasksReady())
+            GpuEfficiency.TriggerTools(close: false);
+        else
+            ToolsGuard.Restore();
+        TuningToolsChanged?.Invoke();
+    }
+
+    /// <summary>Called on every graphics card engine change: close tuning programs while it earns, bring them back when it stops.</summary>
+    private void UpdateTuningTools()
+    {
+        if (!TuningToolsSupported || GpuEngine is null)
+            return;
+        var mining = GpuEngine.Snapshot.State is EngineState.Starting or EngineState.Earning;
+        if (mining && Settings.PauseTuningTools)
+        {
+            // A program started while the card was already mining (the miner isn't relaunched for that): close it too, but not on every update.
+            var now = DateTimeOffset.UtcNow;
+            if (now - _toolsCheckedAt >= TimeSpan.FromSeconds(15))
+            {
+                _toolsCheckedAt = now;
+                _ = Task.Run(() => PauseTuningToolsAsync(CancellationToken.None));
+            }
+        }
+        else if (!mining)
+        {
+            RestoreTuningTools();
+        }
+    }
+
+    /// <summary>"Allow" for tuning programs: one Windows prompt makes the tasks that close and reopen them. Returns what to tell the user when it went wrong.</summary>
+    public async Task<string?> AllowTuningToolControlAsync()
+    {
+        var run = await Elevation.RunSelfAsync([GpuEfficiency.SetupArgument]);
+        if (run.Succeeded)
+        {
+            TuningToolsNeedPermission = false;
+            TuningToolsChanged?.Invoke();
+            return null;
+        }
+        return run.Cancelled ? null
+            : run.Failure is { } failure ? $"Windows couldn't ask for permission ({failure}). Try again."
+            : $"Windows didn't set it up (error {run.ExitCode}). Try again.";
     }
 
     /// <summary>
@@ -1687,6 +1832,7 @@ public sealed class AppHost : IAsyncDisposable
         if (GpuProvider is not null)
             await GpuProvider.DisposeAsync();
         _sleep.Dispose();
+        RestoreTuningTools(); // the user's overclock comes back with Otium closed
         if (_capApplied == 1)
             GpuEfficiency.Trigger(cap: false); // full power again once Otium is closed
         _nvml?.Dispose();
