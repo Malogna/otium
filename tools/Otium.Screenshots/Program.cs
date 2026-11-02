@@ -106,6 +106,9 @@ foreach (var variant in new[] { ThemeVariant.Light, ThemeVariant.Dark })
     Shoot(new HomeView { DataContext = euroVm }, $"home-euro-week-{theme}", 900, 1500);
     Format.Display = Otium.Core.Currency.DisplayCurrency.Usd;
 
+    // A wide window: the overview in two columns.
+    Shoot(new HomeView { DataContext = new HomeViewModel(host, () => { }) }, $"home-wide-{theme}", 1600, 1000);
+
     // The pool just paid: "You've been paid", which comes before the other result cards.
     results.IsMeasuring = false;
     results.ShowMeasureResult = false;

@@ -33,7 +33,9 @@
         </Grid>
 
         <ScrollViewer Grid.Row="1">
-            <StackPanel MaxWidth="640" Margin="22,18,22,32" Spacing="16">
+            <!-- One column up to a window about 1000 px wide; wider, two columns (see HomeView.axaml.cs). -->
+            <Grid x:Name="Columns" MaxWidth="640" Margin="22,18,22,32" ColumnDefinitions="*" RowDefinitions="Auto,Auto,Auto" RowSpacing="16" ColumnSpacing="20">
+            <StackPanel x:Name="LeftColumn" Spacing="16">
 
                 <!-- Update ready -->
                 <Border Classes="card" IsVisible="{Binding UpdateReady}" Padding="14">
@@ -362,6 +364,9 @@
 
                 </StackPanel>
 
+            </StackPanel>
+
+            <StackPanel x:Name="RightColumn" Grid.Row="1" Spacing="16">
                 <!-- ===== Right now ===== -->
                 <Border Classes="card delay1">
                     <StackPanel Spacing="14">
@@ -614,8 +619,10 @@
                     </Grid>
                 </Border>
 
+            </StackPanel>
+
                 <!-- ===== Community and contact ===== -->
-                <WrapPanel HorizontalAlignment="Center" Margin="0,4,0,0">
+                <WrapPanel x:Name="Footer" Grid.Row="2" HorizontalAlignment="Center" Margin="0,4,0,0">
                     <WrapPanel.Styles>
                         <Style Selector="Button.link TextBlock">
                             <Setter Property="FontSize" Value="12.5" />
@@ -634,7 +641,7 @@
                         <TextBlock Text="Help" TextDecorations="Underline" />
                     </Button>
                 </WrapPanel>
-            </StackPanel>
+            </Grid>
         </ScrollViewer>
     </Grid>
 </UserControl>
