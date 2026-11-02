@@ -96,7 +96,7 @@ public sealed record EmailCodeRecord(long Id, string Email, string DeviceId, str
 public sealed class OtiumStore
 {
     public const long MicrosPerDollar = 1_000_000;
-    private const int SchemaVersion = 17;
+    private const int SchemaVersion = 18;
 
     private readonly string _connectionString;
 
