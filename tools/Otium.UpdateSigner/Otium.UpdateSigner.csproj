@@ -15,7 +15,7 @@
 
   <ItemGroup>
     <!-- Windows DPAPI: the signing key file only opens for the Windows account that made it. -->
-    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="4.7.0" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.14" />
   </ItemGroup>
 
 </Project>
