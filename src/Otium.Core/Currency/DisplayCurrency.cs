@@ -51,8 +51,10 @@ public sealed class DisplayCurrency
     public double ToUsd(double amount) => PerUsd > 0 ? amount / PerUsd : 0;
 
     /// <summary>
-    /// An amount of US dollars written in this currency. Earnings are mostly small, so below one dollar there is one
-    /// more digit than usual ("€0.412"); currencies without a minor unit show two digits below 10 ("¥7.30").
+    /// An amount of US dollars written in this currency. Earnings are mostly small, so below one unit of the currency
+    /// there is one more digit than usual ("€0.412"); currencies without a minor unit show two digits below 10 ("¥7.30").
+    /// The extra digit follows the amount in this currency, not in dollars: 4.20 kroner is "kr 4,20", not "kr 4,203",
+    /// which reads as four thousand.
     /// </summary>
     /// <param name="cents">Always the usual two digits (balances and cash-outs), never the extra one below a dollar.</param>
     public string Format(double usd, bool cents = false)
@@ -61,7 +63,7 @@ public sealed class DisplayCurrency
         var abs = Math.Abs(amount);
         var digits = NoDecimals.Contains(Code)
             ? abs < 10 ? 2 : 0
-            : cents || Math.Abs(usd) >= 1 ? 2 : 3;
+            : cents || abs >= 1 ? 2 : 3;
         var info = (NumberFormatInfo)_culture.NumberFormat.Clone();
         // Symbol and position come from the currency and the locale; a minus sign goes in front in every style.
         var number = abs.ToString("N" + digits, info);
