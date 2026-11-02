@@ -125,6 +125,17 @@ internal static class AdminDashboard
                   <p class="error" id="nc-error"></p>
                 </section>
 
+                <section id="hardware-section">
+                  <h2>Hardware</h2>
+                  <p class="muted" id="hw-summary"></p>
+                  <div class="table-wrap">
+                    <table id="hw-table" hidden>
+                      <thead><tr><th>Part</th><th>Model</th><th>Computers</th></tr></thead>
+                      <tbody id="hw-rows"></tbody>
+                    </table>
+                  </div>
+                </section>
+
                 <div class="cols">
                   <section>
                     <h2>Share analytics, last 7 days</h2>
@@ -762,6 +773,18 @@ internal static class AdminDashboard
               const perHour = Number(k.hours) > 0 ? usd(Number(k.userUsd) / Number(k.hours)) : "–";
               [names[k.kind] || k.kind, n(k.devices), Number(k.hours).toLocaleString("en-US"), usd(k.userUsd), usd(k.electricityUsd), perHour]
                 .forEach((v, i) => tr.append(el("td", v, i ? "num" : "")));
+              return tr;
+            }));
+
+            const hw = s.hardware || [];
+            const hwComputers = kind => hw.filter(h => h.kind === kind).reduce((sum, h) => sum + Number(h.computers), 0);
+            $("hw-summary").textContent = hw.length
+              ? `Reported by computers sharing analytics: ${pl(hwComputers("cpu"), "processor")} and ${pl(hwComputers("gpu"), "graphics card")}. Everyone else is unknown.`
+              : "No computer has shared its hardware yet (Share analytics is opt-in).";
+            $("hw-table").hidden = !hw.length;
+            $("hw-rows").replaceChildren(...hw.map(h => {
+              const tr = el("tr");
+              tr.append(el("td", names[h.kind] || h.kind), el("td", h.model, "mono"), el("td", n(h.computers), "num"));
               return tr;
             }));
 

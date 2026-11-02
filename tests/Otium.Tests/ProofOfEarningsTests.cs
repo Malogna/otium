@@ -668,6 +668,25 @@ public sealed class ProofOfEarningsTests
     }
 
     [Fact]
+    public async Task Reported_hardware_counts_computers_per_model_and_leaves_out_internet_sharing()
+    {
+        using var server = new Server();
+        for (var i = 0; i < 3; i++)
+        {
+            var (device, secret, _) = await server.Register(TestAddresses.Usdt(i));
+            await server.Report(device, secret, new EarningsReport(1, T0 - TimeSpan.FromDays(1), T0,
+                [new DeviceEarnings("cpu", "AMD Ryzen 5 5600X 6-Core Processor", 3600, 0.01, 0),
+                 new DeviceEarnings("gpu", i == 0 ? "rtx4090" : "rtx3080", 3600, 0.1, 0),
+                 new DeviceEarnings("sharing", "NO", 3600, 0.1, 0)]));
+        }
+
+        var hardware = server.Store.ReportedHardware();
+        Assert.Equal(
+            [("cpu", "AMD Ryzen 5 5600X 6-Core Processor", 3L), ("gpu", "rtx3080", 2L), ("gpu", "rtx4090", 1L)],
+            hardware.Select(h => (h.Kind, h.Model, h.Devices)).ToArray());
+    }
+
+    [Fact]
     public async Task Account_summaries_carry_the_myst_price()
     {
         using var server = new Server();

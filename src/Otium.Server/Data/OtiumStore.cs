@@ -1291,6 +1291,27 @@ public sealed class OtiumStore
             .ToList();
     }
 
+    /// <summary>
+    /// The processors and graphics cards computers have reported, ever, and how many computers each. Only computers that
+    /// agreed to "Share analytics" and mined for a while appear.
+    /// </summary>
+    public IReadOnlyList<(string Kind, string Model, long Devices)> ReportedHardware()
+    {
+        using var connection = Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT r.kind, r.model, COUNT(DISTINCT r.device_id) AS n
+            FROM earnings_reports r LEFT JOIN accounts a ON a.account_id = r.account_id
+            WHERE r.kind IN ('cpu', 'gpu') AND r.model IS NOT NULL AND COALESCE(a.is_test, 0) = 0
+            GROUP BY r.kind, r.model ORDER BY r.kind, n DESC, r.model
+            """;
+        using var r = cmd.ExecuteReader();
+        var list = new List<(string, string, long)>();
+        while (r.Read())
+            list.Add((r.GetString(0), r.GetString(1), r.GetInt64(2)));
+        return list;
+    }
+
     public IReadOnlyList<(string Kind, string? Model, DateTimeOffset PeriodStart, DateTimeOffset PeriodEnd, double Seconds, double UserUsd, double ElectricityUsd)> EarningsReportsFor(string accountId)
     {
         using var connection = Open();

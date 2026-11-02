@@ -134,6 +134,8 @@ public static class NonCustodialAdmin
                 devices = reported.Select(e => e.DeviceId).Distinct().Count(),
                 byKind = analytics,
             },
+            // Processors and graphics cards that computers sharing analytics have reported (all time).
+            hardware = store.ReportedHardware().Select(h => new { kind = h.Kind, model = h.Model, computers = h.Devices }),
             mysterium = new
             {
                 sponsoring = mystSponsoring,
