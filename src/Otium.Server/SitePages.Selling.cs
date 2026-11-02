@@ -72,7 +72,7 @@ internal static partial class SitePages
                         <li><strong>Check your internet provider's terms.</strong> Some forbid reselling your connection.</li>
                         <li><strong>It counts towards data caps.</strong> Proxybase says a home connection carries 1–5 GB a day on average.</li>
                       </ul>
-                      <p>Compared with apps that keep your earnings as points until you cash out, Otium pays your own wallet and needs no account. <a href="/compare/honeygain">Otium vs Honeygain</a></p>
+                      <p>Compared with apps that keep your earnings as points until you cash out, Otium pays your own wallet and needs no account. <a href="/compare/honeygain">Otium vs Honeygain</a> · <a href="/compare/packetstream">Otium vs PacketStream</a> · <a href="/compare/grass">Otium vs Grass</a></p>
                     </div>
                     <div class="panel">
                       <h2>Questions</h2>
@@ -141,6 +141,7 @@ internal static partial class SitePages
                         <li>Otium's fee is {fee} of mining time. The mining software's and pool's fees are listed on the front page.</li>
                         <li>It can also <a href="/sell-bandwidth">sell your unused bandwidth</a>, in the same app.</li>
                       </ul>
+                      <p>Weighing up other apps? <a href="/compare/nicehash">Otium vs NiceHash</a> · <a href="/compare/salad">Otium vs Salad</a></p>
                       <p class="muted">Antivirus tools flag every miner, so you'll allow one folder. <a href="/antivirus">Why, and how</a></p>
                     </div>
                     <div class="panel">

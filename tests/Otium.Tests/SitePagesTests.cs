@@ -356,6 +356,9 @@ public sealed class SitePagesTests : IDisposable
     [Theory]
     [InlineData("nicehash", "NiceHash", "https://www.nicehash.com/support/general-help/kyc/what-is-kyc")]
     [InlineData("honeygain", "Honeygain", "https://www.honeygain.com/terms-of-use/")]
+    [InlineData("salad", "Salad", "https://salad.com/terms/chefs")]
+    [InlineData("packetstream", "PacketStream", "https://packetstream.io/terms-of-service/")]
+    [InlineData("grass", "Grass", "https://www.grass.io/terms-and-conditions/")]
     public async Task Comparisons_cite_the_other_apps_own_pages(string slug, string name, string source)
     {
         var (status, html) = await Get($"/compare/{slug}");
@@ -524,11 +527,16 @@ public sealed class SitePagesTests : IDisposable
         Assert.Contains("<h1 class=\"mt-14\">Sell your PC's idle processing power</h1>", html);
         Assert.Contains("""<tr><th scope="row"><a href="/mining/rtx-4090">RTX 4090</a></th><td>$9.94</td><td>$298</td><td>$1.04/kWh</td></tr>""", html);
         Assert.Contains("""<a href="/sell-bandwidth">sell your unused bandwidth</a>""", html);
+        Assert.Contains("""<a href="/compare/salad">Otium vs Salad</a>""", html);
 
-        // Found from every page's footer, the front page's sharing section and the sitemap (the compute page dated by today's prices).
+        // Found from every page's footer, the front page's sharing section, the comparisons and the sitemap (the compute page
+        // dated by today's prices).
         var home = (await Get("/")).Html;
         Assert.Contains("""<a href="/sell-computing-power">Sell processing power</a><a href="/sell-bandwidth">Sell bandwidth</a>""", home);
-        Assert.Contains("""<a href="/sell-bandwidth">How selling bandwidth works</a>""", home);
+        Assert.Contains("""<a href="/sell-bandwidth">How selling your unused bandwidth works</a>""", home);
+        Assert.Contains("""<a href="/sell-bandwidth">How selling your unused bandwidth works</a>""", (await Get("/compare/grass")).Html);
+        Assert.Contains("""<a href="/sell-computing-power">How selling your PC&#39;s idle processing power works</a>""",
+            (await Get("/compare/salad")).Html.Replace("'", "&#39;"));
         var sitemap = (await Get("/sitemap.xml")).Html;
         Assert.Contains("<url><loc>http://localhost/sell-computing-power</loc><lastmod>2026-10-18T15:00:00Z</lastmod></url>", sitemap);
         Assert.Contains("<url><loc>http://localhost/sell-bandwidth</loc></url>", sitemap);
@@ -540,8 +548,8 @@ public sealed class SitePagesTests : IDisposable
         Assert.Equal(HttpStatusCode.NotFound, (await Get("/compare/kryptex")).Status);
         var sitemap = (await Get("/sitemap.xml")).Html;
         Assert.Contains("<loc>http://localhost/antivirus</loc>", sitemap);
-        Assert.Contains("<loc>http://localhost/compare/nicehash</loc>", sitemap);
-        Assert.Contains("<loc>http://localhost/compare/honeygain</loc>", sitemap);
+        foreach (var slug in new[] { "nicehash", "salad", "honeygain", "packetstream", "grass" })
+            Assert.Contains($"<loc>http://localhost/compare/{slug}</loc>", sitemap);
     }
 
     [Fact]
