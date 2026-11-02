@@ -8,7 +8,7 @@
         x:Class="Otium.App.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Icon="/Assets/otium.ico"
-        Width="980" Height="760" MinWidth="560" MinHeight="520"
+        Width="980" Height="760" MinWidth="560" MinHeight="520" MaxWidth="1240" MaxHeight="900" CanMaximize="False"
         WindowStartupLocation="CenterScreen"
         Background="{DynamicResource PageBackground}"
         Title="Otium">

@@ -17,7 +17,7 @@ public partial class HomeView : UserControl
 
     /// <summary>
     /// Narrow: everything in one column, 640 wide, in order (left column, right column, footer). Wide: the left column
-    /// (notices, balance, results) beside the right (what is running now, earnings, tips, invite), up to 1280 wide.
+    /// (notices, balance, results) beside the right (what is running now, earnings, tips, invite), up to 1200 wide.
     /// </summary>
     private void Arrange(double width)
     {
@@ -29,7 +29,7 @@ public partial class HomeView : UserControl
         var columns = this.FindControl<Grid>("Columns")!;
         var right = this.FindControl<StackPanel>("RightColumn")!;
         var footer = this.FindControl<WrapPanel>("Footer")!;
-        columns.MaxWidth = wide ? 1280 : 640;
+        columns.MaxWidth = wide ? 1200 : 640;
         columns.ColumnDefinitions = new ColumnDefinitions(wide ? "*,*" : "*");
         columns.RowDefinitions = new RowDefinitions(wide ? "Auto,Auto" : "Auto,Auto,Auto");
         Grid.SetColumn(right, wide ? 1 : 0);
