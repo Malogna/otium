@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Otium.Core.Providers;
 
 namespace Otium.Core.Engine;
@@ -7,7 +8,7 @@ namespace Otium.Core.Engine;
 /// check-in so the admin dashboard can count where computers get stuck (paused for electricity, waiting for the user to
 /// step away, blocked by antivirus…). Only counts are shown; nothing else about the computer is in it.
 /// </summary>
-public static class EngineStateTags
+public static partial class EngineStateTags
 {
     public const string Earning = "earning";
     public const string WaitingForIdle = "waiting-for-idle";
@@ -29,6 +30,37 @@ public static class EngineStateTags
         new[] { Earning, WaitingForIdle, PausedForElectricity, Antivirus, Error, Installing, Starting, SwitchedOff, PausedByUser, NeedsSetup, None }
             .Concat(ProblemKinds.All.Select(ErrorOf)),
         StringComparer.Ordinal);
+
+    /// <summary>The longest reason sent with a check-in.</summary>
+    public const int ReasonMaxLength = 120;
+
+    /// <summary>
+    /// Why a device is in an "error…" state, in a few words, sent with the check-in so the operator can see what went wrong
+    /// without asking the user. Null for every other state.
+    /// </summary>
+    public static string? ReasonFor(EngineSnapshot? snapshot, string tag) =>
+        snapshot is not null && tag.StartsWith(Error, StringComparison.Ordinal) ? Scrub(snapshot.Problem ?? snapshot.StatusText) : null;
+
+    /// <summary>
+    /// Makes an error message safe to send: file paths (they hold the user's name) become "&lt;path&gt;", whitespace is
+    /// collapsed and the text is cut to <see cref="ReasonMaxLength"/>. Null when nothing is left.
+    /// </summary>
+    public static string? Scrub(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return null;
+        var clean = WhitespaceRun().Replace(PathLike().Replace(text, "<path>"), " ").Trim();
+        if (clean.Length == 0)
+            return null;
+        return clean.Length <= ReasonMaxLength ? clean : clean[..(ReasonMaxLength - 1)] + "…";
+    }
+
+    // C:\Users\Anna Smith\x.dll (folders may hold spaces), \\server\share, /home/name/x, ~/x
+    [GeneratedRegex(@"(?:(?:[A-Za-z]:[\\/]|\\\\)(?:[^\\/:*?""'<>|\r\n]+[\\/])*[^\\/:*?""'<>|\s]*|(?:~/|(?<![\w.])/(?=[\w.\-]+/))[^\s""'<>|]*)")]
+    private static partial Regex PathLike();
+
+    [GeneratedRegex(@"\s+")]
+    private static partial Regex WhitespaceRun();
 
     /// <param name="snapshot">The engine's state; null when the computer has no such device (no usable graphics card).</param>
     /// <param name="enabled">The device's own switch in Settings.</param>

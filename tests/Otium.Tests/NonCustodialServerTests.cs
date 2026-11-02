@@ -325,6 +325,27 @@ public sealed class NonCustodialServerTests : IDisposable
     }
 
     [Fact]
+    public async Task The_admin_dashboard_shows_why_computers_say_they_hit_a_problem()
+    {
+        var (broken, brokenSecret, _) = await Register(Usdt);
+        var (fine, fineSecret, _) = await Register(TestAddresses.Usdt(1));
+        var client = new AccountClient(_http);
+        // The app scrubs paths itself; the server cleans the text again and keeps it only with an error state.
+        await client.GetSummaryAsync(broken, brokenSecret, CancellationToken.None, new MiningTimeReport(TimeSpan.Zero, TimeSpan.Zero,
+            EngineStateTags.Earning, EngineStateTags.Error, null, @"Something went wrong: C:\Users\Anna\x.dll missing"));
+        await client.GetSummaryAsync(fine, fineSecret, CancellationToken.None, new MiningTimeReport(TimeSpan.Zero, TimeSpan.Zero,
+            EngineStateTags.Earning, EngineStateTags.Earning, null, "not an error, so not kept"));
+
+        var request = new HttpRequestMessage(HttpMethod.Get, "/admin/summary");
+        request.Headers.Add("X-Admin-Token", AdminToken);
+        using var doc = JsonDocument.Parse(await (await _http.SendAsync(request)).Content.ReadAsStringAsync());
+        var problems = doc.RootElement.GetProperty("activity").GetProperty("engineProblems").EnumerateArray()
+            .Select(e => (e.GetProperty("device").GetString(), e.GetProperty("reason").GetString(), e.GetProperty("computers").GetInt64()))
+            .ToList();
+        Assert.Equal([("gpu", "Something went wrong: <path> missing", 1L)], problems);
+    }
+
+    [Fact]
     public async Task A_computers_regular_check_in_keeps_it_online_on_the_admin_dashboard()
     {
         var (device, secret, _) = await Register(Usdt);

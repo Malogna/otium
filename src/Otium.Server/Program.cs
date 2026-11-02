@@ -317,7 +317,8 @@ api.MapGet("/devices/{deviceId}/account", async (string deviceId, HttpRequest re
     return Results.Ok(await accounts.GetSummaryAsync(deviceId, Secret(request), PublicBase(request, options), ct, request.HttpContext.Connection.RemoteIpAddress,
         Seconds(request.Query[AccountClient.CpuMinedParameter]), Seconds(request.Query[AccountClient.GpuMinedParameter]),
         request.Headers[Otium.Core.AppVersions.Header].ToString(),
-        request.Query[AccountClient.CpuStateParameter].ToString(), request.Query[AccountClient.GpuStateParameter].ToString()));
+        request.Query[AccountClient.CpuStateParameter].ToString(), request.Query[AccountClient.GpuStateParameter].ToString(),
+        request.Query[AccountClient.CpuReasonParameter].ToString(), request.Query[AccountClient.GpuReasonParameter].ToString()));
 });
 
 static double? Seconds(string? value) =>

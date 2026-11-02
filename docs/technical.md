@@ -433,7 +433,10 @@ reputation detection); the app's "Allow in Windows Security" fix covers it. Shar
 (`EngineStateTags`: earning, waiting-for-idle, paused-electricity, antivirus, error, installing, starting,
 switched-off, paused-by-user, needs-setup, none). The server keeps only the latest word per computer (`devices.cpu_state`,
 `gpu_state`, schema 17) and drops anything off the list; the admin dashboard counts them for computers seen in the last
-24 hours.
+24 hours. From 0.1.5 a device in an `error…` state also sends why (`?cpuReason=&gpuReason=`): the engine's problem or
+status text, with file paths replaced by `<path>`, whitespace collapsed and cut to 120 characters
+(`EngineStateTags.Scrub`, applied again on the server). It is kept only while the state is an error (`devices.cpu_reason`,
+`gpu_reason`) and the dashboard's "not mining because of a problem" alert lists the reasons with their counts.
 
 Users can also share disk space and upload bandwidth through an **AIOZ DePIN node** (`src/Otium.Providers.Aioz`,
 AIOZ's official `aioz-depin-cli`, Apache-2.0, pinned to 1.2.5 for Windows x64 and Linux x64), with its own switch,

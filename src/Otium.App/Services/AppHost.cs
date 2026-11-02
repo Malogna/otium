@@ -1312,12 +1312,13 @@ public sealed class AppHost : IAsyncDisposable
                                 || referral.MyCode is null
                                 || referral.RegisteredPayoutAddress != ownWallet
                                 || (referral.CodeUsed is not null && referral.ReferredAt is null);
+            var cpuState = EngineStateTags.For(Engine.Snapshot, Settings.CpuEnabled, Settings.EarningEnabled, MiningBlocker is not null);
+            var gpuState = EngineStateTags.For(GpuEngine?.Snapshot, Settings.GpuEnabled, Settings.EarningEnabled, MiningBlocker is not null);
             var summary = needsRegister
                 ? await client.RegisterAsync(new RegisterDeviceRequest(DeviceId, Settings.DeviceSecret, ownWallet, referral.CodeUsed, HardwareId()), ct)
                 : await client.GetSummaryAsync(DeviceId, Settings.DeviceSecret, ct,
-                    new MiningTimeReport(Engine.Totals.MiningTime, GpuEngine?.Totals.MiningTime ?? TimeSpan.Zero,
-                        EngineStateTags.For(Engine.Snapshot, Settings.CpuEnabled, Settings.EarningEnabled, MiningBlocker is not null),
-                        EngineStateTags.For(GpuEngine?.Snapshot, Settings.GpuEnabled, Settings.EarningEnabled, MiningBlocker is not null)));
+                    new MiningTimeReport(Engine.Totals.MiningTime, GpuEngine?.Totals.MiningTime ?? TimeSpan.Zero, cpuState, gpuState,
+                        EngineStateTags.ReasonFor(Engine.Snapshot, cpuState), EngineStateTags.ReasonFor(GpuEngine?.Snapshot, gpuState)));
 
             Apply(summary);
             ApplyMiningFloors();

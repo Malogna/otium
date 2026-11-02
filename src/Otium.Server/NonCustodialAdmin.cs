@@ -126,6 +126,8 @@ public static class NonCustodialAdmin
                 appVersions = store.AppVersionsSince(now.AddDays(-7)).Select(v => new { version = v.Version ?? "0.1.0 or older", devices = v.Devices }),
                 // What processors and graphics cards were doing at their last check-in (computers seen in the last 24 h).
                 engineStates = store.EngineStatesSince(now.AddDays(-1)).Select(e => new { device = e.Device, state = e.State, computers = e.Computers }),
+                // Why computers that hit a problem say they did (apps from 0.1.5; scrubbed of file paths).
+                engineProblems = store.EngineProblemsSince(now.AddDays(-1)).Select(e => new { device = e.Device, reason = e.Reason, computers = e.Computers }),
             },
             // What the pools have paid users' own addresses (checked by the real-earnings job).
             poolPayouts = new { paidUsd = Math.Round(payouts.PaidUsd, 2), rewarded30dUsd = Math.Round(payouts.Rewarded30dUsd, 2), paidAccounts = payouts.PaidAccounts },

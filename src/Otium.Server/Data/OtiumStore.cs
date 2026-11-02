@@ -447,6 +447,13 @@ public sealed class OtiumStore
                 Execute($"ALTER TABLE devices ADD COLUMN {column};");
         }
 
+        // Why a processor or graphics card was in an "error…" state (a scrubbed sentence from the app), for the dashboard.
+        foreach (var column in new[] { "cpu_reason TEXT NULL", "gpu_reason TEXT NULL" })
+        {
+            if (Scalar<long>($"SELECT COUNT(*) FROM pragma_table_info('devices') WHERE name = '{column.Split(' ')[0]}'") == 0)
+                Execute($"ALTER TABLE devices ADD COLUMN {column};");
+        }
+
         Execute($"PRAGMA user_version = {SchemaVersion};");
     }
 
@@ -1847,8 +1854,30 @@ public sealed class OtiumStore
         Scalar<long>($"SELECT COUNT(*) FROM devices WHERE created_at < $j AND last_seen_at >= $s AND {NotTest}", ("$j", Format(joinedBefore)), ("$s", Format(seenSince))));
 
     /// <summary>Records what the computer's processor and graphics card are doing (tags already checked against the list).</summary>
-    public void SetEngineStates(string deviceId, string cpuState, string gpuState) =>
-        Execute("UPDATE devices SET cpu_state = $c, gpu_state = $g WHERE device_id = $d", ("$c", cpuState), ("$g", gpuState), ("$d", deviceId));
+    public void SetEngineStates(string deviceId, string cpuState, string gpuState, string? cpuReason = null, string? gpuReason = null) =>
+        Execute("UPDATE devices SET cpu_state = $c, gpu_state = $g, cpu_reason = $cr, gpu_reason = $gr WHERE device_id = $d",
+            ("$c", cpuState), ("$g", gpuState), ("$cr", cpuReason), ("$gr", gpuReason), ("$d", deviceId));
+
+    /// <summary>
+    /// The reasons computers seen since <paramref name="since"/> gave for an "error…" state, with how many gave each, most
+    /// common first, for the processor ("cpu") and the graphics card ("gpu").
+    /// </summary>
+    public IReadOnlyList<(string Device, string Reason, long Computers)> EngineProblemsSince(DateTimeOffset since)
+    {
+        using var connection = Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText =
+            $"SELECT 'cpu', cpu_reason, COUNT(*) FROM devices WHERE last_seen_at >= $s AND cpu_reason IS NOT NULL AND {NotTest} GROUP BY cpu_reason " +
+            "UNION ALL " +
+            $"SELECT 'gpu', gpu_reason, COUNT(*) FROM devices WHERE last_seen_at >= $s AND gpu_reason IS NOT NULL AND {NotTest} GROUP BY gpu_reason " +
+            "ORDER BY 1, 3 DESC";
+        Bind(cmd, [("$s", Format(since))]);
+        using var r = cmd.ExecuteReader();
+        var list = new List<(string, string, long)>();
+        while (r.Read())
+            list.Add((r.GetString(0), r.GetString(1), r.GetInt64(2)));
+        return list;
+    }
 
     /// <summary>
     /// How many computers seen since <paramref name="since"/> were in each state at their last check-in, for the processor

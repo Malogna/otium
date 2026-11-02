@@ -46,4 +46,26 @@ public class EngineStateTagsTests
         Assert.Equal(tag, EngineStateTags.For(new EngineSnapshot { State = state, ProblemKind = kind }, enabled: true, earningOn: true, needsSetup: false));
         Assert.Contains(tag, EngineStateTags.Known); // so the server keeps it
     }
+
+    [Theory]
+    [InlineData(@"Could not find file 'C:\Users\Anna Smith\AppData\Local\Otium\engines\srb\x.dll'.", "Could not find file '<path>'.")]
+    [InlineData("Access denied to /home/anna/.local/share/Otium/engines/x", "Access denied to <path>")]
+    [InlineData(@"Share \\nas\anna\otium is unreachable", "Share <path> is unreachable")]
+    [InlineData("The   card\r\n  stopped", "The card stopped")]
+    [InlineData("A 50/50 split of 1/2 a card", "A 50/50 split of 1/2 a card")] // not paths
+    public void Error_reasons_lose_file_paths_and_extra_whitespace(string message, string expected) =>
+        Assert.Equal(expected, EngineStateTags.Scrub(message));
+
+    [Fact]
+    public void Error_reasons_are_short_and_only_sent_with_an_error()
+    {
+        var cut = EngineStateTags.Scrub(new string('x', 500))!;
+        Assert.Equal(EngineStateTags.ReasonMaxLength, cut.Length);
+        Assert.Null(EngineStateTags.Scrub("  "));
+        var failed = new EngineSnapshot { State = EngineState.Error, StatusText = "Something went wrong: boom", Problem = null };
+        Assert.Equal("Something went wrong: boom", EngineStateTags.ReasonFor(failed, "error"));
+        Assert.Equal("Graphics card isn't mining: x", EngineStateTags.ReasonFor(new EngineSnapshot { State = EngineState.Error, StatusText = "t", Problem = "Graphics card isn't mining: x" }, "error-failed"));
+        Assert.Null(EngineStateTags.ReasonFor(failed, "earning"));
+        Assert.Null(EngineStateTags.ReasonFor(null, "error"));
+    }
 }
