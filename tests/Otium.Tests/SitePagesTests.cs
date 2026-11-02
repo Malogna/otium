@@ -663,6 +663,8 @@ public sealed class SitePagesTests : IDisposable
         Assert.Contains("<summary>Is my money safe?</summary>", html);
         Assert.Contains("""<details id="why-fee"><summary>Why does Otium take 2%?</summary>""", html);
         Assert.Contains("href=\"#why-fee\"", html);
+        // Someone launched a token in Otium's name, so the front page says there is none.
+        Assert.Contains("""<details id="no-token"><summary>Does Otium have its own coin or token?</summary>""", html);
 
         var robots = (await Get("/robots.txt")).Html;
         Assert.DoesNotContain("/admin", robots); // listing it would only advertise it to scanners
