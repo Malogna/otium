@@ -166,7 +166,7 @@ jobs:
           SC_APPLE_INSTALL_IDENTITY: ${{ secrets.APPLE_INSTALL_IDENTITY }}
         run: ./build/package.ps1 -Runtimes ${{ matrix.rid }} -Version $env:VERSION
 
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
           name: otium-${{ matrix.rid }}
           path: artifacts/releases/${{ matrix.rid }}
