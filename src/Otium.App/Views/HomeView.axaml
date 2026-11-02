@@ -92,7 +92,14 @@
                     <StackPanel Spacing="18">
                         <Grid ColumnDefinitions="*,Auto">
                             <StackPanel Spacing="0">
-                                <TextBlock Classes="heroMuted" Text="{Binding BalanceCaption}" />
+                                <StackPanel Orientation="Horizontal" Spacing="9">
+                                    <!-- A soft ring spreads from the dot while Otium is earning -->
+                                    <Grid Width="9" Height="9" VerticalAlignment="Center" IsVisible="{Binding IsEarning}">
+                                        <Ellipse Classes="heroPulse" />
+                                        <Ellipse Classes="heroDot" />
+                                    </Grid>
+                                    <TextBlock Classes="heroMuted" Text="{Binding BalanceCaption}" />
+                                </StackPanel>
                                 <TextBlock Classes="display" Text="{Binding Balance}" />
                                 <TextBlock Classes="heroMuted" FontSize="13" Text="{Binding PendingText}"
                                            IsVisible="{Binding PendingText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />

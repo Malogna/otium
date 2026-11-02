@@ -31,6 +31,7 @@
 
         <ScrollViewer x:Name="Scroller" Grid.Row="1">
             <StackPanel x:Name="Sections" Spacing="16" Margin="4,0,4,24">
+                <TextBlock Classes="group" Margin="6,2,0,-6" Text="HOW OTIUM WORKS" />
                 <Border x:Name="EarningSection" Classes="card">
                     <StackPanel Spacing="14">
                         <TextBlock Classes="h2" Text="How hard should your computer work?" />
@@ -326,6 +327,7 @@
                     </StackPanel>
                 </Border>
 
+                <TextBlock Classes="group" Text="MONEY" />
                 <Border x:Name="CurrencySection" Classes="card">
                     <StackPanel Spacing="14">
                         <TextBlock Classes="h2" Text="Currency" />
@@ -409,6 +411,7 @@
                     </StackPanel>
                 </Border>
 
+                <TextBlock Classes="group" Text="YOU" />
                 <Border x:Name="DataSection" Classes="card">
                     <StackPanel Spacing="10" DataContext="{Binding YourData}" x:DataType="vm:YourDataViewModel">
                         <TextBlock Classes="h2" Text="Your data" />
