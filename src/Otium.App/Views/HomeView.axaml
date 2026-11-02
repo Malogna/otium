@@ -364,9 +364,6 @@
 
                 </StackPanel>
 
-            </StackPanel>
-
-            <StackPanel x:Name="RightColumn" Grid.Row="1" Spacing="16">
                 <!-- ===== Right now ===== -->
                 <Border Classes="card delay1">
                     <StackPanel Spacing="14">
@@ -435,6 +432,9 @@
                     </StackPanel>
                 </Border>
 
+            </StackPanel>
+
+            <StackPanel x:Name="RightColumn" Grid.Row="1" Spacing="16">
                 <!-- ===== Projections + chart ===== -->
                 <Border Classes="card delay2">
                     <StackPanel Spacing="14">

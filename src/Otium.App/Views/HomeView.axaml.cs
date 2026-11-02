@@ -17,7 +17,7 @@ public partial class HomeView : UserControl
 
     /// <summary>
     /// Narrow: everything in one column, 640 wide, in order (left column, right column, footer). Wide: the left column
-    /// (notices, balance, results) beside the right (what is running now, earnings, tips, invite), up to 1200 wide.
+    /// (notices, balance, results, what is running now) beside the right (earnings, tips, invite), up to 1200 wide.
     /// </summary>
     private void Arrange(double width)
     {
