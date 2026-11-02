@@ -17,10 +17,10 @@ public sealed record SrbMinerAsset(string FileName, string Sha256)
 /// </summary>
 public static class SrbMinerRelease
 {
-    public const string Version = "3.7.6";
+    public const string Version = "3.8.3";
 
-    private static readonly SrbMinerAsset WindowsX64 = new("SRBMiner-Multi-3-7-6-win64.zip", "fb0ed55977aad70b6efb45e14c2c41263c557f1df64fb02a1396c40c99ebae3b");
-    private static readonly SrbMinerAsset LinuxX64 = new("SRBMiner-Multi-3-7-6-Linux.tar.gz", "5d3f5a30f09b17c828fe9881141ca3b2fce8471422e5d88b074ab654dc456674");
+    private static readonly SrbMinerAsset WindowsX64 = new("SRBMiner-Multi-3-8-3-win64.zip", "92af8d2db5bc96df62825487e7f384b8ab04e5db26a634e29c2cd86dcbb87d0e");
+    private static readonly SrbMinerAsset LinuxX64 = new("SRBMiner-Multi-3-8-3-Linux.tar.gz", "c9e10baae24d1811c04d30a416e237774e9e16110276c864a4221395f9f55e8b");
 
     public static SrbMinerAsset? ForCurrentPlatform() => For(
         OperatingSystem.IsWindows() ? OSPlatform.Windows : OperatingSystem.IsLinux() ? OSPlatform.Linux : OSPlatform.OSX,

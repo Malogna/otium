@@ -229,8 +229,8 @@ public class SrbMinerTests
     [Fact]
     public void Release_assets_cover_windows_and_linux_x64_only()
     {
-        Assert.Equal("SRBMiner-Multi-3-7-6-win64.zip", SrbMinerRelease.For(OSPlatform.Windows, Architecture.X64)!.FileName);
-        Assert.Equal("SRBMiner-Multi-3-7-6-Linux.tar.gz", SrbMinerRelease.For(OSPlatform.Linux, Architecture.X64)!.FileName);
+        Assert.Equal("SRBMiner-Multi-3-8-3-win64.zip", SrbMinerRelease.For(OSPlatform.Windows, Architecture.X64)!.FileName);
+        Assert.Equal("SRBMiner-Multi-3-8-3-Linux.tar.gz", SrbMinerRelease.For(OSPlatform.Linux, Architecture.X64)!.FileName);
         Assert.Null(SrbMinerRelease.For(OSPlatform.OSX, Architecture.Arm64));
         Assert.Null(SrbMinerRelease.For(OSPlatform.Linux, Architecture.Arm64));
     }
@@ -252,8 +252,8 @@ public sealed class SrbMinerProviderTests : IDisposable
     {
         // A stand-in engine, installed as the installer leaves it (its download kept, to check the binary before each launch).
         var engineDir = Path.Combine(_dir, "engines", $"srbminer-{SrbMinerRelease.Version}");
-        _asset = new SrbMinerAsset("SRBMiner-Multi-3-7-6-win64.zip",
-            FakeEngine.Install(engineDir, "SRBMiner-Multi-3-7-6-win64.zip", $"SRBMiner-Multi-3-7-6/{SrbMinerRelease.BinaryName}"));
+        _asset = new SrbMinerAsset("SRBMiner-Multi-3-8-3-win64.zip",
+            FakeEngine.Install(engineDir, "SRBMiner-Multi-3-8-3-win64.zip", $"SRBMiner-Multi-3-8-3/{SrbMinerRelease.BinaryName}"));
 
         // Free electricity, so MoneroOcean's "free power only" algorithms take part (these tests cover switching itself).
         _provider = CreateProvider(policy: null, pricePerKwh: 0, benchmarks: "bench.json");
