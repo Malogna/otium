@@ -180,6 +180,12 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
 
     /// <summary>After an intensity step: the measured watts before it, to check the step lowered them.</summary>
     private double? _stepWatts;
+
+    /// <summary>After a power step down: the fan before it and the level it left, to check the fan followed.</summary>
+    private double? _fanAtStep;
+    private int? _powerFromStep;
+    private DateTimeOffset _fansIgnorePowerUntil = DateTimeOffset.MinValue;
+    private string? _fanNote;
     private DateTimeOffset? _hotSince;
     private DateTimeOffset? _coolSince;
 
@@ -473,6 +479,8 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         var detail = _switchNote is null ? _current.PoolName : $"{_current.PoolName} ({_switchNote})";
         if ((_quietCap is not null || _powerPercent < GpuEfficiency.CapPercent) && _quietNote is not null)
             detail += $" · quiet: {_quietNote}";
+        else if (_fanNote is not null && now < _fansIgnorePowerUntil)
+            detail += $" · {_fanNote}";
         else if (_trial)
             detail += $" · trying intensity {_intensity?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "auto"}";
         var waiting = inDevFeeRound
@@ -561,6 +569,12 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
 
     /// <summary>For an algorithm that ignores intensity, quiet mode lowers the power limit by this many points per step.</summary>
     public const int PowerStep = 10;
+
+    /// <summary>A power step must bring the fan down by at least this many points, or the fan doesn't follow the card's power.</summary>
+    public const int FanMustDrop = 5;
+
+    /// <summary>When it doesn't, quiet mode puts the power back and leaves it alone for this long: lowering it more would only cost speed.</summary>
+    public static readonly TimeSpan FansIgnorePowerFor = TimeSpan.FromHours(2);
 
     /// <summary>The silent-fans tuner raises the power limit by this many points at a time…</summary>
     public const int ClimbStep = 5;
@@ -778,11 +792,29 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         if (hot is not null)
         {
             _coolSince = null;
+            if (now < _fansIgnorePowerUntil)
+            {
+                _hotSince = null;
+                return null;
+            }
             _hotSince ??= now;
             if (now - _hotSince < HotFor)
                 return null;
             _hotSince = null;
-            var note = hot.FanPercent >= HotFanPercent
+            if (_powerFromStep is { } from && _fanAtStep is { } fanBefore && hot.FanPercent is { } fanNow && fanNow > fanBefore - FanMustDrop)
+            {
+                // The last power step down left the fan where it was: its speed doesn't come from this card's load (another program's
+                // fan curve, a fan that follows the memory's heat). More steps would only cost speed, so the limit goes back.
+                _fanAtStep = null;
+                _powerFromStep = null;
+                if (_powerPercent < from && _powerCap(from))
+                    _powerPercent = from;
+                _fansIgnorePowerUntil = now + FansIgnorePowerFor;
+                _fanNote = FormattableString.Invariant($"the fan stays at {fanNow:0}% however low the power goes, so the power is left alone");
+                _quietNote = null;
+                return null;
+            }
+            var note = hot.FanPercent >= hotFan
                 ? FormattableString.Invariant($"eased off (fan {hot.FanPercent:0}%)")
                 : FormattableString.Invariant($"eased off ({hot.TemperatureC:0} °C)");
             var running = _intensity ?? MinerPick(algorithm) ?? UnknownPick;
@@ -798,6 +830,8 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
             // The power limit instead: no restart needed.
             if (_powerPercent - PowerStep >= GpuEfficiency.MinCapPercent && _powerCap(_powerPercent - PowerStep))
             {
+                _powerFromStep ??= _powerPercent;
+                _fanAtStep = hot.FanPercent;
                 _powerPercent -= PowerStep;
                 _quietNote = FormattableString.Invariant($"{note}, power at {_powerPercent}%");
             }
@@ -805,6 +839,8 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         }
 
         _hotSince = null;
+        _fanAtStep = null;
+        _powerFromStep = null;
         if (!cool || (_quietCap is null && _powerPercent >= GpuEfficiency.CapPercent))
         {
             _coolSince = null;
@@ -1228,6 +1264,8 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         _trial = trial;
         _hotSince = null;
         _coolSince = null;
+        _fanAtStep = null;
+        _powerFromStep = null;
 
         var login = LoginFor(algorithm, options);
         _currentPool = login.Pool;

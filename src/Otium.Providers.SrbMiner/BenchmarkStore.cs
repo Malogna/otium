@@ -86,9 +86,17 @@ public sealed class BenchmarkStore
             return _file.Tuning.Where(t => string.Equals(t.Algorithm, algorithm, StringComparison.OrdinalIgnoreCase) && now - t.At < IntensityTuner.Expiry).ToList();
     }
 
-    /// <summary>Whether this algorithm's load was found not to change with intensity (see <see cref="BenchmarkFile.IntensityIgnored"/>).</summary>
+    /// <summary>Algorithms whose load was measured not to change with intensity on every card tried (Pearl drew the same 348 W at each setting on an RTX 3080).</summary>
+    private static readonly string[] KnownToIgnoreIntensity = ["pearlhash"];
+
+    /// <summary>
+    /// Whether this algorithm's load doesn't change with intensity (see <see cref="BenchmarkFile.IntensityIgnored"/>): found on this
+    /// computer, or already known, so quiet mode goes straight to the power limit instead of restarting the miner to find out.
+    /// </summary>
     public bool IntensityIgnored(string algorithm)
     {
+        if (KnownToIgnoreIntensity.Contains(algorithm, StringComparer.OrdinalIgnoreCase))
+            return true;
         lock (_lock)
             return _file.IntensityIgnored.Contains(algorithm, StringComparer.OrdinalIgnoreCase);
     }

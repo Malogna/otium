@@ -65,7 +65,7 @@
             <SolidColorBrush x:Key="HeroText" Color="#FFFFFF" />
             <SolidColorBrush x:Key="HeroMuted" Color="#ECFAF4" />
             <SolidColorBrush x:Key="HeroChip" Color="#26FFFFFF" />
-            <LinearGradientBrush x:Key="HeroSheen" StartPoint="0%,0%" EndPoint="100%,35%">
+            <LinearGradientBrush x:Key="HeroSheen" StartPoint="0%,50%" EndPoint="100%,50%">
                 <GradientStop Color="#00FFFFFF" Offset="0" />
                 <GradientStop Color="#26FFFFFF" Offset="0.5" />
                 <GradientStop Color="#00FFFFFF" Offset="1" />
