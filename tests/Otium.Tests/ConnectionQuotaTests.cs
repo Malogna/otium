@@ -15,6 +15,7 @@ namespace Otium.Tests;
 /// Limits per internet connection on what anyone can ask for and costs Otium something (new accounts, code emails,
 /// problem reports), with IPv6 counted per /64 network.
 /// </summary>
+[Trait("Suite", "Server")]
 public sealed class ConnectionQuotaTests : IDisposable
 {
     private const string Proxy = "172.30.0.10";

@@ -123,6 +123,7 @@ public class MysteriumNodeTests
 }
 
 /// <summary>Otium paying new Mysterium nodes' registration fee from its own wallet.</summary>
+[Trait("Suite", "Server")]
 public sealed class MysteriumSponsorTests : IDisposable
 {
     private const string Channel = "0x40619b07ec4f7007697d7de77ab9b09516f324e6";

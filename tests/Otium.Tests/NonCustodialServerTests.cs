@@ -16,6 +16,7 @@ using Otium.Server.Gpu;
 namespace Otium.Tests;
 
 /// <summary>The server with custody off (the default): accounts and referrals only, no balances or cash-outs.</summary>
+[Trait("Suite", "Server")]
 public sealed class NonCustodialServerTests : IDisposable
 {
     private const string AdminToken = "test-admin-token-0123456789";

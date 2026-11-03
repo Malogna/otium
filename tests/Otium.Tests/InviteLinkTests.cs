@@ -15,6 +15,7 @@ namespace Otium.Tests;
 /// Invite links that apply themselves: a friend who opens otium.lol/r/CODE and installs Otium on the same internet
 /// connection gets the code filled in, without typing it.
 /// </summary>
+[Trait("Suite", "Server")]
 public sealed class InviteLinkTests : IDisposable
 {
     private const string Proxy = "172.30.0.10";

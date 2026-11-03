@@ -14,6 +14,7 @@ using Otium.Server.Data;
 namespace Otium.Tests;
 
 /// <summary>Exporting and deleting account data (the GDPR rights), through the real API.</summary>
+[Trait("Suite", "Server")]
 public sealed class AccountDataTests : IDisposable
 {
     private const string AdminToken = "test-admin-token";

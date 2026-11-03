@@ -32,4 +32,5 @@ jobs:
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
-      - run: dotnet test
+      # The server tests (Suite=Server) take 5 minutes on a Windows runner and 1 on Linux, where the server runs: Windows runs the rest.
+      - run: dotnet test ${{ runner.os == 'Windows' && '--filter "Suite!=Server"' || '' }}

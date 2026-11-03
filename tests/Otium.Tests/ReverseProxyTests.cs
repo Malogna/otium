@@ -15,6 +15,7 @@ namespace Otium.Tests;
 /// Behind a reverse proxy, the server must see each client's own address (one paid sharer per internet connection),
 /// and must not let anyone but the proxy choose it.
 /// </summary>
+[Trait("Suite", "Server")]
 public sealed class ReverseProxyTests : IDisposable
 {
     private const long MB = 1024 * 1024;
