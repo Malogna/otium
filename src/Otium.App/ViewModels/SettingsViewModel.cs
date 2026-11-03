@@ -15,12 +15,6 @@ using Otium.Providers.XMRig;
 
 namespace Otium.App.ViewModels;
 
-/// <summary>One choice of how loud the graphics card's fans may get while it earns.</summary>
-public sealed record FanLimitOption(int Percent, string Name, string Description)
-{
-    public string Label => $"{Name}: {Description.ToLowerInvariant()}";
-}
-
 public partial class SettingsViewModel : ViewModelBase
 {
     private readonly AppHost _host;
@@ -48,8 +42,8 @@ public partial class SettingsViewModel : ViewModelBase
         GpuOptimize = host.GpuOptimizeOn;
         EarnWhileBrowsing = s.EarnWhileBrowsing;
         PauseTuningTools = s.PauseTuningTools;
-        SilentTuning = s.SilentTuning;
-        SelectedFanLimit = FanLimits.OrderBy(f => Math.Abs(f.Percent - s.QuietFanLimit)).First();
+        ModeMaxEarnings = s.GpuMaxEarnings;
+        ModeOptimized = !s.GpuMaxEarnings;
         RefreshToolsStatus();
         host.TuningToolsChanged += () => Dispatcher.UIThread.Post(RefreshToolsStatus);
         NotificationsEnabled = s.NotificationsEnabled;
@@ -457,35 +451,35 @@ public partial class SettingsViewModel : ViewModelBase
 
     [ObservableProperty] public partial bool EarnWhileBrowsing { get; set; }
 
-    // ---------- Fan noise: how loud the fans may get while the card earns ----------
+    // ---------- What "Optimize my graphics card" optimizes for ----------
 
-    /// <summary>The fan limits to pick from, quietest first.</summary>
-    public IReadOnlyList<FanLimitOption> FanLimits { get; } =
-    [
-        new(40, "Silent", "Fans stay at or under 40%"),
-        new(50, "Quiet", "Fans stay at or under 50%"),
-        new(60, "Balanced", "Fans may reach 60%"),
-        new(75, "Performance", "Fans may reach 75%"),
-    ];
+    /// <summary>"Optimized": the most speed at a fan noise nobody minds.</summary>
+    [ObservableProperty] public partial bool ModeOptimized { get; set; }
 
-    [ObservableProperty] public partial FanLimitOption? SelectedFanLimit { get; set; }
+    /// <summary>"Max earnings": full power, the fans' noise doesn't matter.</summary>
+    [ObservableProperty] public partial bool ModeMaxEarnings { get; set; }
 
-    [ObservableProperty] public partial bool SilentTuning { get; set; }
-
-    partial void OnSelectedFanLimitChanged(FanLimitOption? value)
-    {
-        if (_loading || value is null)
-            return;
-        _host.Settings.QuietFanLimit = value.Percent;
-        _host.SaveSettings();
-    }
-
-    partial void OnSilentTuningChanged(bool value)
+    partial void OnModeMaxEarningsChanged(bool value)
     {
         if (_loading)
             return;
-        _host.Settings.SilentTuning = value;
-        _host.SaveSettings();
+        _host.SetGpuMaxEarnings(value);
+        RefreshToolsStatus();
+    }
+
+    /// <summary>Holding the fans needs Windows' permission once (the card's fan control is an administrator's).</summary>
+    [ObservableProperty] public partial bool FanNeedsPermission { get; set; }
+
+    [ObservableProperty] public partial string FanMessage { get; set; } = "";
+
+    public const string FanPermissionText =
+        "Holding the fans at your limit is a change only an administrator can make. Windows asks once; after that Otium does it by itself, and gives the fans back to the card whenever it stops earning.";
+
+    [RelayCommand]
+    private async Task AllowFanAsync()
+    {
+        FanMessage = await _host.AllowTuningToolControlAsync() ?? "";
+        RefreshToolsStatus();
     }
 
     // ---------- Tuning programs (MSI Afterburner and the like) ----------
@@ -516,6 +510,7 @@ public partial class SettingsViewModel : ViewModelBase
 
     private void RefreshToolsStatus()
     {
+        FanNeedsPermission = GpuOptimize && !ModeMaxEarnings && _host.FanControlNeedsPermission;
         if (!_host.TuningToolsSupported)
             return;
         var paused = _host.TuningToolsPaused;
@@ -558,8 +553,13 @@ public partial class SettingsViewModel : ViewModelBase
 
     /// <summary>What "Optimize my graphics card" does, the same words in setup and Settings.</summary>
     public const string OptimizeGpuText =
-        "Lowers your graphics card's power draw, tunes it and keeps the fans quiet, so it earns about the same on less " +
-        "electricity and noise.";
+        "Tunes your graphics card while it earns. Pick below what to tune it for.";
+
+    public const string OptimizedText =
+        "Counts your electricity and keeps the fans down: the most the card earns after electricity at a fan noise nobody minds. Otium holds the fans at about half speed and sets the card's power and miner setting so it stays cool there; the fans speed up only if the card gets hot (over 75 °C).";
+
+    public const string MaxEarningsText =
+        "The most the card can earn, with no electricity subtracted for it: its full power limit and the miner setting with the highest speed. The fans do what they do, so it can be loud, and it uses more power. Otium still slows down if the card gets too hot.";
 
     /// <summary>Why Windows asks, said once, just before it does (in Settings, and in setup's own words).</summary>
     public const string GpuPermissionText =

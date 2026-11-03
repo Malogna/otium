@@ -108,19 +108,20 @@
                             <Border BorderBrush="{DynamicResource CardBorder}" BorderThickness="2,0,0,0" Margin="14,12,0,0" Padding="18,2,0,2"
                                     IsEnabled="{Binding GpuOptimize}">
                                 <StackPanel Spacing="18">
-                                    <StackPanel Spacing="6">
-                                        <ToggleSwitch IsChecked="{Binding SilentTuning}"
-                                                      OnContent="Most speed at the fan noise I choose" OffContent="Most speed at the fan noise I choose" />
-                                        <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap"
-                                                   Text="Otium raises the graphics card's power limit step by step while its fans stay under your limit, and lowers it when they get louder, so the card gives as much speed as it can at a noise you accept. It says Tuning on the card's row while it does this." />
-                                        <ComboBox ItemsSource="{Binding FanLimits}" SelectedItem="{Binding SelectedFanLimit}" MinWidth="320"
-                                                  IsEnabled="{Binding SilentTuning}" AutomationProperties.Name="Fan noise">
-                                            <ComboBox.ItemTemplate>
-                                                <DataTemplate x:DataType="vm:FanLimitOption">
-                                                    <TextBlock Text="{Binding Label}" />
-                                                </DataTemplate>
-                                            </ComboBox.ItemTemplate>
-                                        </ComboBox>
+                                    <StackPanel Spacing="10">
+                                        <RadioButton GroupName="GpuMode" IsChecked="{Binding ModeOptimized}" Content="Optimized" FontWeight="SemiBold" />
+                                        <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Margin="28,-6,0,0"
+                                                   Text="{x:Static vm:SettingsViewModel.OptimizedText}" />
+                                        <StackPanel Spacing="8" Margin="28,0,0,0" IsVisible="{Binding FanNeedsPermission}">
+                                            <TextBlock FontSize="13" TextWrapping="Wrap" Text="{x:Static vm:SettingsViewModel.FanPermissionText}" />
+                                            <Button Classes="accent" Content="Allow" HorizontalAlignment="Left" Command="{Binding AllowFanCommand}"
+                                                    ToolTip.Tip="Windows asks for your permission once" />
+                                            <TextBlock Classes="error" FontSize="12.5" TextWrapping="Wrap" Text="{Binding FanMessage}"
+                                                       IsVisible="{Binding FanMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                                        </StackPanel>
+                                        <RadioButton GroupName="GpuMode" IsChecked="{Binding ModeMaxEarnings}" Content="Max earnings" FontWeight="SemiBold" />
+                                        <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Margin="28,-6,0,0"
+                                                   Text="{x:Static vm:SettingsViewModel.MaxEarningsText}" />
                                     </StackPanel>
                                     <StackPanel Spacing="2" IsVisible="{Binding ShowTuningTools}">
                                         <ToggleSwitch IsChecked="{Binding PauseTuningTools}"

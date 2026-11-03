@@ -182,6 +182,15 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
     private double? _stepWatts;
 
     /// <summary>After a power step down: the fan before it and the level it left, to check the fan followed.</summary>
+    /// <summary>Holds the fans at a speed (percent) or gives them back to the card (null); false when Windows hasn't allowed it.</summary>
+    private readonly Func<int?, bool>? _fanControl;
+
+    /// <summary>Quiet mode holds the fans (or has handed them back because the card got hot): temperature, not the fan, then says when to ease off.</summary>
+    private bool _fanMode;
+
+    /// <summary>The speed the fans are held at now; null while they are the card's own.</summary>
+    private int? _fanHeld;
+    private DateTimeOffset _fanSetAt;
     private double? _fanAtStep;
     private int? _powerFromStep;
     private DateTimeOffset _fansIgnorePowerUntil = DateTimeOffset.MinValue;
@@ -225,10 +234,12 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         Func<int, bool>? powerCap = null,
         Func<CancellationToken, Task>? prepare = null,
         Func<bool>? silentTuning = null,
-        Func<int>? fanLimit = null)
+        Func<int>? fanLimit = null,
+        Func<int?, bool>? fanControl = null)
     {
         _silentTuning = silentTuning ?? (() => false);
         _fanLimit = fanLimit;
+        _fanControl = fanControl;
         _prepare = prepare ?? (_ => Task.CompletedTask);
         _optimize = optimize ?? (() => false);
         _powerCap = powerCap ?? (_ => false);
@@ -340,6 +351,7 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
     {
         // Keep _current and _currentSince: after a fee-slice restart the same algorithm continues without a re-pick.
         await KillAsync();
+        ReleaseFans();
     }
 
     public async Task<ProviderStatus> GetStatusAsync(CancellationToken ct)
@@ -479,6 +491,8 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         var detail = _switchNote is null ? _current.PoolName : $"{_current.PoolName} ({_switchNote})";
         if ((_quietCap is not null || _powerPercent < GpuEfficiency.CapPercent) && _quietNote is not null)
             detail += $" · quiet: {_quietNote}";
+        else if (_fanMode && _fanHeld is { } heldAt)
+            detail += $" · fans held at {heldAt}%";
         else if (_fanNote is not null && now < _fansIgnorePowerUntil)
             detail += $" · {_fanNote}";
         else if (_trial)
@@ -569,6 +583,33 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
 
     /// <summary>For an algorithm that ignores intensity, quiet mode lowers the power limit by this many points per step.</summary>
     public const int PowerStep = 10;
+
+    /// <summary>While the fans are held, they stay at the user's limit up to this temperature…</summary>
+    public const double FanRampStartC = 75;
+
+    /// <summary>…speed up from there, in step with the temperature, and are the card's own from here (they would be at full speed anyway).</summary>
+    public const double FanAutoC = 82;
+
+    /// <summary>With the fans held, the power limit comes down when a card stays this warm for <see cref="HotFor"/>…</summary>
+    public const double HeldHotC = 76;
+
+    /// <summary>…and may go up again after <see cref="ClimbAfter"/> at this temperature or lower.</summary>
+    public const double HeldCoolC = 70;
+
+    /// <summary>The fans are set again only when the speed they should have changes by this many points (the task that sets them takes a moment).</summary>
+    public const int FanStep = 3;
+
+    public static readonly TimeSpan FanChangeEvery = TimeSpan.FromSeconds(20);
+
+    /// <summary>The speed to hold the fans at: the user's limit while the card is cool, more as it warms, and null (the card's own control) once it is hot.</summary>
+    public static int? FanFor(double temperatureC, int limit)
+    {
+        if (temperatureC >= FanAutoC)
+            return null;
+        if (temperatureC <= FanRampStartC)
+            return limit;
+        return limit + (int)Math.Round((100 - limit) * (temperatureC - FanRampStartC) / (FanAutoC - FanRampStartC));
+    }
 
     /// <summary>A power step must bring the fan down by at least this many points, or the fan doesn't follow the card's power.</summary>
     public const int FanMustDrop = 5;
@@ -700,6 +741,7 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
     {
         if (!_optimize())
         {
+            ReleaseFans();
             _powerPercent = GpuEfficiency.CapPercent; // the app restores the power limit itself when this is off
             _stepWatts = null;
             if (_quietCap is null && _intensity is null)
@@ -712,6 +754,7 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
 
         // Judged only once the miner has settled after a launch (a relaunch briefly changes the load).
         var readings = _cards.Select(_stats).OfType<GpuStats>().Where(s => s.FanPercent is not null || s.TemperatureC is not null).ToList();
+        ManageFans(readings, now); // from the first moment: the card heats up as soon as it mines
         if (readings.Count == 0 || now - _launchedAt < IntensityTuner.Warmup)
             return null;
 
@@ -732,8 +775,13 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
 
         var hotFan = _fanLimit?.Invoke() ?? HotFanPercent;
         var coolFan = _fanLimit is null ? CoolFanPercent : hotFan - QuietMargin;
-        var hot = readings.FirstOrDefault(s => s.FanPercent >= hotFan || s.TemperatureC >= HotTemperatureC);
-        var cool = readings.All(s => (s.FanPercent ?? 0) <= coolFan && (s.TemperatureC ?? 0) <= CoolTemperatureC);
+        // With the fans held, their speed says nothing about the load: the temperature does.
+        var hot = _fanMode
+            ? readings.FirstOrDefault(s => s.TemperatureC >= HeldHotC)
+            : readings.FirstOrDefault(s => s.FanPercent >= hotFan || s.TemperatureC >= HotTemperatureC);
+        var cool = _fanMode
+            ? readings.All(s => (s.TemperatureC ?? 0) <= HeldCoolC)
+            : readings.All(s => (s.FanPercent ?? 0) <= coolFan && (s.TemperatureC ?? 0) <= CoolTemperatureC);
 
         // Silent tuning: start where the last run settled (once), and give a level back before slowing the miner down.
         if (_silentTuning())
@@ -801,7 +849,7 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
             if (now - _hotSince < HotFor)
                 return null;
             _hotSince = null;
-            if (_powerFromStep is { } from && _fanAtStep is { } fanBefore && hot.FanPercent is { } fanNow && fanNow > fanBefore - FanMustDrop)
+            if (!_fanMode && _powerFromStep is { } from && _fanAtStep is { } fanBefore && hot.FanPercent is { } fanNow && fanNow > fanBefore - FanMustDrop)
             {
                 // The last power step down left the fan where it was: its speed doesn't come from this card's load (another program's
                 // fan curve, a fan that follows the memory's heat). More steps would only cost speed, so the limit goes back.
@@ -814,7 +862,7 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
                 _quietNote = null;
                 return null;
             }
-            var note = hot.FanPercent >= hotFan
+            var note = !_fanMode && hot.FanPercent >= hotFan
                 ? FormattableString.Invariant($"eased off (fan {hot.FanPercent:0}%)")
                 : FormattableString.Invariant($"eased off ({hot.TemperatureC:0} °C)");
             var running = _intensity ?? MinerPick(algorithm) ?? UnknownPick;
@@ -869,6 +917,53 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         _quietCap = cap + QuietStep >= full ? null : cap + QuietStep;
         await LaunchAsync(algorithm, ct);
         return new ProviderStatus(ProviderState.Starting, 0, "Quiet mode: the graphics card is cool again, stepping back up…", algorithm.PoolName);
+    }
+
+    /// <summary>
+    /// Holds the graphics card's fans at the user's noise limit (Settings), which the card's own fan curve doesn't: an RTX 3080
+    /// mining Pearl ran its fans at 69% at 60 °C. Held fans have to follow the temperature, so they speed up above
+    /// <see cref="FanRampStartC"/> and are handed back to the card at <see cref="FanAutoC"/>; the power limit then does the
+    /// quieting (see <see cref="HeldHotC"/>). Does nothing where Windows hasn't allowed Otium to set fans, or the card
+    /// reports no temperature.
+    /// </summary>
+    private void ManageFans(IReadOnlyList<GpuStats> readings, DateTimeOffset now)
+    {
+        var temperatures = readings.Select(s => s.TemperatureC).OfType<double>().ToList();
+        if (_fanControl is null || _fanLimit is null || !_silentTuning() || temperatures.Count == 0)
+        {
+            ReleaseFans();
+            return;
+        }
+        var temperature = temperatures.Max();
+        var limit = Math.Clamp(_fanLimit(), Nvml.MinFanPercent, 90);
+        // Back to holding only once it has cooled a little: no flapping around the point where the card's own control took over.
+        var target = _fanMode && _fanHeld is null && temperature > FanAutoC - 4 ? null : FanFor(temperature, limit);
+        if (_fanMode && target == _fanHeld)
+            return;
+        if (_fanMode && target is { } wanted && _fanHeld is { } held && Math.Abs(wanted - held) < FanStep)
+            return;
+        if (_fanMode && target is not null && now - _fanSetAt < FanChangeEvery)
+            return;
+        if (_fanControl(target))
+        {
+            _fanMode = true;
+            _fanHeld = target;
+            _fanSetAt = now;
+        }
+        else
+        {
+            _fanMode = false; // not allowed (yet): the card's own fans and the power limit do what they can
+            _fanHeld = null;
+        }
+    }
+
+    /// <summary>The fans go back to the card's own control (the miner stopped, or quiet mode isn't on).</summary>
+    private void ReleaseFans()
+    {
+        if (_fanMode)
+            _fanControl?.Invoke(null);
+        _fanMode = false;
+        _fanHeld = null;
     }
 
     private static string IntensityText(int? intensity) =>
@@ -1024,7 +1119,11 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
             : new PayoutBalance(stats.PendingXmr, stats.PaidXmr, PayoutCurrency, MoneroOceanClient.MinimumPayoutXmr, MoneroOceanClient.DashboardUrl(walletAddress));
     }
 
-    public async ValueTask DisposeAsync() => await KillAsync();
+    public async ValueTask DisposeAsync()
+    {
+        await KillAsync();
+        ReleaseFans();
+    }
 
     private async Task<IReadOnlyList<GpuAlgorithm>> EligibleAsync(CancellationToken ct) =>
         (await QuotesAsync(ct)).Select(q => q.Algorithm).ToList();

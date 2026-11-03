@@ -30,6 +30,9 @@ public sealed class Nvml : IDisposable
     private readonly GetPowerDelegate? _getDefaultLimit;
     private readonly GetConstraintsDelegate? _getConstraints;
     private readonly SetLimitDelegate? _setLimit;
+    private readonly GetNumFansDelegate? _getNumFans;
+    private readonly SetFanSpeedDelegate? _setFanSpeed;
+    private readonly SetDefaultFanDelegate? _setDefaultFan;
     private readonly Lock _lock = new();
     private bool _disposed;
 
@@ -55,6 +58,9 @@ public sealed class Nvml : IDisposable
     }
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetConstraintsDelegate(IntPtr device, out uint minMilliwatts, out uint maxMilliwatts);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int SetLimitDelegate(IntPtr device, uint milliwatts);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetNumFansDelegate(IntPtr device, out uint fans);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int SetFanSpeedDelegate(IntPtr device, uint fan, uint percent);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int SetDefaultFanDelegate(IntPtr device, uint fan);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct MemoryInfo
@@ -88,6 +94,9 @@ public sealed class Nvml : IDisposable
         _getDefaultLimit = TryLoad<GetPowerDelegate>("nvmlDeviceGetPowerManagementDefaultLimit");
         _getConstraints = TryLoad<GetConstraintsDelegate>("nvmlDeviceGetPowerManagementLimitConstraints");
         _setLimit = TryLoad<SetLimitDelegate>("nvmlDeviceSetPowerManagementLimit");
+        _getNumFans = TryLoad<GetNumFansDelegate>("nvmlDeviceGetNumFans");
+        _setFanSpeed = TryLoad<SetFanSpeedDelegate>("nvmlDeviceSetFanSpeed_v2");
+        _setDefaultFan = TryLoad<SetDefaultFanDelegate>("nvmlDeviceSetDefaultFanSpeed_v2");
         if (_init() != Success)
             throw new InvalidOperationException("nvmlInit failed");
     }
@@ -200,6 +209,56 @@ public sealed class Nvml : IDisposable
                     set++;
             }
             return set;
+        }
+    }
+
+    /// <summary>The lowest fan speed the driver accepts (percent): NVIDIA's cards stop at 30.</summary>
+    public const int MinFanPercent = 30;
+
+    /// <summary>
+    /// Holds every NVIDIA card's fans at <paramref name="percent"/> (at least <see cref="MinFanPercent"/>), whatever the card's
+    /// temperature does: setting a speed switches the driver's fan control to manual, so whoever sets one has to watch the
+    /// temperature. Needs administrator rights. Returns how many fans were set.
+    /// </summary>
+    public int SetFanPercent(int percent)
+    {
+        lock (_lock)
+        {
+            if (_disposed || _getNumFans is null || _setFanSpeed is null || _getCount(out var count) != Success)
+                return 0;
+            var set = 0;
+            for (uint i = 0; i < count; i++)
+            {
+                if (_getHandle(i, out var device) != Success || _getNumFans(device, out var fans) != Success)
+                    continue;
+                for (uint fan = 0; fan < fans; fan++)
+                    if (_setFanSpeed(device, fan, (uint)Math.Clamp(percent, MinFanPercent, 100)) == Success)
+                        set++;
+            }
+            return set;
+        }
+    }
+
+    /// <summary>
+    /// Gives every NVIDIA card's fans back to the driver's own control, which follows the card's temperature. Needs administrator
+    /// rights. Returns how many fans were reset.
+    /// </summary>
+    public int ResetFans()
+    {
+        lock (_lock)
+        {
+            if (_disposed || _getNumFans is null || _setDefaultFan is null || _getCount(out var count) != Success)
+                return 0;
+            var reset = 0;
+            for (uint i = 0; i < count; i++)
+            {
+                if (_getHandle(i, out var device) != Success || _getNumFans(device, out var fans) != Success)
+                    continue;
+                for (uint fan = 0; fan < fans; fan++)
+                    if (_setDefaultFan(device, fan) == Success)
+                        reset++;
+            }
+            return reset;
         }
     }
 

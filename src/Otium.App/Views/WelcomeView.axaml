@@ -147,18 +147,21 @@
                             <CheckBox IsVisible="{Binding HasGpu}" IsChecked="{Binding UseGpu}">
                                 <TextBlock Text="{Binding GpuName, StringFormat='Also use my {0}'}" TextWrapping="Wrap" />
                             </CheckBox>
-                            <CheckBox IsVisible="{Binding HasGpu}" IsEnabled="{Binding UseGpu}" IsChecked="{Binding OptimizeGpu}" Margin="28,0,0,0">
-                                <StackPanel Spacing="2">
-                                    <TextBlock Text="Optimize my graphics card" TextWrapping="Wrap" />
-                                    <TextBlock Classes="muted" FontSize="12.5" Text="{Binding OptimizeGpuText}" TextWrapping="Wrap" />
-                                </StackPanel>
-                            </CheckBox>
-                            <StackPanel Spacing="4">
-                                <TextBlock FontWeight="SemiBold" FontSize="13" Text="Do you pay for this computer's electricity?" />
-                                <StackPanel Orientation="Horizontal" Spacing="16">
-                                    <RadioButton GroupName="power" IsChecked="{Binding PaysForElectricityChosen}" Content="Yes, count it" />
-                                    <RadioButton GroupName="power" IsChecked="{Binding NoElectricityChosen}" Content="No, it's included or free" />
-                                </StackPanel>
+                            <StackPanel Spacing="6">
+                                <TextBlock FontWeight="SemiBold" FontSize="13" Text="What should Otium go for?" />
+                                <RadioButton GroupName="power" IsChecked="{Binding PaysForElectricityChosen}">
+                                    <StackPanel Spacing="2">
+                                        <TextBlock Text="Optimized" FontWeight="SemiBold" />
+                                        <TextBlock Classes="muted" FontSize="12.5" Text="{x:Static vm:WelcomeViewModel.OptimizedChoiceText}" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </RadioButton>
+                                <RadioButton GroupName="power" IsChecked="{Binding NoElectricityChosen}">
+                                    <StackPanel Spacing="2">
+                                        <TextBlock Text="Max earnings" FontWeight="SemiBold" />
+                                        <TextBlock Classes="muted" FontSize="12.5" Text="{x:Static vm:WelcomeViewModel.MaxEarningsChoiceText}" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </RadioButton>
+                                <TextBlock Classes="muted" FontSize="12.5" Text="{Binding OptimizeGpuText}" TextWrapping="Wrap" IsVisible="{Binding HasGpu}" />
                             </StackPanel>
                             <Grid ColumnDefinitions="Auto,*,Auto">
                                 <Path Classes="icon" Data="{StaticResource IconBolt}" Width="16" Height="16" />
@@ -376,20 +379,26 @@
                         </StackPanel>
                     </Border>
 
-                    <!-- Electricity: asked in both setups with nothing preselected; it decides whether the processor runs at all -->
+                    <!-- What to go for: asked in both setups with nothing preselected; it decides whether electricity is counted, so whether the processor runs at all -->
                     <Border Classes="card delay2" Padding="16">
                         <StackPanel Spacing="10">
-                            <TextBlock FontWeight="SemiBold" Text="Do you pay for this computer's electricity?" TextWrapping="Wrap" />
-                            <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap"
-                                       Text="If you do, Otium mines only while it earns more than the power costs, so on a household price a processor often stays paused. If electricity is included in your rent, paid by someone else or free, Otium counts it as zero and earns whenever you're away. You can change this in Settings." />
-                            <StackPanel Orientation="Horizontal" Spacing="10">
-                                <Button Content="Yes, count it" Classes.accent="{Binding PaysForElectricityChosen}" Command="{Binding AnswerPaysForElectricityCommand}"
-                                        AutomationProperties.Name="Yes, I pay for this computer's electricity" />
-                                <Button Content="No, it's included or free" Classes.accent="{Binding NoElectricityChosen}" Command="{Binding AnswerNoElectricityCommand}"
-                                        AutomationProperties.Name="No, this computer's electricity is included or free" />
-                            </StackPanel>
+                            <TextBlock FontWeight="SemiBold" Text="What should Otium go for?" TextWrapping="Wrap" />
+                            <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Classes.accent="{Binding PaysForElectricityChosen}"
+                                    Command="{Binding AnswerPaysForElectricityCommand}" AutomationProperties.Name="Optimized">
+                                <StackPanel Spacing="2" Margin="0,4">
+                                    <TextBlock Text="Optimized" FontWeight="SemiBold" />
+                                    <TextBlock FontSize="12.5" Opacity="0.85" Text="{x:Static vm:WelcomeViewModel.OptimizedChoiceText}" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Button>
+                            <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Classes.accent="{Binding NoElectricityChosen}"
+                                    Command="{Binding AnswerNoElectricityCommand}" AutomationProperties.Name="Max earnings">
+                                <StackPanel Spacing="2" Margin="0,4">
+                                    <TextBlock Text="Max earnings" FontWeight="SemiBold" />
+                                    <TextBlock FontSize="12.5" Opacity="0.85" Text="{x:Static vm:WelcomeViewModel.MaxEarningsChoiceText}" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Button>
                             <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap" IsVisible="{Binding ElectricityUnanswered}"
-                                       Text="Choose one to start." />
+                                       Text="Choose one to start. You can change it in Settings." />
                         </StackPanel>
                     </Border>
 
