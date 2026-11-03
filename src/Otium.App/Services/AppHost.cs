@@ -109,7 +109,7 @@ public sealed class AppHost : IAsyncDisposable
         Hardware = new HardwareMonitor(_nvml);
         _gpuConfig = BuildConfig(100, "g");
         var gpuProvider = new SrbMinerGpuProvider(
-            _http, Pool, Paths.EnginesDir, Paths.GpuBenchmarksFile, Gpus, GpuPowerMeter, EffectivePricePerKwh,
+            _http, Pool, Paths.EnginesDir, Paths.GpuBenchmarksFile, Gpus, GpuPowerMeter, GpuPricePerKwh,
             policy: () => EffectiveGpuPolicy,
             freeMemoryGb: gpu => gpu.Vendor == GpuVendor.Nvidia ? _nvml?.ReadFreeMemoryGb(gpu.Index) : null,
             referralCode: ReferralCode,
@@ -119,8 +119,9 @@ public sealed class AppHost : IAsyncDisposable
             powerCap: SetGpuPowerCap,
             stats: gpu => Hardware.ReadGpus([gpu]).FirstOrDefault(),
             prepare: PauseTuningToolsAsync,
-            silentTuning: () => Settings.SilentTuning && GpuOptimizeOn,
-            fanLimit: () => Math.Clamp(Settings.QuietFanLimit, 30, 90));
+            silentTuning: () => GpuOptimizeOn && !Settings.GpuMaxEarnings,
+            fanLimit: () => Settings.GpuMaxEarnings ? 100 : GpuEfficiency.OptimizedFanPercent, // max earnings: the fans' noise doesn't matter
+            fanControl: SetGpuFan);
         if (IsSimulated)
         {
             var gpuLedger = new JsonFileStore<EarningsLedger>(Paths.GpuLedgerFile);
@@ -176,7 +177,11 @@ public sealed class AppHost : IAsyncDisposable
 
         // Each start caps at the usual percentage; quiet mode lowers it again only if the card runs loud.
         if (GpuEfficiencySupported)
+        {
             GpuEfficiency.WriteCap(Paths.Root, GpuEfficiency.CapPercent);
+            if (File.Exists(GpuEfficiency.FanFile(Paths.Root)))
+                SetGpuFan(null); // Otium closed or crashed while it held the fans: they go back to the card
+        }
         foreach (var engine in Engines)
         {
             engine.SnapshotChanged += _ =>
@@ -469,6 +474,60 @@ public sealed class AppHost : IAsyncDisposable
 
     private DateTimeOffset _capCheckedAt = DateTimeOffset.MinValue;
 
+    /// <summary>"Optimized" (false) or "Max earnings" (true): the power limit and the fans follow at once, while the card earns.</summary>
+    public void SetGpuMaxEarnings(bool maxEarnings)
+    {
+        if (Settings.GpuMaxEarnings == maxEarnings)
+            return;
+        Settings.GpuMaxEarnings = maxEarnings;
+        SaveSettings();
+        UpdateGpuPowerCap();
+    }
+
+    private int _fansHeld; // 1 while Otium holds the card's fans at a speed
+    private bool _fanTasksReady;
+    private DateTimeOffset _fanTasksCheckedAt = DateTimeOffset.MinValue;
+
+    /// <summary>Whether Windows has allowed Otium to hold the fans (the tasks exist); looked up at most once a minute.</summary>
+    private bool FanControlReady()
+    {
+        var now = DateTimeOffset.UtcNow;
+        if (now - _fanTasksCheckedAt >= TimeSpan.FromMinutes(1))
+        {
+            _fanTasksReady = GpuEfficiency.FanTasksReady();
+            _fanTasksCheckedAt = now;
+        }
+        return _fanTasksReady;
+    }
+
+    /// <summary>The fan noise limit is on but Windows hasn't yet allowed Otium to hold the fans: Settings offers "Allow".</summary>
+    public bool FanControlNeedsPermission =>
+        GpuEfficiencySupported && GpuOptimizeOn && !Settings.GpuMaxEarnings && Gpus.Any(g => g.Vendor == GpuVendor.Nvidia) && !FanControlReady();
+
+    /// <summary>
+    /// Holds the graphics card's fans at <paramref name="percent"/>, or gives them back to the card with null. False when that
+    /// isn't possible (not on, or Windows hasn't allowed it): the card's own fans then stay in charge.
+    /// </summary>
+    public bool SetGpuFan(int? percent)
+    {
+        if (!GpuEfficiencySupported)
+            return false;
+        if (percent is not { } speed)
+        {
+            if (Interlocked.Exchange(ref _fansHeld, 0) == 1 || File.Exists(GpuEfficiency.FanFile(Paths.Root)))
+            {
+                GpuEfficiency.ClearFan(Paths.Root);
+                _ = Task.Run(() => GpuEfficiency.TriggerFan(set: false));
+            }
+            return true;
+        }
+        if (!GpuOptimizeOn || !FanControlReady() || !GpuEfficiency.WriteFan(Paths.Root, speed))
+            return false;
+        Volatile.Write(ref _fansHeld, 1);
+        _ = Task.Run(() => GpuEfficiency.TriggerFan(set: true));
+        return true;
+    }
+
     /// <summary>
     /// While capped, looks at the card's real power limit now and then: another program (a tuning tool starting, a driver
     /// reset) can put it back to the default under Otium, and the card would then mine at full power while Otium thinks it is
@@ -507,7 +566,7 @@ public sealed class AppHost : IAsyncDisposable
     /// </summary>
     public bool SetGpuPowerCap(int percent)
     {
-        if (!GpuEfficiencySupported || !Settings.GpuOptimize || !Settings.GpuEfficiencyMode || !GpuEfficiency.WriteCap(Paths.Root, percent))
+        if (!GpuEfficiencySupported || !Settings.GpuOptimize || !Settings.GpuEfficiencyMode || Settings.GpuMaxEarnings || !GpuEfficiency.WriteCap(Paths.Root, percent))
             return false;
         if (Volatile.Read(ref _capApplied) == 1)
             _ = Task.Run(() => GpuEfficiency.Trigger(cap: true));
@@ -524,7 +583,9 @@ public sealed class AppHost : IAsyncDisposable
         if (!GpuEfficiencySupported || GpuEngine is null)
             return;
         var mining = GpuEngine.Snapshot.State is EngineState.Starting or EngineState.Earning;
-        var want = Settings.GpuOptimize && Settings.GpuEfficiencyMode && mining ? 1 : 0;
+        var want = Settings.GpuOptimize && Settings.GpuEfficiencyMode && !Settings.GpuMaxEarnings && mining ? 1 : 0;
+        if (!mining)
+            SetGpuFan(null); // the card's own fans again whenever it isn't earning
         if (Interlocked.Exchange(ref _capApplied, want) == want)
         {
             if (want == 1)
@@ -634,6 +695,7 @@ public sealed class AppHost : IAsyncDisposable
         var run = await Elevation.RunSelfAsync([GpuEfficiency.SetupArgument]);
         if (run.Succeeded)
         {
+            _fanTasksCheckedAt = DateTimeOffset.MinValue; // the fan tasks exist now
             TuningToolsNeedPermission = false;
             TuningToolsChanged?.Invoke();
             return null;
@@ -700,6 +762,9 @@ public sealed class AppHost : IAsyncDisposable
         var shape = ElectricityPrices.CurrentMultiplier() ?? 1.0;
         return Math.Max(0, Settings.ElectricityPricePerKwh * shape);
     }
+
+    /// <summary>What the graphics card is charged per kWh: "Max earnings" subtracts no electricity for it.</summary>
+    public double GpuPricePerKwh() => Settings.GpuMaxEarnings ? 0 : EffectivePricePerKwh();
 
     /// <summary>The day's average price (zero when the user doesn't pay), for projections that span a whole day.</summary>
     public double AveragePricePerKwh() => Settings.PayForElectricity ? Settings.ElectricityPricePerKwh : 0;
@@ -1370,7 +1435,7 @@ public sealed class AppHost : IAsyncDisposable
                 Settings.OnlyWhenIdle,
                 TimeSpan.FromMinutes(Math.Max(1, Settings.IdleMinutes)),
                 Settings.NeverRunAtLoss,
-                EffectivePricePerKwh(),
+                cpu ? EffectivePricePerKwh() : GpuPricePerKwh(),
                 new FeeSchedule(FeePolicy.Default with { FeePercent = 0 }, poolWallet, null, new ReferralStanding(null, null, null)),
                 // CPU and GPU share one worker id so the pool reports their combined work for this account.
                 Settings.Account.WorkerId ?? "",
@@ -1397,7 +1462,7 @@ public sealed class AppHost : IAsyncDisposable
             Settings.OnlyWhenIdle,
             TimeSpan.FromMinutes(Math.Max(1, Settings.IdleMinutes)),
             Settings.NeverRunAtLoss,
-            EffectivePricePerKwh(),
+            cpu ? EffectivePricePerKwh() : GpuPricePerKwh(),
             // Only the graphics card mines Quantus, so only its slices carry the Quantus targets.
             new FeeSchedule(Fees, user, FeeWallet, standing, cpu ? null : QuantusTarget, QuantusFeeWallet),
             $"ot{DeviceId[..8]}{workerSuffix}",
@@ -1838,6 +1903,11 @@ public sealed class AppHost : IAsyncDisposable
         RestoreTuningTools(); // the user's overclock comes back with Otium closed
         if (_capApplied == 1)
             GpuEfficiency.Trigger(cap: false); // full power again once Otium is closed
+        if (Interlocked.Exchange(ref _fansHeld, 0) == 1)
+        {
+            GpuEfficiency.ClearFan(Paths.Root);
+            GpuEfficiency.TriggerFan(set: false); // and the card's own fans
+        }
         _nvml?.Dispose();
         _settingsStore.Save(Settings);
         _http.Dispose();

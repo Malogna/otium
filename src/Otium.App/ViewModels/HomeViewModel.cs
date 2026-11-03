@@ -121,7 +121,6 @@ public partial class HomeViewModel : ViewModelBase
     private readonly AppHost _host;
     private readonly Action _openAdvanced;
     private readonly CountUp _balance;
-    private readonly CountUp _month;
     // The projected and earned amounts count up to their new value, so a change is seen, not just read.
     private readonly CountUp _projDay;
     private readonly CountUp _projWeek;
@@ -144,7 +143,6 @@ public partial class HomeViewModel : ViewModelBase
         CashOut = new CashOutViewModel(host, () => IsCashingOut = false);
         SignIn = new EmailSignInViewModel(host);
         _balance = new CountUp(v => Balance = Format.Money((decimal)v));
-        _month = new CountUp(v => ProjectedMonth = $"≈ {Format.Money((decimal)v)}");
         _projDay = new CountUp(v => ProjDayText = Format.Usd(v));
         _projWeek = new CountUp(v => ProjWeekText = Format.Usd(v));
         _projMonth = new CountUp(v => ProjMonthText = Format.Usd(v));
@@ -207,7 +205,7 @@ public partial class HomeViewModel : ViewModelBase
         host.HistoryChanged += () => Dispatcher.UIThread.Post(Refresh);
         host.CurrencyChanged += () => Dispatcher.UIThread.Post(() =>
         {
-            foreach (var count in new[] { _balance, _month, _projDay, _projWeek, _projMonth, _projYear, _earnToday, _earnWeek, _earnMonth, _earnYear })
+            foreach (var count in new[] { _balance, _projDay, _projWeek, _projMonth, _projYear, _earnToday, _earnWeek, _earnMonth, _earnYear })
                 count.Refresh();
             Refresh();
         });
@@ -343,8 +341,6 @@ public partial class HomeViewModel : ViewModelBase
     [ObservableProperty] public partial string BalanceCaption { get; set; } = "Your balance";
     [ObservableProperty] public partial string PendingText { get; set; } = "";
     [ObservableProperty] public partial bool IsBalanceMode { get; set; }
-    [ObservableProperty] public partial string ProjectedMonth { get; set; } = "";
-    [ObservableProperty] public partial string ProjectedMonthCaption { get; set; } = "";
 
     // ---------- status ----------
 
@@ -502,8 +498,6 @@ public partial class HomeViewModel : ViewModelBase
         var mining = Projection.Create(rate, electricity, projectedHours,
             settings.OnlyWhenIdle, account.AvailableUsd + account.PendingUsd, minimum);
         var projection = WithSharing(mining, SharingPerDay(), account.AvailableUsd + account.PendingUsd, minimum);
-        _month.AnimateTo(projection.PerMonth);
-        ProjectedMonthCaption = projection.PerMonth > 0 ? "projected per month" : "";
         // The projected tiles are what the current pace would bring; the earned tiles are what really came in.
         // They are separate rows with separate headings, so the two can't be mixed up.
         HasProjection = projection.PerDay > 0;

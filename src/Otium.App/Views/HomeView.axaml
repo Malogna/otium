@@ -146,12 +146,13 @@
                     <Grid x:Name="LeftColumn" RowDefinitions="Auto,*,Auto" RowSpacing="14">
 
                         <!-- ===== Hero: balance, projection, main actions, cash-out goal ===== -->
-                        <Border Grid.Row="0" Classes="hero" ClipToBounds="True">
+                        <!-- No padding on the card itself, so the sheen of light spans its full height and is clipped to its rounded corners -->
+                        <Border Grid.Row="0" Classes="hero" Padding="0" ClipToBounds="True">
                             <Panel>
-                                <Border Classes="sheen" Classes.on="{Binding IsEarning}" Width="170" HorizontalAlignment="Left" Background="{StaticResource HeroSheen}">
+                                <Border Classes="sheen" Classes.on="{Binding IsEarning}" Width="190" HorizontalAlignment="Left" Background="{StaticResource HeroSheen}">
                                     <Border.RenderTransform><TranslateTransform /></Border.RenderTransform>
                                 </Border>
-                                <StackPanel Spacing="12">
+                                <StackPanel Spacing="12" Margin="28">
                                     <StackPanel Spacing="0">
                                         <StackPanel Orientation="Horizontal" Spacing="9">
                                             <!-- A soft ring spreads from the dot while Otium is earning -->
@@ -161,17 +162,7 @@
                                             </Grid>
                                             <TextBlock Classes="heroMuted oneLine" Text="{Binding BalanceCaption}" />
                                         </StackPanel>
-                                        <!-- The balance and the projected month: side by side while they fit, one under the other when not -->
-                                        <WrapPanel Orientation="Horizontal">
-                                            <TextBlock Classes="display" VerticalAlignment="Center" Margin="0,0,14,0" Text="{Binding Balance}" />
-                                            <Border Classes="heroChip" VerticalAlignment="Center"
-                                                    IsVisible="{Binding ProjectedMonthCaption, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
-                                                <StackPanel>
-                                                    <TextBlock Text="{Binding ProjectedMonth}" FontSize="17" FontWeight="Bold" HorizontalAlignment="Center" />
-                                                    <TextBlock Classes="heroMuted" FontSize="11.5" Text="{Binding ProjectedMonthCaption}" HorizontalAlignment="Center" />
-                                                </StackPanel>
-                                            </Border>
-                                        </WrapPanel>
+                                        <TextBlock Classes="display" Text="{Binding Balance}" />
                                         <TextBlock Classes="heroMuted oneLine" FontSize="13" Text="{Binding PendingText}"
                                                    IsVisible="{Binding PendingText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                                     </StackPanel>

@@ -262,12 +262,12 @@ public sealed class SrbMinerProviderTests : IDisposable
     private SrbMinerGpuProvider CreateProvider(Func<GpuPolicy?>? policy, double pricePerKwh, string? benchmarks = null, Func<GpuInfo, double?>? freeMemoryGb = null,
         IUnmineableApi? unmineable = null, Func<string, int, CancellationToken, Task<string?>>? poolBlocked = null, IReadOnlyList<GpuInfo>? gpus = null,
         Func<bool>? optimize = null, Func<GpuInfo, GpuStats?>? stats = null, Func<int, bool>? powerCap = null,
-        Func<bool>? silentTuning = null, Func<int>? fanLimit = null, Func<CancellationToken, Task>? prepare = null) =>
+        Func<bool>? silentTuning = null, Func<int>? fanLimit = null, Func<CancellationToken, Task>? prepare = null, Func<int?, bool>? fanControl = null) =>
         new(new HttpClient(), _pool, Path.Combine(_dir, "engines"), Path.Combine(_dir, benchmarks ?? $"bench-{Guid.NewGuid():N}.json"),
             gpus ?? [Rtx3080], _meter, () => pricePerKwh, _factory, _time,
             asset: _asset, policy: policy, freeMemoryGb: freeMemoryGb, unmineable: unmineable,
             poolBlocked: poolBlocked, optimize: optimize ?? (() => true), stats: stats, powerCap: powerCap,
-            silentTuning: silentTuning, fanLimit: fanLimit, prepare: prepare);
+            silentTuning: silentTuning, fanLimit: fanLimit, prepare: prepare, fanControl: fanControl);
 
     /// <summary>Pearl on an RTX 3080, paid power, the card's readings and power limits under the test's control.</summary>
     private async Task<(SrbMinerGpuProvider Provider, ProviderRunOptions Options, List<int> Caps)> SilentPearlAsync(
@@ -1055,32 +1055,117 @@ public sealed class SrbMinerProviderTests : IDisposable
         Assert.Equal("pearlhash", provider.CurrentAlgorithm);
         var launches = _factory.Intensities.Count;
 
-        // Loud: one intensity step (18), which doesn't lower the power, so back to its own setting for good.
+        // Loud: Pearl is known to ignore intensity, so the power limit comes down a step, with no restart of the miner.
         await RunForProvider(provider, IntensityTuner.Warmup + SrbMinerGpuProvider.HotFor + TimeSpan.FromSeconds(10));
-        Assert.Equal(18, _factory.Intensities[^1]);
-        await RunForProvider(provider, IntensityTuner.Warmup + TimeSpan.FromSeconds(10));
-        Assert.Null(_factory.Intensities[^1]);
-        Assert.Equal(launches + 2, _factory.Intensities.Count);
+        Assert.Equal([60], caps);
+        Assert.Equal(launches, _factory.Intensities.Count);
 
-        // Still loud: the power limit comes down a step at a time to 50%, with no more restarts.
-        await RunForProvider(provider, IntensityTuner.Warmup + SrbMinerGpuProvider.HotFor * 4);
+        // The fan followed (88% to 73%) but is still loud: another step, to 50%.
+        fan = 73;
+        await RunForProvider(provider, SrbMinerGpuProvider.HotFor + TimeSpan.FromSeconds(30));
+        fan = 58; // and again
         Assert.Equal([60, 50], caps);
-        Assert.Equal(launches + 2, _factory.Intensities.Count);
+        Assert.Equal(launches, _factory.Intensities.Count);
         Assert.Contains("power at 50%", (await provider.GetStatusAsync(CancellationToken.None)).Detail);
 
         // Quiet again: back up, a step per quarter hour, to the usual 70%.
         fan = 40;
         await RunForProvider(provider, SrbMinerGpuProvider.CoolFor * 2 + TimeSpan.FromMinutes(1));
         Assert.Equal([60, 50, 60, 70], caps);
-        Assert.Equal(launches + 2, _factory.Intensities.Count);
+        Assert.Equal(launches, _factory.Intensities.Count);
+    }
 
-        // Remembered: after a restart, loud fans go straight to the power limit, with no intensity step.
-        await provider.StopAsync(CancellationToken.None);
+    [Fact]
+    public void Held_fans_follow_the_limit_while_cool_speed_up_when_warm_and_are_the_cards_own_when_hot()
+    {
+        Assert.Equal(40, SrbMinerGpuProvider.FanFor(55, 40));
+        Assert.Equal(40, SrbMinerGpuProvider.FanFor(SrbMinerGpuProvider.FanRampStartC, 40));
+        Assert.Equal(57, SrbMinerGpuProvider.FanFor(77, 40));
+        Assert.Null(SrbMinerGpuProvider.FanFor(SrbMinerGpuProvider.FanAutoC, 40));
+        Assert.Equal(75, SrbMinerGpuProvider.FanFor(60, 75));
+    }
+
+    [Fact]
+    public async Task Silent_tuning_holds_the_fans_and_eases_the_power_by_temperature_while_the_fan_reading_is_ignored()
+    {
+        // An RTX 3080 whose fan reads 69% whatever happens (3 November 2026): with the fans held, only the temperature counts.
+        _meter.Watts = () => 348;
+        var fans = new List<int?>();
+        var caps = new List<int>();
+        var temperature = 60.0;
+        var unmineable = new CreditingUnmineable();
+        unmineable.Workers.Add(new UnmineableWorker("pearlpow", "ot1234abcdg", true, 9.2e13, 9.2e13));
+        var provider = CreateProvider(() => UnmineablePearlPolicy(), pricePerKwh: 0.15, unmineable: unmineable,
+            stats: g => new GpuStats(g.Name, temperature, 100, 69, 244, 1755, 2, 12), powerCap: percent => { caps.Add(percent); return true; },
+            silentTuning: () => true, fanLimit: () => 40, fanControl: speed => { fans.Add(speed); return true; });
+        var options = new ProviderRunOptions(new MiningTarget(TestAddresses.Usdt(18), PayoutRole.User), "ot1234abcdg", 100);
         await provider.StartAsync(options, CancellationToken.None);
-        fan = 88;
+        await RunForProvider(provider, SrbMinerGpuProvider.BenchmarkDuration + TimeSpan.FromSeconds(10));
+        Assert.Equal("pearlhash", provider.CurrentAlgorithm);
+
+        // Cool: the fans are held at the limit, and the loud-looking fan reading doesn't ease the power off.
+        await RunForProvider(provider, IntensityTuner.Warmup + SrbMinerGpuProvider.HotFor);
+        Assert.Equal(40, fans[^1]);
+        Assert.DoesNotContain(60, caps);
+        Assert.Contains("fans held at 40%", (await provider.GetStatusAsync(CancellationToken.None)).Detail);
+
+        // Warm: the fans speed up with the temperature, and after two minutes the power limit comes down a step.
+        temperature = 77;
+        await RunForProvider(provider, SrbMinerGpuProvider.HotFor + TimeSpan.FromSeconds(40));
+        Assert.Equal(57, fans[^1]);
+        Assert.Equal([60], caps);
+
+        // Hot: the card's own fans take over, and come back to the held speed once it has cooled.
+        temperature = 85;
+        await RunForProvider(provider, SrbMinerGpuProvider.FanChangeEvery + TimeSpan.FromSeconds(30));
+        Assert.Null(fans[^1]);
+        temperature = 60;
+        await RunForProvider(provider, SrbMinerGpuProvider.FanChangeEvery + TimeSpan.FromSeconds(30));
+        Assert.Equal(40, fans[^1]);
+
+        // Stopped: the card's own fans.
+        await provider.StopAsync(CancellationToken.None);
+        Assert.Null(fans[^1]);
+    }
+
+    [Fact]
+    public async Task Without_permission_to_hold_the_fans_quiet_mode_goes_by_the_fan_reading_as_before()
+    {
+        _meter.Watts = () => 348;
+        var caps = new List<int>();
+        var unmineable = new CreditingUnmineable();
+        unmineable.Workers.Add(new UnmineableWorker("pearlpow", "ot1234abcdg", true, 9.2e13, 9.2e13));
+        var provider = CreateProvider(() => UnmineablePearlPolicy(), pricePerKwh: 0.15, unmineable: unmineable,
+            stats: g => new GpuStats(g.Name, 60, 100, 88, 244, 1755, 2, 12), powerCap: percent => { caps.Add(percent); return true; },
+            silentTuning: () => true, fanLimit: () => 40, fanControl: _ => false);
+        var options = new ProviderRunOptions(new MiningTarget(TestAddresses.Usdt(19), PayoutRole.User), "ot1234abcdg", 100);
+        await provider.StartAsync(options, CancellationToken.None);
+        await RunForProvider(provider, SrbMinerGpuProvider.BenchmarkDuration + TimeSpan.FromSeconds(10));
         await RunForProvider(provider, IntensityTuner.Warmup + SrbMinerGpuProvider.HotFor + TimeSpan.FromSeconds(10));
-        Assert.Null(_factory.Intensities[^1]);
-        Assert.Equal(60, caps[^1]);
+        Assert.Equal([60], caps);
+    }
+
+    [Fact]
+    public async Task A_fan_that_ignores_the_power_limit_gets_the_limit_back_and_is_left_alone()
+    {
+        // An RTX 3080 mining Pearl at 245 W with the fan at 74% (3 November 2026): lowering the power wouldn't have quieted it.
+        _meter.Watts = () => 348;
+        var caps = new List<int>();
+        var unmineable = new CreditingUnmineable();
+        unmineable.Workers.Add(new UnmineableWorker("pearlpow", "ot1234abcdg", true, 9.2e13, 9.2e13));
+        var provider = CreateProvider(() => UnmineablePearlPolicy(), pricePerKwh: 0.15, unmineable: unmineable,
+            stats: g => new GpuStats(g.Name, 59, 100, 74, 244, 1755, 2, 12), powerCap: percent => { caps.Add(percent); return true; });
+        var options = new ProviderRunOptions(new MiningTarget(TestAddresses.Usdt(17), PayoutRole.User), "ot1234abcdg", 100);
+        await provider.StartAsync(options, CancellationToken.None);
+        await RunForProvider(provider, SrbMinerGpuProvider.BenchmarkDuration + TimeSpan.FromSeconds(10));
+        Assert.Equal("pearlhash", provider.CurrentAlgorithm);
+
+        // One step down; the fan is still at 74%, so the limit goes back and stays there.
+        await RunForProvider(provider, IntensityTuner.Warmup + SrbMinerGpuProvider.HotFor * 3 + TimeSpan.FromSeconds(20));
+        Assert.Equal([60, 70], caps);
+        Assert.Contains("fan stays at 74%", (await provider.GetStatusAsync(CancellationToken.None)).Detail);
+        await RunForProvider(provider, TimeSpan.FromMinutes(90));
+        Assert.Equal([60, 70], caps);
     }
 
     [Fact]

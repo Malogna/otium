@@ -15,6 +15,9 @@ public static class GpuEfficiency
 {
     public const int CapPercent = 70;
 
+    /// <summary>The speed "Optimized" holds the fans at (percent): about half, which is quiet in most cases and leaves the card room to run.</summary>
+    public const int OptimizedFanPercent = 50;
+
     /// <summary>
     /// Quiet mode lowers the cap further, in steps, for coins whose miner setting doesn't change the card's load (Pearl
     /// on an RTX 3080 drew the same 348 W at every intensity, October 2026); never below this.
@@ -47,6 +50,51 @@ public static class GpuEfficiency
             return false;
         }
     }
+
+    /// <summary>
+    /// The fan speed the "set" fan task applies, written by Otium (not elevated) like <see cref="CapFile"/>. While it exists
+    /// Otium holds the fans: a copy left by a crash is how the next start knows to give them back.
+    /// </summary>
+    public static string FanFile(string dataRoot) => Path.Combine(dataRoot, "gpu-fan.txt");
+
+    /// <summary>The percentage the fan task applies: the file's (clamped to 30–100), or null without a valid one.</summary>
+    public static int? FanFrom(string? fileText) =>
+        int.TryParse(fileText?.Trim(), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var percent)
+            ? Math.Clamp(percent, Nvml.MinFanPercent, 100)
+            : null;
+
+    /// <summary>Sets the fan speed the next "set" applies (see <see cref="FanFile"/>); true when it was written.</summary>
+    public static bool WriteFan(string dataRoot, int percent)
+    {
+        try
+        {
+            File.WriteAllText(FanFile(dataRoot), Math.Clamp(percent, Nvml.MinFanPercent, 100).ToString(System.Globalization.CultureInfo.InvariantCulture));
+            return true;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>Removes <see cref="FanFile"/>: the fans are the card's own again.</summary>
+    public static void ClearFan(string dataRoot)
+    {
+        try
+        {
+            File.Delete(FanFile(dataRoot));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // Left behind, the next start gives the fans back once more: harmless.
+        }
+    }
+
+    /// <summary>The argument the fan tasks run Otium with: "--gpu-fan set" (the file's speed) or "--gpu-fan auto" (the card's own control).</summary>
+    public const string FanArgument = "--gpu-fan";
+
+    public const string FanSetTask = @"\Otium\GPU fan set";
+    public const string FanAutoTask = @"\Otium\GPU fan auto";
 
     /// <summary>The argument the tasks run Otium with: "--gpu-power cap 70" or "--gpu-power restore".</summary>
     public const string PowerArgument = "--gpu-power";
@@ -81,6 +129,10 @@ public static class GpuEfficiency
                 return SetLimit(CapFrom(ReadCap(), p));
             case [PowerArgument, "restore"]:
                 return SetLimit(100);
+            case [FanArgument, "set"]:
+                return FanFrom(ReadFan()) is { } fan && SetFans(fan) > 0 ? 0 : 3;
+            case [FanArgument, "auto"]:
+                return ResetFans() > 0 ? 0 : 3;
             case [ToolsArgument, "close"]:
                 NewToolsGuard().PauseAsync(CancellationToken.None).GetAwaiter().GetResult();
                 return 0;
@@ -91,11 +143,16 @@ public static class GpuEfficiency
                 var created = Schtasks(["/Create", "/TN", CapTask, "/TR", $"\"{exePath}\" {PowerArgument} cap {CapPercent}", "/SC", "ONCE", "/ST", "00:00", "/RL", "HIGHEST", "/IT", "/F"]) == 0
                               && Schtasks(["/Create", "/TN", RestoreTask, "/TR", $"\"{exePath}\" {PowerArgument} restore", "/SC", "ONCE", "/ST", "00:00", "/RL", "HIGHEST", "/IT", "/F"]) == 0
                               && Schtasks(["/Create", "/TN", ToolsCloseTask, "/TR", $"\"{exePath}\" {ToolsArgument} close", "/SC", "ONCE", "/ST", "00:00", "/RL", "HIGHEST", "/IT", "/F"]) == 0
-                              && Schtasks(["/Create", "/TN", ToolsOpenTask, "/TR", $"\"{exePath}\" {ToolsArgument} open", "/SC", "ONCE", "/ST", "00:00", "/RL", "HIGHEST", "/IT", "/F"]) == 0;
+                              && Schtasks(["/Create", "/TN", ToolsOpenTask, "/TR", $"\"{exePath}\" {ToolsArgument} open", "/SC", "ONCE", "/ST", "00:00", "/RL", "HIGHEST", "/IT", "/F"]) == 0
+                              && Schtasks(["/Create", "/TN", FanSetTask, "/TR", $"\"{exePath}\" {FanArgument} set", "/SC", "ONCE", "/ST", "00:00", "/RL", "HIGHEST", "/IT", "/F"]) == 0
+                              && Schtasks(["/Create", "/TN", FanAutoTask, "/TR", $"\"{exePath}\" {FanArgument} auto", "/SC", "ONCE", "/ST", "00:00", "/RL", "HIGHEST", "/IT", "/F"]) == 0;
                 // ("ONCE at 00:00" today is already past, so the tasks never run by themselves: only when Otium starts them.)
                 return created ? 0 : 1;
             case [RemoveArgument]:
                 SetLimit(100);
+                ResetFans();
+                Schtasks(["/Delete", "/TN", FanSetTask, "/F"]);
+                Schtasks(["/Delete", "/TN", FanAutoTask, "/F"]);
                 Schtasks(["/Delete", "/TN", CapTask, "/F"]);
                 Schtasks(["/Delete", "/TN", RestoreTask, "/F"]);
                 // Bring back anything Otium closed before the tasks that do it go away.
@@ -109,7 +166,7 @@ public static class GpuEfficiency
     }
 
     /// <summary>True when Otium was started as one of the helpers above (it does its job and exits, no window).</summary>
-    public static bool IsHelper(string[] args) => args is [PowerArgument, ..] or [ToolsArgument, ..] or [SetupArgument] or [RemoveArgument];
+    public static bool IsHelper(string[] args) => args is [PowerArgument, ..] or [ToolsArgument, ..] or [FanArgument, ..] or [SetupArgument] or [RemoveArgument];
 
     private static Platform.TuningToolsGuard NewToolsGuard() =>
         new(new Platform.WindowsToolProcesses(), new Settings.JsonFileStore<Platform.TuningToolsState>(Platform.AppPaths.Default.TuningToolsFile));
@@ -119,6 +176,12 @@ public static class GpuEfficiency
 
     /// <summary>Whether the tasks that close and bring back tuning programs exist (they came with a later version than the power tasks).</summary>
     public static bool ToolsTasksReady() => IsSupported && Schtasks(["/Query", "/TN", ToolsCloseTask]) == 0;
+
+    /// <summary>Starts the task that holds the fans at the file's speed (or gives them back to the card). Needs no administrator prompt once set up.</summary>
+    public static bool TriggerFan(bool set) => Schtasks(["/Run", "/TN", set ? FanSetTask : FanAutoTask]) == 0;
+
+    /// <summary>Whether the tasks that hold and release the fans exist (they came with a later version than the power tasks).</summary>
+    public static bool FanTasksReady() => IsSupported && Schtasks(["/Query", "/TN", FanSetTask]) == 0;
 
     /// <summary>Starts the task that caps (or restores) the limit. Needs no administrator prompt once set up.</summary>
     public static bool Trigger(bool cap) => Schtasks(["/Run", "/TN", cap ? CapTask : RestoreTask]) == 0;
@@ -138,6 +201,31 @@ public static class GpuEfficiency
         {
             return null;
         }
+    }
+
+    private static string? ReadFan()
+    {
+        try
+        {
+            var file = FanFile(Platform.AppPaths.Default.Root);
+            return File.Exists(file) ? File.ReadAllText(file) : null;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    private static int SetFans(int percent)
+    {
+        using var nvml = Nvml.TryOpen();
+        return nvml?.SetFanPercent(percent) ?? 0;
+    }
+
+    private static int ResetFans()
+    {
+        using var nvml = Nvml.TryOpen();
+        return nvml?.ResetFans() ?? 0;
     }
 
     private static int SetLimit(int percent)

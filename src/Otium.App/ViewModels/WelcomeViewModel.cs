@@ -32,7 +32,6 @@ public partial class WelcomeViewModel : ViewModelBase
         _started = started;
         InviteCode = host.Settings.Referral.CodeUsed ?? "";
         UseGpu = host.Settings.GpuEnabled;
-        OptimizeGpu = host.Settings.GpuOptimize; // on unless the user unticks it
         UseCpu = host.Settings.CpuEnabled;
         ElectricityPrice = (decimal)host.Settings.ElectricityPricePerKwh;
         PayForElectricity = host.Settings.PayForElectricity;
@@ -284,7 +283,9 @@ public partial class WelcomeViewModel : ViewModelBase
                 list.Add((_host.GpuProvider?.Gpus.Count ?? 1) > 1
                     ? $"Your graphics cards ({GpuName}) mine the best-paying coin each can mine while you're away."
                     : $"Your {GpuName} mines the best-paying coin while you're away.");
-                list.Add("It's optimized: lower power, tuned settings and quiet fans, earning about the same on less electricity."
+                list.Add((MaxEarnings
+                             ? "It's set for max earnings: full power and the fastest settings, no electricity counted and the fans may be loud."
+                             : "It's optimized: your electricity is counted, the fans stay quiet and the power is tuned to earn the most after it.")
                          + (AsksForGpuPower ? " " + GpuPermissionLine : ""));
             }
             list.Add("The processor miner pauses instead of closing when you come back, so it earns again the moment you leave (it keeps about 2.5 GB of memory for up to 10 minutes).");
@@ -358,6 +359,7 @@ public partial class WelcomeViewModel : ViewModelBase
     private void AnswerPaysForElectricity()
     {
         PayForElectricity = true;
+        MaxEarnings = false;
         ElectricityAnswered = true;
     }
 
@@ -365,6 +367,7 @@ public partial class WelcomeViewModel : ViewModelBase
     private void AnswerNoElectricity()
     {
         PayForElectricity = false;
+        MaxEarnings = true;
         ElectricityAnswered = true;
     }
 
@@ -492,8 +495,8 @@ public partial class WelcomeViewModel : ViewModelBase
     public string? StartHint => !IsStep3 ? null
         : (ElectricityUnanswered, ShareEarningsUnanswered) switch
         {
-            (true, true) => "Answer \"Do you pay for this computer's electricity?\" and \"Share analytics?\" at the bottom of this page to start.",
-            (true, false) => "Answer \"Do you pay for this computer's electricity?\" at the bottom of this page to start.",
+            (true, true) => "Choose \"Optimized\" or \"Max earnings\" and answer \"Share analytics?\" at the bottom of this page to start.",
+            (true, false) => "Choose \"Optimized\" or \"Max earnings\" at the bottom of this page to start.",
             (false, true) => "Answer \"Share analytics?\" at the bottom of this page to start.",
             _ => null,
         };
@@ -537,10 +540,16 @@ public partial class WelcomeViewModel : ViewModelBase
     private bool CanStart() => CanBegin && !IsStarting && ShareEarnings is not null && ElectricityAnswered && InviteError is null && Payout.IsValid && (UseCpu || (HasGpu && UseGpu))
                                && PolygonAddressOk;
 
-    /// <summary>"Optimize my graphics card" (on unless unticked in Customize): tuning, quiet fans and a lower power limit.</summary>
+    /// <summary>What the graphics card is tuned for: "Optimized" (electricity counted, quiet fans) or, when true, "Max earnings" (no electricity counted, full power).</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(QuickList))]
-    public partial bool OptimizeGpu { get; set; }
+    public partial bool MaxEarnings { get; set; }
+
+    public const string OptimizedChoiceText =
+        "Counts your electricity and keeps the graphics card's fans quiet: the most you earn after power costs. The processor mines only while it earns more than the power costs, so on a household price it often stays paused.";
+
+    public const string MaxEarningsChoiceText =
+        "No electricity counted: everything earns whenever you're away, at full speed, and the graphics card's fans may be loud. Best if power is included in your rent, paid by someone else or free.";
 
     /// <summary>What it does, plus why Windows will ask when it will (setup's one place to say so).</summary>
     public string OptimizeGpuText => SettingsViewModel.OptimizeGpuText + (AsksForGpuPower ? " " + GpuPermissionLine : "");
@@ -557,11 +566,12 @@ public partial class WelcomeViewModel : ViewModelBase
         // "Optimize my graphics card" needs Windows' permission once on an NVIDIA card: asked here, during setup, before
         // mining starts. Without it the option stays off (Settings can turn it on later).
         IsStarting = true; // also while Windows asks below, so a second click can't start twice
+        _host.Settings.GpuMaxEarnings = MaxEarnings;
         if (HasGpu && UseGpu)
-            await _host.SetGpuOptimizeAsync(OptimizeGpu);
+            await _host.SetGpuOptimizeAsync(true);
         else
         {
-            _host.Settings.GpuOptimize = OptimizeGpu;
+            _host.Settings.GpuOptimize = true;
             _host.SaveSettings();
         }
 

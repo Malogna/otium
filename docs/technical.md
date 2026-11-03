@@ -434,9 +434,17 @@ reputation detection); the app's "Allow in Windows Security" fix covers it. Shar
 them again when it stops, remembering what it closed in `tuning-tools.json`. Such programs usually run as administrator,
 so with the one Windows prompt that sets up the power tasks (`GpuEfficiency.SetupArgument`) two more elevated tasks are
 made, `\Otium\Tuning tools close` and `open`, which run Otium with `--tuning-tools close|open`. The silent-fans tuner is
-a closed loop in `SrbMinerGpuProvider`: while the fans stay under `Settings.QuietFanLimit` minus 10 for 6 minutes it
-raises the power limit by 5 points (up to 100); at the limit for 2 minutes it lowers it by 10 and doesn't try that level
-again for 2 hours; each coin's settled level is kept in `BenchmarkFile.PowerCaps`. `ThermalGuard` stops mining at 90 °C
+a closed loop in `SrbMinerGpuProvider`. The two modes are `Settings.GpuMaxEarnings` (false: "Optimized", true: "Max earnings";
+the latter has no power cap, no fan hold, and the card's electricity price is zero via `AppHost.GpuPricePerKwh`). In Optimized
+with Windows' permission the provider holds the fans at `GpuEfficiency.OptimizedFanPercent` (50%) through NVML
+(`nvmlDeviceSetFanSpeed_v2`, which needs administrator rights, so it runs as the elevated tasks `\Otium\GPU fan set` and
+`\Otium\GPU fan auto`, started with `schtasks /Run` after a `gpu-fan.txt` request file is written; the setup prompt creates
+them with the power tasks). Above 75 °C the held speed ramps up 3 points per 20 s, at 82 °C it hands the fans back, and the power
+limit follows temperature instead of fan speed (hot at 76 °C for 2 minutes steps it down by 10, cool at 70 °C for 15 minutes steps
+it up by 5). A stale `gpu-fan.txt` (Otium killed while holding) is released at startup. Without that permission it falls back to
+the fan-driven loop: while the fans stay under 10 points below the limit for 6 minutes it raises the power limit by 5 points (up to
+100); at the limit for 2 minutes it lowers it by 10 and doesn't try that level again for 2 hours; if a step doesn't drop the fan
+by 5 points it is undone and power adjustment stops for 2 hours; each coin's settled level is kept in `BenchmarkFile.PowerCaps`. `ThermalGuard` stops mining at 90 °C
 (10 s) or a stalled fan on a warm busy card, as `ProblemKinds.TooHot` (an `error-too-hot` check-in tag), and
 `StartAsync` waits for 80 °C. A test whose readings were thermally throttled (30% of them, or a peak of 87 °C) isn't
 recorded and is repeated after cooling, twice at most, after which it is kept with `BenchmarkResult.Throttled` and

@@ -102,14 +102,12 @@ public sealed class AppSettings
     public bool PauseTuningTools { get; set; } = true;
 
     /// <summary>
-    /// "Silent performance": while the graphics card earns, Otium raises its power limit step by step as long as the fans
-    /// stay at or under <see cref="QuietFanLimit"/>, and lowers it when they don't, so the card gives all the speed it can at
-    /// a fan noise the user accepts. Needs "Optimize my graphics card" (the power part). On by default.
+    /// What the graphics card is tuned for. Off (the default) is "Optimized": electricity is counted and the fans stay quiet (held at
+    /// <see cref="Otium.Core.Gpu.GpuEfficiency.OptimizedFanPercent"/>%, the power limit tuned so the card stays cool there). On is
+    /// "Max earnings": no electricity is subtracted for the card, it runs at its full power limit with its own fans, whatever the noise,
+    /// and the miner setting with the highest speed.
     /// </summary>
-    public bool SilentTuning { get; set; } = true;
-
-    /// <summary>The loudest fan speed (percent) the user accepts while the card earns: 40 silent, 50 quiet, 60 balanced, 75 performance.</summary>
-    public int QuietFanLimit { get; set; } = 50;
+    public bool GpuMaxEarnings { get; set; }
 
     /// <summary>The pool's "paid" total last seen, per pool and coin, so a new payout is noticed once.</summary>
     public Dictionary<string, double> NotifiedPaid { get; set; } = [];
