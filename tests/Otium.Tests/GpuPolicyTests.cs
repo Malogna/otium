@@ -300,6 +300,7 @@ public sealed class GpuPolicyTests
 }
 
 /// <summary>Kryptex crediting and the policy endpoint, through the real server.</summary>
+[Trait("Suite", "Server")]
 public sealed class KryptexCreditingTests : IDisposable
 {
     private readonly string _dbPath = Path.Combine(Path.GetTempPath(), $"otium-kx-{Guid.NewGuid():N}.db");

@@ -15,6 +15,7 @@ using Otium.Providers.Honeygain;
 namespace Otium.Tests;
 
 /// <summary>The server's crediting of internet sharing, and its limits on self-reported usage.</summary>
+[Trait("Suite", "Server")]
 public sealed class BandwidthServerTests : IDisposable
 {
     private const long MB = 1024 * 1024;

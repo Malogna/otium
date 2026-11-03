@@ -18,6 +18,7 @@ namespace Otium.Tests;
 /// by switching to the inviter's wallet afterwards, and not with a few minutes of mining (see the unMineable test in
 /// NonCustodialServerTests). What invites earned is shown to the inviter, and friends' apps can't inflate it.
 /// </summary>
+[Trait("Suite", "Server")]
 public sealed class ReferralAbuseTests : IDisposable
 {
     private const string Proxy = "172.30.0.10";

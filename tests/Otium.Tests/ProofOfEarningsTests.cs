@@ -25,6 +25,7 @@ namespace Otium.Tests;
 /// Showing what idle time is worth: the "measure my PC" test, "while you were away", the monthly report, the opt-in
 /// earnings reports behind otium.lol's real-numbers table, and pausing the processor miner instead of stopping it.
 /// </summary>
+[Trait("Suite", "Server")]
 public sealed class ProofOfEarningsTests
 {
     private static readonly DateTimeOffset T0 = new(2026, 10, 18, 2, 0, 0, TimeSpan.Zero);

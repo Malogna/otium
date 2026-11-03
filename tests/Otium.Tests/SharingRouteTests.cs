@@ -23,6 +23,7 @@ namespace Otium.Tests;
 /// USDC (Relay, plus SideShift for LTC or ChangeNOW for XMR), with no Otium fee in it; Otium's share is paid separately,
 /// the exact amount the server names, and the server holds payouts while a payment is overdue.
 /// </summary>
+[Trait("Suite", "Server")]
 public sealed class SharingRouteTests : IDisposable
 {
     private readonly string _dbPath = Path.Combine(Path.GetTempPath(), $"otium-fees-{Guid.NewGuid():N}.db");

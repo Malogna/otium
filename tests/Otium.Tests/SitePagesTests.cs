@@ -10,6 +10,7 @@ using Otium.Server.Gpu;
 namespace Otium.Tests;
 
 /// <summary>The public website: the front page, its embedded files, the invite page, and legal pages that appear only once their files exist.</summary>
+[Trait("Suite", "Server")]
 public sealed class SitePagesTests : IDisposable
 {
     private readonly string _dbPath = Path.Combine(Path.GetTempPath(), $"otium-site-{Guid.NewGuid():N}.db");
