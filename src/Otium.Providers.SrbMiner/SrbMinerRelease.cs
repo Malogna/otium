@@ -93,8 +93,12 @@ public static class GpuAlgorithms
         // 3080, October 2026). Asking for the card's full size free kept every 8 GB card from ever mining it, since
         // Windows and open apps always hold some.
         new("pearlhash", "pearlhash", 2.0, 6, NvidiaAmd, GpuTiers.Primary, GpuRoutes.Unmineable, WorkingMemoryGb: 1),
-        new("quantus", "quantus", 2.5, 2, NvidiaAmd, GpuTiers.Primary, GpuRoutes.Kryptex),
-        new("xelishash", "xelishashv3", 1.5, 2, NvidiaAmd, GpuTiers.FreePowerOnly, GpuRoutes.Unmineable),
+        // Quantus and Xelis are offered from 2 GB cards, but a 2 GB card never has 2 GB free (Windows holds some: a Quadro P600
+        // showed 1.6 GB free with nothing else open, November 2026), so asking for the card's full size kept every such card
+        // from mining either. The working memory is an estimate, not measured: a card that is short of it fails the start
+        // and the next coin is tried, as for any coin that doesn't run on a card.
+        new("quantus", "quantus", 2.5, 2, NvidiaAmd, GpuTiers.Primary, GpuRoutes.Kryptex, WorkingMemoryGb: 1),
+        new("xelishash", "xelishashv3", 1.5, 2, NvidiaAmd, GpuTiers.FreePowerOnly, GpuRoutes.Unmineable, WorkingMemoryGb: 1),
         new("kawpow", "kawpow", 0.85, 6, NvidiaAmd),
         new("autolykos2", "autolykos2", 1.0, 4, NvidiaAmd),
         new("etchash", "etchash", 0.65, 4, NvidiaAmd),
