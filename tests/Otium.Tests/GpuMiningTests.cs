@@ -919,6 +919,29 @@ public sealed class SrbMinerProviderTests : IDisposable
         Assert.False(GpuAlgorithms.Find("pearlhash")!.Fits(new GpuInfo(GpuVendor.Nvidia, 0, "NVIDIA GeForce GTX 1650", 4)));
     }
 
+    [Fact]
+    public async Task A_2_gb_card_mines_quantus_although_windows_holds_some_of_its_memory()
+    {
+        // A Quadro P600 reports 1.6 of its 2 GB free with nothing else open; asking for the full 2 GB kept it from every coin.
+        var p600 = new GpuInfo(GpuVendor.Nvidia, 0, "NVIDIA Quadro P600", 2);
+        var provider = CreateProvider(() => UnmineableCoinsPolicy(), pricePerKwh: 0.15, freeMemoryGb: _ => 1.6, gpus: [p600]);
+        _factory.Speeds["quantus"] = 40e6;
+        var options = new ProviderRunOptions(new MiningTarget(TestAddresses.Usdt(11), PayoutRole.User), "ot1234abcdg", 100);
+
+        await provider.StartAsync(options, CancellationToken.None);
+        Assert.Equal("quantus", _factory.Launches.Single().Algorithm);
+        Assert.Null(provider.SetAsideReason("quantus"));
+
+        // Xelis, a card's last resort, starts there too.
+        Assert.Equal(1, GpuAlgorithms.Find("xelishash")!.FreeMemoryNeededGb);
+
+        // A game holding most of the memory still makes it wait.
+        await provider.StopAsync(CancellationToken.None);
+        var busy = CreateProvider(() => UnmineableCoinsPolicy(), pricePerKwh: 0.15, freeMemoryGb: _ => 0.5, gpus: [p600]);
+        var refused = await Assert.ThrowsAsync<ProviderProblemException>(() => busy.StartAsync(options, CancellationToken.None));
+        Assert.Contains("needs about 1 GB", refused.Message);
+    }
+
     /// <summary>Pearl and Quantus primary on unMineable, Xelis there for free power or a card's last resort.</summary>
     private static GpuPolicy UnmineableCoinsPolicy(bool quantus = true) => new(
         DateTimeOffset.UtcNow,
