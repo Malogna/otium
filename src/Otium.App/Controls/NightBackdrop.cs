@@ -5,6 +5,7 @@ using Avalonia.Animation.Easings;
 using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
+using Avalonia.Media.Immutable;
 using Avalonia.Platform;
 using Avalonia.Threading;
 
@@ -31,7 +32,41 @@ public sealed class NightBackdrop : Control
     private static readonly Mote[] Motes = MakeMotes();
     private static WriteableBitmap? _grain;
 
-    private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(33) };
+    /// <summary>How faint the film grain is, as the share of the bitmap's alpha that is kept.</summary>
+    private const double GrainOpacity = 0.07;
+
+    /// <summary>Frame spacing while the window is the one in use (20 frames a second: every motion in the sky takes seconds, so the twinkle and the shooting star are still well sampled).</summary>
+    private static readonly TimeSpan ActiveFrame = TimeSpan.FromMilliseconds(50);
+
+    /// <summary>
+    /// Frame spacing while the window is open but another window has the focus (10 frames a second): the sky drifts
+    /// slowly, so it still reads as moving, and the graphics card has half of that drawing to do while it's behind or beside
+    /// the user's work or game.
+    /// </summary>
+    private static readonly TimeSpan BackgroundFrame = TimeSpan.FromMilliseconds(100);
+
+    /// <summary>Alpha levels the stars' and motes' brushes are shared between, so a frame creates no brush objects for them.</summary>
+    private const int Levels = 32;
+
+    private static readonly IBrush Ground = new LinearGradientBrush
+    {
+        StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+        EndPoint = new RelativePoint(0, 1, RelativeUnit.Relative),
+        GradientStops = [new GradientStop(Night, 0), new GradientStop(Color.Parse("#0A1A22"), 1)],
+    }.ToImmutable();
+
+    private static readonly IBrush[] StarBrushes = Shades(228, 238, 235, 1);
+    private static readonly IBrush[] MoteHalos = Shades(52, 201, 143, 0.25);
+    private static readonly IBrush[] MoteCores = Shades(150, 240, 205, 1);
+
+    private static IBrush[] Shades(byte r, byte g, byte b, double scale) =>
+        Enumerable.Range(0, Levels).Select(i => (IBrush)new ImmutableSolidColorBrush(Color.FromArgb((byte)Math.Round(i * 255.0 / (Levels - 1) * scale), r, g, b))).ToArray();
+
+    private static IBrush Shade(IBrush[] shades, byte alpha) => shades[alpha * (Levels - 1) / 255];
+
+    private static IBrush? _grainBrush;
+
+    private readonly DispatcherTimer _timer = new() { Interval = ActiveFrame };
     private readonly Stopwatch _clock = Stopwatch.StartNew();
     private double _time;
     private Window? _window;
@@ -82,7 +117,7 @@ public sealed class NightBackdrop : Control
 
     private void OnWindowChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
     {
-        if (e.Property == Visual.IsVisibleProperty || e.Property == Window.WindowStateProperty)
+        if (e.Property == Visual.IsVisibleProperty || e.Property == Window.WindowStateProperty || e.Property == WindowBase.IsActiveProperty)
             UpdateTimer();
     }
 
@@ -90,7 +125,10 @@ public sealed class NightBackdrop : Control
     private void UpdateTimer()
     {
         if (_window is { IsVisible: true, WindowState: not WindowState.Minimized })
+        {
+            _timer.Interval = _window.IsActive ? ActiveFrame : BackgroundFrame;
             _timer.Start();
+        }
         else
             _timer.Stop();
     }
@@ -104,12 +142,7 @@ public sealed class NightBackdrop : Control
         var energy = Math.Clamp(Intensity, 0, 1);
 
         // The ground: a night that is a shade lighter toward the bottom.
-        context.FillRectangle(new LinearGradientBrush
-        {
-            StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-            EndPoint = new RelativePoint(0, 1, RelativeUnit.Relative),
-            GradientStops = [new GradientStop(Night, 0), new GradientStop(Color.Parse("#0A1A22"), 1)],
-        }, bounds);
+        context.FillRectangle(Ground, bounds);
 
         // Glows that wander across the window, each on its own slow loop (about 20 to 30 seconds).
         var a = t / 3.6;
@@ -127,7 +160,7 @@ public sealed class NightBackdrop : Control
             var twinkle = 0.5 + 0.5 * Math.Sin(t * star.Speed + star.Offset);
             var alpha = (byte)Math.Clamp(star.Alpha * (0.25 + 0.75 * twinkle) * 255, 0, 255);
             var x = (star.X + t * star.Drift) % 1.0;
-            context.DrawEllipse(new SolidColorBrush(Color.FromArgb(alpha, 228, 238, 235)), null,
+            context.DrawEllipse(Shade(StarBrushes, alpha), null,
                 new Point(x * bounds.Width, star.Y * bounds.Height), star.Radius, star.Radius);
         }
 
@@ -141,23 +174,16 @@ public sealed class NightBackdrop : Control
             var fade = Math.Sin(Math.Clamp(phase, 0, 1) * Math.PI);
             var alpha = (byte)Math.Clamp(fade * (0.30 + 0.35 * energy) * 255, 0, 255);
             var point = new Point(x * bounds.Width, y * bounds.Height);
-            context.DrawEllipse(new SolidColorBrush(Color.FromArgb((byte)(alpha / 4), 52, 201, 143)), null, point, mote.Size * 3.2, mote.Size * 3.2);
-            context.DrawEllipse(new SolidColorBrush(Color.FromArgb(alpha, 150, 240, 205)), null, point, mote.Size, mote.Size);
+            context.DrawEllipse(Shade(MoteHalos, alpha), null, point, mote.Size * 3.2, mote.Size * 3.2);
+            context.DrawEllipse(Shade(MoteCores, alpha), null, point, mote.Size, mote.Size);
         }
 
         ShootingStar(context, bounds, t);
 
         // Film grain, so the dark reads as made rather than flat.
-        var grain = Grain();
-        using (context.PushOpacity(0.07))
-        {
-            context.FillRectangle(new ImageBrush(grain)
-            {
-                TileMode = TileMode.Tile,
-                Stretch = Stretch.None,
-                DestinationRect = new RelativeRect(0, 0, grain.Size.Width, grain.Size.Height, RelativeUnit.Absolute),
-            }, bounds);
-        }
+        // (Its faintness is in the bitmap's own alpha: an opacity layer would be drawn offscreen and blended again every frame.)
+        _grainBrush ??= MakeGrainBrush();
+        context.FillRectangle(_grainBrush, bounds);
     }
 
     /// <summary>A streak across the upper sky for about a second, every nine seconds or so.</summary>
@@ -248,6 +274,17 @@ public sealed class NightBackdrop : Control
             random.NextDouble())).ToArray();
     }
 
+    private static IBrush MakeGrainBrush()
+    {
+        var grain = Grain();
+        return new ImageBrush(grain)
+        {
+            TileMode = TileMode.Tile,
+            Stretch = Stretch.None,
+            DestinationRect = new RelativeRect(0, 0, grain.Size.Width, grain.Size.Height, RelativeUnit.Absolute),
+        }.ToImmutable();
+    }
+
     private static WriteableBitmap Grain()
     {
         if (_grain is { } existing)
@@ -262,7 +299,7 @@ public sealed class NightBackdrop : Control
             {
                 for (var x = 0; x < size; x++)
                 {
-                    var a = (byte)random.Next(0, 160);
+                    var a = (byte)Math.Round(random.Next(0, 160) * GrainOpacity);
                     // Premultiplied white: every channel is the alpha.
                     row[x * 4] = a;
                     row[x * 4 + 1] = a;
