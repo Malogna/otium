@@ -4,6 +4,7 @@ using System.Text;
 using Otium.Core.Accounts;
 using Otium.Core.Platform;
 using Otium.Core.Support;
+using Otium.Providers.SrbMiner;
 
 namespace Otium.App.Services;
 
@@ -49,8 +50,16 @@ public static class ProblemReportBuilder
         {
             Line("");
             Line($"Graphics card coin now: {gpu.CurrentAlgorithm ?? "none"}");
+            foreach (var card in host.Gpus)
+                Line(host.GpuFreeMemoryGb(card) is { } free
+                    ? Invariant($"  {card.Name}: {free:0.0} of {card.MemoryGb:0} GB memory free")
+                    : $"  {card.Name}: free memory unknown");
             foreach (var bench in gpu.Benchmarks)
                 Line(Invariant($"  tested {bench.Algorithm}: {bench.HashrateHps:0.##} H/s, {bench.ExtraWatts?.ToString("0", CultureInfo.InvariantCulture) ?? "?"} W{(bench.Failure is { } f ? $", failed: {f}" : "")}{(gpu.SetAsideReason(bench.Algorithm) is { } why ? $", set aside: {why}" : "")}"));
+            // Coins that never got a test because something kept them from starting (too little free memory, say).
+            foreach (var algorithm in GpuAlgorithms.All.Where(a => gpu.Benchmarks.All(b => b.Algorithm != a.PoolName)))
+                if (gpu.SetAsideReason(algorithm.PoolName) is { } untested)
+                    Line($"  not started {algorithm.PoolName}: {untested}");
         }
 
         var sharing = host.Bandwidth.Snapshot;

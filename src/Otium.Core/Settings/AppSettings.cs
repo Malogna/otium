@@ -112,6 +112,9 @@ public sealed class AppSettings
     /// <summary>The pool's "paid" total last seen, per pool and coin, so a new payout is noticed once.</summary>
     public Dictionary<string, double> NotifiedPaid { get; set; } = [];
 
+    /// <summary>The pools (per pool and coin) whose "close to a payout" notification was shown for the balance they hold now; cleared after the payout.</summary>
+    public HashSet<string> NotifiedNearPayout { get; set; } = [];
+
     /// <summary>How many internet sharing payouts were already announced.</summary>
     public int NotifiedSharingPayouts { get; set; }
 

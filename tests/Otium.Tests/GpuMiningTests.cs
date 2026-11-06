@@ -1146,10 +1146,36 @@ public sealed class SrbMinerProviderTests : IDisposable
         await RunForProvider(provider, SrbMinerGpuProvider.FanChangeEvery + TimeSpan.FromSeconds(30));
         Assert.Equal(40, fans[^1]);
 
-        // Stopped: the card's own fans.
+        // Stopped: the fans stay held for a moment (a new fee slice restarts the miner within seconds), then go back to the card.
         await provider.StopAsync(CancellationToken.None);
+        Assert.Equal(40, fans[^1]);
+        _time.Advance(SrbMinerGpuProvider.FanHandBackAfter + TimeSpan.FromSeconds(1));
         Assert.Null(fans[^1]);
     }
+
+    [Fact]
+    public async Task A_miner_restarted_on_a_new_slice_keeps_the_fans_held_throughout()
+    {
+        _meter.Watts = () => 348;
+        var fans = new List<int?>();
+        var unmineable = new CreditingUnmineable();
+        unmineable.Workers.Add(new UnmineableWorker("pearlpow", "ot1234abcdg", true, 9.2e13, 9.2e13));
+        var provider = CreateProvider(() => UnmineablePearlPolicy(), pricePerKwh: 0.15, unmineable: unmineable,
+            stats: g => new GpuStats(g.Name, 60, 100, 69, 244, 1755, 2, 12), powerCap: _ => true,
+            silentTuning: () => true, fanLimit: () => 40, fanControl: speed => { fans.Add(speed); return true; });
+        var options = new ProviderRunOptions(new MiningTarget(TestAddresses.Usdt(19), PayoutRole.User), "ot1234abcdg", 100);
+        await provider.StartAsync(options, CancellationToken.None);
+        await RunForProvider(provider, SrbMinerGpuProvider.BenchmarkDuration + IntensityTuner.Warmup + TimeSpan.FromSeconds(30));
+        Assert.Equal(40, fans[^1]);
+
+        // The engine stops the miner and starts it again within seconds: the fans are never handed back.
+        await provider.StopAsync(CancellationToken.None);
+        _time.Advance(TimeSpan.FromSeconds(5));
+        await provider.StartAsync(options, CancellationToken.None);
+        _time.Advance(SrbMinerGpuProvider.FanHandBackAfter * 2);
+        Assert.DoesNotContain(fans, speed => speed is null);
+    }
+
 
     [Fact]
     public async Task Without_permission_to_hold_the_fans_quiet_mode_goes_by_the_fan_reading_as_before()
