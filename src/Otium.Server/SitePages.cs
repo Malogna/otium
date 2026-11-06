@@ -346,13 +346,11 @@ internal static partial class SitePages
           {{head}}
         </head>
         <body>
-          <canvas id="sky" aria-hidden="true"></canvas>
           <header class="nav">
             <div class="wrap">
               <a class="brand" href="/"><img src="{{SiteAssets.Url("otium.svg")}}" alt="" width="30" height="30">Otium</a>
               <nav class="nav-links" aria-label="Sections">
                 <a href="/#night-shift">How it works</a>
-                <a href="/#earnings">Earnings</a>
                 <a href="/mining">Graphics cards</a>
                 <a href="/#fees">Fees</a>
                 <a href="/#questions">Questions</a>
@@ -365,8 +363,14 @@ internal static partial class SitePages
           </main>
           <footer>
             <div class="wrap">
-              <span>Otium · <i>otium</i> is Latin for leisure</span>
-              <nav aria-label="Site">{{string.Concat(legalLinks.Select(p => $"""<a href="/{p}">{Capitalize(p)}</a>"""))}}<a href="{{HelpUrl}}">Help</a><a href="/sell-computing-power">Sell processing power</a><a href="/sell-bandwidth">Sell bandwidth</a><a href="/pearl">What is Pearl?</a><a href="/antivirus">Antivirus help</a>{{ComparisonLinks}}<a href="{{Core.AppIdentity.DiscordUrl}}">Discord</a>{{ContactLink}}<a href="https://github.com/Malogna/otium">Source code</a><a href="https://github.com/Malogna/otium/releases">Releases</a></nav>
+              <div class="footer-about about">
+                <a class="brand" href="/"><img src="{{SiteAssets.Url("otium.svg")}}" alt="" width="30" height="30">Otium</a>
+                <p>Your computer works the night shift, and you get paid. <i>Otium</i> is Latin for leisure.</p>
+              </div>
+              <nav aria-label="Earn"><span class="label">Earn</span><a href="/sell-computing-power">Sell processing power</a><a href="/sell-bandwidth">Sell bandwidth</a><a href="/mining">Graphics cards</a><a href="/pearl">What is Pearl?</a></nav>
+              <nav aria-label="Compare"><span class="label">Compare</span>{{ComparisonLinks}}</nav>
+              <nav aria-label="Help"><span class="label">Help</span><a href="{{HelpUrl}}">Help</a><a href="/antivirus">Antivirus help</a><a href="{{Core.AppIdentity.DiscordUrl}}">Discord</a>{{ContactLink}}</nav>
+              <nav aria-label="Project"><span class="label">Project</span>{{string.Concat(legalLinks.Select(p => $"""<a href="/{p}">{Capitalize(p)}</a>"""))}}<a href="https://github.com/Malogna/otium">Source code</a><a href="https://github.com/Malogna/otium/releases">Releases</a></nav>
             </div>
           </footer>
           <script src="{{SiteAssets.Url("site.js")}}" defer></script>
@@ -509,12 +513,16 @@ internal static partial class SitePages
         var priceBars = string.Concat(day.Select((p, i) =>
             $"""<span class="{(p > breakEven ? "off" : "")}" data-h="{(p / top * 100).ToString("0.#", CultureInfo.InvariantCulture)}" title="{i:00}:00 · ${p.ToString("0.000", CultureInfo.InvariantCulture)}/kWh · {(p > breakEven ? "waits" : "mines")}"></span>"""));
 
-        static string Grid(string cls) => $"""<div class="grid {cls}">{string.Concat(Enumerable.Range(0, 16).Select(i => $"""<span></span>"""))}</div>""";
-
         string Seg(string cls, double pct) => $"""<span class="{cls}" data-w="{pct.ToString("0.##", CultureInfo.InvariantCulture)}"></span>""";
 
+        // An example day as a bar: away from 23:00 to 08:30 (with Otium's fee slice), at the computer until 23:00, and
+        // waiting out the evening price peak from 17:00 to 18:30.
+        string Hours(string cls, double from, double to) => Seg(cls, (to - from) / 24 * 100);
+        var feeHours = fees.CycleLength.TotalMinutes * fees.FeePercent / 100 / 60;
+        var dayBar = Hours("mining", 0, 4.2) + Hours("fee", 0, feeHours) + Hours("mining", 4.2 + feeHours, 8.5) + Hours("using", 8.5, 17)
+            + Hours("paused", 17, 18.5) + Hours("using", 18.5, 23) + Hours("mining", 23, 24);
+
         var body = $"""
-                <div class="glow-frame" aria-hidden="true"><div class="glow"></div></div>
                 <section class="hero" aria-labelledby="hero-title">
                   <div class="wrap">
                     <div class="hero-copy">
@@ -538,10 +546,10 @@ internal static partial class SitePages
                   </div>
                 </section>
 
-                <div class="ribbon">
+                <div class="paid-in">
                   <div class="wrap">
                     <span class="label">Paid to your own wallet in</span>
-                    <div class="marquee"><div class="marquee-track">{coins}<span aria-hidden="true" class="contents">{coins}</span></div></div>
+                    <div class="coins">{coins}</div>
                   </div>
                 </div>
             {PopularCardsStrip(earnings)}
@@ -553,65 +561,39 @@ internal static partial class SitePages
                       <div><span class="label">How it works</span><h2 id="shift-title">Set it up once. It works while you rest.</h2></div>
                       <p>Otium tests your hardware, picks the coin that pays your card the most, and switches as prices change. You don't touch it again.</p>
                     </div>
-                    <div class="night reveal">
-                      <div class="instrument" aria-label="An example day: the computer mines from 23:00 to 08:30 while you're away">
-                        <div class="dial-box">
-                          <svg id="dial" class="dial" viewBox="-30 -30 460 460" aria-hidden="true"></svg>
-                          <div class="dial-center">
-                            <div class="clock mono" id="dial-clock">03:00</div>
-                            <div class="amount" id="dial-amount">1.1043</div>
-                            <div class="unit">USDT earned tonight</div>
-                            <div class="state" id="dial-state">Away: mining Pearl at 101.4 TH/s</div>
-                          </div>
-                        </div>
-                        <ul class="legend">
-                          <li class="mining"><i></i>Away: mining</li>
-                          <li class="using"><i></i>You're using it</li>
-                          <li class="paused"><i></i>Power too expensive</li>
-                          <li class="fee"><i></i>Otium's {feeMinutes} min</li>
-                        </ul>
-                      </div>
-                      <div class="terminal" aria-label="What the miners report during the example night">
-                        <div class="terminal-bar"><i></i><i></i><i></i><span>otium · miner log · RTX 3080</span></div>
-                        <div class="log" id="log"></div>
-                      </div>
-                    </div>
-                    <div class="shift-line reveal">
-                      <div class="moment"><time>18:00</time><h3>Choose where to be paid</h3><p>Pick a coin and paste your wallet address. The default is USDT on TRON, which is worth a dollar and pays out from <span class="mono">1.5 USDT</span>.</p></div>
-                      <div class="moment"><time>23:00</time><h3>Walk away</h3><p>A few minutes after you leave the keyboard, your processor and graphics card start mining. Touch the mouse and they stop within a second.</p></div>
-                      <div class="moment"><time>09:00</time><h3>The pool pays you</h3><p>unMineable sends your earnings straight to your address once a day after the minimum. Otium never holds your money and can't touch it. <a href="#payouts">How payouts work</a></p></div>
+                    <ol class="steps reveal">
+                      <li class="step"><h3>Choose where to be paid</h3><p>Pick a coin and paste your wallet address. The default is USDT on TRON, which is worth a dollar and pays out from <span class="mono">1.5 USDT</span>.</p></li>
+                      <li class="step"><h3>Walk away</h3><p>A few minutes after you leave the keyboard, your processor and graphics card start mining. Touch the mouse and they stop within a second.</p></li>
+                      <li class="step"><h3>The pool pays you</h3><p>unMineable sends your earnings straight to your address once a day after the minimum. Otium never holds your money and can't touch it. <a href="#payouts">How payouts work</a></p></li>
+                    </ol>
+                    <div class="day reveal">
+                      <div class="day-head"><h3>An example day</h3><p>Mining while you're away, paused while you're at the computer, and waiting out the evening price peak.</p></div>
+                      <div class="day-bar" role="img" aria-label="An example day: the computer mines from 23:00 to 08:30 while you're away, and waits from 17:00 to 18:30 when power is expensive">{dayBar}</div>
+                      <div class="day-axis"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div>
+                      <ul class="split-legend"><li><i class="sw-emerald"></i>Away: mining</li><li><i class="sw-mist"></i>You're using it</li><li><i class="sw-waits"></i>Power too expensive</li><li><i class="sw-ink"></i>Otium's {feeMinutes} min</li></ul>
                     </div>
                   </div>
                 </section>
 
-                <section id="useful-work" aria-labelledby="ai-title">
-                  <div class="wrap power">
-                    <div class="reveal">
-                      <span class="label">Proof of useful work</span>
-                      <h2 id="ai-title" class="mt-18">Pearl mining runs the math AI runs on.</h2>
-                      <p class="muted mt-20">Most coins burn power on hashes nobody needs. Pearl is a proof-of-useful-work coin: mining a block means multiplying large matrices, the same operation every AI model is built from, and its protocol is designed so that work can be real AI computation, such as serving a language model. That's why NVIDIA cards with tensor cores mine it best, and why it pays more than any other coin a gaming card can mine today.</p>
-                      <p class="fine mt-14">Through a pool, your card multiplies the matrices the network hands it. It doesn't run anyone's AI model or see their data. <a href="/pearl">What is Pearl?</a></p>
-                    </div>
-                    <div class="panel matmul reveal" aria-hidden="true">
-                      <div class="mm">{Grid("a")}<span class="op">×</span>{Grid("b")}<span class="op">=</span>{Grid("c")}</div>
-                      <div class="threshold"><span>noised matrix product · a winning tile is a share</span><span>INT8 today, FP8 next</span></div>
-                    </div>
-                  </div>
-                </section>
-
-                <section aria-labelledby="power-title">
-                  <div class="wrap power">
-                    <div class="reveal">
-                      <span class="label">Watches the power price</span>
-                      <h2 id="power-title" class="mt-18">It watches the price of power by the hour.</h2>
-                      <p class="muted mt-20">When electricity would cost more than mining earns, Otium waits. In Norway, Sweden, Denmark and Finland it follows the live hourly price for your area, so it mines through the cheap night hours and sits out the evening peak.</p>
-                      <p class="fine mt-14">Electricity included in your rent, or paid by someone else? Say so when you set it up, and Otium earns whenever you're away.</p>
-                    </div>
-                    <div class="panel prices reveal">
-                      <div class="threshold"><span>Example day, southern Norway</span><span>break-even ${breakEven.ToString("0.00", CultureInfo.InvariantCulture)}/kWh</span></div>
-                      <div class="price-bars" id="price-bars">{priceBars}</div>
-                      <div class="price-axis"><span>00:00</span><span>08:00</span><span>16:00</span><span>23:00</span></div>
-                      <ul class="split-legend"><li><i class="sw-emerald"></i>Mines</li><li><i class="sw-waits"></i>Waits</li></ul>
+                <section id="useful-work" aria-label="What it mines, and when">
+                  <div class="wrap">
+                    <div class="pair">
+                      <div class="panel reveal">
+                        <span class="label">Proof of useful work</span>
+                        <h3>Pearl mining runs the math AI runs on.</h3>
+                        <p>Most coins burn power on hashes nobody needs. Pearl is a proof-of-useful-work coin: mining a block means multiplying large matrices, the same operation every AI model is built from, and its protocol is designed so that work can be real AI computation. That's why NVIDIA cards with tensor cores mine it best, and why it pays more than any other coin a gaming card can mine today.</p>
+                        <p class="fine">Through a pool, your card multiplies the matrices the network hands it. It doesn't run anyone's AI model or see their data. <a href="/pearl">What is Pearl?</a></p>
+                      </div>
+                      <div class="panel prices reveal">
+                        <span class="label">Watches the power price</span>
+                        <h3>It watches the price of power by the hour.</h3>
+                        <p>When electricity would cost more than mining earns, Otium waits. In Norway, Sweden, Denmark and Finland it follows the live hourly price for your area.</p>
+                        <div class="threshold"><span>Example day, southern Norway</span><span>break-even ${breakEven.ToString("0.00", CultureInfo.InvariantCulture)}/kWh</span></div>
+                        <div class="price-bars" id="price-bars">{priceBars}</div>
+                        <div class="price-axis"><span>00:00</span><span>08:00</span><span>16:00</span><span>23:00</span></div>
+                        <ul class="split-legend"><li><i class="sw-emerald"></i>Mines</li><li><i class="sw-waits"></i>Waits</li></ul>
+                        <p class="fine">Electricity included in your rent, or paid by someone else? Say so when you set it up, and Otium earns whenever you're away.</p>
+                      </div>
                     </div>
                   </div>
                 </section>
@@ -635,50 +617,43 @@ internal static partial class SitePages
                   </div>
                 </section>
 
-                <section id="payouts" aria-labelledby="payouts-title">
+                <section aria-labelledby="payouts-title">
                   <div class="wrap">
                     <div class="section-head reveal">
                       <div><span class="label">Getting paid</span><h2 id="payouts-title">The pool pays your wallet. Otium never holds your money.</h2></div>
-                      <p>Mining and internet sharing each pay your own address, in the coin you chose. This is the path the money takes.</p>
+                      <p>Mining and internet sharing each pay your own address, in the coin you chose. Open either to see the path the money takes.</p>
                     </div>
-                    <div class="payouts">
-                      <div class="panel reveal">
-                        <h3>Mining</h3>
+                    <div class="faq one reveal">
+                      <details id="payouts"><summary>Mining: from the pool to your wallet</summary>
                         <ol class="pay-steps">
                           <li><strong>Your computer mines on unMineable, under your address.</strong> Your processor mines Monero and your graphics card the coin that pays it most.</li>
                           <li><strong>unMineable converts it into your coin.</strong> A few hours after the mining, it adds the value to your balance at the pool, in USDT, BTC or whichever coin you picked.</li>
                           <li><strong>Once a day it pays your wallet,</strong> when your balance has passed the pool's minimum (<span class="mono">1.5 USDT</span> for USDT on TRON). Otium shows how close you are.</li>
                         </ol>
-                        <p class="fine mt-14">Check that "Auto pay" is on for your address at unMineable: new TRON addresses start with it off, and Otium warns you if it is. A balance with no mining for 6 months is lost at unMineable, so collect it if you stop. In the US, MoneroOcean pays Monero instead, from <span class="mono">0.003 XMR</span>.</p>
-                      </div>
-                      <div class="panel reveal">
-                        <h3>Internet sharing</h3>
+                        <p class="fine">Check that "Auto pay" is on for your address at unMineable: new TRON addresses start with it off, and Otium warns you if it is. A balance with no mining for 6 months is lost at unMineable, so collect it if you stop. In the US, MoneroOcean pays Monero instead, from <span class="mono">0.003 XMR</span>.</p>
+                      </details>
+                      <details id="payouts-sharing"><summary>Internet sharing: from Proxybase to your wallet</summary>
                         <ol class="pay-steps">
                           <li><strong>Proxybase pays for the bandwidth its buyers use,</strong> in dollars, into a small wallet Otium keeps on your computer.</li>
                           <li><strong>From $1, Otium has it converted and sent to your address</strong> in your coin. It waits while network fees would take more than 5% of the payout, so USDT on TRON arrives in payouts of about $16, and pays anyway from $25.</li>
                           <li><strong>The conversion goes through Relay</strong> (and SideShift for Litecoin, ChangeNOW for Monero). One that fails comes back to the wallet on your computer.</li>
                         </ol>
-                        <p class="fine mt-14">Otium's {fee} of sharing earnings comes off; the rest reaches your address. Payouts only ever go to the address you registered, never anywhere the app or anyone else asks.</p>
-                        <p class="fine mt-14">Mysterium and AIOZ skip the conversion. Mysterium pays MYST on Polygon straight to your address from 5 MYST, and Otium takes nothing from it. Otium sends AIOZ to your 0x address from 5 AIOZ; its {fee} of what the node earns goes to Otium's address separately.</p>
-                      </div>
+                        <p class="fine">Otium's {fee} of sharing earnings comes off; the rest reaches your address. Payouts only ever go to the address you registered, never anywhere the app or anyone else asks.</p>
+                        <p class="fine">Mysterium and AIOZ skip the conversion. Mysterium pays MYST on Polygon straight to your address from 5 MYST, and Otium takes nothing from it. Otium sends AIOZ to your 0x address from 5 AIOZ; its {fee} of what the node earns goes to Otium's address separately.</p>
+                      </details>
                     </div>
                   </div>
                 </section>
 
                 <section aria-labelledby="invite-title">
                   <div class="wrap">
-                    <div class="panel invite reveal">
+                    <div class="banner reveal">
                       <div>
                         <span class="label">Invite friends</span>
                         <h2 id="invite-title" class="mt-14">Bring a friend, and {bothFeeFree}.</h2>
-                        <p>Then, for {referrerMonths} months, {referrerShare} of Otium's fee on their mining is mined straight to your address.</p>
-                        <p class="muted fs-sm">Your fee-free days start once your friend has mined for a day (up to {maxFeeFree} days at a time). Friends on your own internet connection don't count.</p>
+                        <p>Then, for {referrerMonths} months, {referrerShare} of Otium's fee on their mining is mined straight to your address. Your fee-free days start once your friend has mined for a day (up to {maxFeeFree} days at a time). Friends on your own internet connection don't count.</p>
                       </div>
-                      <div class="ticket" aria-hidden="true">
-                        <span class="label">Invite</span>
-                        <div class="big">{feeFreeDays} days fee-free</div>
-                        <p>{(perFriend == feeFreeDays ? "for you both" : "for your friend")}, plus {referrerShare} of Otium's fee to you</p>
-                      </div>
+                      <div class="perk" aria-hidden="true">{feeFreeDays} days fee-free<small>{(perFriend == feeFreeDays ? "for you both" : "for your friend")}, plus {referrerShare} of Otium's fee to you</small></div>
                     </div>
                   </div>
                 </section>
@@ -693,7 +668,6 @@ internal static partial class SitePages
                 </section>
 
                 <section class="closing" aria-labelledby="closing-title">
-                  <pre class="ascii" aria-hidden="true"></pre>
                   <div class="wrap">
                     <h2 id="closing-title">Your computer sleeps eight hours a night. <span>It could be working.</span></h2>
                     <a class="button" href="{download}"><span data-download-label>Download Otium</span></a>
@@ -772,7 +746,6 @@ internal static partial class SitePages
     /// <summary>"Page not found", with the way back in. Kept out of search results.</summary>
     public static string NotFoundPage(IEnumerable<string> legalLinks, string baseUrl, string path) =>
         Layout("Page not found | Otium", "This page doesn't exist on otium.lol.", """
-                <div class="glow-frame" aria-hidden="true"><div class="glow"></div></div>
                 <section class="page stacked">
                   <div class="wrap">
                     <div class="panel">
@@ -823,7 +796,6 @@ internal static partial class SitePages
         var others = string.Join("", release.Installers.Where(i => i != mine)
             .Select(i => $"""<a class="button ghost" href="/download/{E(i.Os)}">{E(i.Label)}</a>"""));
         var body = $"""
-                <div class="glow-frame" aria-hidden="true"><div class="glow"></div></div>
                 <section class="page">
                   <div class="wrap">
                     <div class="panel">

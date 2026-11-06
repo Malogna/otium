@@ -39,7 +39,6 @@ internal static partial class SitePages
             ? $"Otium computers in {E(sharing.CountryName)} that shared their numbers made a median of <strong>{month} a month</strong> from Proxybase, after Otium's {fee}."
             : $"Proxybase pays {Usd(sharing.RatePerGb)} per GB {(sharing.ListedMarket ? $"in {E(sharing.CountryName)}" : "where it doesn't list a country on its own")}. At 1 GB a day, that's about <strong>{month} a month</strong> after Otium's {fee}. What you really earn depends on how much buyers use your connection.";
         var body = $"""
-                <div class="glow-frame" aria-hidden="true"><div class="glow"></div></div>
                 <section class="page stacked">
                   <div class="wrap">
                     <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Otium</a><span aria-hidden="true">/</span><span aria-current="page">Sell your bandwidth</span></nav>
@@ -108,7 +107,6 @@ internal static partial class SitePages
                       </div>
               """;
         var body = $"""
-                <div class="glow-frame" aria-hidden="true"><div class="glow"></div></div>
                 <section class="page stacked">
                   <div class="wrap">
                     <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Otium</a><span aria-hidden="true">/</span><span aria-current="page">Sell processing power</span></nav>

@@ -1,6 +1,5 @@
-/* Otium's website. One deliberate look: the computer's night shift. A deep blue-green night, the app's emerald for
-   work being done, warm amber for electricity. Layout: a left-aligned editorial grid, with the hero split between
-   the pitch and a live 24-hour dial of when the computer works. */
+/* Otium's website. A calm dark page: one green for work being done, amber for electricity, flat surfaces and
+   plenty of room. Each page says one thing at a time; details open on request. */
 
 @font-face { font-family: "Bricolage Grotesque"; src: url("/site/fonts/BricolageGrotesque.woff2") format("woff2"); font-weight: 200 800; font-stretch: 75% 100%; font-display: swap; }
 @font-face { font-family: "Hanken Grotesk"; src: url("/site/fonts/HankenGrotesk.woff2") format("woff2"); font-weight: 300 800; font-display: swap; }
@@ -31,8 +30,8 @@
   --step-3: clamp(2.2rem, 1.4rem + 3.4vw, 3.6rem);
   --step-4: clamp(2.9rem, 1.6rem + 5.6vw, 5.6rem);
 
-  --radius: 18px;
-  --wrap: 1180px;
+  --radius: 16px;
+  --wrap: 1080px;
   color-scheme: dark;
 }
 
@@ -53,17 +52,6 @@ body {
 }
 img, svg, canvas { max-width: 100%; }
 
-/* Texture, so the dark surfaces read as made rather than generated: a fine film grain over the whole page… */
-body::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-  pointer-events: none;
-  opacity: 0.09;
-  mix-blend-mode: overlay;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .55 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-}
 a { color: var(--emerald); text-underline-offset: 3px; }
 a:focus-visible, button:focus-visible, summary:focus-visible, input:focus-visible {
   outline: 2px solid var(--amber);
@@ -85,6 +73,7 @@ h3 { font-size: var(--step-1); line-height: 1.2; letter-spacing: -0.01em; }
 p { margin: 0; text-wrap: pretty; }
 .mono { font-family: var(--mono); font-feature-settings: "zero"; }
 .muted { color: var(--mist); }
+.fine { font-size: 0.88rem; color: var(--mist); }
 .label {
   font-family: var(--mono);
   font-size: 0.75rem;
@@ -93,181 +82,78 @@ p { margin: 0; text-wrap: pretty; }
   color: var(--mist);
 }
 
-/* ---------- Atmosphere ---------- */
-
-#sky {
-  position: fixed;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  z-index: -1;
-  pointer-events: none;
-}
-/* The glow is wider than the page and drifts, so a frame as wide as the page clips it sideways (only sideways: it
-   still reaches down over the hero). */
-.glow-frame { position: absolute; inset: 0 0 auto; height: 0; overflow: clip visible; z-index: -1; pointer-events: none; }
-.glow {
-  position: absolute;
-  inset: -20vh -10% auto;
-  height: 900px;
-  z-index: -1;
-  pointer-events: none;
-  background:
-    radial-gradient(40% 50% at 72% 30%, color-mix(in oklab, var(--emerald-deep) 34%, transparent), transparent 70%),
-    radial-gradient(30% 40% at 18% 10%, color-mix(in oklab, #1b4a6b 45%, transparent), transparent 70%);
-  filter: blur(10px);
-  animation: drift 22s ease-in-out infinite alternate;
-  will-change: transform;
-}
-/* …an ordered dither on the hero's glow, the way old screens shaded a gradient (a mask, so the glow's blur leaves it
-   crisp; the even layer keeps the glow from going dim)… */
-.glow {
-  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4' shape-rendering='crispEdges'%3E%3Crect x='0' y='0' width='1' height='1' fill-opacity='0'/%3E%3Crect x='1' y='0' width='1' height='1' fill-opacity='0.5'/%3E%3Crect x='2' y='0' width='1' height='1' fill-opacity='0.125'/%3E%3Crect x='3' y='0' width='1' height='1' fill-opacity='0.625'/%3E%3Crect x='0' y='1' width='1' height='1' fill-opacity='0.75'/%3E%3Crect x='1' y='1' width='1' height='1' fill-opacity='0.25'/%3E%3Crect x='2' y='1' width='1' height='1' fill-opacity='0.875'/%3E%3Crect x='3' y='1' width='1' height='1' fill-opacity='0.375'/%3E%3Crect x='0' y='2' width='1' height='1' fill-opacity='0.1875'/%3E%3Crect x='1' y='2' width='1' height='1' fill-opacity='0.6875'/%3E%3Crect x='2' y='2' width='1' height='1' fill-opacity='0.0625'/%3E%3Crect x='3' y='2' width='1' height='1' fill-opacity='0.5625'/%3E%3Crect x='0' y='3' width='1' height='1' fill-opacity='0.9375'/%3E%3Crect x='1' y='3' width='1' height='1' fill-opacity='0.4375'/%3E%3Crect x='2' y='3' width='1' height='1' fill-opacity='0.8125'/%3E%3Crect x='3' y='3' width='1' height='1' fill-opacity='0.3125'/%3E%3C/svg%3E"), linear-gradient(rgb(0 0 0 / 0.45), rgb(0 0 0 / 0.45));
-  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4' shape-rendering='crispEdges'%3E%3Crect x='0' y='0' width='1' height='1' fill-opacity='0'/%3E%3Crect x='1' y='0' width='1' height='1' fill-opacity='0.5'/%3E%3Crect x='2' y='0' width='1' height='1' fill-opacity='0.125'/%3E%3Crect x='3' y='0' width='1' height='1' fill-opacity='0.625'/%3E%3Crect x='0' y='1' width='1' height='1' fill-opacity='0.75'/%3E%3Crect x='1' y='1' width='1' height='1' fill-opacity='0.25'/%3E%3Crect x='2' y='1' width='1' height='1' fill-opacity='0.875'/%3E%3Crect x='3' y='1' width='1' height='1' fill-opacity='0.375'/%3E%3Crect x='0' y='2' width='1' height='1' fill-opacity='0.1875'/%3E%3Crect x='1' y='2' width='1' height='1' fill-opacity='0.6875'/%3E%3Crect x='2' y='2' width='1' height='1' fill-opacity='0.0625'/%3E%3Crect x='3' y='2' width='1' height='1' fill-opacity='0.5625'/%3E%3Crect x='0' y='3' width='1' height='1' fill-opacity='0.9375'/%3E%3Crect x='1' y='3' width='1' height='1' fill-opacity='0.4375'/%3E%3Crect x='2' y='3' width='1' height='1' fill-opacity='0.8125'/%3E%3Crect x='3' y='3' width='1' height='1' fill-opacity='0.3125'/%3E%3C/svg%3E"), linear-gradient(rgb(0 0 0 / 0.45), rgb(0 0 0 / 0.45));
-  -webkit-mask-size: 4px 4px, auto;
-  mask-size: 4px 4px, auto;
-  -webkit-mask-composite: source-over;
-  mask-composite: add;
-}
-/* …and a field of hash characters behind the closing line, like a miner at work. */
-.closing { position: relative; overflow: clip; }
-.ascii {
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  margin: 0;
-  font: 400 13px/1.15 var(--mono, ui-monospace, monospace);
-  letter-spacing: 0.2em;
-  color: var(--emerald);
-  opacity: 0.11;
-  white-space: pre;
-  overflow: hidden;
-  pointer-events: none;
-  user-select: none;
-  mask-image: radial-gradient(80% 90% at 70% 60%, black, transparent 75%);
-  -webkit-mask-image: radial-gradient(80% 90% at 70% 60%, black, transparent 75%);
-}
-@keyframes drift {
-  to { transform: translate3d(-3%, 4%, 0) scale(1.06); }
-}
-
 /* ---------- Navigation ---------- */
 
 .nav {
   position: sticky;
   top: env(safe-area-inset-top, 0px);
   z-index: 10;
-  backdrop-filter: blur(14px) saturate(1.3);
-  -webkit-backdrop-filter: blur(14px) saturate(1.3);
-  background: color-mix(in oklab, var(--night) 72%, transparent);
-  border-bottom: 1px solid color-mix(in oklab, var(--line) 70%, transparent);
+  background: color-mix(in oklab, var(--night) 92%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--line);
 }
 .nav .wrap { display: flex; align-items: center; gap: 28px; padding-block: 14px; }
 .brand { display: inline-flex; align-items: center; gap: 10px; color: var(--ink); text-decoration: none; font: 700 1.25rem/1 var(--display); letter-spacing: -0.02em; }
 .brand svg { width: 30px; height: 30px; flex: none; }
-.nav-links { display: flex; gap: 24px; margin-left: auto; }
+.nav-links { display: flex; gap: 28px; margin-left: auto; }
 .nav-links a { color: var(--mist); text-decoration: none; font-size: 0.95rem; transition: color .2s; }
 .nav-links a:hover { color: var(--ink); }
 
 .button {
-  --x: 50%; --y: 50%;
-  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  padding: 14px 22px;
+  padding: 14px 24px;
   border-radius: 999px;
   font: 600 1rem/1 var(--body);
   text-decoration: none;
   color: var(--on-emerald);
-  background: radial-gradient(120px circle at var(--x) var(--y), #7ff0c1, var(--emerald) 60%);
-  box-shadow: 0 0 0 1px color-mix(in oklab, var(--emerald) 60%, white 10%) inset, 0 10px 40px -12px color-mix(in oklab, var(--emerald) 80%, transparent);
-  transition: transform .25s cubic-bezier(.2,.8,.2,1), box-shadow .25s;
+  background: var(--emerald);
+  transition: background .2s, transform .2s;
   white-space: nowrap;
 }
-.button:hover { transform: translateY(-2px); box-shadow: 0 0 0 1px #9af5d0 inset, 0 18px 50px -14px var(--emerald); }
-.button:active { transform: translateY(0) scale(0.98); transition-duration: .08s; }
+.button:hover { background: #55dcaa; transform: translateY(-1px); }
+.button:active { transform: none; }
 .button svg { width: 18px; height: 18px; }
-.button.small { padding: 10px 16px; font-size: 0.92rem; }
+.button.small { padding: 10px 18px; font-size: 0.92rem; }
 .button.ghost {
   color: var(--ink);
   background: transparent;
   box-shadow: 0 0 0 1px var(--line) inset;
 }
-.button.ghost:hover { box-shadow: 0 0 0 1px var(--mist) inset; }
-/* Discord's own blurple, lightened to read on the night background. */
+.button.ghost:hover { background: transparent; box-shadow: 0 0 0 1px var(--mist) inset; }
 .button.discord svg { color: #8c95ff; }
 .button.discord:hover { box-shadow: 0 0 0 1px #8c95ff inset; }
 
 /* ---------- Hero ---------- */
 
-.hero { position: relative; padding-block: 72px 56px; }
-.hero .wrap { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 56px; align-items: center; }
+.hero { padding-block: 88px 72px; }
+.hero .wrap { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 56px; align-items: center; }
 .hero h1 {
-  font-size: var(--step-4);
-  line-height: 0.92;
-  letter-spacing: -0.035em;
-  font-stretch: 78%;
+  font-size: clamp(2.6rem, 1.5rem + 4.4vw, 4.5rem);
+  line-height: 1;
+  letter-spacing: -0.03em;
+  font-stretch: 85%;
   font-weight: 800;
 }
-.hero h1 .shift {
-  display: block;
-  background: linear-gradient(100deg, var(--emerald) 10%, #b9f6dc 45%, var(--amber) 95%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  background-size: 200% 100%;
-  animation: sheen 9s ease-in-out infinite alternate;
-}
-@keyframes sheen { to { background-position: 100% 0; } }
-.hero .lede { margin-top: 26px; font-size: 1.22rem; line-height: 1.55; color: color-mix(in oklab, var(--ink) 82%, var(--mist)); max-width: 34em; }
-.hero .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 34px; }
-.facts { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-top: 30px; padding: 0; list-style: none; font-family: var(--mono); font-size: 0.82rem; color: var(--mist); }
+.hero h1 .shift { display: block; color: var(--emerald); }
+.hero .lede { margin-top: 24px; font-size: 1.2rem; line-height: 1.55; color: color-mix(in oklab, var(--ink) 80%, var(--mist)); max-width: 30em; }
+.hero .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 36px; }
+.hero .actions .button { padding: 13px 20px; }
+.facts { display: flex; flex-wrap: wrap; gap: 6px 22px; margin-top: 32px; padding: 0; list-style: none; font-size: 0.9rem; color: var(--mist); }
 .facts li { display: inline-flex; align-items: center; gap: 8px; }
-.facts a { color: inherit; text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; transition: color .2s, text-decoration-color .2s; }
-.facts a:hover { color: var(--ink); text-decoration-color: var(--mist); }
-.facts li::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--emerald); box-shadow: 0 0 10px var(--emerald); }
-
-/* The 24-hour dial */
-.instrument { position: relative; display: grid; gap: 16px; }
-.dial-box { position: relative; width: min(100%, 470px); justify-self: center; aspect-ratio: 1; }
-.dial { width: 100%; height: 100%; overflow: visible; }
-.dial .face { fill: color-mix(in oklab, var(--night-2) 80%, transparent); stroke: var(--line); }
-.dial .tick { stroke: var(--line); stroke-width: 1.5; }
-.dial .tick.major { stroke: var(--mist); stroke-width: 2; }
-.dial .hour { fill: var(--mist); font: 500 13px var(--mono); }
-.dial .arc { fill: none; stroke-width: 22; stroke-linecap: butt; }
-.dial .arc.using { stroke: color-mix(in oklab, var(--mist) 22%, transparent); }
-.dial .arc.mining { stroke: var(--emerald); filter: drop-shadow(0 0 10px color-mix(in oklab, var(--emerald) 60%, transparent)); }
-.dial .arc.paused { stroke: var(--amber); stroke-dasharray: 3 3; }
-.dial .arc.fee { stroke: var(--ink); stroke-width: 30; }
-.dial .arc.draw { animation: draw 1.6s cubic-bezier(.65,0,.35,1) both; }
-@keyframes draw { from { stroke-dashoffset: var(--len); } }
-.dial .hand { stroke: var(--ink); stroke-width: 2; }
-.dial .hand-dot { fill: var(--ink); }
-.dial .spark { fill: var(--emerald); }
-.dial-center { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; pointer-events: none; }
-.dial-center .clock { font: 500 0.95rem var(--mono); color: var(--mist); }
-.dial-center .amount { font: 700 clamp(2rem, 1.4rem + 2.4vw, 2.9rem)/1 var(--display); font-stretch: 85%; letter-spacing: -0.02em; margin-top: 8px; font-variant-numeric: tabular-nums; }
-.dial-center .unit { font: 500 0.85rem var(--mono); color: var(--emerald); margin-top: 6px; }
-.dial-center .state { margin-top: 12px; font-size: 0.85rem; color: var(--mist); min-height: 1.4em; }
-.legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 18px; padding: 0; margin: 0; list-style: none; font-size: 0.82rem; color: var(--mist); }
-.legend li { display: inline-flex; align-items: center; gap: 8px; }
-.legend i { display: inline-block; width: 18px; height: 6px; border-radius: 3px; }
-.legend .using i { background: color-mix(in oklab, var(--mist) 30%, transparent); }
-.legend .mining i { background: var(--emerald); }
-.legend .paused i { background: repeating-linear-gradient(90deg, var(--amber) 0 3px, transparent 3px 6px); }
-.legend .fee i { background: var(--ink); width: 6px; }
+.facts li::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--emerald); }
+.facts a { color: inherit; text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; transition: color .2s; }
+.facts a:hover { color: var(--ink); }
 
 /* The earnings estimator (hero) */
-.estimator { display: grid; gap: 14px; padding: 30px; box-shadow: 0 40px 120px -40px color-mix(in oklab, var(--emerald) 35%, transparent); }
+.estimator { display: grid; gap: 14px; padding: 32px; }
 .est-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 6px 12px; }
 .live { display: inline-flex; align-items: center; gap: 8px; font: 500 0.78rem var(--mono); color: var(--emerald); }
-.live i { width: 7px; height: 7px; border-radius: 50%; background: var(--emerald); box-shadow: 0 0 0 0 var(--emerald); animation: pulse 2s ease-out infinite; }
-@keyframes pulse { to { box-shadow: 0 0 0 9px transparent; } }
+.live i { width: 7px; height: 7px; border-radius: 50%; background: var(--emerald); }
 .est-figure { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
-.est-amount { font: 800 clamp(3.6rem, 2.4rem + 4.6vw, 5.8rem)/0.9 var(--display); font-stretch: 78%; letter-spacing: -0.04em; font-variant-numeric: tabular-nums;
-  background: linear-gradient(180deg, var(--ink) 30%, color-mix(in oklab, var(--emerald) 70%, var(--ink))); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.est-amount { font: 800 clamp(3.4rem, 2.4rem + 4vw, 5.2rem)/0.9 var(--display); font-stretch: 82%; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; color: var(--ink); }
 .est-per { font: 600 1.25rem var(--display); color: var(--mist); }
 .est-sub { color: color-mix(in oklab, var(--ink) 82%, var(--mist)); }
 .est-payout { font: 500 0.88rem var(--mono); color: var(--amber); min-height: 1.3em; }
@@ -297,53 +183,26 @@ p { margin: 0; text-wrap: pretty; }
 input[type="range"] { width: 100%; min-width: 0; accent-color: var(--amber); }
 .estimator .footnote { margin-top: 2px; font-size: 0.78rem; line-height: 1.5; }
 
-/* The example night: dial beside a terminal window */
-.night { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 48px; align-items: center; margin-bottom: 64px; }
-.terminal { border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: color-mix(in oklab, var(--night) 60%, black); box-shadow: 0 30px 80px -40px black; }
-.terminal-bar { display: flex; align-items: center; gap: 7px; padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--night-2); }
-.terminal-bar i { width: 10px; height: 10px; border-radius: 50%; background: var(--line); }
-.terminal-bar span { margin-left: 8px; font: 500 0.78rem var(--mono); color: var(--mist); }
-.log {
-  padding: 14px 16px;
-  font: 400 0.84rem/1.7 var(--mono);
-  color: color-mix(in oklab, var(--ink) 75%, var(--mist));
-  height: calc(12 * 1.7 * 0.84rem + 28px);
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  mask-image: linear-gradient(to bottom, transparent, black 18%);
-  -webkit-mask-image: linear-gradient(to bottom, transparent, black 18%);
-}
-.log div { overflow-wrap: anywhere; animation: line-in .45s ease-out both; }
-.log .ok { color: var(--emerald); }
-.log .warn { color: var(--amber); }
-.log .t { color: var(--mist); }
-@keyframes line-in { from { transform: translateY(8px); opacity: 0; } }
+/* Coins the money can arrive in, one quiet line under the hero */
 
-/* ---------- Coin ribbon ---------- */
-
-.ribbon { border-block: 1px solid var(--line); background: color-mix(in oklab, var(--night-2) 70%, transparent); overflow: hidden; }
-.ribbon .wrap { display: flex; align-items: center; gap: 28px; padding-block: 18px; }
-.ribbon .label { flex: none; }
-.ribbon:hover .marquee-track, .ribbon:focus-within .marquee-track { animation-play-state: paused; }
-/* "Popular cards today": links into the graphics card pages, right under the coins. */
+.paid-in { border-block: 1px solid var(--line); }
+.paid-in .wrap { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 28px; padding-block: 18px; }
+.paid-in .label { flex: none; }
+.coins { display: flex; flex-wrap: wrap; gap: 6px 24px; }
+.coin { display: inline-flex; align-items: baseline; gap: 6px; white-space: nowrap; font: 600 0.98rem var(--display); }
+.coin small { font: 400 0.75rem var(--mono); color: var(--mist); }
+/* "Popular cards today": links into the graphics card pages. */
 .popular { border-bottom: 1px solid var(--line); }
 .popular .wrap { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px 22px; padding-block: 16px; }
 .popular a { color: var(--ink); text-decoration: none; font-size: 0.95rem; }
 .popular a span { color: var(--mist); font-variant-numeric: tabular-nums; margin-left: 6px; }
 .popular a:hover { color: var(--emerald); }
 .popular .all { color: var(--emerald); }
-.marquee { position: relative; flex: 1; min-width: 0; overflow: hidden; mask-image: linear-gradient(90deg, transparent, black 8%, black 92%, transparent); -webkit-mask-image: linear-gradient(90deg, transparent, black 8%, black 92%, transparent); }
-.marquee-track { display: flex; gap: 40px; width: max-content; animation: marquee 38s linear infinite; }
-.coin { display: inline-flex; align-items: baseline; gap: 8px; white-space: nowrap; font: 700 1.05rem var(--display); letter-spacing: -0.01em; }
-.coin small { font: 400 0.78rem var(--mono); color: var(--mist); letter-spacing: 0; }
-@keyframes marquee { to { transform: translateX(-50%); } }
 
 /* ---------- Sections ---------- */
 
-section { padding-block: 104px 0; }
-.section-head { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 32px 56px; align-items: end; margin-bottom: 48px; }
+section { padding-block: 112px 0; }
+.section-head { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 24px 56px; align-items: end; margin-bottom: 56px; }
 .section-head p { font-size: 1.12rem; color: color-mix(in oklab, var(--ink) 78%, var(--mist)); max-width: 36em; }
 .section-head .label { display: block; margin-bottom: 18px; }
 
@@ -356,51 +215,48 @@ section { padding-block: 104px 0; }
 .fs-sm { font-size: 0.88rem !important; }
 .contents { display: contents !important; }
 
-/* The night shift: three moments of a real day */
-.shift-line { position: relative; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; }
-.shift-line::before, .shift-line::after {
-  content: "";
-  position: absolute;
-  top: 47px;
-  left: 0;
-  height: 2px;
-  border-radius: 2px;
-}
-.shift-line::before { right: 0; background: var(--line); }
-.shift-line::after { width: calc(var(--progress, 0) * 100%); background: linear-gradient(90deg, var(--amber), var(--emerald)); box-shadow: 0 0 14px var(--emerald); transition: width .2s linear; }
-.moment { position: relative; padding-top: 80px; }
-.moment::before {
-  content: "";
-  position: absolute;
-  top: 40px;
-  left: 0;
-  width: 16px;
-  height: 16px;
+/* How it works: three steps, then one example night as a bar */
+.steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 40px; margin: 0; padding: 0; list-style: none; counter-reset: step; }
+.step { counter-increment: step; }
+.step::before {
+  content: counter(step);
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  margin-bottom: 20px;
+  border: 1px solid var(--emerald);
   border-radius: 50%;
-  background: var(--night);
-  border: 2px solid var(--mist);
-  z-index: 1;
+  color: var(--emerald);
+  font: 600 0.95rem var(--mono);
 }
-.moment.lit::before { border-color: var(--emerald); background: var(--emerald); box-shadow: 0 0 0 6px color-mix(in oklab, var(--emerald) 20%, transparent); }
-.moment time { position: absolute; top: 0; left: 0; font: 600 1.05rem var(--mono); color: var(--ink); letter-spacing: 0.02em; }
-.moment.lit time { color: var(--emerald); }
-.moment h3 { margin-bottom: 10px; }
-.moment p { color: var(--mist); max-width: 30em; }
-.moment .mono { color: var(--ink); font-size: 0.86em; background: var(--night-3); border: 1px solid var(--line); padding: 1px 7px; border-radius: 6px; white-space: nowrap; }
+.step h3 { margin-bottom: 10px; }
+.step p { color: var(--mist); max-width: 28em; }
+.step .mono { color: var(--ink); font-size: 0.86em; background: var(--night-3); border: 1px solid var(--line); padding: 1px 7px; border-radius: 6px; white-space: nowrap; }
+.day { margin-top: 72px; display: grid; gap: 12px; }
+.day-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 6px 24px; }
+.day-head p { color: var(--mist); font-size: 0.95rem; max-width: 40em; }
+.day-bar { display: flex; gap: 3px; height: 16px; }
+.day-bar span { display: block; border-radius: 4px; }
+.day-bar .mining { background: var(--emerald); }
+.day-bar .fee { background: var(--ink); }
+.day-bar .using { background: color-mix(in oklab, var(--mist) 28%, transparent); }
+.day-bar .paused { background: repeating-linear-gradient(90deg, var(--amber) 0 3px, transparent 3px 6px); }
+.day-axis { display: flex; justify-content: space-between; font: 400 0.75rem var(--mono); color: var(--mist); }
 
 /* Live numbers */
 .panel {
-  --mx: 50%; --my: 0%;
-  position: relative;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background:
-    radial-gradient(600px circle at var(--mx) var(--my), color-mix(in oklab, var(--emerald) 7%, transparent), transparent 40%),
-    var(--night-2);
-  padding: 28px;
+  background: var(--night-2);
+  padding: 32px;
 }
 /* Power-aware: an example day of hourly prices */
-.power { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 40px; align-items: center; }
+.power { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 56px; align-items: center; }
+.pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+.pair .panel { display: grid; gap: 14px; align-content: start; }
+.pair h3 { margin-top: 4px; }
+.pair p { color: var(--mist); }
 .power p + p { margin-top: 14px; }
 .prices { display: grid; gap: 10px; }
 .price-bars { display: grid; grid-template-columns: repeat(24, minmax(0, 1fr)); align-items: end; gap: 4px; height: 190px; }
@@ -414,8 +270,8 @@ section { padding-block: 104px 0; }
 .threshold { display: flex; justify-content: space-between; gap: 12px; font: 400 0.8rem var(--mono); color: var(--mist); }
 
 /* Fees */
-.fees { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 40px; align-items: start; }
-.keep { font: 800 clamp(3.4rem, 2rem + 6vw, 6.6rem)/0.9 var(--display); font-stretch: 78%; letter-spacing: -0.04em; color: var(--ink); font-variant-numeric: tabular-nums; }
+.fees { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 56px; align-items: start; }
+.keep { font: 800 clamp(3.4rem, 2rem + 5vw, 5.8rem)/0.9 var(--display); font-stretch: 82%; letter-spacing: -0.04em; color: var(--ink); font-variant-numeric: tabular-nums; }
 .keep small { display: block; margin-top: 14px; font: 400 1rem/1.5 var(--body); letter-spacing: 0; color: var(--mist); }
 .split { display: flex; height: 18px; border-radius: 9px; overflow: hidden; margin: 28px 0 10px; background: var(--night-3); }
 .split span { height: 100%; }
@@ -433,7 +289,6 @@ section { padding-block: 104px 0; }
 .split-legend .sw-waits { background: repeating-linear-gradient(0deg, var(--amber) 0 3px, transparent 3px 6px); }
 .fee-why { margin-top: 22px; max-width: 32em; font-size: 0.95rem; }
 .fee-why a { color: var(--emerald); white-space: nowrap; }
-.payouts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
 .payouts h3 { margin-bottom: 14px; }
 .pay-steps { margin: 0; padding-left: 22px; display: grid; gap: 12px; color: var(--mist); }
 .pay-steps strong { color: var(--ink); font-weight: 600; }
@@ -444,24 +299,21 @@ section { padding-block: 104px 0; }
 .costs dd { margin: 0; color: color-mix(in oklab, var(--ink) 80%, var(--mist)); }
 
 /* Invite */
-.invite { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 40px; align-items: center; overflow: hidden; }
-.invite h2 { font-size: var(--step-2); line-height: 1.08; font-stretch: 85%; }
-.invite p { margin-top: 14px; color: color-mix(in oklab, var(--ink) 80%, var(--mist)); }
-.ticket {
-  position: relative;
-  border-radius: 16px;
-  padding: 22px 24px;
-  background: linear-gradient(135deg, color-mix(in oklab, var(--emerald) 20%, var(--night-3)), var(--night-3));
-  border: 1px dashed color-mix(in oklab, var(--emerald) 50%, var(--line));
-  transform: rotate(-2deg);
-  transition: transform .4s cubic-bezier(.2,.8,.2,1);
-}
-.ticket:hover { transform: rotate(0deg) translateY(-4px); }
-.ticket .big { font: 800 2.4rem/1 var(--display); font-stretch: 80%; letter-spacing: -0.02em; margin: 8px 0 6px; }
-.ticket p { margin: 0; color: var(--mist); font-size: 0.92rem; }
+.banner { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 16px 40px; padding: 32px 36px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--night-2); }
+.banner > div:first-child { flex: 1 1 28rem; min-width: 0; }
+.banner .perk { flex: none; }
+.banner h2 { font-size: var(--step-2); line-height: 1.1; font-stretch: 88%; max-width: 20em; }
+.banner p { margin-top: 10px; color: var(--mist); max-width: 36em; }
+.banner .perk { font: 800 2.2rem/1 var(--display); font-stretch: 82%; letter-spacing: -0.02em; color: var(--emerald); text-align: right; }
+.banner .perk small { display: block; margin-top: 6px; font: 400 0.85rem var(--body); letter-spacing: 0; color: var(--mist); }
 
 /* FAQ */
-.faq { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 48px; }
+.faq { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 56px; }
+.faq.one { grid-template-columns: minmax(0, 1fr); }
+.faq.one details:nth-last-child(2) { border-bottom: 0; }
+.faq.one details:last-child { border-bottom: 1px solid var(--line); }
+.faq.one .pay-steps { margin-bottom: 16px; }
+.faq.one .fine { padding-bottom: 22px; }
 details { border-top: 1px solid var(--line); }
 details:last-child, details:nth-last-child(2) { border-bottom: 1px solid var(--line); }
 summary { list-style: none; cursor: pointer; padding: 20px 0; display: flex; justify-content: space-between; gap: 16px; font: 600 1.08rem/1.35 var(--display); }
@@ -471,14 +323,16 @@ details[open] summary::after { transform: rotate(45deg); }
 details p { padding: 0 0 22px; color: var(--mist); max-width: 34em; }
 
 /* Closing call */
-.closing { padding-block: 120px 72px; text-align: left; }
+.closing { padding-block: 128px 96px; }
 .closing .wrap { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 24px 48px; align-items: end; }
-.closing h2 { font-size: var(--step-4); line-height: 0.95; font-stretch: 78%; font-weight: 800; letter-spacing: -0.035em; }
+.closing h2 { font-size: clamp(2.2rem, 1.4rem + 3.4vw, 3.6rem); line-height: 1; font-stretch: 85%; font-weight: 800; letter-spacing: -0.03em; max-width: 14em; }
 .closing h2 span { color: var(--emerald); }
 
 footer { border-top: 1px solid var(--line); }
-footer .wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; padding-block: 28px; font-size: 0.9rem; color: var(--mist); }
-footer nav { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-left: auto; }
+footer .wrap { display: grid; grid-template-columns: minmax(0, 1.4fr) repeat(4, minmax(0, 1fr)); gap: 32px 40px; padding-block: 56px 48px; font-size: 0.92rem; color: var(--mist); }
+footer .about p + p { margin-top: 8px; font-size: 0.85rem; }
+footer nav { display: grid; gap: 10px; align-content: start; }
+footer nav .label { margin-bottom: 4px; }
 footer a { color: var(--mist); text-decoration: none; }
 footer a:hover { color: var(--ink); }
 
@@ -538,9 +392,8 @@ footer a:hover { color: var(--ink); }
 /* Reveal: everything is visible without script; script only animates what starts below the fold. */
 .reveal.pending { opacity: 0; transform: translateY(18px); }
 .reveal.shown { opacity: 1; transform: none; transition: opacity .7s ease-out, transform .7s cubic-bezier(.2,.8,.2,1); }
-/* What plays once (the dial's arcs drawing, the miner log, the price bars rising) waits until its section scrolls into
-   view, instead of finishing unseen while the visitor is still at the top. */
-.reveal.pending .arc.draw, .reveal.pending .log div, .reveal.pending .price-bars span { animation-play-state: paused; }
+/* The price bars rise once their section scrolls into view, not unseen while the visitor is still at the top. */
+.reveal.pending .price-bars span { animation-play-state: paused; }
 
 /* Questions and "See the breakdown and adjust" unfold (site.js animates the height): what's inside fades in a moment
    after the box starts opening, line by line, and fades out first when it closes. */
@@ -566,8 +419,10 @@ details.folding summary::after { transform: none; }
 .real-cards .footnote { margin-top: 14px; font-size: 0.78rem; line-height: 1.5; color: var(--mist); }
 
 @media (max-width: 960px) {
-  .hero .wrap, .section-head, .power, .fees, .invite, .night, .payouts { grid-template-columns: minmax(0, 1fr); }
-  .hero { padding-block: 36px 40px; }
+  .hero .wrap, .section-head, .power, .fees, .pair { grid-template-columns: minmax(0, 1fr); }
+  footer .wrap { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .footer-about { grid-column: 1 / -1; }
+  .hero { padding-block: 40px 48px; }
   /* On one column the estimate comes right after the headline, so the numbers are the first thing you see. */
   .hero .wrap { gap: 24px; }
   .hero-copy { display: contents; }
@@ -576,61 +431,28 @@ details.folding summary::after { transform: none; }
   .hero .lede { order: 3; margin-top: 0; }
   .hero .actions { order: 4; margin-top: 0; }
   .hero .facts { order: 5; margin-top: 0; }
+  .steps { grid-template-columns: minmax(0, 1fr); gap: 36px; }
+  .banner .perk { text-align: left; }
   .nav-links { display: none; }
   .nav .button { margin-left: auto; }
   .closing .wrap { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 680px) {
   section { padding-block: 72px 0; }
-  .shift-line { grid-template-columns: minmax(0, 1fr); gap: 8px; }
-  .shift-line::before, .shift-line::after { display: none; }
-  .moment { padding-top: 0; padding-left: 0; }
-  .moment::before { display: none; }
-  .moment time { position: static; display: block; margin-bottom: 6px; color: var(--emerald); }
   .estimator { padding: 22px; }
   .card-pick { grid-template-columns: minmax(0, 1fr); gap: 6px; }
-  .grid { width: 28%; gap: 4px; }
   .est-sliders { grid-template-columns: minmax(0, 1fr) auto; grid-auto-flow: row dense; gap: 4px 12px; }
   .est-sliders input { grid-column: 1 / -1; margin-bottom: 8px; }
   .est-sliders output { grid-column: 2; }
-  .log { font-size: 0.76rem; height: calc(12 * 1.7 * 0.76rem + 28px); }
   .faq { grid-template-columns: minmax(0, 1fr); }
   details:nth-last-child(2) { border-bottom: 0; }
   .costs div { grid-template-columns: minmax(0, 1fr); gap: 4px; }
-  .panel { padding: 20px; }
-  .ribbon .wrap { flex-direction: column; align-items: flex-start; gap: 10px; }
-  .marquee { width: 100%; }
+  .panel { padding: 22px; }
+  .banner { padding: 24px; }
+  .closing { padding-block: 88px 64px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
   .reveal.pending { opacity: 1; transform: none; }
-  .marquee-track { animation: none; flex-wrap: wrap; width: auto; }
 }
-
-/* Proof of useful work: A × B = C, tile by tile. A's rows take turns, B's columns sweep within each row, and C's
-   cell (r, c) lights when its row and column meet. */
-.matmul { display: grid; gap: 18px; }
-.mm { display: flex; align-items: center; justify-content: center; gap: 14px; padding-block: 18px; }
-.mm .op { font: 400 1.6rem var(--mono); color: var(--mist); }
-.grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; width: min(26%, 132px); }
-.grid span { aspect-ratio: 1; border-radius: 5px; background: var(--night-3); border: 1px solid var(--line); --r: 0; --c: 0; }
-/* Each tile's row (--r) and column (--c) in the 4 × 4 grid, from its position. */
-.grid span:nth-child(4n+2) { --c: 1; }
-.grid span:nth-child(4n+3) { --c: 2; }
-.grid span:nth-child(4n+4) { --c: 3; }
-.grid span:nth-child(n+5) { --r: 1; }
-.grid span:nth-child(n+9) { --r: 2; }
-.grid span:nth-child(n+13) { --r: 3; }
-.grid.a span { animation: lit-row 4.8s linear infinite; animation-delay: calc(var(--r) * 1.2s); }
-.grid.b span { animation: lit-col 1.2s linear infinite; animation-delay: calc(var(--c) * 0.3s); }
-.grid.c span { animation: lit-cell 4.8s ease-out infinite; animation-delay: calc(var(--r) * 1.2s + var(--c) * 0.3s); }
-@keyframes lit-row { 0%, 24.9% { background: color-mix(in oklab, var(--emerald) 45%, var(--night-3)); border-color: var(--emerald); } 25%, 100% { background: var(--night-3); } }
-@keyframes lit-col { 0%, 24.9% { background: color-mix(in oklab, var(--amber) 45%, var(--night-3)); border-color: var(--amber); } 25%, 100% { background: var(--night-3); } }
-@keyframes lit-cell {
-  0% { background: var(--emerald); border-color: var(--emerald); box-shadow: 0 0 14px var(--emerald); }
-  12% { background: color-mix(in oklab, var(--emerald) 40%, var(--night-3)); box-shadow: none; }
-  100% { background: color-mix(in oklab, var(--emerald) 14%, var(--night-3)); border-color: var(--line); }
-}
-.facts a { color: inherit; text-decoration: none; border-bottom: 1px dashed color-mix(in oklab, var(--mist) 60%, transparent); }
-.facts a:hover { color: var(--ink); }

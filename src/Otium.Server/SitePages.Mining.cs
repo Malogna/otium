@@ -128,7 +128,6 @@ internal static partial class SitePages
             """;
 
         var body = $"""
-                <div class="glow-frame" aria-hidden="true"><div class="glow"></div></div>
                 <section class="page stacked">
                   <div class="wrap">
                     <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Otium</a><span aria-hidden="true">/</span><a href="/mining">GPU mining</a><span aria-hidden="true">/</span><span aria-current="page">{E(name)}</span></nav>
@@ -250,7 +249,6 @@ internal static partial class SitePages
             : $"Typical speed and power for {cards.Count} NVIDIA graphics cards mining Pearl. Today's coin prices aren't available right now, so there are no earnings figures.";
 
         var body = $"""
-                <div class="glow-frame" aria-hidden="true"><div class="glow"></div></div>
                 <section class="page stacked">
                   <div class="wrap">
                     <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Otium</a><span aria-hidden="true">/</span><span aria-current="page">GPU mining</span></nav>
