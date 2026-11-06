@@ -1276,7 +1276,8 @@ public sealed class AppHost : IAsyncDisposable
     /// <summary>What this computer could earn per 24 h of mining, from its hardware and today's payouts.</summary>
     public Task<EarningsEstimate> EstimateAsync(CancellationToken ct) =>
         Estimator.EstimateAsync(CpuInfo.Name, Environment.ProcessorCount, Settings.CpuUsagePercent, PowerModel,
-            Settings.GpuEnabled ? Gpus : [], AveragePricePerKwh(), EffectiveFeePercent, ct, EffectiveGpuPolicy);
+            Settings.GpuEnabled ? Gpus : [], AveragePricePerKwh(), EffectiveFeePercent, ct, EffectiveGpuPolicy,
+            Settings.GpuMaxEarnings ? 0 : null);
 
     /// <summary>Samples running totals into the hour-by-hour history (call about once a minute).</summary>
     public void RecordHistory()
