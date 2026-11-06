@@ -121,6 +121,9 @@ public sealed class AppSettings
     /// <summary>The month ("2026-10") whose report was already announced.</summary>
     public string? MonthlyNotified { get; set; }
 
+    /// <summary>The week ("2026-W45") whose summary was already announced.</summary>
+    public string? WeeklyNotified { get; set; }
+
     public DateTimeOffset? ProblemNotifiedAt { get; set; }
 
     public int IdleMinutes { get; set; } = 3;

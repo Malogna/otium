@@ -439,6 +439,39 @@ public partial class HomeViewModel : ViewModelBase
     [ObservableProperty] public partial bool UpdateReady { get; set; }
     [ObservableProperty] public partial string UpdateText { get; set; } = "";
 
+    // ---------- send a report straight from an error ----------
+
+    /// <summary>An engine is in an error that isn't the antivirus fix: offer to send a problem report right there.</summary>
+    [ObservableProperty] public partial bool ShowReportStrip { get; set; }
+    [ObservableProperty] public partial bool IsSendingReport { get; set; }
+    [ObservableProperty] public partial string ReportResult { get; set; } = "";
+    [ObservableProperty] public partial string? ReportReference { get; set; }
+
+    [RelayCommand]
+    private async Task SendReport()
+    {
+        IsSendingReport = true;
+        ReportResult = "";
+        ReportReference = null;
+        try
+        {
+            var reference = await _host.SendProblemReportAsync($"Sent from the Home screen. Status: {StatusText}");
+            ReportReference = reference;
+            ReportResult = $"Sent. Your reference is {reference}: mention it when you ask for help.";
+        }
+        catch (Exception e) when (e is AccountRequestException or HttpRequestException or TaskCanceledException or InvalidOperationException)
+        {
+            ReportResult = e is AccountRequestException rejected ? rejected.Message : "Couldn't reach Otium to send it. Check your internet connection and try again.";
+        }
+        finally
+        {
+            IsSendingReport = false;
+        }
+    }
+
+    [RelayCommand]
+    private Task CopyReportReference() => ReportReference is { } reference ? ClipboardService.CopyAsync(reference) : Task.CompletedTask;
+
     private void Refresh()
     {
         var settings = _host.Settings;
@@ -569,6 +602,7 @@ public partial class HomeViewModel : ViewModelBase
         IsEarning = states.Contains(EngineState.Earning);
         IsWaiting = !IsEarning && settings.EarningEnabled && states.Contains(EngineState.WaitingForIdle);
         IsProblem = NeedsAntivirusFix || (!IsEarning && states.Contains(EngineState.Error));
+        ShowReportStrip = IsProblem && !NeedsAntivirusFix;
         RefreshElectricityPause(engines);
         var sharers = _host.Sharers.Select(s => s.Snapshot).Where(s => s.State == BandwidthState.Sharing).ToList();
         var sharing = sharers.Count > 0;
@@ -913,6 +947,8 @@ public partial class HomeViewModel : ViewModelBase
             return ("Needs attention", explained.Problem!);
         if (states.Contains(EngineState.Error))
             return ("Needs attention", "Something went wrong. Otium retries automatically; see Advanced for details.");
+        if (NothingRunningReason.Explain(settings.CpuEnabled, settings.GpuEnabled, _host.Gpus.Count) is { } why)
+            return ("Nothing on", why);
         return ("Starting", "Getting ready…");
     }
 

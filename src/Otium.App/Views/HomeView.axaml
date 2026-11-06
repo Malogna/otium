@@ -109,6 +109,22 @@
                     </Grid>
                 </Border>
 
+                <!-- An error that isn't the antivirus: send the problem report right here -->
+                <Border Classes="strip warn" Margin="22,10,22,0" IsVisible="{Binding ShowReportStrip}">
+                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12">
+                        <StackPanel VerticalAlignment="Center" ToolTip.Tip="Sends what Otium knows about why it isn't earning, with payout addresses and keys taken out. You get a reference to mention when you ask for help.">
+                            <TextBlock Classes="oneLine" FontWeight="SemiBold" Text="{Binding StatusText}" />
+                            <TextBlock Classes="muted oneLine" FontSize="12" Text="Sending a report shows us what went wrong. No addresses or keys are included."
+                                       IsVisible="{Binding ReportResult, Converter={x:Static StringConverters.IsNullOrEmpty}}" />
+                            <TextBlock Classes="muted oneLine" FontSize="12" Text="{Binding ReportResult}"
+                                       IsVisible="{Binding ReportResult, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                        </StackPanel>
+                        <Button Grid.Column="1" Classes="link" Content="Copy reference" Command="{Binding CopyReportReferenceCommand}"
+                                IsVisible="{Binding ReportReference, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                        <Button Grid.Column="2" Classes="accent" Content="Send a problem report" Command="{Binding SendReportCommand}" IsEnabled="{Binding !IsSendingReport}" />
+                    </Grid>
+                </Border>
+
                 <!-- Paused for electricity: both sides of the sum, and the fix for users who don't pay for power -->
                 <Border Classes="strip warn" Margin="22,10,22,0" IsVisible="{Binding ShowElectricityPause}">
                     <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="12">

@@ -25,6 +25,7 @@ public sealed class EarningsNotifications
         host.AwayChanged += OnAway;
         host.AccountChanged += CheckPayouts;
         host.HistoryChanged += CheckMonthly;
+        host.HistoryChanged += CheckWeekly;
         foreach (var engine in host.Engines)
             engine.SnapshotChanged += CheckProblem;
     }
@@ -96,6 +97,19 @@ public sealed class EarningsNotifications
         _host.SaveSettings();
         if (Enabled)
             _show($"{month.MonthName} in numbers", $"Your PC earned {Format.Usd(month.EarnedUsd)} last month. Open Otium to share it.");
+    }
+
+    private void CheckWeekly()
+    {
+        var settings = _host.Settings;
+        if (!Enabled || WeeklySummary.Due(_host.History, DateTimeOffset.Now, settings.WeeklyNotified) is not { } week)
+            return;
+        settings.WeeklyNotified = week.Week;
+        _host.SaveSettings();
+        var net = week.EarnedUsd - week.ElectricityUsd;
+        _show("Your week with Otium",
+            $"Your PC earned {Format.Usd(week.EarnedUsd)} last week in about {Format.Duration(TimeSpan.FromHours(week.EarningHours))} of earning"
+            + (week.ElectricityUsd >= 0.01 && net > 0 ? $", {Format.Usd(net)} after electricity." : "."));
     }
 
     private void CheckProblem(EngineSnapshot snapshot)
