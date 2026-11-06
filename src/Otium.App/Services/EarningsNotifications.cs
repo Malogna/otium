@@ -54,6 +54,22 @@ public sealed class EarningsNotifications
                 settings.NotifiedPaid[key] = pool.Paid;
                 _host.SaveSettings();
             }
+
+            switch (PayoutNudge.Check(pool.Pending, pool.MinimumPayout, settings.NotifiedNearPayout.Contains(key)))
+            {
+                case PayoutNudge.Action.Notify:
+                    settings.NotifiedNearPayout.Add(key);
+                    _host.SaveSettings();
+                    if (Enabled)
+                        _show("Close to a payout", pool.AutoPay
+                            ? $"{Format.Coin(pool.Pending, pool.Coin)} of {Format.Coin(pool.MinimumPayout, pool.Coin)} at {pool.PoolName}. At {Format.Coin(pool.MinimumPayout, pool.Coin)} it's sent to your wallet by itself."
+                            : $"{Format.Coin(pool.Pending, pool.Coin)} of {Format.Coin(pool.MinimumPayout, pool.Coin)} at {pool.PoolName}. Auto pay is off for your address there, so ask for the payout once you reach it.");
+                    break;
+                case PayoutNudge.Action.Reset:
+                    settings.NotifiedNearPayout.Remove(key);
+                    _host.SaveSettings();
+                    break;
+            }
         }
 
         if (_host.Bandwidth.Provider is ProxybaseBandwidthProvider proxybase)

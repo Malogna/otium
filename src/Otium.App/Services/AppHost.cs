@@ -111,7 +111,7 @@ public sealed class AppHost : IAsyncDisposable
         var gpuProvider = new SrbMinerGpuProvider(
             _http, Pool, Paths.EnginesDir, Paths.GpuBenchmarksFile, Gpus, GpuPowerMeter, GpuPricePerKwh,
             policy: () => EffectiveGpuPolicy,
-            freeMemoryGb: gpu => gpu.Vendor == GpuVendor.Nvidia ? _nvml?.ReadFreeMemoryGb(gpu.Index) : null,
+            freeMemoryGb: GpuFreeMemoryGb,
             referralCode: ReferralCode,
             isUnitedStates: () => InUnitedStates,
             poolBlocked: PoolReachability.BlockedReasonAsync,
@@ -1516,6 +1516,23 @@ public sealed class AppHost : IAsyncDisposable
         0,
         Settings.Account.WorkerId ?? "");
 
+    private readonly ErrorGrace _errorGrace = new();
+
+    /// <summary>Graphics memory a card has free right now (NVIDIA only), for the miner's start-up check and problem reports.</summary>
+    public double? GpuFreeMemoryGb(GpuInfo gpu) => gpu.Vendor == GpuVendor.Nvidia ? _nvml?.ReadFreeMemoryGb(gpu.Index) : null;
+
+    private string CurrentCpuState() => EngineStateTags.For(Engine.Snapshot, Settings.CpuEnabled, Settings.EarningEnabled, MiningBlocker is not null);
+
+    private string CurrentGpuState() => EngineStateTags.For(GpuEngine?.Snapshot, Settings.GpuEnabled, Settings.EarningEnabled, MiningBlocker is not null);
+
+    /// <summary>Notes whether each engine is in error, every minute, so a miner that stopped once (at shutdown, say) isn't reported as a problem.</summary>
+    public void ObserveEngineErrors()
+    {
+        var now = DateTimeOffset.UtcNow;
+        _errorGrace.Observe("cpu", CurrentCpuState(), now);
+        _errorGrace.Observe("gpu", CurrentGpuState(), now);
+    }
+
     /// <summary>
     /// Registers this device with the Otium server (creating its account and redeeming a pending invite code)
     /// or refreshes balance, cash-outs and referral stats. Failure is non-fatal and retried by the caller's timer.
@@ -1535,8 +1552,10 @@ public sealed class AppHost : IAsyncDisposable
                                 || referral.MyCode is null
                                 || referral.RegisteredPayoutAddress != ownWallet
                                 || (referral.CodeUsed is not null && referral.ReferredAt is null);
-            var cpuState = EngineStateTags.For(Engine.Snapshot, Settings.CpuEnabled, Settings.EarningEnabled, MiningBlocker is not null);
-            var gpuState = EngineStateTags.For(GpuEngine?.Snapshot, Settings.GpuEnabled, Settings.EarningEnabled, MiningBlocker is not null);
+            var now = DateTimeOffset.UtcNow;
+            ObserveEngineErrors();
+            var cpuState = _errorGrace.Report("cpu", CurrentCpuState(), now);
+            var gpuState = _errorGrace.Report("gpu", CurrentGpuState(), now);
             var summary = needsRegister
                 ? await client.RegisterAsync(new RegisterDeviceRequest(DeviceId, Settings.DeviceSecret, ownWallet, referral.CodeUsed, HardwareId()), ct)
                 : await client.GetSummaryAsync(DeviceId, Settings.DeviceSecret, ct,

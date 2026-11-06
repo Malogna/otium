@@ -77,6 +77,48 @@ public sealed class ManualTime(DateTimeOffset start, TimeZoneInfo? localTimeZone
     {
         _now += by;
         _ticks += by.Ticks;
+        foreach (var timer in _timers.ToList())
+            timer.FireIfDue(_ticks);
+    }
+
+    private readonly List<ManualTimer> _timers = [];
+
+    /// <summary>A timer that fires when <see cref="Advance"/> passes its due time, once (or every period).</summary>
+    public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+    {
+        var timer = new ManualTimer(this, callback, state);
+        timer.Change(dueTime, period);
+        _timers.Add(timer);
+        return timer;
+    }
+
+    private sealed class ManualTimer(ManualTime clock, TimerCallback callback, object? state) : ITimer
+    {
+        private long? _dueAt;
+        private long _period;
+
+        public bool Change(TimeSpan dueTime, TimeSpan period)
+        {
+            _dueAt = dueTime == Timeout.InfiniteTimeSpan ? null : clock._ticks + dueTime.Ticks;
+            _period = period == Timeout.InfiniteTimeSpan ? 0 : period.Ticks;
+            return true;
+        }
+
+        public void FireIfDue(long now)
+        {
+            if (_dueAt is not { } due || now < due)
+                return;
+            _dueAt = _period > 0 ? now + _period : null;
+            callback(state);
+        }
+
+        public void Dispose() => clock._timers.Remove(this);
+
+        public ValueTask DisposeAsync()
+        {
+            Dispose();
+            return ValueTask.CompletedTask;
+        }
     }
 
     /// <summary>Sets the wall clock forward or back (the user changing the system time); monotonic time doesn't move.</summary>

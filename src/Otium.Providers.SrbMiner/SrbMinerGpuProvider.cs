@@ -187,6 +187,7 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
 
     /// <summary>Quiet mode holds the fans (or has handed them back because the card got hot): temperature, not the fan, then says when to ease off.</summary>
     private bool _fanMode;
+    private ITimer? _fanHandBack;
 
     /// <summary>The speed the fans are held at now; null while they are the card's own.</summary>
     private int? _fanHeld;
@@ -351,7 +352,7 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
     {
         // Keep _current and _currentSince: after a fee-slice restart the same algorithm continues without a re-pick.
         await KillAsync();
-        ReleaseFans();
+        HandFansBackSoon();
     }
 
     public async Task<ProviderStatus> GetStatusAsync(CancellationToken ct)
@@ -600,6 +601,12 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
     public const int FanStep = 3;
 
     public static readonly TimeSpan FanChangeEvery = TimeSpan.FromSeconds(20);
+
+    /// <summary>
+    /// How long held fans stay held after the miner stops: a new fee slice or pool route stops it and starts it again within
+    /// seconds, and handing the fans back to the card's own curve for that gap made them roar (93% on an RTX 3080).
+    /// </summary>
+    public static readonly TimeSpan FanHandBackAfter = TimeSpan.FromSeconds(45);
 
     /// <summary>The speed to hold the fans at: the user's limit while the card is cool, more as it warms, and null (the card's own control) once it is hot.</summary>
     public static int? FanFor(double temperatureC, int limit)
@@ -957,13 +964,28 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         }
     }
 
-    /// <summary>The fans go back to the card's own control (the miner stopped, or quiet mode isn't on).</summary>
+    /// <summary>The fans go back to the card's own control (quiet mode isn't on, or the miner is gone for good).</summary>
     private void ReleaseFans()
     {
+        _fanHandBack?.Dispose();
+        _fanHandBack = null;
         if (_fanMode)
             _fanControl?.Invoke(null);
         _fanMode = false;
         _fanHeld = null;
+    }
+
+    /// <summary>The miner stopped: keep the fans held a little, so a restart on a new slice doesn't let them loose, then hand them back.</summary>
+    private void HandFansBackSoon()
+    {
+        if (!_fanMode)
+            return;
+        _fanHandBack?.Dispose();
+        _fanHandBack = _time.CreateTimer(_ =>
+        {
+            if (_process is null)
+                ReleaseFans();
+        }, null, FanHandBackAfter, Timeout.InfiniteTimeSpan);
     }
 
     private static string IntensityText(int? intensity) =>
