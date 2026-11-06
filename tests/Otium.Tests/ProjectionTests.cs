@@ -27,6 +27,22 @@ public class ProjectionTests
         Assert.Equal("Pearl", gpus[1].Coin); // the better of the two on an RTX 4090
     }
 
+    [Fact]
+    public async Task Max_earnings_charges_the_cards_no_electricity_but_still_charges_the_processor()
+    {
+        var cards = new[] { new GpuInfo(GpuVendor.Nvidia, 0, "NVIDIA GeForce RTX 3080", 10) };
+        var cpu = new Otium.Core.Power.CpuPowerModel(100, 10);
+        var estimator = new EarningsEstimator(new GpuPolicyTests.FakePool());
+
+        var optimized = await estimator.EstimateAsync("CPU", 8, 50, cpu, cards, 0.20, 2, CancellationToken.None);
+        var max = await estimator.EstimateAsync("CPU", 8, 50, cpu, cards, 0.20, 2, CancellationToken.None, null, gpuPricePerKwh: 0);
+
+        var cpuCost = Otium.Core.Power.Electricity.CostPerDay(optimized.Devices[0].Watts, 0.20);
+        Assert.True(optimized.ElectricityUsdPerDay > cpuCost);
+        Assert.Equal(cpuCost, max.ElectricityUsdPerDay, 9);
+        Assert.Equal(optimized.GrossUsdPerDay, max.GrossUsdPerDay, 9);
+    }
+
     private static readonly DateTimeOffset Now = new(2026, 10, 15, 12, 30, 0, TimeSpan.Zero);
 
     [Fact]

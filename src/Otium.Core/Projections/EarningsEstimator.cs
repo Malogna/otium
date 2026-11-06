@@ -28,7 +28,8 @@ public sealed class EarningsEstimator(IMoneroPoolApi pool)
         double pricePerKwh,
         double feePercent,
         CancellationToken ct,
-        GpuPolicy? gpuPolicy = null)
+        GpuPolicy? gpuPolicy = null,
+        double? gpuPricePerKwh = null)
     {
         var network = await pool.GetNetworkStatsAsync(ct);
         var keep = 1 - feePercent / 100.0;
@@ -69,7 +70,9 @@ public sealed class EarningsEstimator(IMoneroPoolApi pool)
             }
         }
 
-        var electricity = devices.Sum(d => Electricity.CostPerDay(d.Watts, pricePerKwh));
+        // "Max earnings" charges the graphics cards nothing, so their price can differ from the processor's.
+        var gpuPrice = gpuPricePerKwh ?? pricePerKwh;
+        var electricity = devices.Sum(d => Electricity.CostPerDay(d.Watts, d.Device == DeviceKind.Gpu ? gpuPrice : pricePerKwh));
         return new EarningsEstimate(devices, devices.Sum(d => d.GrossUsdPerDay), electricity);
     }
 }
