@@ -39,7 +39,6 @@ internal static partial class SitePages
             ("Mining pools for Pearl", "https://miningpoolstats.stream/pearl"),
         ];
         var body = $"""
-                <div class="glow-frame" aria-hidden="true"><div class="glow"></div></div>
                 <section class="page stacked">
                   <div class="wrap">
                     <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Otium</a><span aria-hidden="true">/</span><span aria-current="page">What is Pearl?</span></nav>

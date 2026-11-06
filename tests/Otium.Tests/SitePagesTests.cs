@@ -153,8 +153,7 @@ public sealed class SitePagesTests : IDisposable
         var html = (await Get("/")).Html;
         Assert.Contains("Pearl mining runs the math AI runs on.", html);
         Assert.Contains("It doesn't run anyone's AI model or see their data.", html);
-        // Three 4×4 grids of tiles; each tile's row and column for the animation come from its position, in site.css.
-        Assert.Equal(3, System.Text.RegularExpressions.Regex.Matches(html, "<div class=\"grid [abc]\">(<span></span>){16}</div>").Count);
+        Assert.Contains("""see their data. <a href="/pearl">What is Pearl?</a>""", html);
     }
 
     [Fact]
@@ -659,7 +658,9 @@ public sealed class SitePagesTests : IDisposable
         Assert.Equal(["Organization", "WebSite", "SoftwareApplication", "FAQPage"], graph.Select(g => g.GetProperty("@type").GetString()));
         Assert.Equal("Windows, macOS, Linux", graph[2].GetProperty("operatingSystem").GetString());
         var questions = graph[3].GetProperty("mainEntity").EnumerateArray().ToList();
-        Assert.Equal(System.Text.RegularExpressions.Regex.Matches(html, "<details[^>]*><summary>").Count, questions.Count);
+        // The questions section's boxes (the payout paths above it are details too, but aren't questions).
+        var faqHtml = html[html.IndexOf("id=\"questions\"", StringComparison.Ordinal)..html.IndexOf("class=\"closing\"", StringComparison.Ordinal)];
+        Assert.Equal(System.Text.RegularExpressions.Regex.Matches(faqHtml, "<details[^>]*><summary>").Count, questions.Count);
         Assert.Equal("Is my money safe?", questions[0].GetProperty("name").GetString());
         Assert.Contains("<summary>Is my money safe?</summary>", html);
         Assert.Contains("""<details id="why-fee"><summary>Why does Otium take 2%?</summary>""", html);

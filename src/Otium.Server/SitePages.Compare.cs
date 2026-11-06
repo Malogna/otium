@@ -169,7 +169,6 @@ internal static partial class SitePages
             ? """<a href="/sell-bandwidth">How selling your unused bandwidth works</a>"""
             : """<a href="/sell-computing-power">How selling your PC's idle processing power works</a>""";
         var body = $"""
-                <div class="glow-frame" aria-hidden="true"><div class="glow"></div></div>
                 <section class="page stacked">
                   <div class="wrap">
                     <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Otium</a><span aria-hidden="true">/</span><span aria-current="page">Otium vs {name}</span></nav>

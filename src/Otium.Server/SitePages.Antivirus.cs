@@ -74,7 +74,6 @@ internal static partial class SitePages
         var vendors = string.Concat(AntivirusSteps.Select(v =>
             $"""<details id="av-{v.Id}"><summary>{E(v.Name)}</summary><div class="install-body"><ol>{v.StepsHtml}<li>Back in Otium, press <strong>Try again</strong>.</li></ol><p class="sum-intro"><a href="{E(v.HelpUrl)}" rel="nofollow">{E(v.Name)}'s own help</a></p></div></details>"""));
         var body = $"""
-                <div class="glow-frame" aria-hidden="true"><div class="glow"></div></div>
                 <section class="page stacked">
                   <div class="wrap">
                     <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Otium</a><span aria-hidden="true">/</span><span aria-current="page">Antivirus help</span></nav>
