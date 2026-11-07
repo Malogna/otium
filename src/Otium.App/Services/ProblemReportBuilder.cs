@@ -81,7 +81,10 @@ public static class ProblemReportBuilder
 
         AppendLog(b, "Processor miner (XMRig), recent output", host.Provider.RecentLog);
         if (host.GpuProvider is { } g)
+        {
             AppendLog(b, "Graphics card miner (SRBMiner), recent output", g.RecentLog);
+            AppendLog(b, "Graphics card miner launches and stops, oldest first", g.LaunchHistory);
+        }
 
         string?[] known =
         [
