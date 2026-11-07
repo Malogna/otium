@@ -733,6 +733,13 @@ public sealed class SrbMinerProviderTests : IDisposable
         Assert.Contains("Trying kawpow instead", status.Problem);
         Assert.NotNull(_provider.SetAsideReason("autolykos2"));
 
+        // The report keeps each launch and stop, so a miner that prints nothing can still be told apart from one that never ran.
+        var history = _provider.LaunchHistory;
+        Assert.Contains(history, h => h.Contains("started autolykos2 on 1 card(s)", StringComparison.Ordinal) && h.Contains("miner file", StringComparison.Ordinal));
+        Assert.Contains(history, h => h.Contains("autolykos2 miner stopped by Otium after", StringComparison.Ordinal) && h.Contains("still running", StringComparison.Ordinal));
+        Assert.Contains(history, h => h.Contains("started kawpow", StringComparison.Ordinal));
+        Assert.True(history.Count <= 8);
+
         // kawpow hashes, so the notice clears; autolykos2 pays more but isn't retried while it's set aside.
         var autolykosLaunches = _factory.Launches.Count(l => l.Algorithm == "autolykos2");
         status = await RunFor(TimeSpan.FromMinutes(50));

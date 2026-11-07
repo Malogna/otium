@@ -113,7 +113,7 @@
                 <Border Classes="strip warn" Margin="22,10,22,0" IsVisible="{Binding ShowReportStrip}">
                     <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12">
                         <StackPanel VerticalAlignment="Center" ToolTip.Tip="Sends what Otium knows about why it isn't earning, with payout addresses and keys taken out. You get a reference to mention when you ask for help.">
-                            <TextBlock Classes="oneLine" FontWeight="SemiBold" Text="{Binding StatusText}" />
+                            <TextBlock Classes="oneLine" FontWeight="SemiBold" Text="{Binding ReportHeadline}" />
                             <TextBlock Classes="muted oneLine" FontSize="12" Text="Sending a report shows us what went wrong. No addresses or keys are included."
                                        IsVisible="{Binding ReportResult, Converter={x:Static StringConverters.IsNullOrEmpty}}" />
                             <TextBlock Classes="muted oneLine" FontSize="12" Text="{Binding ReportResult}"

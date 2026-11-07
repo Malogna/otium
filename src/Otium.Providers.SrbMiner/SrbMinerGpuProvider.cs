@@ -290,6 +290,32 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
 
     public IReadOnlyList<string> RecentLog => _process?.RecentLog ?? [];
 
+    private const int LaunchHistoryKept = 8;
+    private readonly Queue<string> _launchHistory = new();
+
+    /// <summary>
+    /// The last few launches and stops of the miner, oldest first, for problem reports: when a miner starts and prints
+    /// nothing (a missing driver component, antivirus ending it), its own output is empty and this is all there is to go on.
+    /// </summary>
+    public IReadOnlyList<string> LaunchHistory
+    {
+        get
+        {
+            lock (_launchHistory)
+                return _launchHistory.ToArray();
+        }
+    }
+
+    private void NoteLaunch(string what)
+    {
+        lock (_launchHistory)
+        {
+            _launchHistory.Enqueue($"{_time.GetUtcNow().ToString("HH':'mm':'ss", System.Globalization.CultureInfo.InvariantCulture)}Z {what}");
+            while (_launchHistory.Count > LaunchHistoryKept)
+                _launchHistory.Dequeue();
+        }
+    }
+
     public string? ValidatePayoutAddress(string address) =>
         PayoutTarget.TryParse(address, out _, out var error) ? null : error;
 
@@ -1394,7 +1420,9 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         var args = SrbMinerArgs.Build(algorithm, login, cards, options.LowPriority, _gpus, DeviceIds(cards), intensity);
         _cards = cards;
         ct.ThrowIfCancellationRequested();
+        var size = File.Exists(binary) ? new FileInfo(binary).Length : -1;
         _process = _factory.Start(binary, args, options.LowPriority);
+        NoteLaunch($"started {algorithm.PoolName} on {cards.Count} card(s), intensity {intensity?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "auto"}{(trial ? " (trial)" : "")}, miner file {size} bytes");
     }
 
     /// <summary>
@@ -1431,7 +1459,14 @@ public sealed class SrbMinerGpuProvider : IComputeProvider
         var process = _process;
         _process = null;
         if (process is not null)
+        {
+            // What state it was in when Otium ended it: still running, or already gone with an exit code (and how much it printed).
+            var lines = process.RecentLog.Count;
+            NoteLaunch(process.HasExited
+                ? FormattableString.Invariant($"{_current?.PoolName} miner had exited after {_time.GetUtcNow() - _launchedAt:hh\\:mm\\:ss} with code {process.ExitCode} (0x{process.ExitCode.GetValueOrDefault():X8}), {lines} lines of output")
+                : FormattableString.Invariant($"{_current?.PoolName} miner stopped by Otium after {_time.GetUtcNow() - _launchedAt:hh\\:mm\\:ss}, still running, {lines} lines of output"));
             await process.DisposeAsync();
+        }
     }
 
     private double? AverageWatts()

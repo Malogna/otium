@@ -443,6 +443,9 @@ public partial class HomeViewModel : ViewModelBase
 
     /// <summary>An engine is in an error that isn't the antivirus fix: offer to send a problem report right there.</summary>
     [ObservableProperty] public partial bool ShowReportStrip { get; set; }
+
+    /// <summary>What the strip says is wrong: the failing engine's own problem.</summary>
+    [ObservableProperty] public partial string ReportHeadline { get; set; } = "";
     [ObservableProperty] public partial bool IsSendingReport { get; set; }
     [ObservableProperty] public partial string ReportResult { get; set; } = "";
     [ObservableProperty] public partial string? ReportReference { get; set; }
@@ -455,7 +458,7 @@ public partial class HomeViewModel : ViewModelBase
         ReportReference = null;
         try
         {
-            var reference = await _host.SendProblemReportAsync($"Sent from the Home screen. Status: {StatusText}");
+            var reference = await _host.SendProblemReportAsync($"Sent from the Home screen. Problem: {ReportHeadline}");
             ReportReference = reference;
             ReportResult = $"Sent. Your reference is {reference}: mention it when you ask for help.";
         }
@@ -603,6 +606,10 @@ public partial class HomeViewModel : ViewModelBase
         IsWaiting = !IsEarning && settings.EarningEnabled && states.Contains(EngineState.WaitingForIdle);
         IsProblem = NeedsAntivirusFix || (!IsEarning && states.Contains(EngineState.Error));
         ShowReportStrip = IsProblem && !NeedsAntivirusFix;
+        // The engine that is in error, not the status line, which may be about the other device ("starts when you step away").
+        ReportHeadline = !ShowReportStrip ? ""
+            : snapshots.FirstOrDefault(s => s.State == EngineState.Error) is { } failing ? failing.Problem ?? failing.StatusText
+            : StatusText;
         RefreshElectricityPause(engines);
         var sharers = _host.Sharers.Select(s => s.Snapshot).Where(s => s.State == BandwidthState.Sharing).ToList();
         var sharing = sharers.Count > 0;
