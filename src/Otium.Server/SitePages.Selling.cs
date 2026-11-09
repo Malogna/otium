@@ -12,7 +12,7 @@ internal static partial class SitePages
 {
     private static readonly (string Question, string AnswerHtml)[] BandwidthFaq =
     [
-        ("How much can I make selling bandwidth?", """It depends on where you are and how much of your connection buyers actually use. Proxybase pays per GB, more in some countries than others, and says a home connection carries 1–5 GB a day on average. For many people that's a few dollars a month, sometimes less. Otium shows your real numbers after the first hour."""),
+        ("How much can I make selling bandwidth?", """It depends on where you are and how much of your connection buyers actually use. Proxybase lists a price per GB, more in some countries than others, and says a home connection carries 1–5 GB a day on average, but it isn't paying at that pace right now. For many people that's around a dollar a day at the moment, sometimes less, and more if demand picks up. Otium shows your real numbers after the first hour."""),
         ("Is selling bandwidth safe?", """Your connection carries other people's web requests, so websites see them coming from your internet address. Proxybase's buyers are mostly AI agents and businesses collecting public web pages, and Otium only shares while you're away. If that isn't for you, leave sharing off: it's off until you tick it, and you can untick it any time."""),
         ("Does my internet provider allow it?", """Some providers' terms forbid reselling your connection. Check yours before turning sharing on."""),
         ("Will it slow down my internet or games?", """Proxybase sharing runs only while you're away from the computer and stops when you're back, so it doesn't compete with your own browsing or games. Mysterium has a daily limit of its own, and AIOZ a storage limit (20 GB by default)."""),
@@ -37,7 +37,7 @@ internal static partial class SitePages
         var month = UsdWhole(sharing.PerDay * 30);
         var figure = sharing.IsReal
             ? $"Otium computers in {E(sharing.CountryName)} that shared their numbers made a median of <strong>{month} a month</strong> from Proxybase, after Otium's {fee}."
-            : $"Proxybase pays {Usd(sharing.RatePerGb)} per GB {(sharing.ListedMarket ? $"in {E(sharing.CountryName)}" : "where it doesn't list a country on its own")}. At 1 GB a day, that's about <strong>{month} a month</strong> after Otium's {fee}. What you really earn depends on how much buyers use your connection.";
+            : $"Proxybase lists {Usd(sharing.RatePerGb)} per GB {(sharing.ListedMarket ? $"in {E(sharing.CountryName)}" : "where it doesn't list a country on its own")}, but it isn't paying at the 1–5 GB a day it quotes right now. At about 0.3 to 0.9 GB a day, that's <strong>{SharingDayRange(sharing)} a day</strong> after Otium's {fee}, and more if demand picks up. What you really earn depends on how much buyers use your connection.";
         var body = $"""
                 <section class="page stacked">
                   <div class="wrap">

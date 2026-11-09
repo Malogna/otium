@@ -93,11 +93,11 @@ public sealed class SitePagesTests : IDisposable
         // RTX 4090: Pearl 310 TH/s × 3.4e-14 $/H/s/day = $10.54, less SRBMiner 2%, unMineable 0.75% and Otium 3% = $9.94,
         // less 400 W for 24 h at $0.15/kWh ($1.44) = $8.50 a day of mining; left alone 16 hours a day, $5.67 a day and
         // $170 a month. Without a visitor country the price is $0.15/kWh. Internet sharing adds Proxybase's worldwide rate
-        // for 1 GB a day ($1.50, less Otium's 3% = $1.455 a day, $43.65 a month): $214 in all.
-        Assert.Contains("""<span class="est-amount" id="est-month">$214</span>""", html);
+        // for the low end, 0.3 GB a day ($1.50 × 0.3, less Otium's 3% = $0.4365 a day, $13.10 a month): $183 in all.
+        Assert.Contains("""<span class="est-amount" id="est-month">$183</span>""", html);
         Assert.Contains("Mining: $5.67/day on an RTX 4090 (Pearl).", html);
-        Assert.Contains("Internet sharing: +$1.46/day (estimate).", html);
-        Assert.Contains("\"sharingPerDay\":1.455", html);
+        Assert.Contains("Internet sharing: +$0.44 to $1.31/day (estimate).", html);
+        Assert.Contains("\"sharingPerDay\":0.4365", html);
         Assert.Contains("First payout within a day.", html);
         // Like for like with mining calculators and comparison sites: $9.94 a day around the clock, no electricity.
         Assert.Contains("""<p class="est-compare" id="est-compare">Mining around the clock, before electricity: $298 a month, the way most comparison sites count it.</p>""", html);
@@ -136,13 +136,16 @@ public sealed class SitePagesTests : IDisposable
         var estimate = Otium.Server.SitePages.SharingFor("NO", fees, null);
         Assert.False(estimate.IsReal);
         Assert.Equal("Norway", estimate.CountryName);
-        Assert.Equal(2.10 * 0.98, estimate.PerDay, precision: 6);
+        Assert.Equal(2.10 * 0.3 * 0.98, estimate.PerDay, precision: 6);
+        Assert.Equal(2.10 * 0.9 * 0.98, estimate.HighPerDay, precision: 6);
+        Assert.Equal("$0.62 to $1.85", Otium.Server.SitePages.SharingDayRange(estimate));
 
         var real = new Otium.Server.RealEarnings.RealEarningsSummary(0, 0, 0, [], 7,
             [new Otium.Server.RealEarnings.RealSharing("NO", 4, 3.0, 45)]);
         var measured = Otium.Server.SitePages.SharingFor("no", fees, real);
         Assert.True(measured.IsReal);
         Assert.Equal(1.5, measured.PerDay, precision: 6);
+        Assert.Equal(1.5, measured.HighPerDay, precision: 6); // a real median is one figure, not a range
         Assert.Contains("4 Otium computers in Norway", measured.Short);
         Assert.False(Otium.Server.SitePages.SharingFor("SE", fees, real).IsReal); // other countries keep the estimate
     }
@@ -517,8 +520,8 @@ public sealed class SitePagesTests : IDisposable
         Assert.Equal(HttpStatusCode.OK, status);
         Assert.Contains("<h1 class=\"mt-14\">Sell your unused internet bandwidth, paid to your own wallet</h1>", html);
         Assert.Contains("""<link rel="canonical" href="http://localhost/sell-bandwidth">""", html);
-        // Without a visitor country: Proxybase's worldwide rate, at 1 GB a day, after the server's 3% fee ($43.65 a month).
-        Assert.Contains("At 1 GB a day, that&#39;s about <strong>$44 a month</strong> after Otium&#39;s 3%", html.Replace("'", "&#39;"));
+        // Without a visitor country: Proxybase's worldwide rate, at 0.3 to 0.9 GB a day, after the server's 3% fee.
+        Assert.Contains("<strong>$0.44 to $1.31 a day</strong> after Otium&#39;s 3%", html.Replace("'", "&#39;"));
         Assert.Contains("Some providers' terms forbid reselling your connection.".Replace("'", "&#39;"), html.Replace("'", "&#39;"));
         Assert.Contains("\"@type\":\"FAQPage\"", html);
 

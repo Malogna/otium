@@ -469,7 +469,8 @@ public sealed class ProxybaseTests : IDisposable
         var norway = ProxybaseMarkets.For("NO");
         Assert.True(norway.Listed);
         Assert.Equal(2.10, norway.SellerUsdPerGb);
-        Assert.Equal(2.10 * 0.98, ProxybaseMarkets.EstimatedUserUsdPerDay(norway, 0.02), precision: 6); // 1 GB a day, after Otium's 2%
+        Assert.Equal(2.10 * 0.3 * 0.98, ProxybaseMarkets.EstimatedUserUsdPerDay(norway, 0.02), precision: 6); // low end, 0.3 GB a day, after Otium's 2%
+        Assert.Equal(2.10 * 0.9 * 0.98, ProxybaseMarkets.EstimatedUserUsdPerDayHigh(norway, 0.02), precision: 6); // high end, 0.9 GB a day
 
         var elsewhere = ProxybaseMarkets.For("KE"); // not listed on its own: Proxybase's worldwide rate
         Assert.False(elsewhere.Listed);
