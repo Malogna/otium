@@ -15,8 +15,16 @@ public static class ProxybaseMarkets
 {
     public const string Source = "proxybase.xyz/markets, October 2026";
 
-    /// <summary>The low end of Proxybase's "a residential node transfers 1–5 GB/day" on average.</summary>
-    public const double EstimateGbPerDay = 1;
+    /// <summary>
+    /// The low end of what a home connection is paid for per day at the moment, about 300 MB. Proxybase says a node
+    /// transfers 1–5 GB a day on average and lists its per-GB rates, but what it pays is not at that pace right now, so the
+    /// estimate is a range below the listed rate times 1–5 GB: about $0.50 to $1.50 a day in the US. Raise these when
+    /// real figures do.
+    /// </summary>
+    public const double EstimateGbPerDayLow = 0.3;
+
+    /// <summary>The high end of the same range, about 900 MB a day.</summary>
+    public const double EstimateGbPerDayHigh = 0.9;
 
     /// <summary>Seller yield per GB for residential connections, by country.</summary>
     private static readonly Dictionary<string, double> ResidentialUsdPerGb = new(StringComparer.OrdinalIgnoreCase)
@@ -43,9 +51,16 @@ public static class ProxybaseMarkets
             : new ProxybaseMarket(name, WorldWideUsdPerGb, Listed: false);
     }
 
-    /// <summary>The estimate for a day: the market rate for <see cref="EstimateGbPerDay"/>, less Otium's share.</summary>
+    /// <summary>
+    /// The low end of the estimate for a day: the market rate for <see cref="EstimateGbPerDayLow"/>, less Otium's share.
+    /// Where a single figure is needed (projections, first-payout times) this is the one to use, so nothing is overpromised.
+    /// </summary>
     public static double EstimatedUserUsdPerDay(ProxybaseMarket market, double otiumFeeShare) =>
-        market.SellerUsdPerGb * EstimateGbPerDay * (1 - otiumFeeShare);
+        market.SellerUsdPerGb * EstimateGbPerDayLow * (1 - otiumFeeShare);
+
+    /// <summary>The high end of the estimate for a day: the market rate for <see cref="EstimateGbPerDayHigh"/>, less Otium's share.</summary>
+    public static double EstimatedUserUsdPerDayHigh(ProxybaseMarket market, double otiumFeeShare) =>
+        market.SellerUsdPerGb * EstimateGbPerDayHigh * (1 - otiumFeeShare);
 
     private static string NameOf(string code)
     {

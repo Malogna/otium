@@ -113,9 +113,9 @@ public partial class InternetSharingViewModel : ViewModelBase
     public string LimitsText => IsProxybase
         ? "There's no daily data cap: your connection is used whenever Proxybase's customers need an address like yours" +
           (_host.Settings.BandwidthOnlyWhenIdle ? ", and only while you're away. " : ". ") +
-          "What you earn depends on how much they use it. The estimate assumes 1 GB a day, the low end of what Proxybase " +
-          "says a home connection carries, and your real pace replaces it after the first hour of earnings. Turn it off " +
-          "any time in Advanced settings."
+          "What you earn depends on how much they use it. Proxybase says a home connection carries 1–5 GB a day, but it " +
+          "isn't paying at that pace right now, so the estimate is a low-to-high range, and your real pace replaces it " +
+          "after the first hour of earnings. Turn it off any time in Advanced settings."
         : FormattableString.Invariant($"Uses at most {_host.Settings.BandwidthDailyLimitGb:0.#} GB a day (you can change this). ") +
           "Only one computer per internet connection is paid. Turn it off any time in Advanced settings.";
 
@@ -138,7 +138,7 @@ public partial class InternetSharingViewModel : ViewModelBase
         IsOn = settings.BandwidthEnabled && settings.BandwidthConsentAt is not null;
         ShowSuggestion = IsOffered && !IsOn && !settings.BandwidthPromptDismissed;
         var month = ExpectedUsdPerDay * 30;
-        EstimateText = IsProxybase ? $"about {Format.Usd(EstimatedUsdPerDay * 30)} a month by Proxybase's rates, paid in your coin"
+        EstimateText = IsProxybase ? $"about {DayRangeText()} a day at what Proxybase is paying now, in your coin"
             : month > 0 ? $"about {Format.Usd(month)} a month extra" : "";
         OnPropertyChanged(nameof(LimitsText));
         OnPropertyChanged(nameof(ConsentText));
@@ -185,10 +185,20 @@ public partial class InternetSharingViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Before this computer has its own pace: what Proxybase's rate here pays for 1 GB a day (the low end of its
-    /// "1–5 GB a day" average for a home connection), after Otium's fee.
+    /// Before this computer has its own pace: what Proxybase's rate here pays for the low end of what a home connection
+    /// is paid for now (<see cref="Otium.Core.Bandwidth.ProxybaseMarkets.EstimateGbPerDayLow"/>), after Otium's fee.
+    /// Projections use this one so nothing is overpromised; screens show the range.
     /// </summary>
     public double EstimatedUsdPerDay => EstimateFor(_host);
+
+    /// <summary>"$0.52 to $1.57": the low-to-high day, in dollars and cents.</summary>
+    private string DayRangeText()
+    {
+        var share = _host.Fees.FeePercent / 100;
+        var market = MarketHere();
+        return $"{Format.Usd(Otium.Core.Bandwidth.ProxybaseMarkets.EstimatedUserUsdPerDay(market, share))} to " +
+               $"{Format.Usd(Otium.Core.Bandwidth.ProxybaseMarkets.EstimatedUserUsdPerDayHigh(market, share))}";
+    }
 
     /// <summary><see cref="EstimatedUsdPerDay"/> for any screen that has the host.</summary>
     public static double EstimateFor(AppHost host) => host.UsesProxybase
@@ -200,11 +210,11 @@ public partial class InternetSharingViewModel : ViewModelBase
         var market = Market;
         var rate = Format.Usd(market.SellerUsdPerGb);
         var where = market.Listed
-            ? $"Proxybase pays {rate} per GB in {market.CountryName}"
+            ? $"Proxybase lists {rate} per GB in {market.CountryName}"
             : $"Proxybase doesn't list {market.CountryName} on its own, so this uses its worldwide rate of {rate} per GB";
-        return $"Estimate: about {Format.Usd(EstimatedUsdPerDay * 30)} a month. {where}, and says a home connection carries " +
-               "1–5 GB a day on average; this assumes the low end, 1 GB, after Otium's fee. What you really earn depends on how " +
-               "much Proxybase's customers use your connection.";
+        return $"Estimate: about {DayRangeText()} a day. {where} and says a home connection carries 1–5 GB a day, but it " +
+               "isn't paying at that pace right now; this assumes about 0.3 to 0.9 GB a day, after Otium's fee, and it will be " +
+               "more if demand picks up. What you really earn depends on how much Proxybase's customers use your connection.";
     }
 
     partial void OnOnlyWhenAwayChanged(bool value) => Save();

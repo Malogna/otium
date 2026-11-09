@@ -122,7 +122,12 @@ internal static partial class SitePages
 
     /// <summary>What internet sharing pays a visitor from this country per day: Otium users' real median when there is one.</summary>
     /// <param name="Short">Where the figure comes from, for the hero's line.</param>
-    internal sealed record SharingFigure(string CountryName, double PerDay, bool IsReal, int Computers, double RatePerGb, bool ListedMarket, string Short);
+    /// <param name="PerDay">The figure to count in totals: a real median, or the low end of the estimate.</param>
+    /// <param name="PerDayHigh">The high end of the estimate; the same as <paramref name="PerDay"/> for a real median.</param>
+    internal sealed record SharingFigure(string CountryName, double PerDay, bool IsReal, int Computers, double RatePerGb, bool ListedMarket, string Short, double PerDayHigh = 0)
+    {
+        public double HighPerDay => Math.Max(PerDay, PerDayHigh);
+    }
 
     internal static SharingFigure SharingFor(string? visitorCountry, FeePolicy fees, RealEarnings.RealEarningsSummary? real)
     {
@@ -132,11 +137,16 @@ internal static partial class SitePages
             return new SharingFigure(market.CountryName, measured.UsdPerMonth / 30, true, measured.Computers, market.SellerUsdPerGb, market.Listed,
                 $"median of {measured.Computers} Otium computers in {market.CountryName}");
         var estimate = ProxybaseMarkets.EstimatedUserUsdPerDay(market, fees.FeePercent / 100);
-        return new SharingFigure(market.CountryName, estimate, false, 0, market.SellerUsdPerGb, market.Listed, "estimate");
+        var high = ProxybaseMarkets.EstimatedUserUsdPerDayHigh(market, fees.FeePercent / 100);
+        return new SharingFigure(market.CountryName, estimate, false, 0, market.SellerUsdPerGb, market.Listed, "estimate", high);
     }
 
-    private static string SharingLine(SharingFigure s) =>
-        $"Internet sharing: +{Usd(s.PerDay)}/day ({E(s.Short)}).";
+    private static string SharingLine(SharingFigure s) => s.IsReal
+        ? $"Internet sharing: +{Usd(s.PerDay)}/day ({E(s.Short)})."
+        : $"Internet sharing: +{SharingDayRange(s)}/day ({E(s.Short)}).";
+
+    /// <summary>"$0.52 to $1.57": an estimate's low-to-high day, in dollars and cents.</summary>
+    internal static string SharingDayRange(SharingFigure s) => $"{Usd(s.PerDay)} to {Usd(s.HighPerDay)}";
 
     /// <summary>"Get paid for internet bandwidth you aren't using": the visitor's country, real figures when there are, else the estimate.</summary>
     private static string SharingSection(SharingFigure s, string fee)
@@ -145,9 +155,9 @@ internal static partial class SitePages
         var explain = s.IsReal
             ? $"a month: the median of {s.Computers} Otium computers in {E(s.CountryName)} whose owners shared their numbers, after Otium's {fee}."
             : (s.ListedMarket
-                  ? $"a month, estimated for {E(s.CountryName)}: Proxybase pays {rate} per GB there"
-                  : $"a month, estimated: Proxybase pays {rate} per GB where it doesn't list a country on its own")
-              + $", and says a home connection carries 1–5 GB a day on average. This assumes 1 GB, after Otium's {fee}. What you really earn depends on how much Proxybase's customers use your connection; the app shows your real numbers after the first hour.";
+                  ? $"a day, estimated for {E(s.CountryName)}: Proxybase lists {rate} per GB there"
+                  : $"a day, estimated: Proxybase lists {rate} per GB where it doesn't list a country on its own")
+              + $", and says a home connection carries 1–5 GB a day on average, but it isn't paying at that pace right now. This assumes about 0.3 to 0.9 GB a day, after Otium's {fee}, and it will be more if demand picks up. What you really earn depends on how much Proxybase's customers use your connection; the app shows your real numbers after the first hour.";
         return $"""
                 <section id="sharing" aria-labelledby="sharing-title">
                   <div class="wrap power">
@@ -158,7 +168,7 @@ internal static partial class SitePages
                       <p class="fine mt-14">The same tick adds two more networks: Mysterium carries traffic for its business customers and pays its MYST token straight to your own address, with no fee from Otium, and AIOZ uses some spare disk space to store and deliver files, paying its AIOZ token. Untick any you don't want.</p>
                     </div>
                     <div class="panel reveal">
-                      <p class="keep" data-count>{(s.IsReal ? "" : "≈ ")}{UsdWhole(s.PerDay * 30)}<small>{explain}</small></p>
+                      <p class="keep"{(s.IsReal ? " data-count" : "")}>{(s.IsReal ? UsdWhole(s.PerDay * 30) : "≈ " + SharingDayRange(s))}<small>{explain}</small></p>
                     </div>
                   </div>
                 </section>
