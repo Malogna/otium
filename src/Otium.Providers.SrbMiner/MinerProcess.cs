@@ -53,6 +53,11 @@ internal sealed class SrbMinerProcessFactory : IMinerProcessFactory
         };
         foreach (var argument in arguments)
             startInfo.ArgumentList.Add(argument);
+        // SRBMiner holds its console output back when it is piped (all of it arrives at once when it exits), so a
+        // miner that prints a line every few seconds looks silent for minutes. Its log file is written as it goes.
+        var logFile = Path.Combine(Path.GetDirectoryName(binary)!, $"otium-{Guid.NewGuid():N}.log");
+        startInfo.ArgumentList.Add("--log-file");
+        startInfo.ArgumentList.Add(logFile);
 
         try
         {
@@ -66,7 +71,7 @@ internal sealed class SrbMinerProcessFactory : IMinerProcessFactory
             catch (Exception e) when (e is InvalidOperationException or Win32Exception)
             {
             }
-            return new SrbMinerProcess(process);
+            return new SrbMinerProcess(process, logFile);
         }
         catch (Win32Exception e) when (e.NativeErrorCode is ErrorVirusInfected or ErrorVirusDeleted)
         {
@@ -79,14 +84,71 @@ internal sealed class SrbMinerProcess : IMinerProcess
 {
     private readonly Process _process;
     private readonly ConcurrentQueue<string> _log = new();
+    private readonly string? _logFile;
+    private readonly CancellationTokenSource _stopTailing = new();
+    private readonly Task _tail = Task.CompletedTask;
 
-    public SrbMinerProcess(Process process)
+    /// <summary>Timestamped lines already taken, from the console or the log file, whichever came first (both carry them).</summary>
+    private readonly HashSet<string> _seen = [];
+
+    /// <param name="logFile">The file SRBMiner was told to log to, read as it grows; null to use the console only.</param>
+    public SrbMinerProcess(Process process, string? logFile = null)
     {
         _process = process;
+        _logFile = logFile;
         _process.OutputDataReceived += (_, e) => Append(e.Data);
         _process.ErrorDataReceived += (_, e) => Append(e.Data);
         _process.BeginOutputReadLine();
         _process.BeginErrorReadLine();
+        if (logFile is not null)
+            _tail = Task.Run(() => TailAsync(logFile, _stopTailing.Token));
+    }
+
+    /// <summary>Follows the log file, handing each new line to <see cref="Append"/>, until stopped.</summary>
+    private async Task TailAsync(string path, CancellationToken ct)
+    {
+        var pending = "";
+        long position = 0;
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                if (File.Exists(path))
+                {
+                    using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                    if (stream.Length < position)
+                        position = 0; // truncated
+                    stream.Seek(position, SeekOrigin.Begin);
+                    using var reader = new StreamReader(stream, System.Text.Encoding.UTF8);
+                    var text = await reader.ReadToEndAsync(ct);
+                    position = stream.Position;
+                    pending += text;
+                    int newline;
+                    while ((newline = pending.IndexOf('\n')) >= 0)
+                    {
+                        Append(pending[..newline].TrimEnd('\r'));
+                        pending = pending[(newline + 1)..];
+                    }
+                }
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                // Being written or just removed: next round.
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+
+            try
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(500), ct);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+        }
     }
 
     public bool HasExited => _process.HasExited;
@@ -114,11 +176,45 @@ internal sealed class SrbMinerProcess : IMinerProcess
     {
         if (string.IsNullOrWhiteSpace(line))
             return;
+        // A line the console and the log file both carry (they begin with a timestamp) is kept once.
+        if (_logFile is not null && line.StartsWith('['))
+        {
+            lock (_seen)
+            {
+                if (_seen.Count > 2000)
+                    _seen.Clear();
+                if (!_seen.Add(line))
+                    return;
+            }
+        }
         _log.Enqueue(line);
         if (SrbMinerStats.ParseIntensity(line, out _) is { } intensity)
             AutoIntensity ??= intensity; // the first card's (Otium sets one value for all of them)
         while (_log.Count > 300 && _log.TryDequeue(out _))
         {
+        }
+    }
+
+    private async Task StopTailingAsync()
+    {
+        _stopTailing.Cancel();
+        try
+        {
+            await _tail.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        catch (Exception e) when (e is TimeoutException or OperationCanceledException)
+        {
+        }
+        _stopTailing.Dispose();
+        if (_logFile is not null)
+        {
+            try
+            {
+                File.Delete(_logFile); // it holds the wallet address; nothing needs it afterwards
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+            }
         }
     }
 
@@ -139,6 +235,7 @@ internal sealed class SrbMinerProcess : IMinerProcess
         finally
         {
             _process.Dispose();
+            await StopTailingAsync();
         }
     }
 }
