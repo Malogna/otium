@@ -107,6 +107,17 @@ public sealed class BandwidthLedger
 /// </summary>
 public sealed class BandwidthSharer : IAsyncDisposable
 {
+    /// <summary>
+    /// What to show for an unexpected failure. A request that timed out or couldn't connect says so in plain words,
+    /// not with the HTTP client's own message ("The request was canceled due to the configured HttpClient.Timeout...").
+    /// </summary>
+    public static string ProblemText(Exception e) => e switch
+    {
+        TaskCanceledException or TimeoutException => "The sharing service didn't answer in time. Otium tries again in a moment.",
+        HttpRequestException => "Couldn't reach the sharing service. Check the internet connection; Otium tries again in a moment.",
+        _ => $"Something went wrong: {e.Message}",
+    };
+
     public static readonly TimeSpan TickInterval = TimeSpan.FromSeconds(5);
     public static readonly TimeSpan ReportInterval = TimeSpan.FromMinutes(5);
     public static readonly TimeSpan RetryInterval = TimeSpan.FromMinutes(1);
@@ -207,7 +218,7 @@ public sealed class BandwidthSharer : IAsyncDisposable
             catch (Exception e)
             {
                 await StopProviderAsync();
-                Publish(BandwidthState.Error, $"Something went wrong: {e.Message}");
+                Publish(BandwidthState.Error, ProblemText(e));
             }
 
             try
