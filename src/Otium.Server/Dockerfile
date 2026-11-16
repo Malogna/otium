@@ -15,7 +15,7 @@ COPY src/Otium.Core/ src/Otium.Core/
 COPY src/Otium.Server/ src/Otium.Server/
 RUN dotnet publish src/Otium.Server/Otium.Server.csproj -c Release -o /app --no-restore /p:UseAppHost=false
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:11.0 AS runtime
 WORKDIR /app
 
 # The image's non-root "app" user ($APP_UID, 1654) owns the data directory. A new named volume mounted here
