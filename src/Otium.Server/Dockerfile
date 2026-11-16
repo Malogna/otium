@@ -2,7 +2,7 @@
 #   docker build -f src/Otium.Server/Dockerfile -t otium-server .
 # The SQLite database lives on the /data volume; the server listens on plain HTTP port 8080 behind the HTTPS proxy.
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:11.0 AS build
 WORKDIR /src
 
 # Restore first so the package layer is cached until a project file changes.
